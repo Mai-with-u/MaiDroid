@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="42dp"
+    android:height="42dp"
+    android:viewportWidth="42"
+    android:viewportHeight="42">
+    <group android:name="carbon:job-run">
+        <path
+            android:name="Vector"
+            android:fillColor="#FFFFFF"
+            android:pathData="M15.75,22.313H26.25C27.694,22.313 28.875,21.131 28.875,19.688V5.25C28.875,3.806 27.694,2.625 26.25,2.625H15.75C14.306,2.625 13.125,3.806 13.125,5.25V19.688C13.125,21.131 14.306,22.313 15.75,22.313ZM15.75,5.25H26.25V19.688H15.75V5.25ZM10.5,24.938H18.375V27.563H10.5C9.056,27.563 7.875,26.381 7.875,24.938V10.5H10.5V24.938ZM5.25,30.188H13.125V32.813H5.25C3.806,32.813 2.625,31.631 2.625,30.188V15.75H5.25V30.188ZM39.375,31.5L31.5,39.375L29.663,37.538L34.388,32.813H22.313V30.188H34.388L29.663,25.463L31.5,23.625L39.375,31.5Z" />
+    </group>
+</vector>

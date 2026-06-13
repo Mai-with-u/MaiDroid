@@ -1,0 +1,37 @@
+# ── Gradle ──────────────────────────────────────────────────────
+*.iml
+.gradle
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# ── IDE ──────────────────────────────────────────────────────────
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+
+# ── APK outputs ──────────────────────────────────────────────────
+/app/build/outputs/
+
+# ── AI tools (Claude Code, etc.) ─────────────────────────────────
+CLAUDE.md
+/.claude/
+/memory/
+*.md.tmp
+
+# ── Debug artifacts ──────────────────────────────────────────────
+screenshot*.png
+ui_dump.xml
+ui*.xml
+fix_null_byte.py
+tmp_*.svg
+
+# ── Local config ─────────────────────────────────────────────────
+/local.properties
+/app/libs/*.aar
