@@ -33,6 +33,7 @@ androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", versi
 
 # Compose (versions managed by BOM)
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-animation = { group = "androidx.compose.animation", name = "animation" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }

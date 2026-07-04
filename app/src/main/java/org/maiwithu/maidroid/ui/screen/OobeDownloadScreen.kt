@@ -6,25 +6,19 @@ import androidx.compose.ui.tooling.preview.Preview
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 
 @Composable
-fun OobeScreen(
-    onStorageAuthorize: () -> Unit = {},
-    onBackgroundAuthorize: () -> Unit = {},
-    onNext: () -> Unit = {},
+fun OobeDownloadScreen(
     modifier: Modifier = Modifier
 ) {
     OobeFlowScreen(
-        currentStep = 0,
-        onStorageAuthorize = onStorageAuthorize,
-        onBackgroundAuthorize = onBackgroundAuthorize,
-        onNext = onNext,
+        currentStep = 1,
         modifier = modifier
     )
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFF121212, widthDp = 360, heightDp = 800)
 @Composable
-private fun OobeScreenPreview() {
+private fun OobeDownloadScreenPreview() {
     MaiDroidTheme {
-        OobeScreen()
+        OobeDownloadScreen()
     }
 }
