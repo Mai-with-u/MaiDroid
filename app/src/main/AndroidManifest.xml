@@ -36,6 +36,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MaiDroid"
         android:largeHeap="true"
+        android:usesCleartextTraffic="true"
         tools:targetApi="36">
 
         <activity
@@ -50,6 +51,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".WebUiActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MaiDroid"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- Foreground service for Python chatbot keep-alive -->
         <service

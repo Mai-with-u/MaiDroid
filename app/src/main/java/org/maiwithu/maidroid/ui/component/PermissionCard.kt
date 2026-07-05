@@ -3,10 +3,10 @@ package org.maiwithu.maidroid.ui.component
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,21 +27,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.ui.theme.Orange400
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import androidx.compose.ui.tooling.preview.Preview
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.Orange400
+import org.maiwithu.maidroid.ui.theme.SurfaceDark
 import org.maiwithu.maidroid.ui.theme.TextOnOrange
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSecondary
 
-/**
- * Permission card — all sizes scaled 0.67× from the 540px Figma canvas.
- */
 @Composable
 fun PermissionCard(
     @DrawableRes iconRes: Int,
@@ -49,37 +45,43 @@ fun PermissionCard(
     description: String,
     required: Boolean,
     onAuthorize: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    granted: Boolean = false
 ) {
+    val cardColor = if (granted) SurfaceDark.copy(alpha = 0.62f) else SurfaceDark
+    val iconBackground = if (granted) Color.White.copy(alpha = 0.12f) else Orange400
+    val primaryTextColor = if (granted) TextSecondary else TextPrimary
+    val secondaryTextColor = if (granted) TextSecondary.copy(alpha = 0.72f) else TextSecondary
+    val badgeBackground = if (granted) Color.White.copy(alpha = 0.1f) else Orange400
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(22.dp))  // 32 × 0.67
-            .background(SurfaceDark)
+            .clip(RoundedCornerShape(22.dp))
+            .background(cardColor)
             .padding(horizontal = 17.dp, vertical = 14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon container: 48dp (72 × 0.67)
             Box(
                 modifier = Modifier
-                    .size(48.dp)           // 72 × 0.67
-                    .clip(RoundedCornerShape(11.dp))  // 16 × 0.67
-                    .background(Orange400),
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(iconBackground),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = title,
-                    modifier = Modifier.size(28.dp),  // 42 × 0.67
-                    tint = Color.White
+                    modifier = Modifier.size(28.dp),
+                    tint = if (granted) TextSecondary else Color.White
                 )
             }
 
-            Spacer(modifier = Modifier.width(15.dp))  // 22 × 0.67
+            Spacer(modifier = Modifier.width(15.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -90,7 +92,7 @@ fun PermissionCard(
                         text = title,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        color = primaryTextColor,
                         maxLines = 1,
                         lineHeight = 20.sp
                     )
@@ -99,10 +101,10 @@ fun PermissionCard(
                         text = if (required) "必须" else "可选",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextOnOrange,
+                        color = if (granted) TextSecondary else TextOnOrange,
                         modifier = Modifier
                             .clip(RoundedCornerShape(5.dp))
-                            .background(Orange400)
+                            .background(badgeBackground)
                             .padding(horizontal = 6.dp, vertical = 0.dp)
                     )
                 }
@@ -113,28 +115,31 @@ fun PermissionCard(
                     text = description,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = TextSecondary,
+                    color = secondaryTextColor,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 16.sp
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))  // 18 × 0.67
+            Spacer(modifier = Modifier.width(12.dp))
 
             Button(
                 onClick = onAuthorize,
-                modifier = Modifier.size(width = 64.dp, height = 28.dp),  // 96/42 × 0.67
-                shape = RoundedCornerShape(8.dp),  // 12 × 0.67
+                enabled = !granted,
+                modifier = Modifier.size(width = 64.dp, height = 28.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Orange400,
-                    contentColor = TextOnOrange
+                    contentColor = TextOnOrange,
+                    disabledContainerColor = Color.White.copy(alpha = 0.12f),
+                    disabledContentColor = TextSecondary
                 ),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
             ) {
                 Text(
-                    text = "去授权",
-                    fontSize = 12.sp,  // 20 × 0.67
+                    text = if (granted) "已授权" else "去授权",
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -150,8 +155,9 @@ private fun PermissionCardPreview() {
             PermissionCard(
                 iconRes = R.drawable.ic_storage_hdd,
                 title = "存储权限",
-                description = "MaiSaka需要存储权限才能安装，运行，和保存配置文件",
+                description = "MaiSaka 需要存储权限来安装、运行和保存配置文件",
                 required = true,
+                granted = true,
                 onAuthorize = {}
             )
         }

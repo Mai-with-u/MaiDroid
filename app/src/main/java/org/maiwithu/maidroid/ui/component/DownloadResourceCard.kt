@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,11 +35,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.Orange400
 import org.maiwithu.maidroid.ui.theme.Orange500
 import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextOnOrange
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSecondary
 
@@ -49,16 +52,35 @@ fun DownloadResourceCard(
     progressText: String,
     statusText: String,
     modifier: Modifier = Modifier,
-    height: Dp = 125.dp
+    height: Dp = 125.dp,
+    status: OobeTaskStatus = OobeTaskStatus.Waiting
 ) {
-    val clampedProgress = progress.coerceIn(0f, 1f)
+    val isDone = status == OobeTaskStatus.Done
+    val isRunning = status == OobeTaskStatus.Running
+    val isFailed = status == OobeTaskStatus.Failed
+    val clampedProgress = if (isDone) 1f else progress.coerceIn(0f, 1f)
+    val cardColor = if (isDone) SurfaceDark.copy(alpha = 0.58f) else SurfaceDark
+    val iconBackground = when {
+        isDone -> Color.White.copy(alpha = 0.1f)
+        isFailed -> Color(0xFF7A2F2F)
+        isRunning -> Orange400
+        else -> Color.White.copy(alpha = 0.08f)
+    }
+    val titleColor = if (isDone) TextSecondary else TextPrimary
+    val bodyColor = if (isDone) TextSecondary.copy(alpha = 0.66f) else TextSecondary
+    val accentColor = when {
+        isDone -> TextSecondary
+        isFailed -> Color(0xFFFF7777)
+        isRunning -> Orange500
+        else -> TextSecondary
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(19.dp))
-            .background(SurfaceDark)
+            .background(cardColor)
             .padding(horizontal = 14.dp, vertical = 13.dp)
     ) {
         Row(verticalAlignment = Alignment.Top) {
@@ -66,15 +88,34 @@ fun DownloadResourceCard(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(Orange400),
+                    .background(iconBackground),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = title,
-                    modifier = Modifier.size(28.dp),
-                    tint = Color.White
-                )
+                when {
+                    isRunning -> CircularProgressIndicator(
+                        modifier = Modifier.size(27.dp),
+                        color = Color.White,
+                        strokeWidth = 3.dp
+                    )
+                    isDone -> Icon(
+                        imageVector = Icons.Outlined.CheckCircle,
+                        contentDescription = title,
+                        modifier = Modifier.size(28.dp),
+                        tint = TextSecondary
+                    )
+                    isFailed -> Icon(
+                        imageVector = Icons.Outlined.ErrorOutline,
+                        contentDescription = title,
+                        modifier = Modifier.size(28.dp),
+                        tint = Color.White
+                    )
+                    else -> Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        modifier = Modifier.size(28.dp),
+                        tint = TextSecondary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.size(13.dp))
@@ -84,8 +125,10 @@ fun DownloadResourceCard(
                     text = title,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    lineHeight = 20.sp
+                    color = titleColor,
+                    lineHeight = 20.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -96,7 +139,7 @@ fun DownloadResourceCard(
             text = description,
             fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
-            color = TextSecondary,
+            color = bodyColor,
             lineHeight = 15.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
@@ -104,7 +147,7 @@ fun DownloadResourceCard(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        DownloadProgressBar(progress = clampedProgress)
+        DownloadProgressBar(progress = clampedProgress, dimmed = isDone)
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -117,7 +160,7 @@ fun DownloadResourceCard(
                 modifier = Modifier.weight(1f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal,
-                color = Orange500,
+                color = accentColor,
                 lineHeight = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -127,16 +170,17 @@ fun DownloadResourceCard(
                 text = progressText,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = Orange500,
+                color = accentColor,
                 textAlign = TextAlign.End,
-                lineHeight = 15.sp
+                lineHeight = 15.sp,
+                maxLines = 1
             )
         }
     }
 }
 
 @Composable
-private fun DownloadProgressBar(progress: Float) {
+private fun DownloadProgressBar(progress: Float, dimmed: Boolean) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -145,6 +189,13 @@ private fun DownloadProgressBar(progress: Float) {
     ) {
         val knobSize = 8.dp
         val knobOffset = (maxWidth - knobSize) * progress
+        val fillBrush = Brush.horizontalGradient(
+            colors = if (dimmed) {
+                listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.16f))
+            } else {
+                listOf(Orange400, Orange500)
+            }
+        )
 
         Box(
             modifier = Modifier
@@ -158,18 +209,14 @@ private fun DownloadProgressBar(progress: Float) {
                 .fillMaxWidth(progress)
                 .height(5.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(Orange400, Orange500)
-                    )
-                )
+                .background(fillBrush)
         )
         Box(
             modifier = Modifier
                 .offset(x = knobOffset)
                 .size(knobSize)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(if (dimmed) TextSecondary else Color.White)
         )
     }
 }
@@ -182,10 +229,11 @@ private fun DownloadResourceCardPreview() {
             DownloadResourceCard(
                 icon = Icons.Outlined.Inventory2,
                 title = "Termux 容器",
-                description = "正在下载运行环境容器\nTermux-alpine-aarch64.tar.gz",
+                description = "正在准备本地运行环境",
                 progress = 0.62f,
-                progressText = "62%",
-                statusText = "187 MB / 302 MB  •  3.2 MB/s"
+                progressText = "进行中",
+                statusText = "187 MB / 302 MB",
+                status = OobeTaskStatus.Running
             )
         }
     }

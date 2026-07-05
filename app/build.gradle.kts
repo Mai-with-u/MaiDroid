@@ -36,6 +36,9 @@ android {
     buildFeatures {
         compose = true
     }
+    androidResources {
+        noCompress += listOf("xz", "zip", "deb")
+    }
 
     packaging {
         jniLibs {
@@ -71,6 +74,10 @@ dependencies {
 
     // Networking
     implementation(libs.okhttp)
+
+    // Runtime asset extraction
+    implementation(libs.commons.compress)
+    implementation(libs.xz)
 
     // Testing
     testImplementation(libs.junit)

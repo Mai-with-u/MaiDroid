@@ -3,50 +3,123 @@ package org.maiwithu.maidroid
 import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.oobe.OobeSetupManager
+import org.maiwithu.maidroid.repository.SettingsRepository
+import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.ui.screen.HomeScreen
 import org.maiwithu.maidroid.ui.screen.OobeFlowScreen
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : ComponentActivity() {
+    private var storagePermissionGranted by mutableStateOf(false)
+    private var backgroundPermissionGranted by mutableStateOf(false)
+
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        val granted = results.values.all { it }
+        storagePermissionGranted = results.values.all { it } && isStoragePermissionGranted()
         Toast.makeText(
             this,
-            if (granted) "存储权限已授权" else "存储权限未授权",
+            if (storagePermissionGranted) "存储权限已授权" else "存储权限未授权",
             Toast.LENGTH_SHORT
         ).show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
+        refreshPermissionState()
+
         setContent {
             MaiDroidTheme {
+                val settingsRepository = remember { SettingsRepository() }
+                var setupComplete by remember {
+                    mutableStateOf(settingsRepository.isSetupComplete())
+                }
+                var webUiOnline by remember { mutableStateOf(false) }
+                val versionName = remember { getVersionName() }
+
+                LaunchedEffect(setupComplete) {
+                    setSystemBarsHidden(setupComplete)
+                }
+
+                LaunchedEffect(setupComplete) {
+                    if (!setupComplete) return@LaunchedEffect
+
+                    startMaiBotService()
+                    while (true) {
+                        webUiOnline = isWebUiReachable()
+                        delay(if (webUiOnline) 5_000L else 1_500L)
+                    }
+                }
+
+                if (setupComplete) {
+                    HomeScreen(
+                        webUiOnline = webUiOnline,
+                        versionName = versionName,
+                        onWakeMai = {
+                            if (webUiOnline) {
+                                openWebUi()
+                            } else {
+                                startMaiBotService()
+                                Toast.makeText(this, "正在唤醒麦麦...", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    return@MaiDroidTheme
+                }
+
                 var oobeStep by remember { mutableIntStateOf(0) }
+                val setupManager = remember { OobeSetupManager(applicationContext) }
+                val setupState by setupManager.state.collectAsState()
 
                 BackHandler(enabled = oobeStep > 0) {
                     oobeStep -= 1
                 }
 
+                LaunchedEffect(oobeStep) {
+                    when (oobeStep) {
+                        1 -> setupManager.prepareContainer()
+                        2 -> setupManager.startInstall()
+                    }
+                }
+
                 OobeFlowScreen(
                     currentStep = oobeStep,
+                    setupState = setupState,
+                    storagePermissionGranted = storagePermissionGranted,
+                    backgroundPermissionGranted = backgroundPermissionGranted,
                     onStorageAuthorize = {
                         requestStoragePermission()
                     },
@@ -54,16 +127,75 @@ class MainActivity : ComponentActivity() {
                         requestIgnoreBatteryOptimizations()
                     },
                     onNext = {
-                        oobeStep = 1
+                        when (oobeStep) {
+                            0 -> {
+                                storagePermissionGranted = isStoragePermissionGranted()
+                                if (storagePermissionGranted) {
+                                    oobeStep = 1
+                                } else {
+                                    Toast.makeText(this, "请先授予必选存储权限", Toast.LENGTH_SHORT).show()
+                                    requestStoragePermission()
+                                }
+                            }
+                            1 -> {
+                                if (setupState.canInstall) {
+                                    oobeStep = 2
+                                } else {
+                                    setupManager.prepareContainer()
+                                }
+                            }
+                            else -> {
+                                if (setupState.isComplete) {
+                                    setupComplete = true
+                                    openWebUi()
+                                } else {
+                                    setupManager.startInstall()
+                                }
+                            }
+                        }
+                    },
+                    onRetry = {
+                        if (oobeStep == 1) {
+                            setupManager.prepareContainer()
+                        } else {
+                            setupManager.startInstall()
+                        }
                     }
                 )
             }
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshPermissionState()
+    }
+
+    private fun refreshPermissionState() {
+        storagePermissionGranted = isStoragePermissionGranted()
+        backgroundPermissionGranted = isBackgroundPermissionGranted()
+    }
+
+    private fun isStoragePermissionGranted(): Boolean =
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Environment.isExternalStorageManager()
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                    checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            }
+            else -> true
+        }
+
+    private fun isBackgroundPermissionGranted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val powerManager = getSystemService(PowerManager::class.java)
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
     private fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
+                storagePermissionGranted = true
                 Toast.makeText(this, "存储权限已授权", Toast.LENGTH_SHORT).show()
                 return
             }
@@ -84,18 +216,21 @@ class MainActivity : ComponentActivity() {
                 )
             )
         } else {
+            storagePermissionGranted = true
             Toast.makeText(this, "存储权限已授权", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun requestIgnoreBatteryOptimizations() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            backgroundPermissionGranted = true
             Toast.makeText(this, "后台权限已授权", Toast.LENGTH_SHORT).show()
             return
         }
 
         val powerManager = getSystemService(PowerManager::class.java)
         if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            backgroundPermissionGranted = true
             Toast.makeText(this, "后台权限已授权", Toast.LENGTH_SHORT).show()
             return
         }
@@ -117,4 +252,54 @@ class MainActivity : ComponentActivity() {
             startActivity(fallbackIntent)
         }
     }
+
+    private fun setSystemBarsHidden(hidden: Boolean) {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (hidden) {
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun openWebUi() {
+        startActivity(
+            Intent(this, WebUiActivity::class.java).apply {
+                putExtra(WebUiActivity.EXTRA_URL, MaiBotContainerConfig.WEB_UI_URL)
+            }
+        )
+    }
+
+    private fun startMaiBotService() {
+        val intent = Intent(this, ChatbotService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private suspend fun isWebUiReachable(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val connection = URL(MaiBotContainerConfig.WEB_UI_URL)
+                .openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 1_000
+                connection.readTimeout = 1_000
+                connection.responseCode in 200..499
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrDefault(false)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getVersionName(): String =
+        runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
+        }.getOrDefault("1.0")
 }

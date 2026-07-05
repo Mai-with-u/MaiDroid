@@ -6,16 +6,15 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import java.io.BufferedReader
-import java.io.File
 import java.io.InputStreamReader
 
 /**
- * Manages the lifecycle of the Python chatbot process running inside
- * a Termux/Debian proot container.
+ * Manages the lifecycle of MaiBot running inside the configured proot container.
  *
  * Responsibilities:
- * - Start the Python server process inside the Debian rootfs
+ * - Start MaiBot with the same uv command described in installation.md
  * - Monitor process health and auto-restart on crash
  * - Collect stdout/stderr logs
  * - Graceful shutdown
@@ -24,14 +23,6 @@ class ProcessManager(private val context: Context) {
 
     companion object {
         private const val TAG = "ProcessManager"
-
-        // Paths inside the Android filesystem
-        private const val DEBIAN_DIR = "debian"
-        private const val CHATBOT_DIR = "opt/chatbot"
-        private const val PROOT_BIN = "usr/bin/proot"
-
-        // The Python server entry point inside the Debian container
-        private const val PYTHON_SERVER_SCRIPT = "/opt/chatbot/server.py"
 
         // IPC socket name (abstract namespace — starts with null byte)
         const val SOCKET_NAME = "\u0000maidroid_ipc_socket"
@@ -47,6 +38,7 @@ class ProcessManager(private val context: Context) {
 
     private var process: Process? = null
     private var job: Job? = null
+    private val containerConfig = MaiBotContainerConfig.from(context)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val _logs = MutableStateFlow<List<String>>(emptyList())
@@ -59,37 +51,15 @@ class ProcessManager(private val context: Context) {
     private var intentionallyStopped = false
 
     /**
-     * Returns the path to the Debian filesystem root on the Android filesystem.
+     * The full command to launch MaiBot via proot.
      */
-    private val debianRoot: File
-        get() = File(context.filesDir, DEBIAN_DIR)
+    private fun buildCommand(): List<String> = containerConfig.launchCommand()
 
-    /**
-     * Returns the path to the chatbot project inside the Debian rootfs.
-     */
-    private val chatbotDir: File
-        get() = File(debianRoot, CHATBOT_DIR)
-
-    /**
-     * The full command to launch the Python server via proot.
-     * Uses `proot-distro login` if available, or falls back to direct proot call.
-     */
-    private fun buildCommand(): List<String> {
-        val rootfs = debianRoot.absolutePath
-        val script = PYTHON_SERVER_SCRIPT
-
-        // Use proot-distro if termux is available, otherwise direct proot
-        return listOf(
-            "proot",
-            "-r", rootfs,
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-b", "/sdcard",
-            "-w", "/opt/chatbot",
-            "/usr/bin/python3", script,
-            "--ipc-socket", SOCKET_NAME
-        )
+    private fun validateRuntime(): String? {
+        containerConfig.ensureExecutableBits()
+        return containerConfig.launchRequirements()
+            .firstOrNull { !it.ready }
+            ?.let { "${it.name} is not ready: ${it.path}. ${it.hint}" }
     }
 
     /**
@@ -100,6 +70,12 @@ class ProcessManager(private val context: Context) {
         if (_isRunning.value) return
         intentionallyStopped = false
         restartDelayMs = INITIAL_RESTART_DELAY_MS
+
+        validateRuntime()?.let { reason ->
+            appendLog("[ProcessManager] Runtime validation failed: $reason")
+            return
+        }
+
         startProcess()
     }
 
@@ -126,8 +102,10 @@ class ProcessManager(private val context: Context) {
                 appendLog("[ProcessManager] Starting: ${command.joinToString(" ")}")
 
                 val processBuilder = ProcessBuilder(command)
-                    .directory(debianRoot)
+                    .directory(containerConfig.rootfsDir)
                     .redirectErrorStream(true)
+                processBuilder.environment().putAll(containerConfig.prootEnvironment())
+                processBuilder.environment().putAll(containerConfig.agreementEnvironment())
 
                 process = processBuilder.start()
 
@@ -143,10 +121,12 @@ class ProcessManager(private val context: Context) {
 
                 // Process exited
                 val exitCode = process!!.waitFor()
+                process = null
                 _isRunning.value = false
                 appendLog("[ProcessManager] Python process exited with code: $exitCode")
 
             } catch (e: Exception) {
+                process = null
                 _isRunning.value = false
                 appendLog("[ProcessManager] Failed to start process: ${e.message}")
                 Log.e(TAG, "Failed to start Python process", e)

@@ -7,6 +7,8 @@ import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 
 @Composable
 fun OobeScreen(
+    storagePermissionGranted: Boolean = false,
+    backgroundPermissionGranted: Boolean = false,
     onStorageAuthorize: () -> Unit = {},
     onBackgroundAuthorize: () -> Unit = {},
     onNext: () -> Unit = {},
@@ -14,6 +16,8 @@ fun OobeScreen(
 ) {
     OobeFlowScreen(
         currentStep = 0,
+        storagePermissionGranted = storagePermissionGranted,
+        backgroundPermissionGranted = backgroundPermissionGranted,
         onStorageAuthorize = onStorageAuthorize,
         onBackgroundAuthorize = onBackgroundAuthorize,
         onNext = onNext,
@@ -25,6 +29,6 @@ fun OobeScreen(
 @Composable
 private fun OobeScreenPreview() {
     MaiDroidTheme {
-        OobeScreen()
+        OobeScreen(storagePermissionGranted = true)
     }
 }

@@ -3,12 +3,10 @@ package org.maiwithu.maidroid.service
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import org.maiwithu.maidroid.ChatbotApplication
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
@@ -21,7 +19,7 @@ import org.maiwithu.maidroid.process.ProcessManager
  * - Holds a partial WakeLock to prevent CPU sleep
  * - Displays a persistent notification so Android doesn't kill it
  * - Manages the ProcessManager lifecycle
- * - Auto-starts when the app launches
+ * - Can be started by the app or restored after boot when setup is complete
  *
  * The Python process runs inside the Termux/Debian proot container
  * and communicates with the Android UI via Unix Domain Socket.

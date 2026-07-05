@@ -4,13 +4,15 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -36,7 +38,6 @@ class ChatbotIpcClient {
         private const val SOCKET_NAME = "\u0000maidroid_ipc_socket"
 
         // Timeouts
-        private const val CONNECT_TIMEOUT_MS = 5_000L
         private const val REQUEST_TIMEOUT_MS = 30_000L
     }
 
@@ -89,7 +90,7 @@ class ChatbotIpcClient {
                     try { socket.close() } catch (_: Exception) { }
                 }
             }
-        } catch (e: java.util.concurrent.TimeoutException) {
+        } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "Request timed out: cmd=$cmd")
             Result.failure(e)
         } catch (e: Exception) {
@@ -126,8 +127,8 @@ class ChatbotIpcClient {
 
         sendCommand("chat", args).map { response ->
             ChatResponse(
-                text = response["response"]?.toString()?.removeSurrounding("\"") ?: "",
-                status = response["status"]?.toString()?.removeSurrounding("\"") ?: "ok"
+                text = response["response"]?.jsonPrimitive?.contentOrNull ?: "",
+                status = response["status"]?.jsonPrimitive?.contentOrNull ?: "ok"
             )
         }
     }
@@ -137,7 +138,7 @@ class ChatbotIpcClient {
      */
     suspend fun ping(): Boolean {
         return sendCommand("ping", timeoutMs = 5_000L)
-            .map { it["status"]?.toString()?.removeSurrounding("\"") == "ok" }
+            .map { it["status"]?.jsonPrimitive?.contentOrNull == "ok" }
             .getOrDefault(false)
     }
 

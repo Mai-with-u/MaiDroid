@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
 
 /**
@@ -20,16 +21,27 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            Log.d(TAG, "Boot completed — starting ChatbotService")
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
-            val serviceIntent = Intent(context, ChatbotService::class.java)
+        val settings = SettingsRepository()
+        if (!settings.isServiceAutoStart()) {
+            Log.d(TAG, "Boot completed, but service auto-start is disabled")
+            return
+        }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
+        if (!settings.isSetupComplete()) {
+            Log.d(TAG, "Boot completed, but OOBE setup is not complete")
+            return
+        }
+
+        Log.d(TAG, "Boot completed — starting ChatbotService")
+
+        val serviceIntent = Intent(context, ChatbotService::class.java)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
         }
     }
 }
