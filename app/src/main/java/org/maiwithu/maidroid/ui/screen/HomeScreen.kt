@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.screen
 import android.annotation.SuppressLint
 import android.os.Build
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -67,6 +68,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCompositionContext
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -83,7 +86,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -97,7 +101,8 @@ import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
-import org.maiwithu.maidroid.ui.view.BackdropBlurView
+import eightbitlab.com.blurview.BlurTarget
+import eightbitlab.com.blurview.BlurView
 
 private val HomeBackground = Color(0xFF07090D)
 private val HomeOrange = Color(0xFFE8921E)
@@ -277,37 +282,47 @@ private fun DashboardShell(
     onTerminalDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MainSurface)
     ) {
-        AnimatedContent(
-            targetState = selectedTab,
+        BlurTargetHost(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MainSurface),
-            transitionSpec = { tabTransition() },
-            label = "HomeTabTransition"
-        ) { tab ->
-            when (tab) {
-                MainTab.WebUi -> WebUiTabPage(
-                    webUiOnline = webUiOnline,
-                    onWakeMai = onWakeMai,
-                    modifier = Modifier.fillMaxSize()
-                )
+            onTargetChanged = { blurTarget = it }
+        ) {
+            AnimatedContent(
+                targetState = selectedTab,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MainSurface),
+                transitionSpec = { tabTransition() },
+                label = "HomeTabTransition"
+            ) { tab ->
+                when (tab) {
+                    MainTab.WebUi -> WebUiTabPage(
+                        webUiOnline = webUiOnline,
+                        onWakeMai = onWakeMai,
+                        modifier = Modifier.fillMaxSize()
+                    )
 
-                MainTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
-                MainTab.Settings -> SettingsPage(
-                    webUiOnline = webUiOnline,
-                    versionName = versionName,
-                    modifier = Modifier.fillMaxSize()
-                )
+                    MainTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
+                    MainTab.Settings -> SettingsPage(
+                        webUiOnline = webUiOnline,
+                        versionName = versionName,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
         MainBottomNavigation(
             selectedTab = selectedTab,
+            blurTarget = blurTarget,
             onTabSelected = onTabSelected,
             onTerminalClick = onTerminalClick,
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -492,6 +507,43 @@ private fun AnimatedContentTransitionScope<MainTab>.tabTransition() =
                 val direction = targetState.ordinal - initialState.ordinal
                 if (direction >= 0) -fullWidth / 5 else fullWidth / 5
             }) using SizeTransform(clip = false)
+
+@Composable
+private fun BlurTargetHost(
+    onTargetChanged: (BlurTarget?) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val parentComposition = rememberCompositionContext()
+    val currentContent by rememberUpdatedState(content)
+
+    AndroidView(
+        factory = { context ->
+            BlurTarget(context).apply {
+                clipChildren = false
+                clipToPadding = false
+
+                addView(
+                    ComposeView(context).apply {
+                        setParentCompositionContext(parentComposition)
+                        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                        setContent {
+                            currentContent()
+                        }
+                    },
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+            }
+        },
+        update = { target ->
+            onTargetChanged(target)
+        },
+        modifier = modifier
+    )
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -1489,6 +1541,7 @@ private fun TerminalOutputDialog(
 @Composable
 private fun MainBottomNavigation(
     selectedTab: MainTab,
+    blurTarget: BlurTarget?,
     onTabSelected: (MainTab) -> Unit,
     onTerminalClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -1512,6 +1565,7 @@ private fun MainBottomNavigation(
         ) {
             AnimatedMainTabBar(
                 selectedTab = selectedTab,
+                blurTarget = blurTarget,
                 onTabSelected = onTabSelected,
                 modifier = Modifier
                     .width(tabBarWidth)
@@ -1530,7 +1584,6 @@ private fun MainBottomNavigation(
                     )
                     .clip(CircleShape)
                     .border(1.dp, GlassStroke, CircleShape)
-                    .background(GlassSurface)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -1539,6 +1592,7 @@ private fun MainBottomNavigation(
                 contentAlignment = Alignment.Center
             ) {
                 BackdropBlurLayer(
+                    blurTarget = blurTarget,
                     cornerRadius = 32.dp,
                     modifier = Modifier.matchParentSize()
                 )
@@ -1557,20 +1611,30 @@ private fun MainBottomNavigation(
 @Composable
 private fun BackdropBlurLayer(
     cornerRadius: Dp,
+    blurTarget: BlurTarget?,
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current
+    val overlayColor = GlassSurface.toArgb()
 
     AndroidView(
         factory = { context ->
-            BackdropBlurView(context).apply {
-                blurRadius = 22f
-                downsampleFactor = 5
-            }
+            BlurView(context)
         },
         update = { view ->
-            view.cornerRadiusPx = with(density) { cornerRadius.toPx() }
-            view.overlayColor = GlassSurface.toArgb()
+            if (blurTarget != null && view.tag !== blurTarget) {
+                view.tag = blurTarget
+                view.setupWith(blurTarget, 5f, false)
+                    .setBlurRadius(22f)
+                    .setOverlayColor(overlayColor)
+                    .setBlurAutoUpdate(true)
+            } else if (blurTarget != null) {
+                view.setBlurEnabled(true)
+                view.setBlurAutoUpdate(true)
+                view.setBlurRadius(22f)
+                view.setOverlayColor(overlayColor)
+            } else {
+                view.setBlurEnabled(false)
+            }
         },
         modifier = modifier
     )
@@ -1579,6 +1643,7 @@ private fun BackdropBlurLayer(
 @Composable
 private fun AnimatedMainTabBar(
     selectedTab: MainTab,
+    blurTarget: BlurTarget?,
     onTabSelected: (MainTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1595,7 +1660,6 @@ private fun AnimatedMainTabBar(
             )
             .clip(shape)
             .border(1.dp, GlassStroke, shape)
-            .background(GlassSurface)
     ) {
         val tabCount = MainTab.values().size
         val tabWidth = (maxWidth - 8.dp) / tabCount
@@ -1606,6 +1670,7 @@ private fun AnimatedMainTabBar(
         )
 
         BackdropBlurLayer(
+            blurTarget = blurTarget,
             cornerRadius = 32.dp,
             modifier = Modifier.matchParentSize()
         )

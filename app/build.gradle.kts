@@ -80,6 +80,9 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
 
+    // Blur
+    implementation(libs.blurview)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
