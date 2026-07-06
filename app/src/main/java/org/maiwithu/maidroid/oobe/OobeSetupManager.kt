@@ -18,6 +18,7 @@ import org.maiwithu.maidroid.container.ContainerRequirement
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.container.RuntimeAssetInstaller
 import org.maiwithu.maidroid.container.RuntimeInstallProgress
+import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
 import java.net.HttpURLConnection
@@ -640,6 +641,7 @@ class OobeSetupManager(
     private fun appendCommandLog(line: String) {
         val nextLogs = (_state.value.commandLogs + line).takeLast(MAX_COMMAND_LOG_LINES)
         _state.value = _state.value.copy(commandLogs = nextLogs)
+        TerminalLogRepository.append(line)
     }
 
     private data class CommandResult(

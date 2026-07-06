@@ -137,11 +137,11 @@ fun OobeFlowScreen(
                 .background(BackgroundDark)
                 .padding(horizontal = 24.dp)
         ) {
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
             OobeStepIndicator(currentStep = currentStep, modifier = Modifier.fillMaxWidth())
 
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             AnimatedContent(
                 targetState = currentStep,
@@ -219,7 +219,7 @@ fun OobeFlowScreen(
                         SetupFooter(
                             footerText = setupState.footerText,
                             canProceed = setupState.isComplete,
-                            proceedText = "打开 WebUI",
+                            proceedText = "进入 MaiDroid",
                             waitingText = if (installRunning) "请稍候" else "重试安装",
                             waitingEnabled = !installRunning,
                             onProceed = onNext,

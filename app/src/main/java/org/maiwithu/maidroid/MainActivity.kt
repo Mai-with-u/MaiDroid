@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.oobe.OobeSetupManager
+import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
 import org.maiwithu.maidroid.ui.screen.HomeScreen
@@ -69,9 +70,10 @@ class MainActivity : ComponentActivity() {
                 }
                 var webUiOnline by remember { mutableStateOf(false) }
                 val versionName = remember { getVersionName() }
+                val terminalLogs by TerminalLogRepository.logs.collectAsState()
 
                 LaunchedEffect(setupComplete) {
-                    setSystemBarsHidden(setupComplete)
+                    configureSystemBars(setupComplete)
                 }
 
                 LaunchedEffect(setupComplete) {
@@ -88,6 +90,7 @@ class MainActivity : ComponentActivity() {
                     HomeScreen(
                         webUiOnline = webUiOnline,
                         versionName = versionName,
+                        terminalLogs = terminalLogs,
                         onWakeMai = {
                             if (webUiOnline) {
                                 openWebUi()
@@ -147,7 +150,6 @@ class MainActivity : ComponentActivity() {
                             else -> {
                                 if (setupState.isComplete) {
                                     setupComplete = true
-                                    openWebUi()
                                 } else {
                                     setupManager.startInstall()
                                 }
@@ -181,7 +183,7 @@ class MainActivity : ComponentActivity() {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Environment.isExternalStorageManager()
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
                 checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                    checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                        checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
             }
             else -> true
         }
@@ -253,13 +255,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setSystemBarsHidden(hidden: Boolean) {
+    private fun configureSystemBars(setupComplete: Boolean) {
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+
         val controller = WindowInsetsControllerCompat(window, window.decorView)
-        if (hidden) {
+        controller.isAppearanceLightStatusBars = false
+        controller.isAppearanceLightNavigationBars = false
+        controller.show(WindowInsetsCompat.Type.statusBars())
+
+        if (setupComplete) {
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.hide(WindowInsetsCompat.Type.navigationBars())
         } else {
             controller.show(WindowInsetsCompat.Type.systemBars())
         }

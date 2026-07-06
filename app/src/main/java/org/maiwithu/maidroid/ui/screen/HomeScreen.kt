@@ -1,14 +1,42 @@
 package org.maiwithu.maidroid.ui.screen
 
+import android.annotation.SuppressLint
+import android.os.Build
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,13 +45,30 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,16 +80,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
+import org.maiwithu.maidroid.ui.view.BackdropBlurView
 
 private val HomeBackground = Color(0xFF07090D)
 private val HomeOrange = Color(0xFFE8921E)
@@ -54,12 +107,226 @@ private val HomeOnline = Color(0xFF64C88C)
 private val HomeOffline = Color(0xFFE8A064)
 private const val HomeDesignWidth = 412f
 private const val HomeDesignHeight = 917f
+private val MainSurface = Color(0xFF0F0F0F)
+private val PlatformCardSurface = Color(0xFF1C1C1E)
+private val PlatformBorder = Color(0xFF2C2C2E)
+private val PlatformTextSecondary = Color(0xFF8E8E93)
+private val PlatformTextDim = Color(0xFF717171)
+private val PlatformOnline = Color(0xFF30D158)
+private val PlatformOrange = Color(0xFFE97F0F)
+private val GlassSurface = Color(0x802B2B2B)
+private val GlassStroke = Color(0x55FFFFFF)
+private val StartupTopInset = 48.dp
+private const val WebUiLogTag = "MaiDroidWebUi"
+
+private enum class MainTab {
+    WebUi,
+    Platforms,
+    Settings
+}
+
+private data class InstalledPlatform(
+    val name: String,
+    @param:DrawableRes val iconRes: Int,
+    val account: String,
+    val iconColor: Color,
+    val statusColor: Color = PlatformOnline,
+    val running: Boolean = true
+)
+
+private data class AvailablePlatform(
+    val name: String,
+    @param:DrawableRes val iconRes: Int,
+    val iconColor: Color,
+    val provider: String,
+    val description: String,
+    val tags: List<String>,
+    val badge: String? = null,
+    val adapters: List<String> = emptyList()
+)
+
+private val InstalledPlatforms = listOf(
+    InstalledPlatform(
+        name = "微信",
+        iconRes = R.drawable.ic_platform_wechat,
+        account = "野兽先辈 在线",
+        iconColor = Color(0xFF07C160)
+    ),
+    InstalledPlatform(
+        name = "Telegram",
+        iconRes = R.drawable.ic_platform_telegram,
+        account = "Harry Poorter 在线",
+        iconColor = Color(0xFF229ED9)
+    ),
+    InstalledPlatform(
+        name = "iMessage",
+        iconRes = R.drawable.ic_platform_imessage,
+        account = "325799 在线",
+        iconColor = Color(0xFF06C755),
+        statusColor = PlatformTextSecondary
+    )
+)
+
+private val AvailablePlatforms = listOf(
+    AvailablePlatform(
+        name = "QQ",
+        iconRes = R.drawable.ic_platform_qq,
+        iconColor = Color(0xCC0F3BE9),
+        provider = "将由 NapCat 提供服务",
+        description = "日常闲聊，水群必选平台",
+        tags = listOf("国内", "常用"),
+        badge = "最佳适配",
+        adapters = listOf("NapCat", "SnowLuma")
+    ),
+    AvailablePlatform(
+        name = "Discord",
+        iconRes = R.drawable.ic_platform_discord,
+        iconColor = Color(0xCC5865F2),
+        provider = "将由 Discord 官方 API 提供服务",
+        description = "游戏玩家必选平台",
+        tags = listOf("海外", "游戏平台", "常用")
+    ),
+    AvailablePlatform(
+        name = "WhatsApp",
+        iconRes = R.drawable.ic_platform_whatsapp,
+        iconColor = Color(0xCC25D366),
+        provider = "将由 ??? 提供服务",
+        description = "实则根本没有做适配",
+        tags = listOf("海外", "常用")
+    ),
+    AvailablePlatform(
+        name = "Signal",
+        iconRes = R.drawable.ic_platform_signal,
+        iconColor = Color(0xCC3A76F0),
+        provider = "将由 ??? 提供服务",
+        description = "实则根本没有做适配",
+        tags = listOf("海外", "常用")
+    )
+)
 
 @Composable
 fun HomeScreen(
     webUiOnline: Boolean,
     versionName: String,
+    terminalLogs: List<String> = emptyList(),
     onWakeMai: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var dashboardVisible by rememberSaveable { mutableStateOf(false) }
+    var wakeRequested by rememberSaveable { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(MainTab.WebUi) }
+    var showTerminalOutput by remember { mutableStateOf(false) }
+
+    LaunchedEffect(webUiOnline, wakeRequested) {
+        if (wakeRequested && webUiOnline) {
+            dashboardVisible = true
+            selectedTab = MainTab.WebUi
+        }
+    }
+
+    AnimatedContent(
+        targetState = dashboardVisible,
+        modifier = modifier
+            .fillMaxSize()
+            .background(MainSurface),
+        transitionSpec = { entryTransition() },
+        label = "HomeEntryTransition"
+    ) { showDashboard ->
+        if (showDashboard) {
+            DashboardShell(
+                selectedTab = selectedTab,
+                webUiOnline = webUiOnline,
+                versionName = versionName,
+                terminalLogs = terminalLogs,
+                onTabSelected = { selectedTab = it },
+                onWakeMai = onWakeMai,
+                onTerminalDismiss = { showTerminalOutput = false },
+                showTerminalOutput = showTerminalOutput,
+                onTerminalClick = { showTerminalOutput = true },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            WakeMaiGatePage(
+                webUiOnline = webUiOnline,
+                versionName = versionName,
+                onWakeClick = {
+                    if (webUiOnline) {
+                        dashboardVisible = true
+                        selectedTab = MainTab.WebUi
+                    } else {
+                        wakeRequested = true
+                        onWakeMai()
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardShell(
+    selectedTab: MainTab,
+    webUiOnline: Boolean,
+    versionName: String,
+    terminalLogs: List<String>,
+    showTerminalOutput: Boolean,
+    onTabSelected: (MainTab) -> Unit,
+    onWakeMai: () -> Unit,
+    onTerminalClick: () -> Unit,
+    onTerminalDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MainSurface)
+    ) {
+        AnimatedContent(
+            targetState = selectedTab,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MainSurface),
+            transitionSpec = { tabTransition() },
+            label = "HomeTabTransition"
+        ) { tab ->
+            when (tab) {
+                MainTab.WebUi -> WebUiTabPage(
+                    webUiOnline = webUiOnline,
+                    onWakeMai = onWakeMai,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                MainTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
+                MainTab.Settings -> SettingsPage(
+                    webUiOnline = webUiOnline,
+                    versionName = versionName,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        MainBottomNavigation(
+            selectedTab = selectedTab,
+            onTabSelected = onTabSelected,
+            onTerminalClick = onTerminalClick,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        if (showTerminalOutput) {
+            TerminalOutputDialog(
+                logs = terminalLogs,
+                onDismiss = onTerminalDismiss
+            )
+        }
+    }
+}
+
+@Composable
+private fun WakeMaiGatePage(
+    webUiOnline: Boolean,
+    versionName: String,
+    onWakeClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(
@@ -177,7 +444,7 @@ fun HomeScreen(
         )
 
         WakeMaiButton(
-            onClick = onWakeMai,
+            onClick = onWakeClick,
             modifier = Modifier
                 .offset(x = x(38f), y = y(706f))
                 .width(x(335.7f))
@@ -198,9 +465,1249 @@ fun HomeScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = y(15f))
+                .padding(bottom = y(118f))
                 .width(x(335.7f))
         )
+    }
+}
+
+private fun AnimatedContentTransitionScope<Boolean>.entryTransition() =
+    (fadeIn(animationSpec = tween(220)) +
+        slideInHorizontally(animationSpec = tween(220)) { fullWidth ->
+            if (targetState) fullWidth / 5 else -fullWidth / 5
+        }) togetherWith
+        (fadeOut(animationSpec = tween(160)) +
+            slideOutHorizontally(animationSpec = tween(200)) { fullWidth ->
+                if (targetState) -fullWidth / 5 else fullWidth / 5
+            }) using SizeTransform(clip = false)
+
+private fun AnimatedContentTransitionScope<MainTab>.tabTransition() =
+    (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+        slideInHorizontally(animationSpec = tween(260, easing = FastOutSlowInEasing)) { fullWidth ->
+            val direction = targetState.ordinal - initialState.ordinal
+            if (direction >= 0) fullWidth / 5 else -fullWidth / 5
+        }) togetherWith
+        (fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+            slideOutHorizontally(animationSpec = tween(240, easing = FastOutSlowInEasing)) { fullWidth ->
+                val direction = targetState.ordinal - initialState.ordinal
+                if (direction >= 0) -fullWidth / 5 else fullWidth / 5
+            }) using SizeTransform(clip = false)
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun WebUiTabPage(
+    webUiOnline: Boolean,
+    onWakeMai: () -> Unit,
+    modifier: Modifier = Modifier,
+    url: String = MaiBotContainerConfig.WEB_UI_URL
+) {
+    var webViewError by remember { mutableStateOf<String?>(null) }
+    var reloadToken by remember { mutableStateOf(0) }
+    var webViewHasSize by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MainSurface)
+    ) {
+        AndroidView(
+            factory = { context ->
+                if (BuildConfig.DEBUG) {
+                    WebView.setWebContentsDebuggingEnabled(true)
+                }
+                WebView(context).apply {
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    overScrollMode = WebView.OVER_SCROLL_NEVER
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.setSupportZoom(true)
+                    settings.builtInZoomControls = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        settings.mixedContentMode =
+                            android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    }
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                            Log.d(
+                                WebUiLogTag,
+                                "console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} " +
+                                    "(${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
+                            )
+                            return super.onConsoleMessage(consoleMessage)
+                        }
+                    }
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView, pageUrl: String) {
+                            webViewError = null
+                            patchBrokenViewportUnitsIfNeeded(view)
+                            super.onPageFinished(view, pageUrl)
+                        }
+
+                        override fun onReceivedError(
+                            view: WebView,
+                            request: WebResourceRequest,
+                            error: WebResourceError
+                        ) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && request.isForMainFrame) {
+                                webViewError = "${error.errorCode}: ${error.description}"
+                            }
+                            super.onReceivedError(view, request, error)
+                        }
+                    }
+                }
+            },
+            update = { webView ->
+                val loadRequest = "$url#$reloadToken"
+                if (webViewHasSize && webView.tag != loadRequest) {
+                    webView.tag = loadRequest
+                    webViewError = null
+                    Log.d(WebUiLogTag, "load $url at ${webView.width}x${webView.height}")
+                    webView.loadUrl(url)
+                }
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { size ->
+                    webViewHasSize = size.width > 0 && size.height > 0
+                }
+        )
+
+        if (webViewError != null) {
+            WebUiStatusBanner(
+                message = "WebView 加载失败：$webViewError",
+                action = "重试",
+                onAction = {
+                    webViewError = null
+                    reloadToken += 1
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = StartupTopInset + 8.dp, start = 16.dp, end = 56.dp)
+            )
+        } else if (!webUiOnline) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = StartupTopInset + 8.dp, start = 16.dp, end = 56.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .border(1.dp, PlatformBorder, RoundedCornerShape(22.dp))
+                    .background(PlatformCardSurface.copy(alpha = 0.92f))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(HomeOffline)
+                )
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Text(
+                    text = "WebUI 离线",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Text(
+                    text = "唤醒",
+                    color = PlatformOrange,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onWakeMai
+                    )
+                )
+            }
+        }
+
+        WebUiRefreshButton(
+            onClick = {
+                webViewError = null
+                reloadToken += 1
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = StartupTopInset + 8.dp, end = 16.dp)
+        )
+    }
+}
+
+private fun patchBrokenViewportUnitsIfNeeded(webView: WebView) {
+    webView.evaluateJavascript(
+        """
+        (() => {
+            const probe = document.createElement('div');
+            probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:100vh;pointer-events:none';
+            document.body.appendChild(probe);
+            const vh = probe.getBoundingClientRect().height;
+            probe.remove();
+
+            const root = document.getElementById('root');
+            const rootHeight = root ? root.getBoundingClientRect().height : -1;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const shouldPatch = viewportHeight > 0 && (vh < 1 || rootHeight < 1);
+            if (!shouldPatch) {
+                return JSON.stringify({ patched: false, vh, viewportHeight, rootHeight });
+            }
+
+            let style = document.getElementById('maidroid-webview-viewport-fix');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'maidroid-webview-viewport-fix';
+                document.head.appendChild(style);
+            }
+            style.textContent =
+                'html,body,#root{width:100%!important;height:' + viewportHeight + 'px!important;' +
+                'min-height:' + viewportHeight + 'px!important;overflow:auto!important}' +
+                '.min-h-screen{min-height:' + viewportHeight + 'px!important}' +
+                '.h-screen{height:' + viewportHeight + 'px!important}';
+            window.dispatchEvent(new Event('resize'));
+            return JSON.stringify({ patched: true, vh, viewportHeight, rootHeight });
+        })()
+        """.trimIndent()
+    ) { result ->
+        Log.d(WebUiLogTag, "viewport probe $result")
+    }
+}
+
+@Composable
+private fun WebUiRefreshButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .shadow(
+                elevation = 10.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.28f),
+                spotColor = Color.Black.copy(alpha = 0.28f)
+            )
+            .clip(CircleShape)
+            .border(1.dp, GlassStroke, CircleShape)
+            .background(GlassSurface)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Refresh,
+            contentDescription = "刷新 WebUI",
+            tint = Color.White,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun WebUiStatusBanner(
+    message: String,
+    action: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .border(1.dp, PlatformBorder, RoundedCornerShape(22.dp))
+            .background(PlatformCardSurface.copy(alpha = 0.94f))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(HomeOffline)
+        )
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Text(
+            text = message,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f)
+        )
+
+        Text(
+            text = action,
+            color = PlatformOrange,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onAction
+            )
+        )
+    }
+}
+
+@Composable
+private fun MessagePlatformsPage(modifier: Modifier = Modifier) {
+    var selectedCategory by remember { mutableStateOf("全部") }
+    val categories = listOf("全部", "国内", "海外", "其他")
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MainSurface)
+    ) {
+        Spacer(modifier = Modifier.height(64.dp))
+        MessagePlatformsHeader()
+        Spacer(modifier = Modifier.height(24.dp))
+        InstalledPlatformsRow()
+        Spacer(modifier = Modifier.height(24.dp))
+        DiscoverHeader(
+            categories = categories,
+            selectedCategory = selectedCategory,
+            onCategorySelected = { selectedCategory = it }
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+
+        AnimatedContent(
+            targetState = selectedCategory,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(MainSurface),
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { 24 }) togetherWith
+                    (fadeOut(animationSpec = tween(120)) +
+                        slideOutHorizontally(animationSpec = tween(180, easing = FastOutSlowInEasing)) { -24 }) using
+                    SizeTransform(clip = false)
+            },
+            label = "PlatformCategoryTransition"
+        ) { category ->
+            val visiblePlatforms = remember(category) {
+                if (category == "全部") {
+                    AvailablePlatforms
+                } else {
+                    AvailablePlatforms.filter { category in it.tags }
+                }
+            }
+
+            PlatformList(platforms = visiblePlatforms)
+        }
+    }
+}
+
+@Composable
+private fun PlatformList(platforms: List<AvailablePlatform>) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MainSurface),
+        contentPadding = PaddingValues(start = 16.dp, end = 11.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (platforms.isEmpty()) {
+            item {
+                EmptyPlatformCard()
+            }
+        } else {
+            items(platforms) { platform ->
+                PlatformInstallCard(platform = platform)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessagePlatformsHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(66.dp)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "消息平台",
+                color = Color.White,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 34.sp
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "3 个平台正在运行",
+                color = PlatformTextSecondary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 18.sp
+            )
+        }
+
+        SearchButton()
+    }
+}
+
+@Composable
+private fun SearchButton() {
+    Box(
+        modifier = Modifier
+            .padding(top = 0.dp)
+            .size(42.dp)
+            .clip(CircleShape)
+            .border(1.dp, Color(0x552B2B2B), CircleShape)
+            .background(Color(0x552B2B2B))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Search,
+            contentDescription = "搜索",
+            tint = PlatformTextSecondary,
+            modifier = Modifier.size(25.dp)
+        )
+    }
+}
+
+@Composable
+private fun InstalledPlatformsRow() {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(InstalledPlatforms) { platform ->
+            InstalledPlatformCard(platform = platform)
+        }
+    }
+}
+
+@Composable
+private fun InstalledPlatformCard(platform: InstalledPlatform) {
+    Box(
+        modifier = Modifier
+            .width(170.dp)
+            .height(135.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(PlatformCardSurface)
+    ) {
+        PlatformLogo(
+            iconRes = platform.iconRes,
+            contentDescription = platform.name,
+            color = platform.iconColor,
+            modifier = Modifier
+                .offset(x = 12.dp, y = 12.dp)
+                .size(52.dp),
+            cornerRadius = 12.dp,
+            iconSize = 32.dp
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 12.dp, end = 14.dp)
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(platform.statusColor)
+        )
+
+        Text(
+            text = platform.name,
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 18.sp,
+            modifier = Modifier
+                .offset(x = 12.dp, y = 72.dp)
+                .width(130.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .offset(x = 12.dp, y = 96.dp)
+                .width(142.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(platform.statusColor)
+            )
+
+            Spacer(modifier = Modifier.width(5.dp))
+
+            Text(
+                text = platform.account,
+                color = platform.statusColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 14.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiscoverHeader(
+    categories: List<String>,
+    selectedCategory: String,
+    onCategorySelected: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "发现",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 30.sp,
+                modifier = Modifier.weight(1f)
+            )
+
+            Text(
+                text = "共 325 个",
+                color = PlatformOrange,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(categories) { category ->
+                CategoryChip(
+                    text = category,
+                    selected = category == selectedCategory,
+                    onClick = { onCategorySelected(category) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (selected) PlatformOrange else PlatformCardSurface,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "CategoryChipBackground"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) PlatformOrange else PlatformBorder,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "CategoryChipBorder"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.96f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "CategoryChipScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .width(72.dp)
+            .height(42.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(21.dp))
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(21.dp)
+            )
+            .background(backgroundColor)
+            .animateContentSize(animationSpec = tween(180, easing = FastOutSlowInEasing))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 20.sp
+        )
+    }
+}
+
+@Composable
+private fun PlatformInstallCard(platform: AvailablePlatform) {
+    val hasAdapters = platform.adapters.isNotEmpty()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (hasAdapters) 172.dp else 120.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
+            .background(PlatformCardSurface)
+            .padding(16.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            PlatformLogo(
+                iconRes = platform.iconRes,
+                contentDescription = platform.name,
+                color = platform.iconColor,
+                modifier = Modifier.size(64.dp),
+                cornerRadius = 16.dp,
+                iconSize = 32.dp
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 48.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = platform.name,
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 26.sp
+                    )
+
+                    platform.badge?.let { badge ->
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Badge(text = badge)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = platform.provider,
+                    color = PlatformTextDim,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 15.sp
+                )
+
+                Text(
+                    text = platform.description,
+                    color = PlatformTextDim,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 15.sp
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    platform.tags.forEach { tag ->
+                        SmallTag(text = tag)
+                    }
+                }
+            }
+        }
+
+        DownloadIconButton(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 3.dp, end = 8.dp)
+        )
+
+        if (hasAdapters) {
+            AdapterSelector(
+                adapters = platform.adapters,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .width(172.dp)
+                    .height(42.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyPlatformCard() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
+            .background(PlatformCardSurface)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "暂无其他平台",
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 22.sp
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = "后续适配项会出现在这里。",
+            color = PlatformTextDim,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 16.sp
+        )
+    }
+}
+
+@Composable
+private fun PlatformLogo(
+    @DrawableRes iconRes: Int,
+    contentDescription: String?,
+    color: Color,
+    modifier: Modifier,
+    cornerRadius: Dp,
+    iconSize: Dp
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(color),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+@Composable
+private fun Badge(text: String) {
+    Box(
+        modifier = Modifier
+            .height(16.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(PlatformOrange.copy(alpha = 0.5f))
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 10.sp
+        )
+    }
+}
+
+@Composable
+private fun SmallTag(text: String) {
+    Box(
+        modifier = Modifier
+            .height(20.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(PlatformBorder)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun DownloadIconButton(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_platform_download),
+            contentDescription = "下载",
+            tint = Color.White,
+            modifier = Modifier.size(32.dp)
+        )
+    }
+}
+
+@Composable
+private fun AdapterSelector(
+    adapters: List<String>,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(21.dp))
+            .background(PlatformBorder)
+            .border(1.dp, PlatformBorder, RoundedCornerShape(21.dp))
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        adapters.forEachIndexed { index, adapter ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(19.dp))
+                    .background(if (index == 0) Color(0xFF3C3C3E) else Color.Transparent),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = adapter,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsPage(
+    webUiOnline: Boolean,
+    versionName: String,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MainSurface),
+        contentPadding = PaddingValues(top = 72.dp, start = 16.dp, end = 16.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                text = "设置",
+                color = Color.White,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 34.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
+
+        item {
+            SettingsInfoCard(
+                title = "WebUI 状态",
+                value = if (webUiOnline) "在线" else "离线",
+                accent = if (webUiOnline) PlatformOnline else HomeOffline
+            )
+        }
+
+        item {
+            SettingsInfoCard(
+                title = "应用版本",
+                value = "v$versionName",
+                accent = PlatformOrange
+            )
+        }
+
+        item {
+            SettingsInfoCard(
+                title = "消息平台",
+                value = "${InstalledPlatforms.size} 个平台正在运行",
+                accent = PlatformOnline
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsInfoCard(
+    title: String,
+    value: String,
+    accent: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(84.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
+            .background(PlatformCardSurface)
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(accent)
+        )
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = PlatformTextSecondary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 15.sp
+            )
+
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Text(
+                text = value,
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 22.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun TerminalOutputDialog(
+    logs: List<String>,
+    onDismiss: () -> Unit
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.lastIndex)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "终端输出",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 22.sp
+            )
+        },
+        text = {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.Black.copy(alpha = 0.38f))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (logs.isEmpty()) {
+                    item {
+                        Text(
+                            text = "暂无命令输出。平台安装或 MaiBot 启动后会显示在这里。",
+                            color = PlatformTextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+                } else {
+                    items(logs) { line ->
+                        Text(
+                            text = line.ifBlank { " " },
+                            color = PlatformTextSecondary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PlatformOrange,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(text = "关闭", fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = PlatformCardSurface,
+        titleContentColor = Color.White,
+        textContentColor = PlatformTextSecondary
+    )
+}
+
+@Composable
+private fun MainBottomNavigation(
+    selectedTab: MainTab,
+    onTabSelected: (MainTab) -> Unit,
+    onTerminalClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp)
+    ) {
+        val horizontalPadding = 28.dp
+        val availableWidth = maxWidth - horizontalPadding * 2
+        val fabSize = 64.dp
+        val tabBarWidth = minOf(249.dp, availableWidth - fabSize - 16.dp).coerceAtLeast(216.dp)
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AnimatedMainTabBar(
+                selectedTab = selectedTab,
+                onTabSelected = onTabSelected,
+                modifier = Modifier
+                    .width(tabBarWidth)
+                    .height(64.dp)
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(fabSize)
+                    .shadow(
+                        elevation = 18.dp,
+                        shape = CircleShape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.35f),
+                        spotColor = Color.Black.copy(alpha = 0.35f)
+                    )
+                    .clip(CircleShape)
+                    .border(1.dp, GlassStroke, CircleShape)
+                    .background(GlassSurface)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onTerminalClick
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                BackdropBlurLayer(
+                    cornerRadius = 32.dp,
+                    modifier = Modifier.matchParentSize()
+                )
+
+                Icon(
+                    painter = painterResource(R.drawable.ic_terminal_code),
+                    contentDescription = "查看终端输出",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackdropBlurLayer(
+    cornerRadius: Dp,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+
+    AndroidView(
+        factory = { context ->
+            BackdropBlurView(context).apply {
+                blurRadius = 22f
+                downsampleFactor = 5
+            }
+        },
+        update = { view ->
+            view.cornerRadiusPx = with(density) { cornerRadius.toPx() }
+            view.overlayColor = GlassSurface.toArgb()
+        },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun AnimatedMainTabBar(
+    selectedTab: MainTab,
+    onTabSelected: (MainTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(32.dp)
+
+    BoxWithConstraints(
+        modifier = modifier
+            .shadow(
+                elevation = 18.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.32f),
+                spotColor = Color.Black.copy(alpha = 0.32f)
+            )
+            .clip(shape)
+            .border(1.dp, GlassStroke, shape)
+            .background(GlassSurface)
+    ) {
+        val tabCount = MainTab.values().size
+        val tabWidth = (maxWidth - 8.dp) / tabCount
+        val indicatorOffset by animateDpAsState(
+            targetValue = 4.dp + tabWidth * selectedTab.ordinal.toFloat(),
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                label = "MainTabIndicatorOffset"
+        )
+
+        BackdropBlurLayer(
+            cornerRadius = 32.dp,
+            modifier = Modifier.matchParentSize()
+        )
+
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorOffset, y = 4.dp)
+                .width(tabWidth)
+                .height(56.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(Color(0x54717171))
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            MainTabButton(
+                label = "WebUI",
+                selected = selectedTab == MainTab.WebUi,
+                onClick = { onTabSelected(MainTab.WebUi) }
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_maibot),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            MainTabButton(
+                label = "消息平台",
+                selected = selectedTab == MainTab.Platforms,
+                onClick = { onTabSelected(MainTab.Platforms) }
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_platform_plug),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            MainTabButton(
+                label = "设置",
+                selected = selectedTab == MainTab.Settings,
+                onClick = { onTabSelected(MainTab.Settings) }
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.MainTabButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.76f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "MainTabContentAlpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .height(56.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.graphicsLayer { alpha = contentAlpha }
+        ) {
+            icon()
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 12.sp,
+                maxLines = 1
+            )
+        }
     }
 }
 

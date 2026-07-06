@@ -202,6 +202,7 @@ class ProcessManager(private val context: Context) {
             current.removeAt(0)
         }
         _logs.value = current
+        TerminalLogRepository.append(line)
         Log.d(TAG, line)
     }
 }
