@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 /**
  * Manages the lifecycle of MaiBot running inside the configured proot container.
@@ -68,6 +69,7 @@ class ProcessManager(private val context: Context) {
      */
     fun start() {
         if (_isRunning.value) return
+        if (job?.isActive == true) return
         intentionallyStopped = false
         restartDelayMs = INITIAL_RESTART_DELAY_MS
 
@@ -76,7 +78,10 @@ class ProcessManager(private val context: Context) {
             return
         }
 
-        startProcess()
+        scope.launch {
+            cleanupOrphanedMaiBotProcesses()
+            startProcess()
+        }
     }
 
     /**
@@ -88,6 +93,24 @@ class ProcessManager(private val context: Context) {
         job?.cancel()
         scope.launch {
             killProcess()
+        }
+    }
+
+    fun restart() {
+        intentionallyStopped = true
+        job?.cancel()
+        scope.launch {
+            killProcess()
+            intentionallyStopped = false
+            restartDelayMs = INITIAL_RESTART_DELAY_MS
+
+            validateRuntime()?.let { reason ->
+                appendLog("[ProcessManager] Runtime validation failed: $reason")
+                return@launch
+            }
+
+            cleanupOrphanedMaiBotProcesses()
+            startProcess()
         }
     }
 
@@ -155,7 +178,7 @@ class ProcessManager(private val context: Context) {
                 // Wait briefly for graceful shutdown
                 withContext(Dispatchers.IO) {
                     try {
-                        proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                        proc.waitFor(3, TimeUnit.SECONDS)
                     } catch (_: Exception) { }
                 }
                 if (proc.isAlive) {
@@ -167,7 +190,35 @@ class ProcessManager(private val context: Context) {
             }
             process = null
         }
+        cleanupOrphanedMaiBotProcesses()
         _isRunning.value = false
+    }
+
+    private suspend fun cleanupOrphanedMaiBotProcesses() {
+        runMaintenanceCommand(containerConfig.cleanupMaiBotCommand())
+    }
+
+    private suspend fun runMaintenanceCommand(command: List<String>) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val processBuilder = ProcessBuilder(command)
+                    .directory(containerConfig.rootfsDir)
+                    .redirectErrorStream(true)
+                processBuilder.environment().putAll(containerConfig.prootEnvironment())
+                val cleanupProcess = processBuilder.start()
+                cleanupProcess.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        if (line.isNotBlank()) appendLog(line.trimEnd('\r'))
+                    }
+                }
+                val exitCode = cleanupProcess.waitFor()
+                if (exitCode != 0) {
+                    appendLog("[ProcessManager] cleanup command exited with code: $exitCode")
+                }
+            }.onFailure { error ->
+                appendLog("[ProcessManager] cleanup command failed: ${error.message.orEmpty()}")
+            }
+        }
     }
 
     /**

@@ -88,6 +88,19 @@ class MaiBotContainerConfig private constructor(
     val gitExecutable: File = File(rootfsDir, "usr/bin/git")
     val curlExecutable: File = File(rootfsDir, "usr/bin/curl")
     val caCertificateBundle: File = File(rootfsDir, "etc/ssl/certs/ca-certificates.crt")
+    val fakeProcStat: File = File(rootfsDir, "proc/.stat")
+    val fakeProcLoadAvg: File = File(rootfsDir, "proc/.loadavg")
+    val fakeProcVmStat: File = File(rootfsDir, "proc/.vmstat")
+    val fakeProcUptime: File = File(rootfsDir, "proc/.uptime")
+    val napCatDir: File = File(rootfsDir, "root/napcat")
+    val napCatConfigDir: File = File(napCatDir, "config")
+    val napCatOneBotConfig: File = File(napCatConfigDir, "onebot11.json")
+    val napCatQrCodeFile: File = File(napCatDir, "cache/qrcode.png")
+    val napCatTokenFile: File = File(rootfsDir, "root/.maidroid/napcat_token")
+    val napCatReadyMarker: File = File(rootfsDir, "root/.maidroid/napcat_ready")
+    val napCatLauncher: File = File(rootfsDir, "root/launcher.sh")
+    val maiBotNapCatAdapterDir: File = File(maiBotDir, "plugins/MaiBot-Napcat-Adapter")
+    val maiBotNapCatAdapterConfig: File = File(maiBotNapCatAdapterDir, "config.toml")
 
     fun containerRequirements(): List<ContainerRequirement> = listOf(
         ContainerRequirement(
@@ -232,9 +245,86 @@ class MaiBotContainerConfig private constructor(
     )
 
     fun launchCommand(): List<String> = shellCommand(
-        script = "${uvPrelude()}; cd ${shellQuote(MAIBOT_CONTAINER_DIR)} && uv run python bot.py",
+        script = "${uvPrelude()}; cd ${shellQuote(MAIBOT_CONTAINER_DIR)} && " +
+            "if command -v script >/dev/null 2>&1; then " +
+            "script -q -c ${shellQuote("uv run python bot.py")} /dev/null; " +
+            "else uv run python bot.py; fi",
         workingDirectory = MAIBOT_CONTAINER_DIR
     )
+
+    fun cleanupMaiBotCommand(): List<String> = shellCommand(
+        script = """
+        set +e
+        ps -eo pid=,args= | awk '
+            /uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main/ &&
+            !/awk/ { print ${'$'}1 }
+        ' | while read pid; do
+            [ -n "${'$'}pid" ] || continue
+            printf "[ProcessManager] stopping stale MaiBot process %s\n" "${'$'}pid"
+            kill "${'$'}pid" 2>/dev/null || true
+        done
+        sleep 1
+        ps -eo pid=,args= | awk '
+            /uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main/ &&
+            !/awk/ { print ${'$'}1 }
+        ' | while read pid; do
+            [ -n "${'$'}pid" ] || continue
+            printf "[ProcessManager] force stopping stale MaiBot process %s\n" "${'$'}pid"
+            kill -9 "${'$'}pid" 2>/dev/null || true
+        done
+        exit 0
+        """.trimIndent(),
+        workingDirectory = "/"
+    )
+
+    fun napCatInstallCommand(token: String, targetProxy: String? = null): List<String> =
+        shellCommand(
+            script = napCatInstallScript(token = token, targetProxy = targetProxy),
+            workingDirectory = "/root"
+        )
+
+    fun napCatPrepareRuntimeCommand(): List<String> = shellCommand(
+        script = napCatPrepareRuntimeScript(),
+        workingDirectory = "/root"
+    )
+
+    fun cleanupNapCatCommand(): List<String> = shellCommand(
+        script = """
+        set +e
+        ps -eo pid=,args= | awk '
+            /Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so/ &&
+            !/awk/ { print ${'$'}1 }
+        ' | while read pid; do
+            [ -n "${'$'}pid" ] || continue
+            printf "[NapCat] stopping stale process %s\n" "${'$'}pid"
+            kill "${'$'}pid" 2>/dev/null || true
+        done
+        sleep 1
+        ps -eo pid=,args= | awk '
+            /Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so/ &&
+            !/awk/ { print ${'$'}1 }
+        ' | while read pid; do
+            [ -n "${'$'}pid" ] || continue
+            printf "[NapCat] force stopping stale process %s\n" "${'$'}pid"
+            kill -9 "${'$'}pid" 2>/dev/null || true
+        done
+        rm -f /tmp/.X1-lock
+        rm -f /tmp/.X11-unix/X1
+        exit 0
+        """.trimIndent(),
+        workingDirectory = "/root"
+    )
+
+    fun napCatLaunchCommand(): List<String> = shellCommand(
+        script = "cd /root && " +
+            "if command -v script >/dev/null 2>&1; then " +
+            "script -q -c ${shellQuote("bash /root/launcher.sh")} /dev/null; " +
+            "else bash /root/launcher.sh; fi",
+        workingDirectory = "/root"
+    )
+
+    fun isNapCatInstalled(): Boolean =
+        napCatReadyMarker.isFile && napCatOneBotConfig.isFile && maiBotNapCatAdapterConfig.isFile
 
     fun agreementEnvironment(): Map<String, String> {
         val eulaHash = md5(eulaFile) ?: return emptyMap()
@@ -249,17 +339,26 @@ class MaiBotContainerConfig private constructor(
     fun prootCommand(
         workingDirectory: String = MAIBOT_CONTAINER_DIR,
         vararg args: String
-    ): List<String> = listOf(
-        prootExecutable.absolutePath,
-        "--link2symlink",
-        "-0",
-        "-r", rootfsDir.absolutePath,
-        "-b", "/dev",
-        "-b", "/proc",
-        "-b", "/sys",
-        "-b", "/sdcard",
-        "-w", workingDirectory
-    ) + args
+    ): List<String> {
+        termuxTmpDir.mkdirs()
+        ensureFakeProcFiles()
+        return listOf(
+            prootExecutable.absolutePath,
+            "--link2symlink",
+            "-0",
+            "-r", rootfsDir.absolutePath,
+            "-b", "/dev",
+            "-b", "/proc",
+            "-b", "${fakeProcStat.absolutePath}:/proc/stat",
+            "-b", "${fakeProcLoadAvg.absolutePath}:/proc/loadavg",
+            "-b", "${fakeProcVmStat.absolutePath}:/proc/vmstat",
+            "-b", "${fakeProcUptime.absolutePath}:/proc/uptime",
+            "-b", "/sys",
+            "-b", "/sdcard",
+            "-b", "${termuxTmpDir.absolutePath}:/tmp",
+            "-w", workingDirectory
+        ) + args
+    }
 
     private fun isProotRuntimeReady(): Boolean =
         prootExecutable.isFile && prootExecutable.canExecute() &&
@@ -368,6 +467,204 @@ class MaiBotContainerConfig private constructor(
         ln -sfn /sdcard/Movies /root/storage/movies
         ln -sfn /sdcard/Music /root/storage/music
         """.trimIndent()
+
+    private fun napCatInstallScript(token: String, targetProxy: String?): String =
+        """
+        set -e
+        export target_proxy=${shellQuote(targetProxy.orEmpty())}
+        progress_file="${'$'}{TMPDIR:-/tmp}/progress"
+        progress_des_file="${'$'}{TMPDIR:-/tmp}/progress_des"
+
+        maidroid_progress() {
+            printf "%s\n" "${'$'}1" > "${'$'}progress_file"
+            printf "%s\n" "${'$'}2" > "${'$'}progress_des_file"
+            printf "[NapCat] %s\n" "${'$'}2"
+        }
+
+        maidroid_progress 0.05 "准备 NapCat 安装环境"
+        mkdir -p "${'$'}HOME/.maidroid"
+        if [ -s "${'$'}HOME/.maidroid/napcat_token" ]; then
+            napcat_token="${'$'}(cat "${'$'}HOME/.maidroid/napcat_token")"
+        else
+            napcat_token="$token"
+            printf "%s" "${'$'}napcat_token" > "${'$'}HOME/.maidroid/napcat_token"
+            chmod 600 "${'$'}HOME/.maidroid/napcat_token" 2>/dev/null || true
+        fi
+        if [ -d "${'$'}HOME/napcat" ] && [ ! -f "${'$'}HOME/.maidroid/napcat_ready" ]; then
+            if find "${'$'}HOME/napcat" -mindepth 1 -type f | grep -q .; then
+                backup_dir="${'$'}HOME/napcat.maidroid-bak.${'$'}(date +%Y%m%d%H%M%S)"
+                printf "[NapCat] 检测到未完成的 NapCat 目录，移动到备份: %s\n" "${'$'}backup_dir"
+                mv "${'$'}HOME/napcat" "${'$'}backup_dir"
+            else
+                printf "[NapCat] 清理旧版本留下的空 NapCat 目录骨架\n"
+                rm -rf "${'$'}HOME/napcat"
+            fi
+        fi
+        if ! command -v sudo >/dev/null 2>&1; then
+            printf "[NapCat] 容器内未找到 sudo，创建 root 兼容包装\n"
+            mkdir -p /usr/local/bin
+            cat > /usr/local/bin/sudo <<'EOF'
+        #!/bin/sh
+        exec "$@"
+        EOF
+            chmod +x /usr/local/bin/sudo
+        fi
+
+        maidroid_progress 0.15 "下载 NapCat 官方安装脚本"
+        curl -o napcat.sh ${'$'}{target_proxy:+${'$'}{target_proxy}/}https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh
+
+        maidroid_progress 0.35 "赋予 NapCat 安装脚本执行权限"
+        chmod +x napcat.sh
+
+        maidroid_progress 0.45 "执行 NapCat 官方安装脚本"
+        bash napcat.sh
+
+        maidroid_progress 0.78 "写入 NapCat OneBot11 WebSocket 配置"
+        mkdir -p "${'$'}HOME/napcat/config"
+        cat > "${'$'}HOME/napcat/config/onebot11.json" <<EOF
+        {
+          "network": {
+            "websocketServers": [
+              {
+                "name": "WsServer",
+                "enable": true,
+                "host": "127.0.0.1",
+                "port": 8095,
+                "reportSelfMessage": false,
+                "enableForcePushEvent": true,
+                "messagePostFormat": "array",
+                "token": "${'$'}napcat_token",
+                "debug": false,
+                "heartInterval": 30000
+              }
+            ],
+            "websocketClients": []
+          },
+          "musicSignUrl": "",
+          "enableLocalFile2Url": false,
+          "parseMultMsg": false
+        }
+        EOF
+
+        maidroid_progress 0.88 "安装并配置 MaiBot NapCat 适配器"
+        INSTALL_DIR=${shellQuote(MAIBOT_CONTAINER_DIR)}
+        ADAPTER_DIR="${'$'}INSTALL_DIR/plugins/MaiBot-Napcat-Adapter"
+        if [ -d "${'$'}INSTALL_DIR" ]; then
+            mkdir -p "${'$'}INSTALL_DIR/plugins"
+            if [ ! -d "${'$'}ADAPTER_DIR" ]; then
+                git clone --depth=1 --branch main https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
+            fi
+            cat > "${'$'}ADAPTER_DIR/config.toml" <<EOF
+        [plugin]
+        enabled = true
+        config_version = "0.1.0"
+
+        [napcat_server]
+        host = "127.0.0.1"
+        port = 8095
+        token = "${'$'}napcat_token"
+        heartbeat_interval = 30.0
+        reconnect_delay_sec = 5.0
+        action_timeout_sec = 15.0
+        EOF
+        else
+            printf "[NapCat] MaiBot 目录不存在，跳过适配器配置: %s\n" "${'$'}INSTALL_DIR"
+        fi
+
+        maidroid_progress 0.96 "记录 NapCat 安装状态"
+        printf "ready\n" > "${'$'}HOME/.maidroid/napcat_ready"
+        ${napCatPrepareRuntimeScript()}
+
+        maidroid_progress 1.0 "NapCat 安装和自动配置完成"
+        """.trimIndent()
+
+    private fun napCatPrepareRuntimeScript(): String =
+        """
+        set -e
+        mkdir -p /root/napcat/cache /root/napcat/config /tmp /tmp/.X11-unix /tmp/runtime-root
+        chmod 700 /tmp/runtime-root 2>/dev/null || true
+        cat > /root/launcher.sh <<'EOF'
+        #!/bin/bash
+        set -u
+        cd /root
+        mkdir -p /root/napcat/cache /tmp /tmp/.X11-unix /tmp/runtime-root
+        chmod 700 /tmp/runtime-root 2>/dev/null || true
+        export DISPLAY=:1
+        export XDG_RUNTIME_DIR=/tmp/runtime-root
+        export HOME=/root
+        export QQNT_PROFILE_DIR=/root/.config/QQ
+        trap "" SIGPIPE
+
+        if ! command -v qq >/dev/null 2>&1; then
+            echo "[NapCat] qq executable not found in PATH"
+            exit 127
+        fi
+
+        if ! ps -eo args= | grep -F "Xvfb :1" | grep -v grep >/dev/null 2>&1; then
+            rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+            Xvfb :1 -screen 0 1x1x8 +extension GLX +render 2>&1 &
+            xvfb_pid=$!
+            echo "[NapCat] Xvfb started, pid=${'$'}xvfb_pid"
+            sleep 1
+        else
+            echo "[NapCat] Reusing existing Xvfb :1"
+        fi
+
+        echo "[NapCat] Launching LinuxQQ with NapCat preload"
+        LD_PRELOAD=/root/libnapcat_launcher.so qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1
+        exit_code=$?
+        echo "[NapCat] qq exited with code ${'$'}exit_code"
+        exit ${'$'}exit_code
+        EOF
+        chmod +x /root/launcher.sh
+        """.trimIndent()
+
+    private fun ensureFakeProcFiles() {
+        val bootTimeSeconds = (System.currentTimeMillis() / 1000L) - 60L
+        writeIfChanged(
+            fakeProcStat,
+            """
+            cpu  0 0 0 0 0 0 0 0 0 0
+            cpu0 0 0 0 0 0 0 0 0 0 0
+            intr 0
+            ctxt 0
+            btime $bootTimeSeconds
+            processes 1
+            procs_running 1
+            procs_blocked 0
+            softirq 0 0 0 0 0 0 0 0 0 0 0
+            """.trimIndent() + "\n"
+        )
+        writeIfChanged(fakeProcLoadAvg, "0.00 0.00 0.00 1/1 1\n")
+        writeIfChanged(
+            fakeProcVmStat,
+            """
+            nr_free_pages 0
+            nr_inactive_anon 0
+            nr_active_anon 0
+            nr_inactive_file 0
+            nr_active_file 0
+            nr_unevictable 0
+            nr_mlock 0
+            pgpgin 0
+            pgpgout 0
+            pswpin 0
+            pswpout 0
+            pgfault 0
+            pgmajfault 0
+            """.trimIndent() + "\n"
+        )
+        writeIfChanged(fakeProcUptime, "60.00 60.00\n")
+    }
+
+    private fun writeIfChanged(file: File, content: String) {
+        file.parentFile?.mkdirs()
+        if (!file.isFile || file.readText() != content) {
+            file.writeText(content)
+        }
+        file.setReadable(true, false)
+        file.setWritable(true, true)
+    }
 
     private fun uvPrelude(): String =
         "export UV_LINK_MODE=copy; " +

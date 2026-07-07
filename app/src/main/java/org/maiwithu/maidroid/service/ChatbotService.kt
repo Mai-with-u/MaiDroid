@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import org.maiwithu.maidroid.ChatbotApplication
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.platform.NapCatRuntime
 import org.maiwithu.maidroid.process.ProcessManager
 
 /**
@@ -29,6 +30,7 @@ class ChatbotService : Service() {
     companion object {
         private const val TAG = "ChatbotService"
         private const val NOTIFICATION_ID = 1001
+        const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
     }
 
     private lateinit var processManager: ProcessManager
@@ -47,8 +49,12 @@ class ChatbotService : Service() {
         // Start foreground with persistent notification
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // Launch the Python process
-        processManager.start()
+        NapCatRuntime.start(this)
+        if (intent?.action == ACTION_RESTART_RUNTIME) {
+            processManager.restart()
+        } else {
+            processManager.start()
+        }
 
         return START_STICKY
     }
@@ -57,6 +63,7 @@ class ChatbotService : Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy")
+        NapCatRuntime.stop(this)
         processManager.stop()
         releaseWakeLock()
         super.onDestroy()

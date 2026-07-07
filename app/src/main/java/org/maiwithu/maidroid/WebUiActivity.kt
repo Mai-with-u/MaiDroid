@@ -53,11 +53,22 @@ class WebUiActivity : ComponentActivity() {
         )
 
         val url = intent.getStringExtra(EXTRA_URL) ?: MaiBotContainerConfig.WEB_UI_URL
-        webView.loadUrl(MaiBotWebUiSupport.resolveLaunchUrl(this, url))
+        val launchUrl = if (url.isMaiBotWebUiUrl()) {
+            MaiBotWebUiSupport.resolveLaunchUrl(this, url)
+        } else {
+            url
+        }
+        webView.loadUrl(launchUrl)
     }
 
     override fun onDestroy() {
         webView.destroy()
         super.onDestroy()
+    }
+
+    private fun String.isMaiBotWebUiUrl(): Boolean {
+        val normalizedUrl = trimEnd('/')
+        val normalizedMaiBotUrl = MaiBotContainerConfig.WEB_UI_URL.trimEnd('/')
+        return normalizedUrl == normalizedMaiBotUrl || normalizedUrl.startsWith("$normalizedMaiBotUrl/")
     }
 }
