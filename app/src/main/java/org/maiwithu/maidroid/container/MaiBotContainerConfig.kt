@@ -26,6 +26,18 @@ class MaiBotContainerConfig private constructor(
     companion object {
         private const val DEBIAN_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         const val REPOSITORY_URL = "https://github.com/Mai-with-u/MaiBot.git"
+        const val GITHUB_RETRY_PER_MIRROR = 3
+        private val GITHUB_MIRROR_SPECS = listOf(
+            "gitproxy.mrhjx.cn|https://gitproxy.mrhjx.cn",
+            "ghproxy.vip|https://ghproxy.vip",
+            "raw.githubusercontent.com|",
+            "gh-proxy.com|https://gh-proxy.com",
+            "v6.gh-proxy.org|https://v6.gh-proxy.org",
+            "cdn.gh-proxy.com|https://cdn.gh-proxy.com"
+        )
+        val GITHUB_MIRROR_DESCRIPTION: String =
+            "GitHub 镜像自动重试（每源 ${GITHUB_RETRY_PER_MIRROR} 次）: " +
+                GITHUB_MIRROR_SPECS.joinToString(" -> ") { it.substringBefore('|') }
         const val ROOTFS_ASSET = "runtime/debian-rootfs.tar.xz"
         const val BOOTSTRAP_ASSET = "runtime/bootstrap-aarch64.zip"
         const val PROOT_ASSET = "runtime/proot_5.1.107.82_aarch64.deb"
@@ -204,11 +216,15 @@ class MaiBotContainerConfig private constructor(
     }
 
     fun cloneCommand(): List<String> = shellCommand(
-        script = "mkdir -p /opt && " +
-            "rm -rf ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} && " +
-            "git clone --depth=1 --single-branch ${shellQuote(REPOSITORY_URL)} ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} && " +
-            "rm -rf ${shellQuote(MAIBOT_CONTAINER_DIR)} && " +
-            "mv ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} ${shellQuote(MAIBOT_CONTAINER_DIR)}",
+        script = """
+        ${githubMirrorScript()}
+        set -e
+        mkdir -p /opt
+        rm -rf ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")}
+        maidroid_github_clone ${shellQuote(REPOSITORY_URL)} ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} --depth=1 --single-branch
+        rm -rf ${shellQuote(MAIBOT_CONTAINER_DIR)}
+        mv ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} ${shellQuote(MAIBOT_CONTAINER_DIR)}
+        """.trimIndent(),
         workingDirectory = "/"
     )
 
@@ -472,6 +488,7 @@ class MaiBotContainerConfig private constructor(
         """
         set -e
         export target_proxy=${shellQuote(targetProxy.orEmpty())}
+        ${githubMirrorScript()}
         progress_file="${'$'}{TMPDIR:-/tmp}/progress"
         progress_des_file="${'$'}{TMPDIR:-/tmp}/progress_des"
 
@@ -511,7 +528,7 @@ class MaiBotContainerConfig private constructor(
         fi
 
         maidroid_progress 0.15 "下载 NapCat 官方安装脚本"
-        curl -o napcat.sh ${'$'}{target_proxy:+${'$'}{target_proxy}/}https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh
+        maidroid_github_curl napcat.sh https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh "NapCat installer"
 
         maidroid_progress 0.35 "赋予 NapCat 安装脚本执行权限"
         chmod +x napcat.sh
@@ -552,7 +569,7 @@ class MaiBotContainerConfig private constructor(
         if [ -d "${'$'}INSTALL_DIR" ]; then
             mkdir -p "${'$'}INSTALL_DIR/plugins"
             if [ ! -d "${'$'}ADAPTER_DIR" ]; then
-                git clone --depth=1 --branch main https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
+                maidroid_github_clone https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR" --depth=1 --branch main
             fi
             cat > "${'$'}ADAPTER_DIR/config.toml" <<EOF
         [plugin]
@@ -618,6 +635,88 @@ class MaiBotContainerConfig private constructor(
         EOF
         chmod +x /root/launcher.sh
         """.trimIndent()
+
+    private fun githubMirrorScript(): String {
+        val mirrorSpecArguments = GITHUB_MIRROR_SPECS.joinToString(" \\\n                ") {
+            shellQuote(it)
+        }
+        return """
+        maidroid_github_mirror_specs() {
+            printf '%s\n' \
+                $mirrorSpecArguments
+            if [ -n "${'$'}{target_proxy:-}" ]; then
+                printf "%s\n" "custom|${'$'}target_proxy"
+            fi
+        }
+
+        maidroid_github_candidate_url() {
+            mirror_prefix="${'$'}1"
+            original_url="${'$'}2"
+            if [ -n "${'$'}mirror_prefix" ]; then
+                printf "%s/%s\n" "${'$'}{mirror_prefix%/}" "${'$'}original_url"
+            else
+                printf "%s\n" "${'$'}original_url"
+            fi
+        }
+
+        maidroid_github_clone() {
+            repo_url="${'$'}1"
+            clone_dest="${'$'}2"
+            shift 2
+            for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
+                mirror_name="${'$'}{mirror_spec%%|*}"
+                mirror_prefix="${'$'}{mirror_spec#*|}"
+                candidate_url="${'$'}(maidroid_github_candidate_url "${'$'}mirror_prefix" "${'$'}repo_url")"
+                attempt=1
+                while [ "${'$'}attempt" -le $GITHUB_RETRY_PER_MIRROR ]; do
+                    rm -rf "${'$'}clone_dest"
+                    printf "[GitHub] git clone via %s (attempt %s/$GITHUB_RETRY_PER_MIRROR): %s\n" "${'$'}mirror_name" "${'$'}attempt" "${'$'}candidate_url"
+                    if git clone "${'$'}@" "${'$'}candidate_url" "${'$'}clone_dest"; then
+                        printf "[GitHub] git clone succeeded via %s\n" "${'$'}mirror_name"
+                        return 0
+                    fi
+                    rm -rf "${'$'}clone_dest"
+                    attempt=${'$'}((attempt + 1))
+                    sleep 1
+                done
+                printf "[GitHub] git clone failed via %s, switching mirror\n" "${'$'}mirror_name"
+            done
+            printf "[GitHub] git clone failed after all mirrors: %s\n" "${'$'}repo_url"
+            return 1
+        }
+
+        maidroid_github_curl() {
+            output_path="${'$'}1"
+            source_url="${'$'}2"
+            label="${'$'}3"
+            if [ -z "${'$'}label" ]; then
+                label="${'$'}source_url"
+            fi
+            temp_path="${'$'}output_path.tmp"
+            for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
+                mirror_name="${'$'}{mirror_spec%%|*}"
+                mirror_prefix="${'$'}{mirror_spec#*|}"
+                candidate_url="${'$'}(maidroid_github_candidate_url "${'$'}mirror_prefix" "${'$'}source_url")"
+                attempt=1
+                while [ "${'$'}attempt" -le $GITHUB_RETRY_PER_MIRROR ]; do
+                    rm -f "${'$'}temp_path"
+                    printf "[GitHub] download %s via %s (attempt %s/$GITHUB_RETRY_PER_MIRROR): %s\n" "${'$'}label" "${'$'}mirror_name" "${'$'}attempt" "${'$'}candidate_url"
+                    if curl -fL --connect-timeout 20 -o "${'$'}temp_path" "${'$'}candidate_url"; then
+                        mv "${'$'}temp_path" "${'$'}output_path"
+                        printf "[GitHub] download succeeded via %s\n" "${'$'}mirror_name"
+                        return 0
+                    fi
+                    rm -f "${'$'}temp_path"
+                    attempt=${'$'}((attempt + 1))
+                    sleep 1
+                done
+                printf "[GitHub] download failed via %s, switching mirror\n" "${'$'}mirror_name"
+            done
+            printf "[GitHub] download failed after all mirrors: %s\n" "${'$'}source_url"
+            return 1
+        }
+        """.trimIndent()
+    }
 
     private fun ensureFakeProcFiles() {
         val bootTimeSeconds = (System.currentTimeMillis() / 1000L) - 60L

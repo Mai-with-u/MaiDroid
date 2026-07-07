@@ -112,7 +112,7 @@ data class OobeSetupState(
             OobeTaskState(
                 kind = OobeTaskKind.Source,
                 title = "MaiBot 源码",
-                description = MaiBotContainerConfig.REPOSITORY_URL,
+                description = MaiBotContainerConfig.GITHUB_MIRROR_DESCRIPTION,
                 progress = 0f,
                 progressText = "等待",
                 statusText = "等待容器就绪",
@@ -404,7 +404,7 @@ class OobeSetupManager(
             OobeTaskState(
                 kind = OobeTaskKind.Source,
                 title = "MaiBot 源码",
-                description = "git clone ${MaiBotContainerConfig.REPOSITORY_URL}",
+                description = "git clone，GitHub 镜像每源重试 ${MaiBotContainerConfig.GITHUB_RETRY_PER_MIRROR} 次",
                 progress = if (sourceReady) 1f else 0f,
                 progressText = if (sourceReady) "完成" else "等待",
                 statusText = if (sourceReady) config.maiBotDir.absolutePath else "等待 git clone",

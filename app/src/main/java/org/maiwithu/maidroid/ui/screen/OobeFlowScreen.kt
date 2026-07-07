@@ -31,12 +31,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -315,43 +315,38 @@ private fun CommandLogButton(
 
 @Composable
 private fun CommandLogViewer(logs: List<String>) {
-    val listState = rememberLazyListState()
-
-    LaunchedEffect(logs.size) {
-        if (logs.isNotEmpty()) {
-            listState.animateScrollToItem(logs.lastIndex)
+    val scrollState = rememberScrollState()
+    val logText = remember(logs) {
+        if (logs.isEmpty()) {
+            "暂无命令输出，点击“重新配置”后会实时显示。"
+        } else {
+            logs.joinToString(separator = "\n") { line -> line.ifBlank { " " } }
         }
     }
 
-    LazyColumn(
-        state = listState,
+    LaunchedEffect(logText) {
+        if (logs.isNotEmpty()) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(360.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(Color.Black.copy(alpha = 0.34f))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .verticalScroll(scrollState)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        if (logs.isEmpty()) {
-            item {
-                Text(
-                    text = "暂无命令输出，点击“重新配置”后会实时显示。",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-            }
-        } else {
-            items(logs) { line ->
-                Text(
-                    text = line.ifBlank { " " },
-                    color = TextSecondary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp
-                )
-            }
+        SelectionContainer {
+            Text(
+                text = logText,
+                color = TextSecondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = if (logs.isEmpty()) 12.sp else 11.sp,
+                lineHeight = if (logs.isEmpty()) 16.sp else 15.sp
+            )
         }
     }
 }
