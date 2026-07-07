@@ -98,6 +98,7 @@ private fun DashboardShell(
     modifier: Modifier = Modifier
 ) {
     var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
+    val webUiTabState = rememberWebUiTabState()
 
     Box(
         modifier = modifier
@@ -122,6 +123,7 @@ private fun DashboardShell(
                     MainTab.WebUi -> WebUiTabPage(
                         webUiOnline = webUiOnline,
                         onWakeMai = onWakeMai,
+                        state = webUiTabState,
                         terminalLogs = terminalLogs,
                         modifier = Modifier.fillMaxSize()
                     )

@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.screen
 import android.annotation.SuppressLint
 import android.os.Build
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,18 +50,83 @@ import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 
+private const val WebUiBottomOverlayInsetCssPx = 112
+
+internal class WebUiTabState internal constructor(
+    val webView: WebView
+) {
+    var webViewError by mutableStateOf<String?>(null)
+    var reloadToken by mutableStateOf(0)
+    var webViewHasSize by mutableStateOf(false)
+}
+
 @SuppressLint("SetJavaScriptEnabled")
+@Composable
+internal fun rememberWebUiTabState(): WebUiTabState {
+    val context = LocalContext.current
+    val state = remember(context) {
+        if (BuildConfig.DEBUG) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
+
+        val webView = WebView(context).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
+            overScrollMode = WebView.OVER_SCROLL_NEVER
+            isFocusable = true
+            isFocusableInTouchMode = true
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                settings.mixedContentMode =
+                    android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            }
+            MaiBotWebUiSupport.enableCookies(this)
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                    Log.d(
+                        WebUiLogTag,
+                        "console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} " +
+                            "(${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
+                    )
+                    return super.onConsoleMessage(consoleMessage)
+                }
+            }
+        }
+
+        WebUiTabState(webView).also { tabState ->
+            webView.webViewClient = MaiBotWebViewClient(
+                logTag = WebUiLogTag,
+                viewportReservedBottomCssPx = WebUiBottomOverlayInsetCssPx,
+                onPageFinishedCallback = { _, _ ->
+                    tabState.webViewError = null
+                },
+                onMainFrameError = { _, error ->
+                    tabState.webViewError = "${error.errorCode}: ${error.description}"
+                }
+            )
+        }
+    }
+
+    DisposableEffect(state) {
+        onDispose {
+            state.webView.destroy()
+        }
+    }
+
+    return state
+}
+
 @Composable
 internal fun WebUiTabPage(
     webUiOnline: Boolean,
     onWakeMai: () -> Unit,
+    state: WebUiTabState,
     modifier: Modifier = Modifier,
     terminalLogs: List<String> = emptyList(),
     url: String = MaiBotContainerConfig.WEB_UI_URL
 ) {
-    var webViewError by remember { mutableStateOf<String?>(null) }
-    var reloadToken by remember { mutableStateOf(0) }
-    var webViewHasSize by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val statusBarTop = with(density) {
         WindowInsets.statusBars.getTop(this).toDp()
@@ -70,45 +138,9 @@ internal fun WebUiTabPage(
             .background(MainSurface)
     ) {
         AndroidView(
-            factory = { context ->
-                if (BuildConfig.DEBUG) {
-                    WebView.setWebContentsDebuggingEnabled(true)
-                }
-                WebView(context).apply {
-                    setBackgroundColor(android.graphics.Color.BLACK)
-                    overScrollMode = WebView.OVER_SCROLL_NEVER
-                    isFocusable = true
-                    isFocusableInTouchMode = true
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.setSupportZoom(true)
-                    settings.builtInZoomControls = false
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        settings.mixedContentMode =
-                            android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                    }
-                    MaiBotWebUiSupport.enableCookies(this)
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                            Log.d(
-                                WebUiLogTag,
-                                "console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} " +
-                                    "(${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
-                            )
-                            return super.onConsoleMessage(consoleMessage)
-                        }
-                    }
-                    webViewClient = MaiBotWebViewClient(
-                        logTag = WebUiLogTag,
-                        onPageFinishedCallback = { view, _ ->
-                            webViewError = null
-                            patchBrokenViewportUnitsIfNeeded(view)
-                        },
-                        onMainFrameError = { _, error ->
-                            webViewError = "${error.errorCode}: ${error.description}"
-                        }
-                    )
-                }
+            factory = {
+                (state.webView.parent as? ViewGroup)?.removeView(state.webView)
+                state.webView
             },
             update = { webView ->
                 val launchUrl = MaiBotWebUiSupport.resolveLaunchUrl(
@@ -116,10 +148,10 @@ internal fun WebUiTabPage(
                     baseUrl = url,
                     terminalLogs = terminalLogs
                 )
-                val loadRequest = "$launchUrl#$reloadToken"
-                if (webViewHasSize && webView.tag != loadRequest) {
+                val loadRequest = "$launchUrl#${state.reloadToken}"
+                if (state.webViewHasSize && webView.tag != loadRequest) {
                     webView.tag = loadRequest
-                    webViewError = null
+                    state.webViewError = null
                     Log.d(
                         WebUiLogTag,
                         "load ${MaiBotWebUiSupport.redactUrlForLogs(launchUrl)} at " +
@@ -132,17 +164,17 @@ internal fun WebUiTabPage(
                 .padding(top = statusBarTop)
                 .fillMaxSize()
                 .onSizeChanged { size ->
-                    webViewHasSize = size.width > 0 && size.height > 0
+                    state.webViewHasSize = size.width > 0 && size.height > 0
                 }
         )
 
-        if (webViewError != null) {
+        if (state.webViewError != null) {
             WebUiStatusBanner(
-                message = "WebView 加载失败：$webViewError",
+                message = "WebView 加载失败：${state.webViewError}",
                 action = "重试",
                 onAction = {
-                    webViewError = null
-                    reloadToken += 1
+                    state.webViewError = null
+                    state.reloadToken += 1
                 },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -193,51 +225,13 @@ internal fun WebUiTabPage(
 
         WebUiRefreshButton(
             onClick = {
-                webViewError = null
-                reloadToken += 1
+                state.webViewError = null
+                state.reloadToken += 1
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = statusBarTop + 8.dp, end = 16.dp)
         )
-    }
-}
-
-private fun patchBrokenViewportUnitsIfNeeded(webView: WebView) {
-    webView.evaluateJavascript(
-        """
-        (() => {
-            const probe = document.createElement('div');
-            probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:100vh;pointer-events:none';
-            document.body.appendChild(probe);
-            const vh = probe.getBoundingClientRect().height;
-            probe.remove();
-
-            const root = document.getElementById('root');
-            const rootHeight = root ? root.getBoundingClientRect().height : -1;
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-            const shouldPatch = viewportHeight > 0 && (vh < 1 || rootHeight < 1);
-            if (!shouldPatch) {
-                return JSON.stringify({ patched: false, vh, viewportHeight, rootHeight });
-            }
-
-            let style = document.getElementById('maidroid-webview-viewport-fix');
-            if (!style) {
-                style = document.createElement('style');
-                style.id = 'maidroid-webview-viewport-fix';
-                document.head.appendChild(style);
-            }
-            style.textContent =
-                'html,body,#root{width:100%!important;height:' + viewportHeight + 'px!important;' +
-                'min-height:' + viewportHeight + 'px!important;overflow:auto!important}' +
-                '.min-h-screen{min-height:' + viewportHeight + 'px!important}' +
-                '.h-screen{height:' + viewportHeight + 'px!important}';
-            window.dispatchEvent(new Event('resize'));
-            return JSON.stringify({ patched: true, vh, viewportHeight, rootHeight });
-        })()
-        """.trimIndent()
-    ) { result ->
-        Log.d(WebUiLogTag, "viewport probe $result")
     }
 }
 

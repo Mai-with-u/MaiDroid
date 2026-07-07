@@ -26,6 +26,7 @@ object MaiBotWebUiSupport {
     private const val WEBUI_CONFIG_PATH = "data/webui.json"
     private const val THEME_MODE = "dark"
     private const val DASHBOARD_STYLE = "future-retro"
+    private const val VIEWPORT_PATCH_STYLE_ID = "maidroid-webview-viewport-fix"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -141,6 +142,94 @@ object MaiBotWebUiSupport {
         }
     }
 
+    fun patchViewportLayout(
+        webView: WebView,
+        reservedBottomCssPx: Int = 0,
+        logTag: String = TAG
+    ) {
+        webView.evaluateJavascript(
+            buildViewportPatchScript(reservedBottomCssPx)
+        ) { result ->
+            Log.d(logTag, "viewport patch $result")
+        }
+    }
+
+    internal fun buildViewportPatchScript(reservedBottomCssPx: Int): String {
+        val safeReservedBottom = reservedBottomCssPx.coerceAtLeast(0)
+        return """
+            (() => {
+              const reservedBottom = $safeReservedBottom;
+              const styleId = '$VIEWPORT_PATCH_STYLE_ID';
+
+              const readViewportHeight = () => {
+                const visualHeight = window.visualViewport && window.visualViewport.height;
+                return Math.max(
+                  1,
+                  Math.round(
+                    visualHeight ||
+                    window.innerHeight ||
+                    document.documentElement.clientHeight ||
+                    document.body.clientHeight ||
+                    1
+                  )
+                );
+              };
+
+              const ensureStyle = () => {
+                let style = document.getElementById(styleId);
+                if (!style) {
+                  style = document.createElement('style');
+                  style.id = styleId;
+                  document.head.appendChild(style);
+                }
+
+                style.textContent = [
+                  'html,body,#root{width:100%!important;height:var(--maidroid-webview-height)!important;min-height:var(--maidroid-webview-height)!important;overflow:auto!important;overscroll-behavior:none!important}',
+                  '.min-h-screen{min-height:var(--maidroid-webview-height)!important}',
+                  '.h-screen{height:var(--maidroid-webview-height)!important}',
+                  '[class~="min-h-screen"][class~="overflow-y-auto"],[class~="h-screen"][class~="overflow-y-auto"]{max-height:var(--maidroid-webview-height)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:calc(var(--maidroid-webview-reserved-bottom) + 1rem)!important}',
+                  '[class~="min-h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"],[class~="h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"]{justify-content:flex-start!important}',
+                  '[role="dialog"],[data-radix-dialog-content],[class*="DialogContent"],[class*="dialog-content"],[class*="modal-content"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 2rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
+                  '[class~="max-h-screen"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 2rem)!important}'
+                ].join('\n');
+              };
+
+              const apply = () => {
+                const viewportHeight = readViewportHeight();
+                document.documentElement.style.setProperty('--maidroid-webview-height', viewportHeight + 'px');
+                document.documentElement.style.setProperty('--maidroid-webview-reserved-bottom', reservedBottom + 'px');
+                ensureStyle();
+                return viewportHeight;
+              };
+
+              if (!window.__maidroidViewportPatchInstalled) {
+                window.__maidroidViewportPatchInstalled = true;
+                window.addEventListener('resize', apply, { passive: true });
+                window.addEventListener('orientationchange', () => setTimeout(apply, 50), { passive: true });
+                if (window.visualViewport) {
+                  window.visualViewport.addEventListener('resize', apply, { passive: true });
+                  window.visualViewport.addEventListener('scroll', apply, { passive: true });
+                }
+              }
+
+              const probe = document.createElement('div');
+              probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:100vh;pointer-events:none';
+              document.body.appendChild(probe);
+              const measuredVh = probe.getBoundingClientRect().height;
+              probe.remove();
+
+              const viewportHeight = apply();
+              window.dispatchEvent(new Event('resize'));
+              return JSON.stringify({
+                patched: true,
+                vh: measuredVh,
+                viewportHeight,
+                reservedBottom
+              });
+            })()
+        """.trimIndent()
+    }
+
     private fun readAccessTokenFromConfig(context: Context): String? {
         val config = MaiBotContainerConfig.from(context)
         val tokenFile = File(config.maiBotDir, WEBUI_CONFIG_PATH)
@@ -218,6 +307,7 @@ object MaiBotWebUiSupport {
 
 open class MaiBotWebViewClient(
     private val logTag: String,
+    private val viewportReservedBottomCssPx: Int = 0,
     private val onPageFinishedCallback: (WebView, String) -> Unit = { _, _ -> },
     private val onMainFrameError: (WebResourceRequest, WebResourceError) -> Unit = { _, _ -> }
 ) : WebViewClient() {
@@ -231,6 +321,11 @@ open class MaiBotWebViewClient(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             CookieManager.getInstance().flush()
         }
+        MaiBotWebUiSupport.patchViewportLayout(
+            webView = view,
+            reservedBottomCssPx = viewportReservedBottomCssPx,
+            logTag = logTag
+        )
         onPageFinishedCallback(view, url)
         super.onPageFinished(view, url)
     }
