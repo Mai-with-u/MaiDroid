@@ -187,11 +187,55 @@ object MaiBotWebUiSupport {
                   'html,body,#root{width:100%!important;height:var(--maidroid-webview-height)!important;min-height:var(--maidroid-webview-height)!important;overflow:auto!important;overscroll-behavior:none!important}',
                   '.min-h-screen{min-height:var(--maidroid-webview-height)!important}',
                   '.h-screen{height:var(--maidroid-webview-height)!important}',
-                  '[class~="min-h-screen"][class~="overflow-y-auto"],[class~="h-screen"][class~="overflow-y-auto"]{max-height:var(--maidroid-webview-height)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:calc(var(--maidroid-webview-reserved-bottom) + 1rem)!important}',
+                  '[data-maidroid-scroll-safe-area="true"]{scroll-padding-bottom:calc(var(--maidroid-webview-reserved-bottom) + 1rem)!important;padding-bottom:calc(var(--maidroid-original-padding-bottom, 0px) + var(--maidroid-webview-reserved-bottom) + 1rem)!important;box-sizing:border-box!important}',
+                  '[class~="min-h-screen"][class~="overflow-y-auto"],[class~="h-screen"][class~="overflow-y-auto"],[class~="overflow-y-auto"],[class~="overflow-auto"],[class~="overscroll-contain"]{max-height:var(--maidroid-webview-height)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
                   '[class~="min-h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"],[class~="h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"]{justify-content:flex-start!important}',
-                  '[role="dialog"],[data-radix-dialog-content],[class*="DialogContent"],[class*="dialog-content"],[class*="modal-content"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 2rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
-                  '[class~="max-h-screen"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 2rem)!important}'
+                  '[role="dialog"],[data-radix-dialog-content],[class*="DialogContent"],[class*="dialog-content"],[class*="modal-content"],[class*="drawer"],[class*="Drawer"],[class*="sidebar"],[class*="Sidebar"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 1rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
+                  '[class~="max-h-screen"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 1rem)!important}'
                 ].join('\n');
+              };
+
+              const scrollCandidatePattern = /scroll|overscroll|drawer|sidebar|sheet|dialog|modal|menu|nav|radix/i;
+
+              const markScrollSafeAreas = (viewportHeight) => {
+                const candidates = [
+                  document.scrollingElement,
+                  document.documentElement,
+                  document.body,
+                  document.getElementById('root'),
+                  ...document.querySelectorAll('body *')
+                ].filter(Boolean);
+
+                candidates.forEach((element) => {
+                  const computed = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  const className = typeof element.className === 'string' ? element.className : '';
+                  const id = element.id || '';
+                  const overflowY = computed.overflowY || computed.overflow;
+                  const canScroll = element.scrollHeight > element.clientHeight + 12;
+                  const scrollStyled = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+                  const viewportSized = rect.height >= viewportHeight * 0.45 || element === document.scrollingElement;
+                  const importantSurface =
+                    element === document.scrollingElement ||
+                    element === document.body ||
+                    element.id === 'root' ||
+                    computed.position === 'fixed' ||
+                    scrollCandidatePattern.test(className + ' ' + id);
+                  const shouldMark = reservedBottom > 0 && canScroll && (scrollStyled || viewportSized || importantSurface);
+
+                  if (shouldMark) {
+                    if (!element.hasAttribute('data-maidroid-scroll-safe-area')) {
+                      element.style.setProperty(
+                        '--maidroid-original-padding-bottom',
+                        computed.paddingBottom || '0px'
+                      );
+                    }
+                    element.setAttribute('data-maidroid-scroll-safe-area', 'true');
+                  } else if (element.hasAttribute('data-maidroid-scroll-safe-area')) {
+                    element.removeAttribute('data-maidroid-scroll-safe-area');
+                    element.style.removeProperty('--maidroid-original-padding-bottom');
+                  }
+                });
               };
 
               const apply = () => {
@@ -199,6 +243,7 @@ object MaiBotWebUiSupport {
                 document.documentElement.style.setProperty('--maidroid-webview-height', viewportHeight + 'px');
                 document.documentElement.style.setProperty('--maidroid-webview-reserved-bottom', reservedBottom + 'px');
                 ensureStyle();
+                markScrollSafeAreas(viewportHeight);
                 return viewportHeight;
               };
 
@@ -209,6 +254,18 @@ object MaiBotWebUiSupport {
                 if (window.visualViewport) {
                   window.visualViewport.addEventListener('resize', apply, { passive: true });
                   window.visualViewport.addEventListener('scroll', apply, { passive: true });
+                }
+                window.__maidroidViewportPatchObserver = new MutationObserver(() => {
+                  window.clearTimeout(window.__maidroidViewportPatchTimer);
+                  window.__maidroidViewportPatchTimer = window.setTimeout(apply, 50);
+                });
+                if (document.body) {
+                  window.__maidroidViewportPatchObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['class', 'style', 'open', 'data-state']
+                  });
                 }
               }
 

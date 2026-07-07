@@ -50,7 +50,7 @@ import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 
-private const val WebUiBottomOverlayInsetCssPx = 112
+private const val WebUiBottomOverlayInsetCssPx = 72
 
 internal class WebUiTabState internal constructor(
     val webView: WebView
