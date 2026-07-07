@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.ui.component
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
@@ -69,26 +68,22 @@ private fun StepNode(step: Int, isActive: Boolean) {
             .background(Color.Transparent, CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Crossfade(
-            targetState = isActive,
-            label = "OobeStepNodeContent"
-        ) { active ->
-            if (active) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                )
-            } else {
-                Text(
-                    text = step.toString(),
-                    fontSize = 16.sp,  // 24 × 0.67
-                    fontWeight = FontWeight.Bold,
-                    color = TextDimmed,
-                    textAlign = TextAlign.Center
-                )
-            }
+        if (isActive) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+            )
+        } else {
+            Text(
+                text = step.toString(),
+                fontSize = 16.sp,  // 24 × 0.67
+                fontWeight = FontWeight.Bold,
+                color = TextDimmed,
+                textAlign = TextAlign.Center,
+                lineHeight = 16.sp
+            )
         }
     }
 }

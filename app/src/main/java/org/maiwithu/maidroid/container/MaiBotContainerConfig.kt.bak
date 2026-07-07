@@ -486,18 +486,19 @@ class MaiBotContainerConfig private constructor(
         ln -sfn /sdcard/Music /root/storage/music
         """.trimIndent()
 
-    @Suppress("UNUSED_PARAMETER")
     private fun napCatInstallScript(token: String, targetProxy: String?): String =
         listOf(
-            napCatInstallPreludeScript(),
+            napCatInstallPreludeScript(targetProxy),
+            githubMirrorScript(),
             napCatInstallBodyScript(token),
             napCatPrepareRuntimeScript(),
             "maidroid_progress 1.0 ${shellQuote("NapCat install and auto configuration completed")}"
         ).joinToString("\n")
 
-    private fun napCatInstallPreludeScript(): String =
+    private fun napCatInstallPreludeScript(targetProxy: String?): String =
         """
         set -e
+        export target_proxy=${shellQuote(targetProxy.orEmpty())}
         """.trimIndent()
 
     private fun napCatInstallBodyScript(token: String): String =
@@ -543,7 +544,7 @@ class MaiBotContainerConfig private constructor(
         fi
 
         maidroid_progress 0.15 "Download NapCat installer"
-        curl -fL --connect-timeout 20 -o napcat.sh https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh
+        maidroid_github_curl napcat.sh https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh "NapCat installer"
 
         maidroid_progress 0.35 "Make NapCat installer executable"
         chmod +x napcat.sh
@@ -584,7 +585,7 @@ class MaiBotContainerConfig private constructor(
         if [ -d "${'$'}INSTALL_DIR" ]; then
             mkdir -p "${'$'}INSTALL_DIR/plugins"
             if [ ! -d "${'$'}ADAPTER_DIR" ]; then
-                git clone --depth=1 --branch main https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
+                maidroid_github_clone https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR" --depth=1 --branch main
             fi
             cat > "${'$'}ADAPTER_DIR/config.toml" <<EOF
         [plugin]

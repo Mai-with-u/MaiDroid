@@ -3,10 +3,12 @@ package org.maiwithu.maidroid.ui.screen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -42,14 +44,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeTaskKind
@@ -89,6 +89,8 @@ import org.maiwithu.maidroid.ui.theme.SurfaceDark
 import org.maiwithu.maidroid.ui.theme.TextOnOrange
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSecondary
+
+private const val SETUP_ATTENTION_DELAY_MS = 5 * 60 * 1000L
 
 @Composable
 fun OobeFlowScreen(
@@ -121,6 +123,26 @@ fun OobeFlowScreen(
         val contentCornerRadius = 48.dp
         val contentOverlap = contentCornerRadius
         val contentTop = maxOf(headerHeight - contentOverlap, 0.dp)
+        val currentTasks = when (currentStep) {
+            1 -> setupState.containerTasks
+            2 -> setupState.installTasks
+            else -> emptyList()
+        }
+        val setupFailed = currentTasks.hasFailedTask()
+        val stepDone = when (currentStep) {
+            1 -> setupState.canInstall
+            2 -> setupState.isComplete
+            else -> true
+        }
+        var waitedTooLong by remember { mutableStateOf(false) }
+
+        LaunchedEffect(currentStep, stepDone, setupFailed) {
+            waitedTooLong = false
+            if (currentStep > 0 && !stepDone && !setupFailed) {
+                delay(SETUP_ATTENTION_DELAY_MS)
+                waitedTooLong = true
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -138,6 +160,7 @@ fun OobeFlowScreen(
             if (currentStep > 0) {
                 CommandLogButton(
                     logs = setupState.commandLogs,
+                    attention = setupFailed || waitedTooLong,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = statusBarTop + 8.dp, end = 20.dp)
@@ -169,17 +192,17 @@ fun OobeFlowScreen(
                 when (step) {
                     0 -> StepHeaderContent(
                         title = "授予权限",
-                        description = "MaiSaka 需要以下权限才能完成自动部署。必选权限通过后才会进入容器配置。"
+                        description = "MaiSaka需要以下权限才能运行~\n可选权限也可以不给，如果你确定你在做什么的话"
                     )
 
                     1 -> StepHeaderContent(
                         title = "配置容器",
-                        description = "正在检查 Debian rootfs、Termux bootstrap、proot 启动器和系统依赖。"
+                        description = "正在自动下载运行环境，以给予麦麦一个新家\n请保持网络连接，下载完成后麦麦会自己装~"
                     )
 
                     else -> StepHeaderContent(
                         title = "安装 MaiBot",
-                        description = "将按 installation.md 自动 clone、安装 uv 依赖，并等待 MaiBot WebUI 启动。"
+                        description = "麦麦正在装修并入住新家……，请耐心等待"
                     )
                 }
             }
@@ -232,6 +255,7 @@ fun OobeFlowScreen(
                         canProceed = setupState.canInstall,
                         proceedText = "开始安装",
                         waitingText = "重新配置",
+                        waitingEnabled = setupState.containerTasks.hasFailedTask(),
                         onProceed = onNext,
                         onRetry = onRetry
                     )
@@ -239,12 +263,13 @@ fun OobeFlowScreen(
                         val installRunning = setupState.installTasks.any {
                             it.status == OobeTaskStatus.Running
                         }
+                        val installFailed = setupState.installTasks.hasFailedTask()
                         SetupFooter(
                             footerText = setupState.footerText,
                             canProceed = setupState.isComplete,
                             proceedText = "进入 MaiDroid",
-                            waitingText = if (installRunning) "请稍候" else "重试安装",
-                            waitingEnabled = !installRunning,
+                            waitingText = if (installFailed) "重试安装" else "请稍候",
+                            waitingEnabled = installFailed && !installRunning,
                             onProceed = onNext,
                             onRetry = onRetry
                         )
@@ -260,23 +285,42 @@ fun OobeFlowScreen(
 @Composable
 private fun CommandLogButton(
     logs: List<String>,
+    attention: Boolean,
     modifier: Modifier = Modifier
 ) {
     var showLogs by remember { mutableStateOf(false) }
+    val buttonWidth by animateDpAsState(
+        targetValue = if (attention) 132.dp else 44.dp,
+        label = "CommandLogButtonWidth"
+    )
 
-    Box(
+    Row(
         modifier = modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(SurfaceDark.copy(alpha = 0.82f)),
-        contentAlignment = Alignment.Center
+            .width(buttonWidth)
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(SurfaceDark.copy(alpha = 0.82f))
+            .clickable { showLogs = true }
+            .padding(horizontal = if (attention) 12.dp else 0.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (attention) Arrangement.Start else Arrangement.Center
     ) {
-        IconButton(onClick = { showLogs = true }) {
-            Icon(
-                imageVector = Icons.Outlined.Code,
-                contentDescription = "查看容器输出",
-                tint = Orange500,
-                modifier = Modifier.size(24.dp)
+        Icon(
+            imageVector = Icons.Outlined.Code,
+            contentDescription = "查看容器输出",
+            tint = Orange500,
+            modifier = Modifier.size(24.dp)
+        )
+
+        if (attention) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "遇到问题？",
+                color = TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -286,14 +330,25 @@ private fun CommandLogButton(
             onDismissRequest = { showLogs = false },
             title = {
                 Text(
-                    text = "容器命令输出",
+                    text = "容器命令窗口",
                     color = TextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
-                CommandLogViewer(logs = logs)
+                Column {
+                    Text(
+                        text = "如果你确定你遇到问题，请向开发者提供以下信息，你可以长按选中必要的部分复制并发送给开发者",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    CommandLogViewer(logs = logs)
+                }
             },
             confirmButton = {
                 Button(
@@ -318,7 +373,7 @@ private fun CommandLogViewer(logs: List<String>) {
     val scrollState = rememberScrollState()
     val logText = remember(logs) {
         if (logs.isEmpty()) {
-            "暂无命令输出，点击“重新配置”后会实时显示。"
+            "暂无命令输出。"
         } else {
             logs.joinToString(separator = "\n") { line -> line.ifBlank { " " } }
         }
@@ -666,20 +721,11 @@ private fun SetupCards(tasks: List<OobeTaskState>) {
     ) {
         itemsIndexed(tasks) { _, task ->
             DownloadResourceCard(
-                icon = when (task.kind) {
-                    OobeTaskKind.Container -> Icons.Outlined.Inventory2
-                    OobeTaskKind.Source -> Icons.Outlined.Code
-                    OobeTaskKind.Dependency -> Icons.Outlined.Settings
-                    OobeTaskKind.Agreement -> Icons.Outlined.Code
-                    OobeTaskKind.WebUi -> Icons.Outlined.Settings
-                },
+                iconRes = task.iconRes(),
                 title = task.title,
-                description = task.description,
-                progress = task.progress,
-                progressText = task.progressText,
-                statusText = task.statusText,
+                description = task.cardDescription(),
                 status = task.status,
-                height = 121.dp
+                height = 76.dp
             )
         }
 
@@ -697,6 +743,40 @@ private fun androidx.compose.animation.AnimatedContentTransitionScope<Int>.oobeS
         (slideInHorizontally { -it / 4 } + fadeIn())
             .togetherWith(slideOutHorizontally { it / 4 } + fadeOut())
     }
+
+private fun List<OobeTaskState>.hasFailedTask(): Boolean =
+    any { it.status == OobeTaskStatus.Failed }
+
+@DrawableRes
+private fun OobeTaskState.iconRes(): Int = when (title) {
+    "Debian rootfs" -> R.drawable.oobe_icon_debian_rootfs
+    "Termux bootstrap" -> R.drawable.oobe_icon_termux_bootstrap
+    "proot" -> R.drawable.oobe_icon_proot
+    "Git" -> R.drawable.oobe_icon_git
+    "curl / CA" -> R.drawable.oobe_icon_curl_ca
+    else -> when (kind) {
+        OobeTaskKind.Container -> R.drawable.oobe_icon_debian_rootfs
+        OobeTaskKind.Source -> R.drawable.oobe_icon_git
+        OobeTaskKind.Dependency -> R.drawable.oobe_icon_python
+        OobeTaskKind.Agreement -> R.drawable.oobe_icon_curl_ca
+        OobeTaskKind.WebUi -> R.drawable.oobe_icon_webui
+    }
+}
+
+private fun OobeTaskState.cardDescription(): String = when (title) {
+    "Debian rootfs" -> "准备 Debian 根文件系统"
+    "Termux bootstrap" -> "准备基础运行环境"
+    "proot" -> "准备容器启动器"
+    "Git" -> "安装源码下载工具"
+    "curl / CA" -> "配置 HTTPS 下载能力"
+    else -> when (kind) {
+        OobeTaskKind.Container -> description
+        OobeTaskKind.Source -> "下载 MaiBot 源码"
+        OobeTaskKind.Dependency -> "安装 Python 运行依赖"
+        OobeTaskKind.Agreement -> "自动确认运行协议"
+        OobeTaskKind.WebUi -> "启动 MaiBot WebUI"
+    }
+}
 
 @Composable
 private fun NextButton(
@@ -777,7 +857,9 @@ private fun SetupFooter(
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Orange400,
-                contentColor = TextOnOrange
+                contentColor = TextOnOrange,
+                disabledContainerColor = Color.White.copy(alpha = 0.12f),
+                disabledContentColor = TextSecondary
             )
         ) {
             Text(

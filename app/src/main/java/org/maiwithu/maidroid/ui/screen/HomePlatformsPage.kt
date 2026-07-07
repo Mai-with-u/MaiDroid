@@ -169,7 +169,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         }
                     },
                     onUnsupportedInstall = {
-                        Toast.makeText(context, "当前先支持 QQ + NapCat", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "还没有做适配…… `（> _ <）.", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -436,7 +436,7 @@ private fun EmptyInstalledPlatformCard() {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "暂无运行平台",
+            text = "暂无消息平台",
             color = Color.White,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
@@ -446,7 +446,7 @@ private fun EmptyInstalledPlatformCard() {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "安装并登录 QQ 后会出现在这里",
+            text = "安装并登录消息平台后会在这里显示状态",
             color = PlatformTextDim,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
@@ -928,7 +928,7 @@ private fun NapCatQrCodeDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = state.qrCodePath ?: "二维码路径：/root/napcat/cache/qrcode.png",
+                    text = "请使用QQ扫码登录……或者截图发给其他设备，然后用QQ扫码",
                     color = PlatformTextDim,
                     fontSize = 11.sp,
                     lineHeight = 14.sp
