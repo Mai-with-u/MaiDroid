@@ -122,6 +122,7 @@ private fun DashboardShell(
                     MainTab.WebUi -> WebUiTabPage(
                         webUiOnline = webUiOnline,
                         onWakeMai = onWakeMai,
+                        terminalLogs = terminalLogs,
                         modifier = Modifier.fillMaxSize()
                     )
 

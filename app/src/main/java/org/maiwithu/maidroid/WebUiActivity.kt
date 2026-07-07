@@ -5,10 +5,12 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.ui.screen.WebUiLogTag
+import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
+import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 
 class WebUiActivity : ComponentActivity() {
     companion object {
@@ -23,6 +25,7 @@ class WebUiActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         webView = WebView(this).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.setSupportZoom(true)
@@ -30,7 +33,8 @@ class WebUiActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             }
-            webViewClient = WebViewClient()
+            MaiBotWebUiSupport.enableCookies(this)
+            webViewClient = MaiBotWebViewClient(logTag = WebUiLogTag)
         }
 
         setContentView(webView)
@@ -49,7 +53,7 @@ class WebUiActivity : ComponentActivity() {
         )
 
         val url = intent.getStringExtra(EXTRA_URL) ?: MaiBotContainerConfig.WEB_UI_URL
-        webView.loadUrl(url)
+        webView.loadUrl(MaiBotWebUiSupport.resolveLaunchUrl(this, url))
     }
 
     override fun onDestroy() {

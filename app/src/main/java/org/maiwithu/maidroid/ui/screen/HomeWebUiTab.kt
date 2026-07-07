@@ -5,10 +5,7 @@ import android.os.Build
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,10 +13,12 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,12 +37,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
+import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -51,11 +53,16 @@ internal fun WebUiTabPage(
     webUiOnline: Boolean,
     onWakeMai: () -> Unit,
     modifier: Modifier = Modifier,
+    terminalLogs: List<String> = emptyList(),
     url: String = MaiBotContainerConfig.WEB_UI_URL
 ) {
     var webViewError by remember { mutableStateOf<String?>(null) }
     var reloadToken by remember { mutableStateOf(0) }
     var webViewHasSize by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val statusBarTop = with(density) {
+        WindowInsets.statusBars.getTop(this).toDp()
+    }
 
     Box(
         modifier = modifier
@@ -80,6 +87,7 @@ internal fun WebUiTabPage(
                         settings.mixedContentMode =
                             android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     }
+                    MaiBotWebUiSupport.enableCookies(this)
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                             Log.d(
@@ -90,36 +98,38 @@ internal fun WebUiTabPage(
                             return super.onConsoleMessage(consoleMessage)
                         }
                     }
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView, pageUrl: String) {
+                    webViewClient = MaiBotWebViewClient(
+                        logTag = WebUiLogTag,
+                        onPageFinishedCallback = { view, _ ->
                             webViewError = null
                             patchBrokenViewportUnitsIfNeeded(view)
-                            super.onPageFinished(view, pageUrl)
+                        },
+                        onMainFrameError = { _, error ->
+                            webViewError = "${error.errorCode}: ${error.description}"
                         }
-
-                        override fun onReceivedError(
-                            view: WebView,
-                            request: WebResourceRequest,
-                            error: WebResourceError
-                        ) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && request.isForMainFrame) {
-                                webViewError = "${error.errorCode}: ${error.description}"
-                            }
-                            super.onReceivedError(view, request, error)
-                        }
-                    }
+                    )
                 }
             },
             update = { webView ->
-                val loadRequest = "$url#$reloadToken"
+                val launchUrl = MaiBotWebUiSupport.resolveLaunchUrl(
+                    context = webView.context,
+                    baseUrl = url,
+                    terminalLogs = terminalLogs
+                )
+                val loadRequest = "$launchUrl#$reloadToken"
                 if (webViewHasSize && webView.tag != loadRequest) {
                     webView.tag = loadRequest
                     webViewError = null
-                    Log.d(WebUiLogTag, "load $url at ${webView.width}x${webView.height}")
-                    webView.loadUrl(url)
+                    Log.d(
+                        WebUiLogTag,
+                        "load ${MaiBotWebUiSupport.redactUrlForLogs(launchUrl)} at " +
+                            "${webView.width}x${webView.height}"
+                    )
+                    webView.loadUrl(launchUrl)
                 }
             },
             modifier = Modifier
+                .padding(top = statusBarTop)
                 .fillMaxSize()
                 .onSizeChanged { size ->
                     webViewHasSize = size.width > 0 && size.height > 0
@@ -136,13 +146,13 @@ internal fun WebUiTabPage(
                 },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = StartupTopInset + 8.dp, start = 16.dp, end = 56.dp)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
             )
         } else if (!webUiOnline) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = StartupTopInset + 8.dp, start = 16.dp, end = 56.dp)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(22.dp))
                     .border(1.dp, PlatformBorder, RoundedCornerShape(22.dp))
@@ -188,7 +198,7 @@ internal fun WebUiTabPage(
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = StartupTopInset + 8.dp, end = 16.dp)
+                .padding(top = statusBarTop + 8.dp, end = 16.dp)
         )
     }
 }

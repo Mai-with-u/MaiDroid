@@ -8,18 +8,30 @@ import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 @Composable
 fun OobeScreen(
     storagePermissionGranted: Boolean = false,
-    backgroundPermissionGranted: Boolean = false,
+    notificationPermissionGranted: Boolean = false,
+    batteryOptimizationGranted: Boolean = false,
     onStorageAuthorize: () -> Unit = {},
-    onBackgroundAuthorize: () -> Unit = {},
+    onNotificationAuthorize: () -> Unit = {},
+    onBatteryOptimizationAuthorize: () -> Unit = {},
+    onAutoStartAuthorize: () -> Unit = {},
+    onTaskLockAuthorize: () -> Unit = {},
+    onAccessibilityAuthorize: () -> Unit = {},
+    onDeviceAdminAuthorize: () -> Unit = {},
     onNext: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     OobeFlowScreen(
         currentStep = 0,
         storagePermissionGranted = storagePermissionGranted,
-        backgroundPermissionGranted = backgroundPermissionGranted,
+        notificationPermissionGranted = notificationPermissionGranted,
+        batteryOptimizationGranted = batteryOptimizationGranted,
         onStorageAuthorize = onStorageAuthorize,
-        onBackgroundAuthorize = onBackgroundAuthorize,
+        onNotificationAuthorize = onNotificationAuthorize,
+        onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
+        onAutoStartAuthorize = onAutoStartAuthorize,
+        onTaskLockAuthorize = onTaskLockAuthorize,
+        onAccessibilityAuthorize = onAccessibilityAuthorize,
+        onDeviceAdminAuthorize = onDeviceAdminAuthorize,
         onNext = onNext,
         modifier = modifier
     )

@@ -2,7 +2,6 @@ package org.maiwithu.maidroid.ui.screen
 
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import org.maiwithu.maidroid.R
 
 internal val HomeBackground = Color(0xFF07090D)
@@ -22,7 +21,6 @@ internal val PlatformOnline = Color(0xFF30D158)
 internal val PlatformOrange = Color(0xFFE97F0F)
 internal val GlassSurface = Color(0x802B2B2B)
 internal val GlassStroke = Color(0x55FFFFFF)
-internal val StartupTopInset = 48.dp
 internal const val WebUiLogTag = "MaiDroidWebUi"
 
 internal enum class MainTab {

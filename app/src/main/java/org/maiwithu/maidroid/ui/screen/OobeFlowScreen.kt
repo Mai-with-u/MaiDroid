@@ -15,17 +15,20 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,14 +40,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,9 +67,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
@@ -88,9 +95,15 @@ fun OobeFlowScreen(
     currentStep: Int,
     setupState: OobeSetupState = OobeSetupState.preview(),
     storagePermissionGranted: Boolean = false,
-    backgroundPermissionGranted: Boolean = false,
+    notificationPermissionGranted: Boolean = false,
+    batteryOptimizationGranted: Boolean = false,
     onStorageAuthorize: () -> Unit = {},
-    onBackgroundAuthorize: () -> Unit = {},
+    onNotificationAuthorize: () -> Unit = {},
+    onBatteryOptimizationAuthorize: () -> Unit = {},
+    onAutoStartAuthorize: () -> Unit = {},
+    onTaskLockAuthorize: () -> Unit = {},
+    onAccessibilityAuthorize: () -> Unit = {},
+    onDeviceAdminAuthorize: () -> Unit = {},
     onNext: () -> Unit = {},
     onRetry: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -100,6 +113,10 @@ fun OobeFlowScreen(
             .fillMaxSize()
             .background(BackgroundDark)
     ) {
+        val density = LocalDensity.current
+        val statusBarTop = with(density) {
+            WindowInsets.statusBars.getTop(this).toDp()
+        }
         val headerHeight = maxHeight * 0.33f
         val contentCornerRadius = 48.dp
         val contentOverlap = contentCornerRadius
@@ -123,7 +140,7 @@ fun OobeFlowScreen(
                     logs = setupState.commandLogs,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 48.dp, end = 20.dp)
+                        .padding(top = statusBarTop + 8.dp, end = 20.dp)
                 )
             }
         }
@@ -180,9 +197,15 @@ fun OobeFlowScreen(
                 when (step) {
                     0 -> PermissionCards(
                         storagePermissionGranted = storagePermissionGranted,
-                        backgroundPermissionGranted = backgroundPermissionGranted,
+                        notificationPermissionGranted = notificationPermissionGranted,
+                        batteryOptimizationGranted = batteryOptimizationGranted,
                         onStorageAuthorize = onStorageAuthorize,
-                        onBackgroundAuthorize = onBackgroundAuthorize
+                        onNotificationAuthorize = onNotificationAuthorize,
+                        onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
+                        onAutoStartAuthorize = onAutoStartAuthorize,
+                        onTaskLockAuthorize = onTaskLockAuthorize,
+                        onAccessibilityAuthorize = onAccessibilityAuthorize,
+                        onDeviceAdminAuthorize = onDeviceAdminAuthorize
                     )
 
                     1 -> SetupCards(setupState.containerTasks)
@@ -362,9 +385,15 @@ private fun StepHeaderContent(
 @Composable
 private fun PermissionCards(
     storagePermissionGranted: Boolean,
-    backgroundPermissionGranted: Boolean,
+    notificationPermissionGranted: Boolean,
+    batteryOptimizationGranted: Boolean,
     onStorageAuthorize: () -> Unit,
-    onBackgroundAuthorize: () -> Unit
+    onNotificationAuthorize: () -> Unit,
+    onBatteryOptimizationAuthorize: () -> Unit,
+    onAutoStartAuthorize: () -> Unit,
+    onTaskLockAuthorize: () -> Unit,
+    onAccessibilityAuthorize: () -> Unit,
+    onDeviceAdminAuthorize: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -382,16 +411,243 @@ private fun PermissionCards(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        PermissionCard(
-            iconRes = R.drawable.ic_job_run,
-            title = "后台权限",
-            description = "允许 MaiBot 在切换到其他应用后继续运行。",
-            required = false,
-            granted = backgroundPermissionGranted,
-            onAuthorize = onBackgroundAuthorize
+        BackgroundKeepAliveCard(
+            notificationPermissionGranted = notificationPermissionGranted,
+            batteryOptimizationGranted = batteryOptimizationGranted,
+            onNotificationAuthorize = onNotificationAuthorize,
+            onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
+            onAutoStartAuthorize = onAutoStartAuthorize,
+            onTaskLockAuthorize = onTaskLockAuthorize,
+            onAccessibilityAuthorize = onAccessibilityAuthorize,
+            onDeviceAdminAuthorize = onDeviceAdminAuthorize
         )
 
         Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun BackgroundKeepAliveCard(
+    notificationPermissionGranted: Boolean,
+    batteryOptimizationGranted: Boolean,
+    onNotificationAuthorize: () -> Unit,
+    onBatteryOptimizationAuthorize: () -> Unit,
+    onAutoStartAuthorize: () -> Unit,
+    onTaskLockAuthorize: () -> Unit,
+    onAccessibilityAuthorize: () -> Unit,
+    onDeviceAdminAuthorize: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(SurfaceDark)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(71.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Orange400),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_job_run),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(33.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "后台保活",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        lineHeight = 24.sp
+                    )
+
+                    Spacer(modifier = Modifier.width(5.dp))
+
+                    KeepAliveTag(
+                        text = "可选",
+                        backgroundColor = Orange400,
+                        width = 48.dp,
+                        textSize = 12
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "MaiSaka 需要后台权限才能在切换到其他应用时保持后台运行；这个设置是可选项，你可以视情况开启一部分。",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary,
+                    lineHeight = 15.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(272.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF1C1C1E))
+                .padding(8.dp)
+        ) {
+            KeepAlivePermissionRow(
+                tagText = "推荐",
+                title = "通知保活",
+                granted = notificationPermissionGranted,
+                onAuthorize = onNotificationAuthorize
+            )
+            KeepAliveDivider()
+            KeepAlivePermissionRow(
+                tagText = "推荐",
+                title = "关闭电池优化",
+                granted = batteryOptimizationGranted,
+                onAuthorize = onBatteryOptimizationAuthorize
+            )
+            KeepAliveDivider()
+            KeepAlivePermissionRow(
+                tagText = "推荐",
+                title = "开启自启动&后台活动",
+                onAuthorize = onAutoStartAuthorize
+            )
+            KeepAliveDivider()
+            KeepAlivePermissionRow(
+                tagText = "推荐",
+                title = "多任务加锁",
+                onAuthorize = onTaskLockAuthorize
+            )
+            KeepAliveDivider()
+            KeepAlivePermissionRow(
+                tagText = "不建议",
+                title = "无障碍服务",
+                actionText = "你确定？！",
+                destructive = true,
+                onAuthorize = onAccessibilityAuthorize
+            )
+            KeepAliveDivider()
+            KeepAlivePermissionRow(
+                tagText = "不建议",
+                title = "设备管理员",
+                actionText = "你确定？！",
+                destructive = true,
+                onAuthorize = onDeviceAdminAuthorize
+            )
+        }
+    }
+}
+
+@Composable
+private fun KeepAlivePermissionRow(
+    tagText: String,
+    title: String,
+    onAuthorize: () -> Unit,
+    modifier: Modifier = Modifier,
+    granted: Boolean = false,
+    actionText: String = "去授权",
+    destructive: Boolean = false
+) {
+    val actionLabel = if (granted) "已授权" else actionText
+    val actionColor = if (granted) Orange500 else Color(0xFF808080)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = !granted, onClick = onAuthorize)
+            .padding(horizontal = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        KeepAliveTag(
+            text = tagText,
+            backgroundColor = if (destructive) Color(0xFFE90F0F) else Orange500,
+            width = if (destructive) 42.dp else 32.dp,
+            textSize = 10
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 18.sp
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
+            Text(
+                text = actionLabel,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = actionColor,
+                maxLines = 1,
+                lineHeight = 14.sp
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = actionColor,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun KeepAliveDivider() {
+    Spacer(modifier = Modifier.height(4.dp))
+    HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+    Spacer(modifier = Modifier.height(3.dp))
+}
+
+@Composable
+private fun KeepAliveTag(
+    text: String,
+    backgroundColor: Color,
+    width: androidx.compose.ui.unit.Dp,
+    textSize: Int
+) {
+    Box(
+        modifier = Modifier
+            .size(width = width, height = 18.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(backgroundColor),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = textSize.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            lineHeight = textSize.sp
+        )
     }
 }
 
