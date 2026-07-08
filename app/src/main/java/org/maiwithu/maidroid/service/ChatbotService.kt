@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import org.maiwithu.maidroid.ChatbotApplication
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.container.ContainerSshManager
 import org.maiwithu.maidroid.platform.NapCatRuntime
 import org.maiwithu.maidroid.process.ProcessManager
 
@@ -31,6 +32,7 @@ class ChatbotService : Service() {
         private const val TAG = "ChatbotService"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
+        const val ACTION_SYNC_CONTAINER_SSH = "org.maiwithu.maidroid.action.SYNC_CONTAINER_SSH"
     }
 
     private lateinit var processManager: ProcessManager
@@ -49,6 +51,11 @@ class ChatbotService : Service() {
         // Start foreground with persistent notification
         startForeground(NOTIFICATION_ID, buildNotification())
 
+        ContainerSshManager.get(this).syncWithSettings()
+        if (intent?.action == ACTION_SYNC_CONTAINER_SSH) {
+            return START_STICKY
+        }
+
         NapCatRuntime.start(this)
         if (intent?.action == ACTION_RESTART_RUNTIME) {
             processManager.restart()
@@ -63,6 +70,7 @@ class ChatbotService : Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy")
+        ContainerSshManager.get(this).stop()
         NapCatRuntime.stop(this)
         processManager.stop()
         releaseWakeLock()

@@ -232,7 +232,7 @@ private fun PlatformList(
     }
 }
 
-private fun installedPlatformCards(napCatState: NapCatPlatformState): List<InstalledPlatform> {
+internal fun installedPlatformCards(napCatState: NapCatPlatformState): List<InstalledPlatform> {
     if (!napCatState.installed && !napCatState.hasQrCode && napCatState.oneBotConfig == null) {
         return emptyList()
     }

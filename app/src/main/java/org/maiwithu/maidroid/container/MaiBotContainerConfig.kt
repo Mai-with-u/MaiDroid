@@ -113,6 +113,7 @@ class MaiBotContainerConfig private constructor(
     val napCatLauncher: File = File(rootfsDir, "root/launcher.sh")
     val maiBotNapCatAdapterDir: File = File(maiBotDir, "plugins/MaiBot-Napcat-Adapter")
     val maiBotNapCatAdapterConfig: File = File(maiBotNapCatAdapterDir, "config.toml")
+    val sshdExecutable: File = File(rootfsDir, "usr/sbin/sshd")
 
     fun containerRequirements(): List<ContainerRequirement> = listOf(
         ContainerRequirement(
@@ -254,6 +255,24 @@ class MaiBotContainerConfig private constructor(
         script = "export DEBIAN_FRONTEND=noninteractive; " +
             "apt-get -o Acquire::http::Pipeline-Depth=0 update && " +
             "apt-get install -y --no-install-recommends git ca-certificates curl",
+        workingDirectory = "/"
+    )
+
+    fun configureContainerSshCommand(port: Int, rootPassword: String): List<String> = shellCommand(
+        script = containerSshSetupScript(
+            port = port.coerceIn(1024, 65535),
+            rootPassword = rootPassword
+        ),
+        workingDirectory = "/"
+    )
+
+    fun launchContainerSshCommand(port: Int): List<String> = shellCommand(
+        script = containerSshLaunchScript(port.coerceIn(1024, 65535)),
+        workingDirectory = "/"
+    )
+
+    fun cleanupContainerSshCommand(): List<String> = shellCommand(
+        script = containerSshCleanupScript(),
         workingDirectory = "/"
     )
 
@@ -484,6 +503,133 @@ class MaiBotContainerConfig private constructor(
         ln -sfn /sdcard/Pictures /root/storage/pictures
         ln -sfn /sdcard/Movies /root/storage/movies
         ln -sfn /sdcard/Music /root/storage/music
+        """.trimIndent()
+
+    private fun containerSshSetupScript(port: Int, rootPassword: String): String =
+        """
+        set -e
+        export DEBIAN_FRONTEND=noninteractive
+        root_password=${shellQuote(rootPassword)}
+
+        maidroid_dpkg_preflight() {
+            mkdir -p /var/lib/dpkg /var/lib/dpkg/updates
+            if [ -f /var/lib/dpkg/status ] && [ ! -f /var/lib/dpkg/status-old ]; then
+                cp /var/lib/dpkg/status /var/lib/dpkg/status-old 2>/dev/null || true
+            fi
+            if [ -f /var/lib/dpkg/status-new ]; then
+                mv /var/lib/dpkg/status-new /var/lib/dpkg/status
+            fi
+        }
+
+        maidroid_dpkg_repair() {
+            rm -f /var/lib/dpkg/status-old
+            if [ -f /var/lib/dpkg/status ]; then
+                cp /var/lib/dpkg/status /var/lib/dpkg/status-old 2>/dev/null || true
+            fi
+            if [ -f /var/lib/dpkg/status-new ]; then
+                mv /var/lib/dpkg/status-new /var/lib/dpkg/status
+            fi
+            if [ -f /var/lib/dpkg/status ]; then
+                sed -i '/^Package: openssh-server$/,/^$/s/^Status:.*/Status: install ok installed/' /var/lib/dpkg/status 2>/dev/null || true
+            fi
+            dpkg --configure -a 2>/dev/null || true
+            apt-get -f install -y 2>/dev/null || true
+        }
+
+        maidroid_dpkg_preflight
+        if [ ! -x /usr/sbin/sshd ]; then
+            apt-get -o Acquire::http::Pipeline-Depth=0 update
+            apt-get install -y --no-install-recommends openssh-server || {
+                echo "apt install openssh-server failed, repairing dpkg state"
+                maidroid_dpkg_repair
+                if [ ! -x /usr/sbin/sshd ]; then
+                    apt-get install -y --fix-broken || apt-get install -y --no-install-recommends openssh-server --fix-missing
+                fi
+            }
+        fi
+
+        if [ ! -x /usr/sbin/sshd ]; then
+            echo "openssh-server is not installed"
+            exit 127
+        fi
+
+        if [ -f /etc/ssh/moduli.dpkg-new ] && [ ! -f /etc/ssh/moduli ]; then
+            mv /etc/ssh/moduli.dpkg-new /etc/ssh/moduli
+        fi
+
+        if ! grep -q '^sshd:' /etc/passwd 2>/dev/null; then
+            echo 'sshd:x:1000:1000:sshd:/var/empty:/usr/sbin/nologin' >> /etc/passwd
+        fi
+        if ! grep -q '^sshd:' /etc/shadow 2>/dev/null; then
+            echo 'sshd:*:19688:0:99999:7:::' >> /etc/shadow
+        fi
+        if ! grep -q '^sshd:' /etc/group 2>/dev/null; then
+            echo 'sshd:x:1000:' >> /etc/group
+        fi
+
+        mkdir -p /etc/ssh /run/sshd /var/empty
+        chmod 0755 /run /run/sshd /var/empty 2>/dev/null || true
+        touch /etc/ssh/sshd_config
+        sed -i '/^[#[:space:]]*UsePrivilegeSeparation[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/^[#[:space:]]*Port[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/^[#[:space:]]*PermitRootLogin[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/^[#[:space:]]*PasswordAuthentication[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/^[#[:space:]]*KbdInteractiveAuthentication[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/^[#[:space:]]*ChallengeResponseAuthentication[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        sed -i '/^[#[:space:]]*UsePAM[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
+        cat >> /etc/ssh/sshd_config <<EOF
+        Port $port
+        PermitRootLogin yes
+        PasswordAuthentication yes
+        KbdInteractiveAuthentication no
+        ChallengeResponseAuthentication no
+        UsePAM no
+        EOF
+
+        printf 'root:%s\n' "${'$'}root_password" | chpasswd
+        ssh-keygen -A 2>/dev/null || true
+        /usr/sbin/sshd -t
+        echo "sshd configured on port $port"
+        """.trimIndent()
+
+    private fun containerSshLaunchScript(port: Int): String =
+        """
+        set -e
+        mkdir -p /run/sshd /var/empty
+        chmod 0755 /run /run/sshd /var/empty 2>/dev/null || true
+        if [ ! -x /usr/sbin/sshd ]; then
+            echo "openssh-server is not installed"
+            exit 127
+        fi
+        /usr/sbin/sshd -t
+        echo "sshd listening on port $port"
+        exec /usr/sbin/sshd -D -e -p $port
+        """.trimIndent()
+
+    private fun containerSshCleanupScript(): String =
+        """
+        set +e
+        if command -v ps >/dev/null 2>&1; then
+            ps -eo pid=,args= | awk '
+                /\/usr\/sbin\/sshd|sshd: / &&
+                !/awk/ { print ${'$'}1 }
+            ' | while read pid; do
+                [ -n "${'$'}pid" ] || continue
+                printf "stopping sshd process %s\n" "${'$'}pid"
+                kill "${'$'}pid" 2>/dev/null || true
+            done
+            sleep 1
+            ps -eo pid=,args= | awk '
+                /\/usr\/sbin\/sshd|sshd: / &&
+                !/awk/ { print ${'$'}1 }
+            ' | while read pid; do
+                [ -n "${'$'}pid" ] || continue
+                printf "force stopping sshd process %s\n" "${'$'}pid"
+                kill -9 "${'$'}pid" 2>/dev/null || true
+            done
+        fi
+        rm -f /run/sshd.pid /run/sshd/sshd.pid 2>/dev/null || true
+        exit 0
         """.trimIndent()
 
     @Suppress("UNUSED_PARAMETER")

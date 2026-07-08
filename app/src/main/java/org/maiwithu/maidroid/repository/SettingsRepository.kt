@@ -23,8 +23,13 @@ class SettingsRepository(
         private const val KEY_SERVICE_AUTO_START = "service_auto_start"
         private const val KEY_DEBIAN_PATH = "debian_path"
         private const val KEY_CHATBOT_PATH = "chatbot_path"
+        private const val KEY_CONTAINER_SSH_ENABLED = "container_ssh_enabled"
+        private const val KEY_CONTAINER_SSH_CONFIGURED = "container_ssh_configured"
+        private const val KEY_CONTAINER_SSH_PORT = "container_ssh_port"
+        private const val KEY_CONTAINER_SSH_ROOT_PASSWORD = "container_ssh_root_password"
 
         private const val DEFAULT_MODEL = "default"
+        private const val DEFAULT_CONTAINER_SSH_PORT = 2222
         private const val DEFAULT_SYSTEM_PROMPT = "你是一个有帮助的AI助手。"
     }
 
@@ -60,6 +65,26 @@ class SettingsRepository(
 
     fun getChatbotPath(): String = kv.decodeString(KEY_CHATBOT_PATH, "") ?: ""
     fun setChatbotPath(path: String) = kv.encode(KEY_CHATBOT_PATH, path)
+
+    // Container SSH
+
+    fun isContainerSshEnabled(): Boolean = kv.decodeBool(KEY_CONTAINER_SSH_ENABLED, false)
+    fun setContainerSshEnabled(enabled: Boolean) = kv.encode(KEY_CONTAINER_SSH_ENABLED, enabled)
+
+    fun isContainerSshConfigured(): Boolean = kv.decodeBool(KEY_CONTAINER_SSH_CONFIGURED, false)
+
+    fun getContainerSshPort(): Int =
+        kv.decodeInt(KEY_CONTAINER_SSH_PORT, DEFAULT_CONTAINER_SSH_PORT)
+            .coerceIn(1024, 65535)
+
+    fun getContainerSshRootPassword(): String =
+        kv.decodeString(KEY_CONTAINER_SSH_ROOT_PASSWORD, "") ?: ""
+
+    fun setContainerSshConfig(port: Int, rootPassword: String) {
+        kv.encode(KEY_CONTAINER_SSH_PORT, port.coerceIn(1024, 65535))
+        kv.encode(KEY_CONTAINER_SSH_ROOT_PASSWORD, rootPassword)
+        kv.encode(KEY_CONTAINER_SSH_CONFIGURED, true)
+    }
 
     // ── Build config map for Python backend ──────────────────────────
 
