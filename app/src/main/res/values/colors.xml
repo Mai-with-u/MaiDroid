@@ -7,5 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="home_background">#FF07090D</color>
+    <color name="main_surface">#FF0F0F0F</color>
     <color name="launcher_icon_background">#FFB5DCBD</color>
 </resources>

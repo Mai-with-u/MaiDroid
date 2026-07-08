@@ -20,6 +20,7 @@ class SettingsRepository(
         private const val KEY_MODEL = "model"
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
         private const val KEY_SETUP_COMPLETE = "setup_complete"
+        private const val KEY_AUTHORIZATION_ACCEPTED = "authorization_accepted"
         private const val KEY_SERVICE_AUTO_START = "service_auto_start"
         private const val KEY_DEBIAN_PATH = "debian_path"
         private const val KEY_CHATBOT_PATH = "chatbot_path"
@@ -52,6 +53,9 @@ class SettingsRepository(
 
     fun isSetupComplete(): Boolean = kv.decodeBool(KEY_SETUP_COMPLETE, false)
     fun setSetupComplete(complete: Boolean) = kv.encode(KEY_SETUP_COMPLETE, complete)
+
+    fun isAuthorizationAccepted(): Boolean = kv.decodeBool(KEY_AUTHORIZATION_ACCEPTED, false)
+    fun setAuthorizationAccepted(accepted: Boolean) = kv.encode(KEY_AUTHORIZATION_ACCEPTED, accepted)
 
     // ── Service Auto-Start ───────────────────────────────────────────
 

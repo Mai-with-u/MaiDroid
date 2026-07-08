@@ -3,10 +3,8 @@ package org.maiwithu.maidroid.ui.screen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -16,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,24 +22,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import eightbitlab.com.blurview.BlurTarget
+import kotlinx.coroutines.delay
+
+internal const val WakeRetryIntervalMillis = 30_000L
 
 @Composable
 fun HomeScreen(
     webUiOnline: Boolean,
     versionName: String,
     terminalLogs: List<String> = emptyList(),
-    onWakeMai: () -> Unit,
+    onWakeMai: (showToast: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var dashboardVisible by rememberSaveable { mutableStateOf(false) }
-    var wakeRequested by rememberSaveable { mutableStateOf(false) }
+    var wakeCycle by rememberSaveable { mutableIntStateOf(0) }
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.WebUi) }
     var showTerminalOutput by remember { mutableStateOf(false) }
 
-    LaunchedEffect(webUiOnline, wakeRequested) {
-        if (wakeRequested && webUiOnline) {
+    LaunchedEffect(webUiOnline) {
+        if (webUiOnline) {
             dashboardVisible = true
             selectedTab = MainTab.WebUi
+        }
+    }
+
+    LaunchedEffect(dashboardVisible, webUiOnline) {
+        if (dashboardVisible || webUiOnline) return@LaunchedEffect
+
+        while (true) {
+            wakeCycle += 1
+            onWakeMai(false)
+            delay(WakeRetryIntervalMillis)
         }
     }
 
@@ -69,15 +81,7 @@ fun HomeScreen(
             WakeMaiGatePage(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
-                onWakeClick = {
-                    if (webUiOnline) {
-                        dashboardVisible = true
-                        selectedTab = MainTab.WebUi
-                    } else {
-                        wakeRequested = true
-                        onWakeMai()
-                    }
-                },
+                wakeCycle = wakeCycle,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -92,7 +96,7 @@ private fun DashboardShell(
     terminalLogs: List<String>,
     showTerminalOutput: Boolean,
     onTabSelected: (MainTab) -> Unit,
-    onWakeMai: () -> Unit,
+    onWakeMai: (showToast: Boolean) -> Unit,
     onTerminalClick: () -> Unit,
     onTerminalDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -122,7 +126,7 @@ private fun DashboardShell(
                 when (tab) {
                     MainTab.WebUi -> WebUiTabPage(
                         webUiOnline = webUiOnline,
-                        onWakeMai = onWakeMai,
+                        onWakeMai = { onWakeMai(true) },
                         state = webUiTabState,
                         terminalLogs = terminalLogs,
                         modifier = Modifier.fillMaxSize()
@@ -156,23 +160,37 @@ private fun DashboardShell(
 }
 
 private fun AnimatedContentTransitionScope<Boolean>.entryTransition() =
-    (fadeIn(animationSpec = tween(220)) +
-        slideInHorizontally(animationSpec = tween(220)) { fullWidth ->
-            if (targetState) fullWidth / 5 else -fullWidth / 5
-        }) togetherWith
-        (fadeOut(animationSpec = tween(160)) +
-            slideOutHorizontally(animationSpec = tween(200)) { fullWidth ->
-                if (targetState) -fullWidth / 5 else fullWidth / 5
-            }) using SizeTransform(clip = false)
+    slideInHorizontally(
+        animationSpec = spring(
+            dampingRatio = 0.86f,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) { fullWidth ->
+        if (targetState) fullWidth else -fullWidth
+    } togetherWith slideOutHorizontally(
+        animationSpec = spring(
+            dampingRatio = 0.86f,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) { fullWidth ->
+        if (targetState) -fullWidth else fullWidth
+    } using SizeTransform(clip = true)
 
 private fun AnimatedContentTransitionScope<MainTab>.tabTransition() =
-    (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-        slideInHorizontally(animationSpec = tween(260, easing = FastOutSlowInEasing)) { fullWidth ->
-            val direction = targetState.ordinal - initialState.ordinal
-            if (direction >= 0) fullWidth / 5 else -fullWidth / 5
-        }) togetherWith
-        (fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-            slideOutHorizontally(animationSpec = tween(240, easing = FastOutSlowInEasing)) { fullWidth ->
-                val direction = targetState.ordinal - initialState.ordinal
-                if (direction >= 0) -fullWidth / 5 else fullWidth / 5
-            }) using SizeTransform(clip = false)
+    slideInHorizontally(
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) { fullWidth ->
+        val direction = targetState.ordinal - initialState.ordinal
+        if (direction >= 0) fullWidth else -fullWidth
+    } togetherWith slideOutHorizontally(
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) { fullWidth ->
+        val direction = targetState.ordinal - initialState.ordinal
+        if (direction >= 0) -fullWidth else fullWidth
+    } using SizeTransform(clip = true)

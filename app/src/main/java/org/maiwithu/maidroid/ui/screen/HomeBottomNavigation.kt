@@ -1,9 +1,9 @@
 package org.maiwithu.maidroid.ui.screen
 
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -176,8 +176,11 @@ private fun AnimatedMainTabBar(
         val tabWidth = (maxWidth - 8.dp) / tabCount
         val indicatorOffset by animateDpAsState(
             targetValue = 4.dp + tabWidth * selectedTab.ordinal.toFloat(),
-            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-                label = "MainTabIndicatorOffset"
+            animationSpec = spring(
+                dampingRatio = 0.78f,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "MainTabIndicatorOffset"
         )
 
         BackdropBlurLayer(
@@ -251,7 +254,10 @@ private fun RowScope.MainTabButton(
 ) {
     val contentAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0.76f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        animationSpec = spring(
+            dampingRatio = 1f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "MainTabContentAlpha"
     )
 

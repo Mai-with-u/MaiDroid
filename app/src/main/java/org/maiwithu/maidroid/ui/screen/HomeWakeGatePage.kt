@@ -1,13 +1,15 @@
 package org.maiwithu.maidroid.ui.screen
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,11 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.GenericShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +48,7 @@ import org.maiwithu.maidroid.R
 internal fun WakeMaiGatePage(
     webUiOnline: Boolean,
     versionName: String,
-    onWakeClick: () -> Unit,
+    wakeCycle: Int,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(
@@ -62,6 +62,22 @@ internal fun WakeMaiGatePage(
         fun x(value: Float): Dp = (value * sx).dp
         fun y(value: Float): Dp = (value * sy).dp
         fun sp(value: Float) = (value * textScale).sp
+        val wakeProgress = remember { Animatable(if (webUiOnline) 1f else 0f) }
+
+        LaunchedEffect(wakeCycle, webUiOnline) {
+            if (webUiOnline) {
+                wakeProgress.snapTo(1f)
+            } else {
+                wakeProgress.snapTo(0f)
+                wakeProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(
+                        durationMillis = WakeRetryIntervalMillis.toInt(),
+                        easing = LinearEasing
+                    )
+                )
+            }
+        }
 
         Image(
             painter = painterResource(R.drawable.home_background),
@@ -165,21 +181,21 @@ internal fun WakeMaiGatePage(
                 .width(x(240f))
         )
 
-        WakeMaiButton(
-            onClick = onWakeClick,
+        WakeProgressBar(
+            progress = wakeProgress.value,
+            webUiOnline = webUiOnline,
             modifier = Modifier
                 .offset(x = x(38f), y = y(706f))
                 .width(x(335.7f))
                 .height(y(59.6f)),
-            sx = sx,
             textScale = textScale
         )
 
         Text(
             text = if (webUiOnline) {
-                "MAIBOT READY  ◇  TAP TO CONTINUE"
+                "MAIBOT READY  //  ENTERING WEBUI"
             } else {
-                "WEBUI OFFLINE  ◇  TAP TO WAKE"
+                "WEBUI OFFLINE  //  AUTO WAKE"
             },
             color = Color(0xFF96A5B9).copy(alpha = 0.4f),
             fontSize = sp(7.05f),
@@ -278,7 +294,7 @@ private fun BootTelemetry(
     )
 
     Text(
-        text = "MAI.BOOT  //  AWAITING INPUT",
+        text = "MAI.BOOT  //  AUTO WAKE",
         color = Color(0xFFC8A064).copy(alpha = 0.35f),
         fontSize = sp(6.27f),
         letterSpacing = sp(1.5f),
@@ -289,29 +305,24 @@ private fun BootTelemetry(
 }
 
 @Composable
-private fun WakeMaiButton(
-    onClick: () -> Unit,
+private fun WakeProgressBar(
+    progress: Float,
+    webUiOnline: Boolean,
     modifier: Modifier,
-    sx: Float,
     textScale: Float
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
+    val clampedProgress = progress.coerceIn(0f, 1f)
 
     Box(
         modifier = modifier
             .shadow(
                 elevation = (7f * textScale).dp,
                 shape = WakeButtonShape,
-                ambientColor = HomeOrange.copy(alpha = 0.28f),
-                spotColor = HomeOrange.copy(alpha = 0.5f)
+                ambientColor = HomeOrange.copy(alpha = 0.2f),
+                spotColor = HomeOrange.copy(alpha = 0.34f)
             )
             .clip(WakeButtonShape)
-            .background(HomeOrange)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
+            .background(Color(0xFF151A22))
             .drawWithContent {
                 drawContent()
                 drawLine(
@@ -329,22 +340,20 @@ private fun WakeMaiButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = Icons.Filled.PlayArrow,
-            contentDescription = null,
-            tint = Color.White,
+        Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = (16f * sx).dp)
-                .size((30f * textScale).dp)
+                .fillMaxHeight()
+                .fillMaxWidth(clampedProgress)
+                .background(HomeOrange)
         )
 
         Text(
-            text = "唤醒麦麦",
+            text = if (webUiOnline) "麦麦已唤醒" else "正在唤醒麦麦",
             color = Color.White,
-            fontSize = (24f * textScale).sp,
+            fontSize = (20f * textScale).sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = (4f * textScale).sp,
+            letterSpacing = (2f * textScale).sp,
             lineHeight = (24f * textScale).sp
         )
     }

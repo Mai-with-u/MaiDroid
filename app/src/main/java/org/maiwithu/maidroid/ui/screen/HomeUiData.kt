@@ -21,6 +21,8 @@ internal val PlatformOnline = Color(0xFF30D158)
 internal val PlatformOrange = Color(0xFFE97F0F)
 internal val GlassSurface = Color(0x802B2B2B)
 internal val GlassStroke = Color(0x55FFFFFF)
+internal val SubtleGlassSurface = Color(0x332B2B2B)
+internal const val SubtleGlassBlurRadius = 6f
 internal const val WebUiLogTag = "MaiDroidWebUi"
 
 internal enum class MainTab {

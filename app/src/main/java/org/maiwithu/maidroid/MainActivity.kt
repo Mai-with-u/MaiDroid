@@ -17,28 +17,44 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.ui.screen.BlurTargetHost
 import org.maiwithu.maidroid.ui.screen.HomeScreen
+import org.maiwithu.maidroid.ui.screen.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.screen.OobeFlowScreen
+import org.maiwithu.maidroid.ui.screen.StartupSplashPage
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
+import eightbitlab.com.blurview.BlurTarget
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -81,9 +97,29 @@ class MainActivity : ComponentActivity() {
                 var setupComplete by remember {
                     mutableStateOf(settingsRepository.isSetupComplete())
                 }
+                var authorizationAccepted by remember {
+                    mutableStateOf(settingsRepository.isAuthorizationAccepted())
+                }
                 var webUiOnline by remember { mutableStateOf(false) }
+                var showStartupSplash by remember { mutableStateOf(true) }
+                var showAuthorizationDialog by remember { mutableStateOf(false) }
+                var oobeBlurTarget by remember { mutableStateOf<BlurTarget?>(null) }
+                val uiScope = rememberCoroutineScope()
                 val versionName = remember { getVersionName() }
                 val terminalLogs by TerminalLogRepository.logs.collectAsState()
+
+                LaunchedEffect(Unit) {
+                    delay(1_200L)
+                    showStartupSplash = false
+                }
+
+                LaunchedEffect(showStartupSplash, setupComplete, authorizationAccepted) {
+                    showAuthorizationDialog = false
+                    if (!showStartupSplash && !setupComplete && !authorizationAccepted) {
+                        delay(420L)
+                        showAuthorizationDialog = true
+                    }
+                }
 
                 LaunchedEffect(setupComplete) {
                     configureSystemBars(setupComplete)
@@ -99,100 +135,161 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (setupComplete) {
-                    HomeScreen(
-                        webUiOnline = webUiOnline,
-                        versionName = versionName,
-                        terminalLogs = terminalLogs,
-                        onWakeMai = {
-                            if (webUiOnline) {
-                                openWebUi()
-                            } else {
-                                startMaiBotService()
-                                Toast.makeText(this, "正在唤醒麦麦...", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                    return@MaiDroidTheme
-                }
-
                 var oobeStep by remember { mutableIntStateOf(0) }
                 val setupManager = remember { OobeSetupManager(applicationContext) }
                 val setupState by setupManager.state.collectAsState()
 
-                BackHandler(enabled = oobeStep > 0) {
+                BackHandler(enabled = !showStartupSplash && !setupComplete && oobeStep > 0) {
                     oobeStep -= 1
                 }
 
-                LaunchedEffect(oobeStep) {
+                LaunchedEffect(oobeStep, setupComplete) {
+                    if (setupComplete) return@LaunchedEffect
                     when (oobeStep) {
                         1 -> setupManager.prepareContainer()
                         2 -> setupManager.startInstall()
                     }
                 }
 
-                OobeFlowScreen(
-                    currentStep = oobeStep,
-                    setupState = setupState,
-                    storagePermissionGranted = storagePermissionGranted,
-                    notificationPermissionGranted = notificationPermissionGranted,
-                    batteryOptimizationGranted = batteryOptimizationGranted,
-                    onStorageAuthorize = {
-                        requestStoragePermission()
+                AnimatedContent(
+                    targetState = showStartupSplash,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        slideInHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = 0.86f,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        ) { fullWidth ->
+                            if (targetState) -fullWidth else fullWidth
+                        } togetherWith slideOutHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = 0.86f,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        ) { fullWidth ->
+                            if (targetState) fullWidth else -fullWidth
+                        } using SizeTransform(clip = true)
                     },
-                    onNotificationAuthorize = {
-                        requestNotificationPermission()
-                    },
-                    onBatteryOptimizationAuthorize = {
-                        requestIgnoreBatteryOptimizations()
-                    },
-                    onAutoStartAuthorize = {
-                        openAppDetails("请在系统设置中为 MaiDroid 开启自启动和后台活动")
-                    },
-                    onTaskLockAuthorize = {
-                        Toast.makeText(this, "请在系统多任务界面将 MaiDroid 加锁", Toast.LENGTH_LONG).show()
-                    },
-                    onAccessibilityAuthorize = {
-                        openAccessibilitySettings()
-                    },
-                    onDeviceAdminAuthorize = {
-                        openDeviceAdminSettings()
-                    },
-                    onNext = {
-                        when (oobeStep) {
-                            0 -> {
-                                storagePermissionGranted = isStoragePermissionGranted()
-                                if (storagePermissionGranted) {
-                                    oobeStep = 1
+                    label = "StartupSplashTransition"
+                ) { showingSplash ->
+                    when {
+                        showingSplash -> StartupSplashPage(modifier = Modifier.fillMaxSize())
+
+                        setupComplete -> HomeScreen(
+                            webUiOnline = webUiOnline,
+                            versionName = versionName,
+                            terminalLogs = terminalLogs,
+                            onWakeMai = { showToast ->
+                                if (webUiOnline) {
+                                    openWebUi()
                                 } else {
-                                    Toast.makeText(this, "请先授予必选存储权限", Toast.LENGTH_SHORT).show()
-                                    requestStoragePermission()
+                                    startMaiBotService()
+                                    if (showToast) {
+                                        Toast.makeText(this@MainActivity, "正在唤醒麦麦...", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             }
-                            1 -> {
-                                if (setupState.canInstall) {
-                                    oobeStep = 2
-                                } else {
-                                    setupManager.prepareContainer()
-                                }
+                        )
+
+                        else -> Box(modifier = Modifier.fillMaxSize()) {
+                            BlurTargetHost(
+                                onTargetChanged = { oobeBlurTarget = it },
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                OobeFlowScreen(
+                                    currentStep = oobeStep,
+                                    setupState = setupState,
+                                    storagePermissionGranted = storagePermissionGranted,
+                                    notificationPermissionGranted = notificationPermissionGranted,
+                                    batteryOptimizationGranted = batteryOptimizationGranted,
+                                    onStorageAuthorize = {
+                                        requestStoragePermission()
+                                    },
+                                    onNotificationAuthorize = {
+                                        requestNotificationPermission()
+                                    },
+                                    onBatteryOptimizationAuthorize = {
+                                        requestIgnoreBatteryOptimizations()
+                                    },
+                                    onAutoStartAuthorize = {
+                                        openAppDetails("请在系统设置中为 MaiDroid 开启自启动和后台活动")
+                                    },
+                                    onTaskLockAuthorize = {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "请在系统多任务界面将 MaiDroid 加锁",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    onAccessibilityAuthorize = {
+                                        openAccessibilitySettings()
+                                    },
+                                    onDeviceAdminAuthorize = {
+                                        openDeviceAdminSettings()
+                                    },
+                                    onNext = {
+                                        when (oobeStep) {
+                                            0 -> {
+                                                storagePermissionGranted = isStoragePermissionGranted()
+                                                if (storagePermissionGranted) {
+                                                    oobeStep = 1
+                                                } else {
+                                                    Toast.makeText(
+                                                        this@MainActivity,
+                                                        "请先授予必选存储权限",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                    requestStoragePermission()
+                                                }
+                                            }
+                                            1 -> {
+                                                if (setupState.canInstall) {
+                                                    oobeStep = 2
+                                                } else {
+                                                    setupManager.prepareContainer()
+                                                }
+                                            }
+                                            else -> {
+                                                if (setupState.isComplete) {
+                                                    setupComplete = true
+                                                } else {
+                                                    setupManager.startInstall()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onRetry = {
+                                        if (oobeStep == 1) {
+                                            setupManager.prepareContainer()
+                                        } else {
+                                            setupManager.startInstall()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
-                            else -> {
-                                if (setupState.isComplete) {
-                                    setupComplete = true
-                                } else {
-                                    setupManager.startInstall()
-                                }
-                            }
-                        }
-                    },
-                    onRetry = {
-                        if (oobeStep == 1) {
-                            setupManager.prepareContainer()
-                        } else {
-                            setupManager.startInstall()
+
+                            OobeAuthorizationDialog(
+                                visible = showAuthorizationDialog,
+                                blurTarget = oobeBlurTarget,
+                                onAgree = {
+                                    settingsRepository.setAuthorizationAccepted(true)
+                                    authorizationAccepted = true
+                                    showAuthorizationDialog = false
+                                },
+                                onExit = {
+                                    showAuthorizationDialog = false
+                                    uiScope.launch {
+                                        delay(260L)
+                                        finish()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
                         }
                     }
-                )
+                }
             }
         }
     }

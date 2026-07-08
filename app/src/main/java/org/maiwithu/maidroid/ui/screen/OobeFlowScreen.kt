@@ -1,16 +1,17 @@
 package org.maiwithu.maidroid.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -291,6 +292,10 @@ private fun CommandLogButton(
     var showLogs by remember { mutableStateOf(false) }
     val buttonWidth by animateDpAsState(
         targetValue = if (attention) 132.dp else 44.dp,
+        animationSpec = spring(
+            dampingRatio = 0.78f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "CommandLogButtonWidth"
     )
 
@@ -737,11 +742,33 @@ private fun SetupCards(tasks: List<OobeTaskState>) {
 
 private fun androidx.compose.animation.AnimatedContentTransitionScope<Int>.oobeStepTransition() =
     if (targetState > initialState) {
-        (slideInHorizontally { it / 4 } + fadeIn())
-            .togetherWith(slideOutHorizontally { -it / 4 } + fadeOut())
+        slideInHorizontally(
+            animationSpec = spring(
+                dampingRatio = 0.84f,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        ) { it }.togetherWith(
+            slideOutHorizontally(
+                animationSpec = spring(
+                    dampingRatio = 0.84f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) { -it }
+        ) using SizeTransform(clip = true)
     } else {
-        (slideInHorizontally { -it / 4 } + fadeIn())
-            .togetherWith(slideOutHorizontally { it / 4 } + fadeOut())
+        slideInHorizontally(
+            animationSpec = spring(
+                dampingRatio = 0.84f,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        ) { -it }.togetherWith(
+            slideOutHorizontally(
+                animationSpec = spring(
+                    dampingRatio = 0.84f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) { it }
+        ) using SizeTransform(clip = true)
     }
 
 private fun List<OobeTaskState>.hasFailedTask(): Boolean =

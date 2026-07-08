@@ -8,11 +8,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -24,6 +23,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -132,11 +132,22 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     .weight(1f)
                     .background(MainSurface),
                 transitionSpec = {
-                    (fadeIn(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                        slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { 24 }) togetherWith
-                        (fadeOut(animationSpec = tween(120)) +
-                            slideOutHorizontally(animationSpec = tween(180, easing = FastOutSlowInEasing)) { -24 }) using
-                        SizeTransform(clip = false)
+                    val direction = categories.indexOf(targetState) - categories.indexOf(initialState)
+                    slideInHorizontally(
+                        animationSpec = spring(
+                            dampingRatio = 0.82f,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    ) { fullWidth ->
+                        if (direction >= 0) fullWidth else -fullWidth
+                    } togetherWith slideOutHorizontally(
+                        animationSpec = spring(
+                            dampingRatio = 0.82f,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    ) { fullWidth ->
+                        if (direction >= 0) -fullWidth else fullWidth
+                    } using SizeTransform(clip = true)
                 },
                 label = "PlatformCategoryTransition"
             ) { category ->
@@ -510,17 +521,26 @@ private fun CategoryChip(
 ) {
     val backgroundColor by animateColorAsState(
         targetValue = if (selected) PlatformOrange else PlatformCardSurface,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        animationSpec = spring(
+            dampingRatio = 1f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "CategoryChipBackground"
     )
     val borderColor by animateColorAsState(
         targetValue = if (selected) PlatformOrange else PlatformBorder,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        animationSpec = spring(
+            dampingRatio = 1f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "CategoryChipBorder"
     )
     val scale by animateFloatAsState(
         targetValue = if (selected) 1f else 0.96f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        animationSpec = spring(
+            dampingRatio = 0.72f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "CategoryChipScale"
     )
 
@@ -539,7 +559,12 @@ private fun CategoryChip(
                 shape = RoundedCornerShape(21.dp)
             )
             .background(backgroundColor)
-            .animateContentSize(animationSpec = tween(180, easing = FastOutSlowInEasing))
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = 0.86f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -602,7 +627,7 @@ private fun PlatformInstallCard(
                         color = Color.White,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 26.sp
+                        lineHeight = 25.sp
                     )
 
                     platform.badge?.let { badge ->
@@ -614,22 +639,16 @@ private fun PlatformInstallCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = platform.provider,
+                    text = "${platform.provider}\n${platform.description}",
                     color = PlatformTextDim,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = 15.sp
+                    lineHeight = 15.sp,
+                    maxLines = 2,
+                    modifier = Modifier.height(30.dp)
                 )
 
-                Text(
-                    text = platform.description,
-                    color = PlatformTextDim,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 15.sp
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(9.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     platform.tags.forEach { tag ->
@@ -810,36 +829,77 @@ private fun AdapterSelector(
     onAdapterSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    val selectedIndex = adapters.indexOf(selectedAdapter).coerceAtLeast(0)
+    val itemSpacing = 2.dp
+    val horizontalPadding = 2.dp
+
+    BoxWithConstraints(
         modifier = modifier
             .clip(RoundedCornerShape(21.dp))
             .background(PlatformBorder)
             .border(1.dp, PlatformBorder, RoundedCornerShape(21.dp))
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        adapters.forEach { adapter ->
-            val selected = adapter == selectedAdapter
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(38.dp)
-                    .clip(RoundedCornerShape(19.dp))
-                    .background(if (selected) Color(0xFF3C3C3E) else Color.Transparent)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onAdapterSelected(adapter) }
+        val itemWidth = if (adapters.isNotEmpty()) {
+            (maxWidth - horizontalPadding * 2f - itemSpacing * (adapters.size - 1).toFloat()) /
+                adapters.size.toFloat()
+        } else {
+            0.dp
+        }
+        val selectedOffset by animateDpAsState(
+            targetValue = horizontalPadding + (itemWidth + itemSpacing) * selectedIndex.toFloat(),
+            animationSpec = spring(
+                dampingRatio = 0.76f,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "AdapterSelectorOffset"
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = selectedOffset)
+                .width(itemWidth)
+                .height(38.dp)
+                .clip(RoundedCornerShape(19.dp))
+                .background(Color(0xFF3C3C3E))
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding, vertical = horizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(itemSpacing)
+        ) {
+            adapters.forEach { adapter ->
+                val selected = adapter == selectedAdapter
+                val textColor by animateColorAsState(
+                    targetValue = if (selected) Color.White else PlatformTextSecondary,
+                    animationSpec = spring(
+                        dampingRatio = 1f,
+                        stiffness = Spring.StiffnessMediumLow
                     ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = adapter,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 14.sp
+                    label = "AdapterSelectorTextColor"
                 )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(19.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onAdapterSelected(adapter) }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = adapter,
+                        color = textColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 14.sp
+                    )
+                }
             }
         }
     }
