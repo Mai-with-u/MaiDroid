@@ -52,6 +52,8 @@ import org.maiwithu.maidroid.ui.screen.BlurTargetHost
 import org.maiwithu.maidroid.ui.screen.HomeScreen
 import org.maiwithu.maidroid.ui.screen.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.screen.OobeFlowScreen
+import org.maiwithu.maidroid.ui.screen.PermissionManagementActions
+import org.maiwithu.maidroid.ui.screen.PermissionManagementState
 import org.maiwithu.maidroid.ui.screen.StartupSplashPage
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import eightbitlab.com.blurview.BlurTarget
@@ -180,6 +182,44 @@ class MainActivity : ComponentActivity() {
                             webUiOnline = webUiOnline,
                             versionName = versionName,
                             terminalLogs = terminalLogs,
+                            permissionState = PermissionManagementState(
+                                storageGranted = storagePermissionGranted,
+                                notificationGranted = notificationPermissionGranted,
+                                batteryOptimizationGranted = batteryOptimizationGranted
+                            ),
+                            permissionActions = PermissionManagementActions(
+                                onStorageAuthorize = {
+                                    requestStoragePermission()
+                                },
+                                onNotificationEnable = {
+                                    requestNotificationPermission()
+                                },
+                                onNotificationDisable = {
+                                    openNotificationSettings()
+                                },
+                                onBatteryOptimizationEnable = {
+                                    requestIgnoreBatteryOptimizations()
+                                },
+                                onBatteryOptimizationDisable = {
+                                    openBatteryOptimizationSettings()
+                                },
+                                onAutoStartSettings = {
+                                    openAppDetails("请在系统设置中为 MaiDroid 开启或关闭自启动和后台活动")
+                                },
+                                onTaskLockSettings = {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "请在系统多任务界面为 MaiDroid 开启或关闭加锁",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                },
+                                onAccessibilitySettings = {
+                                    openAccessibilitySettings()
+                                },
+                                onDeviceAdminSettings = {
+                                    openDeviceAdminSettings()
+                                }
+                            ),
                             onWakeMai = { showToast ->
                                 if (webUiOnline) {
                                     openWebUi()
@@ -378,6 +418,13 @@ class MainActivity : ComponentActivity() {
         val settingsIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
 
         startSettingsActivity(requestIntent, settingsIntent)
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        startSettingsActivity(
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        )
     }
 
     private fun requestNotificationPermission() {

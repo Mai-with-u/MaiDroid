@@ -31,6 +31,8 @@ fun HomeScreen(
     webUiOnline: Boolean,
     versionName: String,
     terminalLogs: List<String> = emptyList(),
+    permissionState: PermissionManagementState = PermissionManagementState(),
+    permissionActions: PermissionManagementActions = PermissionManagementActions(),
     onWakeMai: (showToast: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -70,6 +72,8 @@ fun HomeScreen(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
                 terminalLogs = terminalLogs,
+                permissionState = permissionState,
+                permissionActions = permissionActions,
                 onTabSelected = { selectedTab = it },
                 onWakeMai = onWakeMai,
                 onTerminalDismiss = { showTerminalOutput = false },
@@ -94,6 +98,8 @@ private fun DashboardShell(
     webUiOnline: Boolean,
     versionName: String,
     terminalLogs: List<String>,
+    permissionState: PermissionManagementState,
+    permissionActions: PermissionManagementActions,
     showTerminalOutput: Boolean,
     onTabSelected: (MainTab) -> Unit,
     onWakeMai: (showToast: Boolean) -> Unit,
@@ -136,6 +142,8 @@ private fun DashboardShell(
                     MainTab.Settings -> SettingsPage(
                         webUiOnline = webUiOnline,
                         versionName = versionName,
+                        permissionState = permissionState,
+                        permissionActions = permissionActions,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

@@ -4,6 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +65,8 @@ import org.maiwithu.maidroid.service.ChatbotService
 internal fun SettingsPage(
     webUiOnline: Boolean,
     versionName: String,
+    permissionState: PermissionManagementState = PermissionManagementState(),
+    permissionActions: PermissionManagementActions = PermissionManagementActions(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -66,8 +78,13 @@ internal fun SettingsPage(
         installedPlatformCards(napCatState).count { it.running }
     }
     var showSshDialog by remember { mutableStateOf(false) }
+    var showPermissionPage by rememberSaveable { mutableStateOf(false) }
     var sshPortText by remember { mutableStateOf(sshState.port.toString()) }
     var sshPasswordText by remember { mutableStateOf("") }
+
+    BackHandler(enabled = showPermissionPage) {
+        showPermissionPage = false
+    }
 
     fun openSshDialog() {
         sshPortText = sshState.port.toString()
@@ -80,69 +97,94 @@ internal fun SettingsPage(
             .fillMaxSize()
             .background(MainSurface)
     ) {
-        LazyColumn(
+        AnimatedContent(
+            targetState = showPermissionPage,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MainSurface),
-            contentPadding = PaddingValues(top = 72.dp, start = 16.dp, end = 16.dp, bottom = 112.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Text(
-                    text = "设置",
-                    color = Color.White,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 34.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
+            transitionSpec = { settingsDetailTransition() },
+            label = "SettingsPermissionTransition"
+        ) { showingPermissionPage ->
+            if (showingPermissionPage) {
+                PermissionManagementPage(
+                    state = permissionState,
+                    actions = permissionActions,
+                    onBack = { showPermissionPage = false },
+                    modifier = Modifier.fillMaxSize()
                 )
-            }
-
-            item {
-                SettingsInfoCard(
-                    title = "WebUI 状态",
-                    value = if (webUiOnline) "在线" else "离线",
-                    accent = if (webUiOnline) PlatformOnline else HomeOffline
-                )
-            }
-
-            item {
-                ContainerSshSettingsCard(
-                    state = sshState,
-                    onConfigureClick = { openSshDialog() },
-                    onEnabledChange = { enabled ->
-                        if (enabled && !sshState.configured) {
-                            Toast.makeText(context, "请先设置端口和 root 密码", Toast.LENGTH_SHORT).show()
-                            openSshDialog()
-                            return@ContainerSshSettingsCard
-                        }
-
-                        sshManager.setEnabled(enabled)
-                        if (enabled) {
-                            requestContainerSshSync(context)
-                        }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MainSurface),
+                    contentPadding = PaddingValues(top = 72.dp, start = 16.dp, end = 16.dp, bottom = 112.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Text(
+                            text = "设置",
+                            color = Color.White,
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 34.sp,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
                     }
-                )
-            }
 
-            item {
-                SettingsInfoCard(
-                    title = "应用版本",
-                    value = "v$versionName",
-                    accent = PlatformOrange
-                )
-            }
+                    item {
+                        SettingsInfoCard(
+                            title = "WebUI 状态",
+                            value = if (webUiOnline) "在线" else "离线",
+                            accent = if (webUiOnline) PlatformOnline else HomeOffline
+                        )
+                    }
 
-            item {
-                SettingsInfoCard(
-                    title = "消息平台",
-                    value = if (runningPlatformCount > 0) {
-                        "$runningPlatformCount 个平台正在运行"
-                    } else {
-                        "暂无平台正在运行"
-                    },
-                    accent = if (runningPlatformCount > 0) PlatformOnline else HomeOffline
-                )
+                    item {
+                        PermissionManagementEntryCard(
+                            state = permissionState,
+                            onClick = { showPermissionPage = true }
+                        )
+                    }
+
+                    item {
+                        ContainerSshSettingsCard(
+                            state = sshState,
+                            onConfigureClick = { openSshDialog() },
+                            onEnabledChange = { enabled ->
+                                if (enabled && !sshState.configured) {
+                                    Toast.makeText(context, "请先设置端口和 root 密码", Toast.LENGTH_SHORT).show()
+                                    openSshDialog()
+                                    return@ContainerSshSettingsCard
+                                }
+
+                                sshManager.setEnabled(enabled)
+                                if (enabled) {
+                                    requestContainerSshSync(context)
+                                }
+                            }
+                        )
+                    }
+
+                    item {
+                        SettingsInfoCard(
+                            title = "应用版本",
+                            value = "v$versionName",
+                            accent = PlatformOrange
+                        )
+                    }
+
+                    item {
+                        SettingsInfoCard(
+                            title = "消息平台",
+                            value = if (runningPlatformCount > 0) {
+                                "$runningPlatformCount 个平台正在运行"
+                            } else {
+                                "暂无平台正在运行"
+                            },
+                            accent = if (runningPlatformCount > 0) PlatformOnline else HomeOffline
+                        )
+                    }
+                }
             }
         }
 
@@ -168,6 +210,23 @@ internal fun SettingsPage(
         }
     }
 }
+
+private fun AnimatedContentTransitionScope<Boolean>.settingsDetailTransition() =
+    slideInHorizontally(
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) { fullWidth ->
+        if (targetState) fullWidth else -fullWidth
+    } togetherWith slideOutHorizontally(
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    ) { fullWidth ->
+        if (targetState) -fullWidth else fullWidth
+    } using SizeTransform(clip = true)
 
 @Composable
 private fun ContainerSshSettingsCard(
