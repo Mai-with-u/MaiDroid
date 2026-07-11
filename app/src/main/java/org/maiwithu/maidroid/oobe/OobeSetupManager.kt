@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -169,6 +170,10 @@ class OobeSetupManager(
     private val _state = MutableStateFlow(OobeSetupState.preview())
     val state: StateFlow<OobeSetupState> = _state.asStateFlow()
 
+    fun close() {
+        scope.cancel()
+    }
+
     fun refreshContainer() {
         scope.launch {
             config.ensureExecutableBits()
@@ -298,6 +303,7 @@ class OobeSetupManager(
     }
 
     fun startInstall() {
+        if (_state.value.isComplete || settingsRepository.isSetupComplete()) return
         if (installJob?.isActive == true) return
         installJob = scope.launch {
             config.ensureExecutableBits()

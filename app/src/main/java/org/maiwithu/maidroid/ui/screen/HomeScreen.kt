@@ -42,7 +42,7 @@ fun HomeScreen(
     var showTerminalOutput by remember { mutableStateOf(false) }
 
     LaunchedEffect(webUiOnline) {
-        if (webUiOnline) {
+        if (webUiOnline && !dashboardVisible) {
             dashboardVisible = true
             selectedTab = MainTab.WebUi
         }

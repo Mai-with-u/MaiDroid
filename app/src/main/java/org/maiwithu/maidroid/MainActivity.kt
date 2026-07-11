@@ -33,18 +33,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
-import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaiDroidTheme {
+                val activityViewModel: MainActivityViewModel = viewModel()
                 val settingsRepository = remember { SettingsRepository() }
                 var setupComplete by remember {
                     mutableStateOf(settingsRepository.isSetupComplete())
@@ -103,23 +105,32 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(settingsRepository.isAuthorizationAccepted())
                 }
                 var webUiOnline by remember { mutableStateOf(false) }
-                var showStartupSplash by remember { mutableStateOf(true) }
-                var showAuthorizationDialog by remember { mutableStateOf(false) }
+                var showStartupSplash by rememberSaveable {
+                    mutableStateOf(savedInstanceState == null)
+                }
+                var showAuthorizationDialog by rememberSaveable { mutableStateOf(false) }
                 var oobeBlurTarget by remember { mutableStateOf<BlurTarget?>(null) }
                 val uiScope = rememberCoroutineScope()
                 val versionName = remember { getVersionName() }
                 val terminalLogs by TerminalLogRepository.logs.collectAsState()
 
-                LaunchedEffect(Unit) {
-                    delay(1_200L)
-                    showStartupSplash = false
+                LaunchedEffect(showStartupSplash) {
+                    if (showStartupSplash) {
+                        delay(1_200L)
+                        showStartupSplash = false
+                    }
                 }
 
                 LaunchedEffect(showStartupSplash, setupComplete, authorizationAccepted) {
-                    showAuthorizationDialog = false
-                    if (!showStartupSplash && !setupComplete && !authorizationAccepted) {
-                        delay(420L)
-                        showAuthorizationDialog = true
+                    when {
+                        showStartupSplash || setupComplete || authorizationAccepted -> {
+                            showAuthorizationDialog = false
+                        }
+
+                        !showAuthorizationDialog -> {
+                            delay(420L)
+                            showAuthorizationDialog = true
+                        }
                     }
                 }
 
@@ -137,8 +148,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                var oobeStep by remember { mutableIntStateOf(0) }
-                val setupManager = remember { OobeSetupManager(applicationContext) }
+                var oobeStep by rememberSaveable { mutableIntStateOf(0) }
+                val setupManager = activityViewModel.setupManager
                 val setupState by setupManager.state.collectAsState()
 
                 BackHandler(enabled = !showStartupSplash && !setupComplete && oobeStep > 0) {

@@ -70,16 +70,26 @@ internal fun PermissionManagementPage(
     state: PermissionManagementState,
     actions: PermissionManagementActions,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true
 ) {
+    val statusBarTop = statusBarTopInset()
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MainSurface)
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 64.dp, start = 16.dp, end = 16.dp, bottom = 112.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = statusBarTop),
+            contentPadding = PaddingValues(
+                top = 40.dp,
+                start = 16.dp,
+                end = 16.dp,
+                bottom = 112.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
@@ -89,21 +99,23 @@ internal fun PermissionManagementPage(
                         .padding(bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(PlatformCardSurface)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                            tint = Color.White
-                        )
-                    }
+                    if (showBackButton) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(PlatformCardSurface)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回",
+                                tint = Color.White
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
 
                     Text(
                         text = "权限管理",

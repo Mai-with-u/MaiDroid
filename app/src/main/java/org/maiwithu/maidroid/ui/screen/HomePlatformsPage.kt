@@ -29,14 +29,19 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,8 +84,35 @@ import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.platform.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.NapCatPlatformState
+import kotlin.math.ceil
+import kotlin.math.floor
 
 private const val NapCatWebUiUrl = "http://127.0.0.1:6099/webui"
+private const val PlatformGridMinCardWidthDp = 272f
+private const val PlatformGridMaxCardWidthDp = 420f
+private const val PlatformGridSpacingDp = 12f
+private val PlatformGridHorizontalPadding = 16.dp
+
+/**
+ * Chooses the largest practical card layout for the available content width.
+ *
+ * Cards stay between 272dp and 420dp whenever the viewport can satisfy both
+ * constraints. For in-between widths where that is impossible, fewer columns
+ * are preferred so controls inside a card are not squeezed.
+ */
+internal fun calculatePlatformGridColumnCount(availableWidthDp: Float): Int {
+    val safeWidth = availableWidthDp.coerceAtLeast(0f)
+    val minimumColumnsForMaxCardWidth = ceil(
+        (safeWidth + PlatformGridSpacingDp) /
+            (PlatformGridMaxCardWidthDp + PlatformGridSpacingDp)
+    ).toInt().coerceAtLeast(1)
+    val maximumColumnsForMinCardWidth = floor(
+        (safeWidth + PlatformGridSpacingDp) /
+            (PlatformGridMinCardWidthDp + PlatformGridSpacingDp)
+    ).toInt().coerceAtLeast(1)
+
+    return minimumColumnsForMaxCardWidth.coerceAtMost(maximumColumnsForMinCardWidth)
+}
 
 @Composable
 internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
@@ -97,19 +129,30 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val categories = listOf("全部", "国内", "海外", "其他")
     val installedPlatforms = installedPlatformCards(napCatState)
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(MainSurface)
     ) {
+        val statusBarTop = statusBarTopInset()
+        // Grow the generous portrait spacing back gradually instead of jumping
+        // at a breakpoint when a landscape window is resized.
+        val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f))
+            .coerceIn(0f, 1f)
+        // The previous 64dp top slot assumed a roughly 24dp status bar. Keep its
+        // visual breathing room separate from the inset reported by the system.
+        val topSpacing = 8.dp + 32.dp * verticalExpansion
+        val sectionSpacing = 8.dp + 16.dp * verticalExpansion
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MainSurface)
+                .padding(top = statusBarTop)
         ) {
-            Spacer(modifier = Modifier.height(64.dp))
+            Spacer(modifier = Modifier.height(topSpacing))
             MessagePlatformsHeader(runningCount = installedPlatforms.count { it.running })
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(sectionSpacing))
             InstalledPlatformsRow(
                 platforms = installedPlatforms,
                 onNapCatConfigSettings = {
@@ -117,13 +160,13 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     showNapCatConfig = true
                 }
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(sectionSpacing))
             DiscoverHeader(
                 categories = categories,
                 selectedCategory = selectedCategory,
                 onCategorySelected = { selectedCategory = it }
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(sectionSpacing))
 
             AnimatedContent(
                 targetState = selectedCategory,
@@ -214,30 +257,59 @@ private fun PlatformList(
     onNapCatSettings: () -> Unit,
     onUnsupportedInstall: () -> Unit
 ) {
-    LazyColumn(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MainSurface),
-        contentPadding = PaddingValues(start = 16.dp, end = 11.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentAlignment = Alignment.TopCenter
     ) {
-        if (platforms.isEmpty()) {
-            item {
-                EmptyPlatformCard()
-            }
-        } else {
-            items(platforms) { platform ->
-                PlatformInstallCard(
-                    platform = platform,
-                    selectedAdapter = selectedAdapters[platform.name]
-                        ?: platform.adapters.firstOrNull()
-                        ?: "",
-                    napCatState = napCatState,
-                    onAdapterSelected = { adapter -> onAdapterSelected(platform, adapter) },
-                    onNapCatInstall = onNapCatInstall,
-                    onNapCatSettings = onNapCatSettings,
-                    onUnsupportedInstall = onUnsupportedInstall
-                )
+        val availableWidth = (maxWidth - PlatformGridHorizontalPadding * 2f)
+            .coerceAtLeast(0.dp)
+        val widthBasedColumnCount = calculatePlatformGridColumnCount(availableWidth.value)
+        // Do not reserve empty columns when a category has fewer results; the
+        // resulting narrower grid stays centered by the parent container.
+        val columnCount = minOf(widthBasedColumnCount, platforms.size.coerceAtLeast(1))
+        val maximumGridWidth = PlatformGridMaxCardWidthDp.dp * columnCount.toFloat() +
+            PlatformGridSpacingDp.dp * (columnCount - 1).toFloat()
+        val gridWidth = minOf(availableWidth, maximumGridWidth)
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columnCount),
+            modifier = Modifier
+                .width(gridWidth)
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(bottom = 112.dp),
+            horizontalArrangement = Arrangement.spacedBy(PlatformGridSpacingDp.dp),
+            verticalArrangement = Arrangement.spacedBy(PlatformGridSpacingDp.dp)
+        ) {
+            if (platforms.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        EmptyPlatformCard(
+                            modifier = Modifier.widthIn(max = PlatformGridMaxCardWidthDp.dp)
+                        )
+                    }
+                }
+            } else {
+                gridItems(
+                    items = platforms,
+                    key = { platform -> platform.name }
+                ) { platform ->
+                    PlatformInstallCard(
+                        platform = platform,
+                        selectedAdapter = selectedAdapters[platform.name]
+                            ?: platform.adapters.firstOrNull()
+                            ?: "",
+                        napCatState = napCatState,
+                        onAdapterSelected = { adapter -> onAdapterSelected(platform, adapter) },
+                        onNapCatInstall = onNapCatInstall,
+                        onNapCatSettings = onNapCatSettings,
+                        onUnsupportedInstall = onUnsupportedInstall
+                    )
+                }
             }
         }
     }
@@ -688,9 +760,9 @@ private fun PlatformInstallCard(
 }
 
 @Composable
-private fun EmptyPlatformCard() {
+private fun EmptyPlatformCard(modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(120.dp)
             .clip(RoundedCornerShape(24.dp))
