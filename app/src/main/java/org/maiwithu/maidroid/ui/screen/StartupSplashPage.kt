@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -61,6 +62,7 @@ private const val StartupSplashInfoOffsetY = 773f
 private const val StartupSplashInfoWidth = 314f
 private const val StartupSplashInfoHeight = 96f
 private const val StartupSplashInfoHorizontalMargin = 16f
+private const val StartupSplashSideBlurRadius = 24f
 
 internal fun startupSplashUsesAdaptiveLayout(widthDp: Float, heightDp: Float): Boolean =
     widthDp >= 600f || widthDp > heightDp
@@ -144,7 +146,6 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
     BoxWithConstraints(
         modifier = modifier
             .background(Color(0xFF1C1C1E))
-            .clip(RoundedCornerShape(48.dp))
     ) {
         val useAdaptiveLayout = startupSplashUsesAdaptiveLayout(
             widthDp = maxWidth.value,
@@ -163,6 +164,24 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
                 modifier = Modifier.matchParentSize()
             ) {
                 AdaptiveSplashBackground(modifier = Modifier.fillMaxSize())
+            }
+
+            val sideWidth = geometry.artLeftDp.coerceAtLeast(0f).dp
+            if (sideWidth > 0.dp) {
+                StartupSideBlurLayer(
+                    blurTarget = blurTarget,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .width(sideWidth)
+                        .fillMaxHeight()
+                )
+                StartupSideBlurLayer(
+                    blurTarget = blurTarget,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .width(sideWidth)
+                        .fillMaxHeight()
+                )
             }
 
             StartupInfoCard(
@@ -273,6 +292,36 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+@Composable
+private fun StartupSideBlurLayer(
+    blurTarget: BlurTarget?,
+    modifier: Modifier = Modifier
+) {
+    val overlayColor = Color.Black.copy(alpha = 0.06f).toArgb()
+
+    AndroidView(
+        factory = { context -> BlurView(context) },
+        update = { view ->
+            if (blurTarget != null && view.tag !== blurTarget) {
+                view.tag = blurTarget
+                view.setupWith(blurTarget, 5f, false)
+                    .setBlurRadius(StartupSplashSideBlurRadius)
+                    .setOverlayColor(overlayColor)
+                    .setBlurAutoUpdate(true)
+            } else if (blurTarget != null) {
+                view.setBlurEnabled(true)
+                view.setBlurAutoUpdate(true)
+                view.setBlurRadius(StartupSplashSideBlurRadius)
+                view.setOverlayColor(overlayColor)
+            } else {
+                view.setBlurEnabled(false)
+                view.setOverlayColor(overlayColor)
+            }
+        },
+        modifier = modifier
+    )
 }
 
 @Composable
