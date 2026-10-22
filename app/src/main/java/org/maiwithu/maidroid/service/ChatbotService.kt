@@ -53,7 +53,7 @@ class ChatbotService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
-        processManager = ProcessManager(this)
+        processManager = ProcessManager.get(this)
         acquireWakeLock()
     }
 
@@ -88,11 +88,6 @@ class ChatbotService : Service() {
         releaseWakeLock()
         super.onDestroy()
     }
-
-    /**
-     * Returns the ProcessManager instance for other components to observe.
-     */
-    fun getProcessManager(): ProcessManager = processManager
 
     // ── Notification ─────────────────────────────────────────────────
 

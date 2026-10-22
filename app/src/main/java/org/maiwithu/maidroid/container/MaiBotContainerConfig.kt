@@ -290,27 +290,15 @@ class MaiBotContainerConfig private constructor(
     )
 
     fun cleanupMaiBotCommand(): List<String> = shellCommand(
-        script = """
-        set +e
-        ps -eo pid=,args= | awk '
-            /uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main/ &&
-            !/awk/ { print ${'$'}1 }
-        ' | while read pid; do
-            [ -n "${'$'}pid" ] || continue
-            printf "[ProcessManager] stopping stale MaiBot process %s\n" "${'$'}pid"
-            kill "${'$'}pid" 2>/dev/null || true
-        done
-        sleep 1
-        ps -eo pid=,args= | awk '
-            /uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main/ &&
-            !/awk/ { print ${'$'}1 }
-        ' | while read pid; do
-            [ -n "${'$'}pid" ] || continue
-            printf "[ProcessManager] force stopping stale MaiBot process %s\n" "${'$'}pid"
-            kill -9 "${'$'}pid" 2>/dev/null || true
-        done
-        exit 0
-        """.trimIndent(),
+        script = listOf(
+            "set +e",
+            killProcessesScript(
+                pattern = "uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main",
+                processName = "stale MaiBot process",
+                logPrefix = "[ProcessManager] "
+            ),
+            "exit 0"
+        ).joinToString("\n"),
         workingDirectory = "/"
     )
 
@@ -326,29 +314,17 @@ class MaiBotContainerConfig private constructor(
     )
 
     fun cleanupNapCatCommand(): List<String> = shellCommand(
-        script = """
-        set +e
-        ps -eo pid=,args= | awk '
-            /Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so/ &&
-            !/awk/ { print ${'$'}1 }
-        ' | while read pid; do
-            [ -n "${'$'}pid" ] || continue
-            printf "[NapCat] stopping stale process %s\n" "${'$'}pid"
-            kill "${'$'}pid" 2>/dev/null || true
-        done
-        sleep 1
-        ps -eo pid=,args= | awk '
-            /Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so/ &&
-            !/awk/ { print ${'$'}1 }
-        ' | while read pid; do
-            [ -n "${'$'}pid" ] || continue
-            printf "[NapCat] force stopping stale process %s\n" "${'$'}pid"
-            kill -9 "${'$'}pid" 2>/dev/null || true
-        done
-        rm -f /tmp/.X1-lock
-        rm -f /tmp/.X11-unix/X1
-        exit 0
-        """.trimIndent(),
+        script = listOf(
+            "set +e",
+            killProcessesScript(
+                pattern = "Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so",
+                processName = "stale process",
+                logPrefix = "[NapCat] "
+            ),
+            "rm -f /tmp/.X1-lock",
+            "rm -f /tmp/.X11-unix/X1",
+            "exit 0"
+        ).joinToString("\n"),
         workingDirectory = "/root"
     )
 
@@ -607,29 +583,40 @@ class MaiBotContainerConfig private constructor(
         """.trimIndent()
 
     private fun containerSshCleanupScript(): String =
+        listOf(
+            "set +e",
+            "if command -v ps >/dev/null 2>&1; then",
+            killProcessesScript(
+                pattern = "\\/usr\\/sbin\\/sshd|sshd: ",
+                processName = "sshd process"
+            ),
+            "fi",
+            "rm -f /run/sshd.pid /run/sshd/sshd.pid 2>/dev/null || true",
+            "exit 0"
+        ).joinToString("\n")
+
+    /**
+     * 按命令行匹配 awk 正则结束容器内进程：先 SIGTERM，等 1 秒后对仍存活的再 SIGKILL。
+     * 用于启动前清理上次异常退出留下的 MaiBot / NapCat / sshd，避免端口和锁文件被占。
+     */
+    private fun killProcessesScript(
+        pattern: String,
+        processName: String,
+        logPrefix: String = ""
+    ): String =
         """
-        set +e
-        if command -v ps >/dev/null 2>&1; then
-            ps -eo pid=,args= | awk '
-                /\/usr\/sbin\/sshd|sshd: / &&
-                !/awk/ { print ${'$'}1 }
-            ' | while read pid; do
+        maidroid_kill_matching() {
+            signal="${'$'}1"
+            verb="${'$'}2"
+            ps -eo pid=,args= | awk '/$pattern/ && !/awk/ { print ${'$'}1 }' | while read pid; do
                 [ -n "${'$'}pid" ] || continue
-                printf "stopping sshd process %s\n" "${'$'}pid"
-                kill "${'$'}pid" 2>/dev/null || true
+                printf "%s%s %s %s\n" ${shellQuote(logPrefix)} "${'$'}verb" ${shellQuote(processName)} "${'$'}pid"
+                kill "${'$'}signal" "${'$'}pid" 2>/dev/null || true
             done
-            sleep 1
-            ps -eo pid=,args= | awk '
-                /\/usr\/sbin\/sshd|sshd: / &&
-                !/awk/ { print ${'$'}1 }
-            ' | while read pid; do
-                [ -n "${'$'}pid" ] || continue
-                printf "force stopping sshd process %s\n" "${'$'}pid"
-                kill -9 "${'$'}pid" 2>/dev/null || true
-            done
-        fi
-        rm -f /run/sshd.pid /run/sshd/sshd.pid 2>/dev/null || true
-        exit 0
+        }
+        maidroid_kill_matching -TERM stopping
+        sleep 1
+        maidroid_kill_matching -KILL "force stopping"
         """.trimIndent()
 
     @Suppress("UNUSED_PARAMETER")
