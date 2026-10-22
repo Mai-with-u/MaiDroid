@@ -234,6 +234,11 @@ class MaiBotContainerConfig private constructor(
         }
     }
 
+    // 克隆 -> 改名 -> 立刻读一次 HEAD 确认仓库可用。
+    // proot 的 --link2symlink 会把 git 落盘 packfile 用的硬链接改成指向绝对路径的符号链接，
+    // 先克隆到 MaiBot.tmp 再改名后，这些链接还指着旧路径，git 就读不到对象（fatal: bad object HEAD），
+    // 在线更新和 MaiBot 自带的更新检查都会失败。core.createObject=rename 让 git 直接用重命名落盘，
+    // 不产生链接；该配置会写进仓库的 .git/config，之后容器里任何 git fetch 也沿用。
     fun cloneCommand(): List<String> = shellCommand(
         script = listOf(
             githubMirrorScript(),
@@ -241,9 +246,13 @@ class MaiBotContainerConfig private constructor(
             set -e
             mkdir -p /opt
             rm -rf ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")}
-            maidroid_github_clone ${shellQuote(REPOSITORY_URL)} ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} --depth=1 --single-branch
+            maidroid_github_clone ${shellQuote(REPOSITORY_URL)} ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} -c core.createObject=rename --depth=1 --single-branch
             rm -rf ${shellQuote(MAIBOT_CONTAINER_DIR)}
             mv ${shellQuote("$MAIBOT_CONTAINER_DIR.tmp")} ${shellQuote(MAIBOT_CONTAINER_DIR)}
+            if ! git -C ${shellQuote(MAIBOT_CONTAINER_DIR)} cat-file -e 'HEAD^{commit}'; then
+                printf "[GitHub] cloned repository is unreadable after move: %s\n" ${shellQuote(MAIBOT_CONTAINER_DIR)}
+                exit 1
+            fi
             """.trimIndent()
         ).joinToString("\n"),
         workingDirectory = "/"
