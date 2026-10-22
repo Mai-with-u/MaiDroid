@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +54,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +82,9 @@ import org.maiwithu.maidroid.container.ContainerSshPhase
 import org.maiwithu.maidroid.container.ContainerSshState
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
 import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.update.MaiBotUpdateManager
+import org.maiwithu.maidroid.update.MaiBotUpdatePhase
+import org.maiwithu.maidroid.update.MaiBotUpdateState
 
 private const val PermissionSettingsDetail = "permissions"
 
@@ -96,13 +101,21 @@ internal fun SettingsPage(
     val sshState by sshManager.state.collectAsState()
     val napCatManager = remember(context) { NapCatPlatformManager.get(context) }
     val napCatState by napCatManager.state.collectAsState()
+    val updateManager = remember(context) { MaiBotUpdateManager.get(context) }
+    val updateState by updateManager.state.collectAsState()
     val runningPlatformCount = remember(napCatState) {
         installedPlatformCards(napCatState).count { it.running }
     }
     var showSshDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
     var selectedDetail by rememberSaveable { mutableStateOf<String?>(null) }
     var sshPortText by remember { mutableStateOf(sshState.port.toString()) }
     var sshPasswordText by remember { mutableStateOf("") }
+
+    // 进入设置页时读取一次当前 MaiBot 版本，供“MaiBot 更新”一行显示。
+    LaunchedEffect(updateManager) {
+        updateManager.loadInstalledRevision()
+    }
 
     fun openSshDialog() {
         sshPortText = sshState.port.toString()
@@ -159,12 +172,14 @@ internal fun SettingsPage(
                     versionName = versionName,
                     permissionState = permissionState,
                     sshState = sshState,
+                    updateState = updateState,
                     runningPlatformCount = runningPlatformCount,
                     permissionSelected = true,
                     compact = true,
                     onPermissionClick = {},
                     onSshConfigureClick = { openSshDialog() },
                     onSshEnabledChange = onSshEnabledChange,
+                    onUpdateClick = { showUpdateDialog = true },
                     modifier = Modifier
                         .width(navigationWidth)
                         .fillMaxHeight()
@@ -214,16 +229,27 @@ internal fun SettingsPage(
                         versionName = versionName,
                         permissionState = permissionState,
                         sshState = sshState,
+                        updateState = updateState,
                         runningPlatformCount = runningPlatformCount,
                         permissionSelected = false,
                         compact = false,
                         onPermissionClick = { selectedDetail = PermissionSettingsDetail },
                         onSshConfigureClick = { openSshDialog() },
                         onSshEnabledChange = onSshEnabledChange,
+                        onUpdateClick = { showUpdateDialog = true },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
             }
+        }
+
+        if (showUpdateDialog) {
+            MaiBotUpdateDialog(
+                state = updateState,
+                onCheck = updateManager::checkForUpdate,
+                onApply = updateManager::applyUpdate,
+                onDismiss = { showUpdateDialog = false }
+            )
         }
 
         if (showSshDialog) {
@@ -261,12 +287,14 @@ private fun SettingsNavigationPane(
     versionName: String,
     permissionState: PermissionManagementState,
     sshState: ContainerSshState,
+    updateState: MaiBotUpdateState,
     runningPlatformCount: Int,
     permissionSelected: Boolean,
     compact: Boolean,
     onPermissionClick: () -> Unit,
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
+    onUpdateClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
@@ -314,6 +342,26 @@ private fun SettingsNavigationPane(
                     trailing = if (compact) null else {
                         {
                             SettingsStatusDot(if (webUiOnline) PlatformOnline else HomeOffline)
+                        }
+                    }
+                )
+
+                SettingsDivider()
+
+                SettingsNavigationRow(
+                    icon = Icons.Outlined.SystemUpdate,
+                    title = "MaiBot 更新",
+                    supportingText = maiBotUpdateSummaryText(updateState),
+                    accent = maiBotUpdateAccent(updateState),
+                    onClick = onUpdateClick,
+                    trailing = if (compact) null else {
+                        {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "打开 MaiBot 更新",
+                                tint = PlatformTextSecondary,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
                 )
@@ -572,6 +620,15 @@ private fun CompactSshSwitchRow(
         )
     }
 }
+
+// 失败标红，可更新和进行中用主题橙，已是最新或刚更新完标绿。
+private fun maiBotUpdateAccent(state: MaiBotUpdateState): Color =
+    when (state.phase) {
+        MaiBotUpdatePhase.Failed -> HomeOffline
+        MaiBotUpdatePhase.UpToDate,
+        MaiBotUpdatePhase.Updated -> PlatformOnline
+        else -> PlatformOrange
+    }
 
 private fun permissionSummary(state: PermissionManagementState): String {
     val optionalGranted = listOf(
