@@ -84,6 +84,7 @@ class MaiBotContainerConfig private constructor(
     val termuxTalloc: File = File(termuxLibDir, "libtalloc.so.2")
     val termuxTmpDir: File = File(termuxDir, "tmp")
     val maiBotDir: File = File(rootfsDir, MAIBOT_HOST_DIR)
+    val maiBotGitDir: File = File(maiBotDir, ".git")
     val botEntry: File = File(maiBotDir, "bot.py")
     val pyproject: File = File(maiBotDir, "pyproject.toml")
     val uvLock: File = File(maiBotDir, "uv.lock")
@@ -402,7 +403,8 @@ class MaiBotContainerConfig private constructor(
         }
     }
 
-    private fun shellCommand(
+    /** 在容器里用 /bin/sh 执行一段脚本，脚本前会先重置 PATH、HOME 等 Debian 环境变量。 */
+    internal fun shellCommand(
         script: String,
         workingDirectory: String
     ): List<String> =
@@ -781,7 +783,11 @@ class MaiBotContainerConfig private constructor(
         chmod +x /root/launcher.sh
         """.trimIndent()
 
-    private fun githubMirrorScript(): String {
+    /**
+     * 定义 maidroid_github_clone / maidroid_github_fetch / maidroid_github_curl 三个 shell 函数：
+     * 依次尝试每个 GitHub 镜像，每个镜像重试 GITHUB_RETRY_PER_MIRROR 次，直到成功为止。
+     */
+    internal fun githubMirrorScript(): String {
         val mirrorSpecArguments = GITHUB_MIRROR_SPECS.joinToString(" \\\n                ") {
             shellQuote(it)
         }
@@ -827,6 +833,30 @@ class MaiBotContainerConfig private constructor(
                 printf "[GitHub] git clone failed via %s, switching mirror\n" "${'$'}mirror_name"
             done
             printf "[GitHub] git clone failed after all mirrors: %s\n" "${'$'}repo_url"
+            return 1
+        }
+
+        maidroid_github_fetch() {
+            repo_url="${'$'}1"
+            fetch_refspec="${'$'}2"
+            shift 2
+            for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
+                mirror_name="${'$'}{mirror_spec%%|*}"
+                mirror_prefix="${'$'}{mirror_spec#*|}"
+                candidate_url="${'$'}(maidroid_github_candidate_url "${'$'}mirror_prefix" "${'$'}repo_url")"
+                attempt=1
+                while [ "${'$'}attempt" -le $GITHUB_RETRY_PER_MIRROR ]; do
+                    printf "[GitHub] git fetch via %s (attempt %s/$GITHUB_RETRY_PER_MIRROR): %s\n" "${'$'}mirror_name" "${'$'}attempt" "${'$'}candidate_url"
+                    if git fetch "${'$'}@" "${'$'}candidate_url" "${'$'}fetch_refspec"; then
+                        printf "[GitHub] git fetch succeeded via %s\n" "${'$'}mirror_name"
+                        return 0
+                    fi
+                    attempt=${'$'}((attempt + 1))
+                    sleep 1
+                done
+                printf "[GitHub] git fetch failed via %s, switching mirror\n" "${'$'}mirror_name"
+            done
+            printf "[GitHub] git fetch failed after all mirrors: %s\n" "${'$'}repo_url"
             return 1
         }
 
@@ -915,7 +945,7 @@ class MaiBotContainerConfig private constructor(
             "export PATH=\"\$HOME/.local/bin:\$PATH\"; " +
             "if [ -f \"\$HOME/.local/bin/env\" ]; then . \"\$HOME/.local/bin/env\"; fi"
 
-    private fun shellQuote(value: String): String =
+    internal fun shellQuote(value: String): String =
         "'" + value.replace("'", "'\"'\"'") + "'"
 
     private fun md5(file: File): String? {
