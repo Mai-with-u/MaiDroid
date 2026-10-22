@@ -47,7 +47,8 @@ import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 
-private const val WebUiBottomOverlayInsetCssPx = 72
+// 导航栏悬浮在 WebView 上，盖住的高度就是网页的底部安全区；WebView 里 1 CSS px 等于 1 dp。
+private val WebUiBottomOverlayInsetCssPx = MainBottomNavigationOverlayHeight.value.toInt()
 
 internal class WebUiTabState internal constructor(
     val webView: WebView

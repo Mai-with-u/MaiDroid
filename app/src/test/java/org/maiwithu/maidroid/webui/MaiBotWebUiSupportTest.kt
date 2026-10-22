@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.webui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -61,5 +62,73 @@ class MaiBotWebUiSupportTest {
         val bare = MaiBotWebUiSupport.injectThemeBootstrap("plain")
         assertTrue(bare.endsWith("plain"))
         assertTrue(bare.contains("__maidroidVhFixInstalled"))
+    }
+
+    @Test
+    fun rewriteBottomSafeAreaAddsNavigationInsetToDeclarations() {
+        // 上游悬浮底栏的 Tailwind 产物：声明里是 env 写法，选择器里的括号带反斜杠转义
+        val css = ".bottom-\\[calc\\(env\\(safe-area-inset-bottom\\)\\+14px\\)\\]" +
+            "{bottom:calc(env(safe-area-inset-bottom) + 14px)}"
+
+        val rewritten = MaiBotWebUiSupport.rewriteBottomSafeArea(css, 80)
+
+        assertEquals(
+            ".bottom-\\[calc\\(env\\(safe-area-inset-bottom\\)\\+14px\\)\\]" +
+                "{bottom:calc(calc(env(safe-area-inset-bottom) + 80px) + 14px)}",
+            rewritten
+        )
+    }
+
+    @Test
+    fun rewriteBottomSafeAreaHandlesMaxShorthandFallbackAndCase() {
+        val css = "a{padding-bottom:max(1.5rem,env(safe-area-inset-bottom))}" +
+            "b{padding:10px 10px calc(ENV(safe-area-inset-bottom) + 12px)}" +
+            "c{margin-bottom:env( safe-area-inset-bottom , 0px )}"
+
+        val rewritten = MaiBotWebUiSupport.rewriteBottomSafeArea(css, 80)
+
+        assertTrue(rewritten.contains("max(1.5rem,calc(env(safe-area-inset-bottom) + 80px))"))
+        assertTrue(rewritten.contains("calc(calc(ENV(safe-area-inset-bottom) + 80px) + 12px)"))
+        // 带回退值的写法整体保留在 calc 里
+        assertTrue(rewritten.contains("calc(env( safe-area-inset-bottom , 0px ) + 80px)"))
+    }
+
+    @Test
+    fun rewriteBottomSafeAreaLeavesOtherEnvAndZeroInsetUntouched() {
+        val css = "a{padding-top:env(safe-area-inset-top)}b{bottom:env(safe-area-inset-bottom)}"
+
+        // 占高为 0 时不改动任何样式；只改底部安全区，顶部安全区保持原样
+        assertEquals(css, MaiBotWebUiSupport.rewriteBottomSafeArea(css, 0))
+        assertEquals(css, MaiBotWebUiSupport.rewriteBottomSafeArea(css, -8))
+
+        val rewritten = MaiBotWebUiSupport.rewriteBottomSafeArea(css, 80)
+        assertTrue(rewritten.contains("padding-top:env(safe-area-inset-top)"))
+        assertTrue(rewritten.contains("bottom:calc(env(safe-area-inset-bottom) + 80px)"))
+    }
+
+    @Test
+    fun isLocalStylesheetUrlOnlyAcceptsLoopbackCss() {
+        assertTrue(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index-abc.css"))
+        assertTrue(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "localhost", "/assets/Chat.CSS"))
+        assertTrue(MaiBotWebUiSupport.isLocalStylesheetUrl("https", "[::1]", "/a.css"))
+
+        // 第三方站点、非 CSS 资源、非 http(s) 协议都不拦截
+        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("https", "fonts.googleapis.com", "/css/a.css"))
+        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index.js"))
+        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/font.woff2"))
+        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", null))
+        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("file", "127.0.0.1", "/a.css"))
+        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", null, "/a.css"))
+    }
+
+    @Test
+    fun viewportPatchSkipsHeuristicPaddingWhenUpstreamDockIsPresent() {
+        val script = MaiBotWebUiSupport.buildViewportPatchScript(80)
+
+        // 上游底栏在场时不再叠加启发式留白，避免和上游按底栏位置算好的留白重复
+        assertTrue(script.contains("""document.querySelector('[data-mobile-tabbar="true"]')"""))
+        assertTrue(script.contains("const scrollPaddingActive = reservedBottom > 0 && !upstreamDockPresent;"))
+        assertTrue(script.contains("const shouldMark = scrollPaddingActive &&"))
+        assertTrue(script.contains("const reservedBottom = 80;"))
     }
 }

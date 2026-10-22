@@ -49,6 +49,20 @@ import org.maiwithu.maidroid.R
 import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.BlurView
 
+/** 悬浮导航栏本体高度（标签栏与终端按钮同高）。 */
+private val MainBottomNavigationBarHeight = 64.dp
+
+/** 悬浮导航栏离容器底边的留白。 */
+private val MainBottomNavigationBottomPadding = 16.dp
+
+/**
+ * 悬浮导航栏从容器底边往上盖住的总高度。
+ * WebUI 页签里导航栏浮在 WebView 上方，WebView 据此把这段高度当作网页的底部安全区，
+ * 让网页自己的贴底元素整体上移到导航栏之上。
+ */
+internal val MainBottomNavigationOverlayHeight =
+    MainBottomNavigationBarHeight + MainBottomNavigationBottomPadding
+
 @Composable
 internal fun MainBottomNavigation(
     selectedTab: MainTab,
@@ -60,11 +74,11 @@ internal fun MainBottomNavigation(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 16.dp)
+            .padding(bottom = MainBottomNavigationBottomPadding)
     ) {
         val horizontalPadding = 28.dp
         val availableWidth = maxWidth - horizontalPadding * 2
-        val fabSize = 64.dp
+        val fabSize = MainBottomNavigationBarHeight
         val tabBarWidth = minOf(249.dp, availableWidth - fabSize - 16.dp).coerceAtLeast(216.dp)
 
         Row(
@@ -80,7 +94,7 @@ internal fun MainBottomNavigation(
                 onTabSelected = onTabSelected,
                 modifier = Modifier
                     .width(tabBarWidth)
-                    .height(64.dp)
+                    .height(MainBottomNavigationBarHeight)
             )
 
             Box(
