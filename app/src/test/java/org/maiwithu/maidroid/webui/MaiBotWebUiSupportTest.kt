@@ -131,4 +131,18 @@ class MaiBotWebUiSupportTest {
         assertTrue(script.contains("const shouldMark = scrollPaddingActive &&"))
         assertTrue(script.contains("const reservedBottom = 80;"))
     }
+
+    @Test
+    fun viewportPatchDialogMaxHeightDoesNotSubtractNavigationInset() {
+        val script = MaiBotWebUiSupport.buildViewportPatchScript(80)
+
+        // 对话框的贴底内边距已由安全区改写让出导航栏高度，最大高度规则不能再减一次，否则底部多出空白
+        val dialogRule = script.lines().single { it.contains("""'[role="dialog"]""") }
+        assertTrue(dialogRule.contains("max-height:calc(var(--maidroid-webview-height) - 1rem)!important"))
+        assertFalse(dialogRule.contains("reserved-bottom"))
+
+        // 滚动区的兜底留白仍然使用导航栏高度，不受这次调整影响
+        val scrollSafeRule = script.lines().single { it.contains("""'[data-maidroid-scroll-safe-area="true"]{""") }
+        assertTrue(scrollSafeRule.contains("var(--maidroid-webview-reserved-bottom)"))
+    }
 }
