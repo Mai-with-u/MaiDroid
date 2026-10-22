@@ -68,6 +68,14 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         }
 
         val webView = WebView(context).apply {
+            // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
+            // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
+            // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
+            // 让 WebView 按固定高度排版，vh 才等于真实视口高度。
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
             setBackgroundColor(android.graphics.Color.BLACK)
             overScrollMode = WebView.OVER_SCROLL_NEVER
             isFocusable = true
