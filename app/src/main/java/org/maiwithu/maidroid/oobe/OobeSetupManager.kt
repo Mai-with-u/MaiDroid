@@ -1,8 +1,6 @@
 package org.maiwithu.maidroid.oobe
 
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.container.ContainerCommandResult
+import org.maiwithu.maidroid.container.ContainerCommandRunner
 import org.maiwithu.maidroid.container.ContainerRequirement
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.container.RuntimeAssetInstaller
@@ -22,8 +22,7 @@ import org.maiwithu.maidroid.container.RuntimeInstallProgress
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
-import java.net.HttpURLConnection
-import java.net.URL
+import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 
 enum class OobeSetupPhase {
     Container,
@@ -163,6 +162,7 @@ class OobeSetupManager(
     private val appContext = context.applicationContext
     private val config = MaiBotContainerConfig.from(appContext)
     private val runtimeInstaller = RuntimeAssetInstaller(appContext, config)
+    private val commandRunner = ContainerCommandRunner(config)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var containerJob: Job? = null
     private var installJob: Job? = null
@@ -254,7 +254,7 @@ class OobeSetupManager(
                 )
                 val storageBridgeResult = runCommand(config.setupStorageBridgeCommand())
                 if (!storageBridgeResult.success) {
-                    failContainer(storageBridgeResult.shortMessage())
+                    failContainer(storageBridgeResult.summary())
                     return@launch
                 }
 
@@ -267,7 +267,7 @@ class OobeSetupManager(
                 )
                 val dnsResult = runCommand(config.configureDnsCommand())
                 if (!dnsResult.success) {
-                    failContainer(dnsResult.shortMessage())
+                    failContainer(dnsResult.summary())
                     return@launch
                 }
 
@@ -280,7 +280,7 @@ class OobeSetupManager(
                 )
                 val mirrorResult = runCommand(config.configureAptMirrorCommand())
                 if (!mirrorResult.success) {
-                    failContainer(mirrorResult.shortMessage())
+                    failContainer(mirrorResult.summary())
                     return@launch
                 }
 
@@ -293,7 +293,7 @@ class OobeSetupManager(
                 )
                 val dependencyResult = runCommand(config.installSystemDependenciesCommand())
                 if (!dependencyResult.success) {
-                    failContainer(dependencyResult.shortMessage())
+                    failContainer(dependencyResult.summary())
                     return@launch
                 }
             }
@@ -322,7 +322,7 @@ class OobeSetupManager(
             )
             val dnsResult = runCommand(config.configureDnsCommand())
             if (!dnsResult.success) {
-                failInstall(dnsTaskKind, dnsResult.shortMessage())
+                failInstall(dnsTaskKind, dnsResult.summary())
                 return@launch
             }
 
@@ -332,7 +332,7 @@ class OobeSetupManager(
                 )
                 val cloneResult = runCommand(config.cloneCommand())
                 if (!cloneResult.success) {
-                    failInstall(OobeTaskKind.Source, cloneResult.shortMessage())
+                    failInstall(OobeTaskKind.Source, cloneResult.summary())
                     return@launch
                 }
             }
@@ -344,7 +344,7 @@ class OobeSetupManager(
             if (!config.userUvExecutable.isFile) {
                 val uvResult = runCommand(config.installUvCommand())
                 if (!uvResult.success) {
-                    failInstall(OobeTaskKind.Dependency, uvResult.shortMessage())
+                    failInstall(OobeTaskKind.Dependency, uvResult.summary())
                     return@launch
                 }
             }
@@ -352,7 +352,7 @@ class OobeSetupManager(
             if (!config.isDependencyReady()) {
                 val syncResult = runCommand(config.syncCommand())
                 if (!syncResult.success) {
-                    failInstall(OobeTaskKind.Dependency, syncResult.shortMessage())
+                    failInstall(OobeTaskKind.Dependency, syncResult.summary())
                     return@launch
                 }
             }
@@ -374,7 +374,7 @@ class OobeSetupManager(
                 buildInstallTasks().markRunning(OobeTaskKind.WebUi, "正在启动 MaiBot WebUI...")
             )
 
-            startMaiBotService()
+            ChatbotService.start(appContext)
 
             val webUiReady = waitForWebUi()
             if (!webUiReady) {
@@ -568,21 +568,12 @@ class OobeSetupManager(
         }
     }
 
-    private fun startMaiBotService() {
-        val intent = Intent(appContext, ChatbotService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            appContext.startForegroundService(intent)
-        } else {
-            appContext.startService(intent)
-        }
-    }
-
     private suspend fun waitForWebUi(): Boolean {
         val deadline = SystemClock.elapsedRealtime() + WEB_UI_START_TIMEOUT_MS
         var attempt = 0
         while (SystemClock.elapsedRealtime() < deadline) {
             attempt += 1
-            if (isWebUiReachable()) return true
+            if (MaiBotWebUiProbe.isReachable()) return true
 
             updateInstallState(
                 buildInstallTasks().markRunning(
@@ -595,73 +586,22 @@ class OobeSetupManager(
         return false
     }
 
-    private suspend fun isWebUiReachable(): Boolean =
-        withContext(Dispatchers.IO) {
-            val connection = runCatching {
-                (URL(MaiBotContainerConfig.WEB_UI_URL).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 1_000
-                    readTimeout = 1_000
-                    instanceFollowRedirects = false
-                }
-            }.getOrNull() ?: return@withContext false
-
-            try {
-                connection.responseCode in 200..499
-            } catch (_: Exception) {
-                false
-            } finally {
-                connection.disconnect()
-            }
-        }
-
-    private suspend fun runCommand(command: List<String>): CommandResult =
-        withContext(Dispatchers.IO) {
-            appendCommandLog("")
-            appendCommandLog("$ ${command.joinToString(" ")}")
-            try {
-                val processBuilder = ProcessBuilder(command)
-                    .directory(config.rootfsDir)
-                    .redirectErrorStream(true)
-                processBuilder.environment().putAll(config.prootEnvironment())
-                processBuilder.environment().putAll(config.agreementEnvironment())
-                val process = processBuilder.start()
-                val outputBuilder = StringBuilder()
-                process.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { rawLine ->
-                        val line = rawLine.trimEnd('\r')
-                        outputBuilder.appendLine(line)
-                        appendCommandLog(line)
-                    }
-                }
-                val exitCode = process.waitFor()
-                appendCommandLog("exit code: $exitCode")
-                val output = outputBuilder.toString()
-                CommandResult(exitCode = exitCode, output = output)
-            } catch (e: Exception) {
-                appendCommandLog("exception: ${e.message.orEmpty()}")
-                CommandResult(exitCode = -1, output = e.message.orEmpty())
-            }
-        }
+    // OOBE 的命令输出同时进入安装页日志和终端日志，命令行本身和退出码也记一笔，方便排查哪一步失败。
+    private suspend fun runCommand(command: List<String>): ContainerCommandResult {
+        appendCommandLog("")
+        appendCommandLog("$ ${command.joinToString(" ")}")
+        val result = commandRunner.run(
+            command = command,
+            includeAgreement = true,
+            onLine = ::appendCommandLog
+        )
+        appendCommandLog("exit code: ${result.exitCode}")
+        return result
+    }
 
     private fun appendCommandLog(line: String) {
         val nextLogs = (_state.value.commandLogs + line).takeLast(MAX_COMMAND_LOG_LINES)
         _state.value = _state.value.copy(commandLogs = nextLogs)
         TerminalLogRepository.append(line)
-    }
-
-    private data class CommandResult(
-        val exitCode: Int,
-        val output: String
-    ) {
-        val success: Boolean = exitCode == 0
-
-        fun shortMessage(): String {
-            val firstLine = output
-                .lineSequence()
-                .map { it.trim() }
-                .firstOrNull { it.isNotEmpty() }
-            return firstLine ?: "命令退出码: $exitCode"
-        }
     }
 }

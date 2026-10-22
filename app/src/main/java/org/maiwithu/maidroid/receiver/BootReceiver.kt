@@ -3,7 +3,6 @@ package org.maiwithu.maidroid.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
@@ -35,13 +34,6 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         Log.d(TAG, "Boot completed — starting ChatbotService")
-
-        val serviceIntent = Intent(context, ChatbotService::class.java)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
-            context.startService(serviceIntent)
-        }
+        ChatbotService.start(context)
     }
 }

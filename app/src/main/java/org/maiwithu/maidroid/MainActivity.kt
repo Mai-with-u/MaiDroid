@@ -41,10 +41,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
@@ -57,9 +55,8 @@ import org.maiwithu.maidroid.ui.screen.PermissionManagementActions
 import org.maiwithu.maidroid.ui.screen.PermissionManagementState
 import org.maiwithu.maidroid.ui.screen.StartupSplashPage
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
+import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 import eightbitlab.com.blurview.BlurTarget
-import java.net.HttpURLConnection
-import java.net.URL
 
 class MainActivity : ComponentActivity() {
     private var storagePermissionGranted by mutableStateOf(false)
@@ -143,7 +140,7 @@ class MainActivity : ComponentActivity() {
 
                     startMaiBotService()
                     while (true) {
-                        webUiOnline = isWebUiReachable()
+                        webUiOnline = MaiBotWebUiProbe.isReachable()
                         delay(if (webUiOnline) 5_000L else 1_500L)
                     }
                 }
@@ -527,28 +524,9 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    // 唤醒麦麦：拉起前台服务，服务内部对已在运行的 MaiBot 不会重复启动。
     private fun startMaiBotService() {
-        val intent = Intent(this, ChatbotService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-    }
-
-    private suspend fun isWebUiReachable(): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val connection = URL(MaiBotContainerConfig.WEB_UI_URL)
-                .openConnection() as HttpURLConnection
-            try {
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 1_000
-                connection.readTimeout = 1_000
-                connection.responseCode in 200..499
-            } finally {
-                connection.disconnect()
-            }
-        }.getOrDefault(false)
+        ChatbotService.start(this)
     }
 
     @Suppress("DEPRECATION")

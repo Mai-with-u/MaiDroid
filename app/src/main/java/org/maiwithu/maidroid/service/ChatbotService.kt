@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.service
 
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
@@ -33,6 +34,17 @@ class ChatbotService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
         const val ACTION_SYNC_CONTAINER_SSH = "org.maiwithu.maidroid.action.SYNC_CONTAINER_SSH"
+
+        /**
+         * 拉起（或唤醒已在运行的）前台服务。
+         * 不带 action 时启动 NapCat 和 MaiBot；ACTION_RESTART_RUNTIME 会重启 MaiBot；
+         * ACTION_SYNC_CONTAINER_SSH 只按设置同步容器 SSH。
+         * minSdk 为 26，后台拉起服务只能走前台服务入口，服务会在 onStartCommand 里立刻挂上常驻通知。
+         */
+        fun start(context: Context, action: String? = null) {
+            val intent = Intent(context, ChatbotService::class.java).setAction(action)
+            context.startForegroundService(intent)
+        }
     }
 
     private lateinit var processManager: ProcessManager

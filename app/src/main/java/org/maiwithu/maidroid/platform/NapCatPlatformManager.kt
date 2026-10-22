@@ -1,8 +1,6 @@
 package org.maiwithu.maidroid.platform
 
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +20,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.maiwithu.maidroid.container.ContainerCommandResult
+import org.maiwithu.maidroid.container.ContainerCommandRunner
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.service.ChatbotService
@@ -103,6 +103,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val config = MaiBotContainerConfig.from(appContext)
+    private val commandRunner = ContainerCommandRunner(config)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val random = SecureRandom()
     private val json = Json { ignoreUnknownKeys = true }
@@ -193,54 +194,26 @@ internal class NapCatPlatformManager private constructor(context: Context) {
                 TerminalLogRepository.append("[NapCat] 安装完成，正在启动 NapCat 并重启 MaiBot 以加载适配器")
                 restartRuntime()
             } else {
-                fail(result.shortMessage())
+                fail(result.summary())
             }
         }
     }
 
+    // NapCat 装好或已存在时，经前台服务重启运行时：NapCat 若未运行会被拉起，MaiBot 重启后加载适配器。
     private fun restartRuntime() {
-        val intent = Intent(appContext, ChatbotService::class.java).apply {
-            action = ChatbotService.ACTION_RESTART_RUNTIME
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            appContext.startForegroundService(intent)
-        } else {
-            appContext.startService(intent)
-        }
+        ChatbotService.start(appContext, ChatbotService.ACTION_RESTART_RUNTIME)
     }
 
-    private suspend fun runCommand(command: List<String>): CommandResult =
-        withContext(Dispatchers.IO) {
-            try {
-                val processBuilder = ProcessBuilder(command)
-                    .directory(config.rootfsDir)
-                    .redirectErrorStream(true)
-                processBuilder.environment().putAll(config.prootEnvironment())
-                processBuilder.environment().putAll(config.agreementEnvironment())
-
-                val process = processBuilder.start()
-                val outputBuilder = StringBuilder()
-                try {
-                    process.inputStream.bufferedReader().useLines { lines ->
-                        lines.forEach { rawLine ->
-                            val line = rawLine.trimEnd('\r')
-                            outputBuilder.appendLine(line)
-                            TerminalLogRepository.append(line)
-                        }
-                    }
-                    val exitCode = process.waitFor()
-                    TerminalLogRepository.append("[NapCat] 安装流程退出码: $exitCode")
-                    CommandResult(exitCode = exitCode, output = outputBuilder.toString())
-                } finally {
-                    if (process.isAlive) {
-                        process.destroy()
-                    }
-                }
-            } catch (e: Exception) {
-                TerminalLogRepository.append("[NapCat] 安装异常: ${e.message.orEmpty()}")
-                CommandResult(exitCode = -1, output = e.message.orEmpty())
-            }
-        }
+    // 安装脚本需要读 MaiBot 目录下的协议文件来配置适配器，因此带上协议 hash 环境变量。
+    private suspend fun runCommand(command: List<String>): ContainerCommandResult {
+        val result = commandRunner.run(
+            command = command,
+            includeAgreement = true,
+            onLine = TerminalLogRepository::append
+        )
+        TerminalLogRepository.append("[NapCat] 安装流程退出码: ${result.exitCode}")
+        return result
+    }
 
     private fun startProgressWatcher() {
         progressJob?.cancel()
@@ -463,19 +436,6 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         val accountId: String?,
         val accountName: String?
     )
-
-    private data class CommandResult(
-        val exitCode: Int,
-        val output: String
-    ) {
-        val success: Boolean = exitCode == 0
-
-        fun shortMessage(): String =
-            output.lineSequence()
-                .map { it.trim() }
-                .lastOrNull { it.isNotEmpty() }
-                ?: "命令退出码: $exitCode"
-    }
 }
 
 internal object NapCatRuntime {
@@ -503,12 +463,8 @@ internal object NapCatRuntime {
             TerminalLogRepository.append("")
             TerminalLogRepository.append("[NapCat] 启动: bash /root/launcher.sh")
             try {
-                val processBuilder = ProcessBuilder(command)
-                    .directory(config.rootfsDir)
-                    .redirectErrorStream(true)
-                processBuilder.environment().putAll(config.prootEnvironment())
-                process = processBuilder.start()
-                val currentProcess = process ?: return@launch
+                val currentProcess = ContainerCommandRunner(config).start(command)
+                process = currentProcess
                 currentProcess.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { rawLine ->
                         TerminalLogRepository.append("[NapCat] ${rawLine.trimEnd('\r')}")
@@ -547,31 +503,16 @@ internal object NapCatRuntime {
         }
     }
 
+    // 清理残留进程、生成 launcher.sh 这类维护命令：只记非空输出，失败不中断后续启动。
     private suspend fun runMaintenanceCommand(
         config: MaiBotContainerConfig,
         command: List<String>
     ) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val processBuilder = ProcessBuilder(command)
-                    .directory(config.rootfsDir)
-                    .redirectErrorStream(true)
-                processBuilder.environment().putAll(config.prootEnvironment())
-                val maintenanceProcess = processBuilder.start()
-                maintenanceProcess.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { line ->
-                        if (line.isNotBlank()) {
-                            TerminalLogRepository.append(line.trimEnd('\r'))
-                        }
-                    }
-                }
-                val exitCode = maintenanceProcess.waitFor()
-                if (exitCode != 0) {
-                    TerminalLogRepository.append("[NapCat] maintenance command exited with code: $exitCode")
-                }
-            }.onFailure { error ->
-                TerminalLogRepository.append("[NapCat] maintenance command failed: ${error.message.orEmpty()}")
-            }
+        val result = ContainerCommandRunner(config).run(command) { line ->
+            if (line.isNotBlank()) TerminalLogRepository.append(line)
+        }
+        if (!result.success) {
+            TerminalLogRepository.append("[NapCat] maintenance command exited with code: ${result.exitCode}")
         }
     }
 }

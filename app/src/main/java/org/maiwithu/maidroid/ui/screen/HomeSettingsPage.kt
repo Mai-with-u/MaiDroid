@@ -1,8 +1,6 @@
 package org.maiwithu.maidroid.ui.screen
 
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -711,13 +709,7 @@ private fun containerSshSummaryText(state: ContainerSshState): String {
     return if (error == null) status else "$status\n$error"
 }
 
+// 经前台服务按设置同步 sshd，保证切到后台后 SSH 仍由常驻服务托管。
 private fun requestContainerSshSync(context: Context) {
-    val intent = Intent(context, ChatbotService::class.java).apply {
-        action = ChatbotService.ACTION_SYNC_CONTAINER_SSH
-    }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-    } else {
-        context.startService(intent)
-    }
+    ChatbotService.start(context, ChatbotService.ACTION_SYNC_CONTAINER_SSH)
 }
