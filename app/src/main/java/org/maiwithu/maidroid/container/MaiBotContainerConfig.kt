@@ -59,6 +59,13 @@ class MaiBotContainerConfig private constructor(
         const val SOCKET_NAME = "maidroid_ipc_socket"
         const val WEB_UI_URL = "http://127.0.0.1:8001/"
 
+        // MaiBot 的 requires-python 只写了 >=3.12，没有上限也没有 .python-version，uv 会自动选最新的 Python。
+        // 新版 Python 刚发布时，pydantic-core、pyarrow、zstandard 等包在 aarch64 上还没有预编译包，
+        // uv 只能退回源码编译，而容器里没有 C 编译器和 Rust，uv sync 会直接失败。
+        // 这里把范围压在 3.12~3.13：全新安装时 uv 选其中最新的 3.13（与上游 Dockerfile 一致），
+        // 已经装好 3.12 的旧环境也不会被重建。
+        const val UV_PYTHON_REQUEST = ">=3.12,<3.14"
+
         fun from(context: Context): MaiBotContainerConfig {
             val appContext = context.applicationContext
             return MaiBotContainerConfig(
@@ -176,10 +183,20 @@ class MaiBotContainerConfig private constructor(
             caCertificateBundle.isFile
 
     fun isSourceReady(): Boolean = botEntry.isFile && pyproject.isFile
+    // uv sync 一开始就会建好 .venv 的壳（pyvenv.cfg 和 python 链接），依赖装到一半失败时壳还留着。
+    // 所以除了壳之外，还要确认 site-packages 里真有包，否则安装流程会把失败的 uv sync 当成已完成并跳过，
+    // 接着启动 MaiBot 时又在后台重新编译依赖，界面就一直停在“等待 WebUI 启动”。
     fun isDependencyReady(): Boolean =
         venvConfig.isFile &&
             (Files.isSymbolicLink(venvPythonExecutable.toPath()) ||
-                (venvPythonExecutable.isFile && venvPythonExecutable.canExecute()))
+                (venvPythonExecutable.isFile && venvPythonExecutable.canExecute())) &&
+            hasInstalledPackages()
+
+    private fun hasInstalledPackages(): Boolean =
+        File(venvDir, "lib")
+            .listFiles { file -> file.isDirectory && file.name.startsWith("python") }
+            ?.any { pythonDir -> File(pythonDir, "site-packages").list()?.isNotEmpty() == true }
+            ?: false
     fun hasAgreementFiles(): Boolean = eulaFile.isFile && privacyFile.isFile
 
     fun ensureExecutableBits() {
@@ -940,8 +957,13 @@ class MaiBotContainerConfig private constructor(
         file.setWritable(true, true)
     }
 
+    // 同一份环境变量同时作用于 uv sync、uv run 和在线更新：先限定 Python 版本，再跳过 dev 依赖，
+    // 保证“安装依赖”和“启动时 uv run 自动同步”用同一套参数，不会因为参数不一致反复重建 .venv。
+    // dev 组里的 zstandard 等测试依赖在运行时用不到，却可能触发源码编译。
     private fun uvPrelude(): String =
-        "export UV_LINK_MODE=copy; " +
+        "export UV_PYTHON=${shellQuote(UV_PYTHON_REQUEST)}; " +
+            "export UV_NO_DEV=1; " +
+            "export UV_LINK_MODE=copy; " +
             "export PATH=\"\$HOME/.local/bin:\$PATH\"; " +
             "if [ -f \"\$HOME/.local/bin/env\" ]; then . \"\$HOME/.local/bin/env\"; fi"
 
