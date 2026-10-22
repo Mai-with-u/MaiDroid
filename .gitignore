@@ -29,7 +29,6 @@ tmp_*.svg
 
 # ── Local config ─────────────────────────────────────────────────
 /local.properties
-/app/libs/*.aar
 
 
 /.agents

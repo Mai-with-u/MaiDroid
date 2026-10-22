@@ -70,8 +70,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 
-    // Storage — MMKV (local AAR, see app/libs/)
-    implementation(files("libs/mmkv-2.4.0.aar"))
+    // Storage — MMKV (Tencent, Maven Central)
+    implementation(libs.mmkv)
 
     // Networking
     implementation(libs.okhttp)
