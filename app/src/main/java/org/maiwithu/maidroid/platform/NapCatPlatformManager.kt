@@ -29,9 +29,9 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatScripts
-import org.maiwithu.maidroid.process.TerminalLogRepository
+import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.runtime.ContainerScript
-import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -194,9 +194,9 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         if (_state.value.qqLoggingOut) return
         scope.launch {
             _state.update { it.copy(qqLoggingOut = true) }
-            TerminalLogRepository.append("[NapCat] 退出 QQ 登录：清除自动登录账号并重启 NapCat")
+            TerminalLog.append("[NapCat] 退出 QQ 登录：清除自动登录账号并重启 NapCat")
             webUiClient.clearAutoLoginAccount().exceptionOrNull()?.let { e ->
-                TerminalLogRepository.append("[NapCat] 清除自动登录账号失败: ${e.message.orEmpty()}")
+                TerminalLog.append("[NapCat] 清除自动登录账号失败: ${e.message.orEmpty()}")
             }
             withContext(Dispatchers.IO) { napCatFiles.qrCodeFile.delete() }
             loginAccount = null
@@ -230,7 +230,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
                     val now = System.currentTimeMillis()
                     val qrAgeMs = now - qrModifiedAt
                     if (shouldAutoRefreshQrCode(status, qrAgeMs, now - lastQrRefreshAttemptAt)) {
-                        TerminalLogRepository.append("[NapCat] 登录二维码已失效，自动请求新二维码")
+                        TerminalLog.append("[NapCat] 登录二维码已失效，自动请求新二维码")
                         // 刷新放到管理器自己的作用域里跑：用户中途关弹窗也能跑完并复位 qrRefreshing。
                         refreshQrCode()
                     }
@@ -253,7 +253,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         refreshRuntimeState()
         val error = result.exceptionOrNull()
         if (error != null) {
-            TerminalLogRepository.append("[NapCat] 刷新二维码失败: ${error.message.orEmpty()}")
+            TerminalLog.append("[NapCat] 刷新二维码失败: ${error.message.orEmpty()}")
         }
         _state.update {
             it.copy(
@@ -299,8 +299,8 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             clearProgressFiles()
             startProgressWatcher()
 
-            TerminalLogRepository.append("")
-            TerminalLogRepository.append("[NapCat] 启动安装流程")
+            TerminalLog.append("")
+            TerminalLog.append("[NapCat] 启动安装流程")
 
             val result = runCommand(NapCatScripts.install(token = generateToken()))
             progressJob?.cancel()
@@ -319,7 +319,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
                         qrCodeLastModified = qr.lastModified
                     )
                 }
-                TerminalLogRepository.append("[NapCat] 安装完成，正在启动 NapCat 并重启 MaiBot 以加载适配器")
+                TerminalLog.append("[NapCat] 安装完成，正在启动 NapCat 并重启 MaiBot 以加载适配器")
                 restartRuntime()
             } else {
                 fail(result.summary())
@@ -329,13 +329,13 @@ internal class NapCatPlatformManager private constructor(context: Context) {
 
     // NapCat 装好或已存在时，经前台服务重启运行时：NapCat 若未运行会被拉起，MaiBot 重启后加载适配器。
     private fun restartRuntime() {
-        ChatbotService.start(appContext, ChatbotService.ACTION_RESTART_RUNTIME)
+        MaiBotRuntimeService.start(appContext, MaiBotRuntimeService.ACTION_RESTART_RUNTIME)
     }
 
     // 安装脚本的输出原样写进终端日志，最后补一行退出码，方便判断失败在哪一步。
     private suspend fun runCommand(script: ContainerScript): ContainerCommandResult {
-        val result = commandRunner.run(script, onLine = TerminalLogRepository::append)
-        TerminalLogRepository.append("[NapCat] 安装流程退出码: ${result.exitCode}")
+        val result = commandRunner.run(script, onLine = TerminalLog::append)
+        TerminalLog.append("[NapCat] 安装流程退出码: ${result.exitCode}")
         return result
     }
 
@@ -548,7 +548,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
                 errorMessage = message
             )
         }
-        TerminalLogRepository.append("[NapCat] 安装失败: $message")
+        TerminalLog.append("[NapCat] 安装失败: $message")
     }
 
     private fun generateToken(): String {
@@ -595,24 +595,24 @@ internal object NapCatRuntime {
             runMaintenanceCommand(config, NapCatScripts.prepareRuntime())
 
             if (!napCatFiles.launcher.isFile) {
-                TerminalLogRepository.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")
+                TerminalLog.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")
                 return@launch
             }
 
-            TerminalLogRepository.append("")
-            TerminalLogRepository.append("[NapCat] 启动: bash /root/launcher.sh")
+            TerminalLog.append("")
+            TerminalLog.append("[NapCat] 启动: bash /root/launcher.sh")
             try {
                 val currentProcess = ContainerCommandRunner(config).start(NapCatScripts.launch())
                 process = currentProcess
                 currentProcess.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { rawLine ->
-                        TerminalLogRepository.append("[NapCat] ${rawLine.trimEnd('\r')}")
+                        TerminalLog.append("[NapCat] ${rawLine.trimEnd('\r')}")
                     }
                 }
                 val exitCode = currentProcess.waitFor()
-                TerminalLogRepository.append("[NapCat] 进程退出码: $exitCode")
+                TerminalLog.append("[NapCat] 进程退出码: $exitCode")
             } catch (e: Exception) {
-                TerminalLogRepository.append("[NapCat] 启动异常: ${e.message.orEmpty()}")
+                TerminalLog.append("[NapCat] 启动异常: ${e.message.orEmpty()}")
             } finally {
                 process = null
             }
@@ -663,10 +663,10 @@ internal object NapCatRuntime {
         script: ContainerScript
     ) {
         val result = ContainerCommandRunner(config).run(script) { line ->
-            if (line.isNotBlank()) TerminalLogRepository.append(line)
+            if (line.isNotBlank()) TerminalLog.append(line)
         }
         if (!result.success) {
-            TerminalLogRepository.append("[NapCat] maintenance command exited with code: ${result.exitCode}")
+            TerminalLog.append("[NapCat] maintenance command exited with code: ${result.exitCode}")
         }
     }
 }

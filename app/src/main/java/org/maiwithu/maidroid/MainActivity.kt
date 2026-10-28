@@ -44,9 +44,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.process.TerminalLogRepository
-import org.maiwithu.maidroid.repository.SettingsRepository
-import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.settings.AppSettings
+import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.ui.screen.BlurTargetHost
 import org.maiwithu.maidroid.ui.screen.HomeScreen
 import org.maiwithu.maidroid.ui.screen.OobeAuthorizationDialog
@@ -94,12 +94,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaiDroidTheme {
                 val activityViewModel: MainActivityViewModel = viewModel()
-                val settingsRepository = remember { SettingsRepository() }
+                val settingsRepository = remember { AppSettings() }
                 var setupComplete by remember {
-                    mutableStateOf(settingsRepository.isSetupComplete())
+                    mutableStateOf(settingsRepository.setupComplete)
                 }
                 var authorizationAccepted by remember {
-                    mutableStateOf(settingsRepository.isAuthorizationAccepted())
+                    mutableStateOf(settingsRepository.authorizationAccepted)
                 }
                 var webUiOnline by remember { mutableStateOf(false) }
                 var showStartupSplash by rememberSaveable {
@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
                 var oobeBlurTarget by remember { mutableStateOf<BlurTarget?>(null) }
                 val uiScope = rememberCoroutineScope()
                 val versionName = remember { getVersionName() }
-                val terminalLogs by TerminalLogRepository.logs.collectAsState()
+                val terminalLogs by TerminalLog.logs.collectAsState()
 
                 LaunchedEffect(showStartupSplash) {
                     if (showStartupSplash) {
@@ -322,7 +322,7 @@ class MainActivity : ComponentActivity() {
                                 visible = showAuthorizationDialog,
                                 blurTarget = oobeBlurTarget,
                                 onAgree = {
-                                    settingsRepository.setAuthorizationAccepted(true)
+                                    settingsRepository.authorizationAccepted = true
                                     authorizationAccepted = true
                                     showAuthorizationDialog = false
                                 },
@@ -526,7 +526,7 @@ class MainActivity : ComponentActivity() {
 
     // 唤醒麦麦：拉起前台服务，服务内部对已在运行的 MaiBot 不会重复启动。
     private fun startMaiBotService() {
-        ChatbotService.start(this)
+        MaiBotRuntimeService.start(this)
     }
 
     @Suppress("DEPRECATION")

@@ -26,7 +26,7 @@
         tools:ignore="ScopedStorage" />
 
     <application
-        android:name=".ChatbotApplication"
+        android:name=".MaiDroidApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -58,15 +58,15 @@
             android:theme="@style/Theme.MaiDroid"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- Foreground service for Python chatbot keep-alive -->
+        <!-- 托管 MaiBot、NapCat、容器 sshd 的前台服务 -->
         <service
-            android:name=".service.ChatbotService"
+            android:name=".service.MaiBotRuntimeService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
         <!-- Auto-start on boot -->
         <receiver
-            android:name=".receiver.BootReceiver"
+            android:name=".service.BootCompletedReceiver"
             android:exported="true"
             android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
             <intent-filter>

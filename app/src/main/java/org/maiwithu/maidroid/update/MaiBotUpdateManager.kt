@@ -17,9 +17,9 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.process.ProcessManager
-import org.maiwithu.maidroid.process.TerminalLogRepository
+import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.runtime.ContainerScript
-import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.service.MaiBotRuntimeService
 
 internal enum class MaiBotUpdatePhase {
     Idle,
@@ -118,8 +118,8 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
                 return@launch
             }
 
-            TerminalLogRepository.append("")
-            TerminalLogRepository.append("$LOG_TAG 检查上游版本")
+            TerminalLog.append("")
+            TerminalLog.append("$LOG_TAG 检查上游版本")
             val result = runCommand(MaiBotUpdateScripts.fetchLatest())
             val report = parseMaiBotUpdateReport(result.output)
             applyReport(report)
@@ -133,7 +133,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
             } else {
                 MaiBotUpdatePhase.UpToDate
             }
-            TerminalLogRepository.append(
+            TerminalLog.append(
                 if (report.hasUpdate) {
                     "$LOG_TAG 发现新版本 ${report.latest.shortCommit}，当前 ${report.installed.shortCommit}"
                 } else {
@@ -160,11 +160,11 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
                 return@launch
             }
 
-            TerminalLogRepository.append("")
-            TerminalLogRepository.append("$LOG_TAG 停止 MaiBot，准备切换到上游最新版本")
+            TerminalLog.append("")
+            TerminalLog.append("$LOG_TAG 停止 MaiBot，准备切换到上游最新版本")
             val failure = processManager.runWhileStopped { updateWhileStopped() }
 
-            TerminalLogRepository.append("$LOG_TAG 重新启动 MaiBot")
+            TerminalLog.append("$LOG_TAG 重新启动 MaiBot")
             restartMaiBot()
 
             if (failure != null) {
@@ -172,7 +172,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
                 return@launch
             }
             val installed = _state.value.installed
-            TerminalLogRepository.append("$LOG_TAG 更新完成：${installed?.shortCommit.orEmpty()}")
+            TerminalLog.append("$LOG_TAG 更新完成：${installed?.shortCommit.orEmpty()}")
             _state.update {
                 it.copy(
                     phase = MaiBotUpdatePhase.Updated,
@@ -209,7 +209,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
 
     // 更新可能在后台跑完：Android 12+ 不允许后台新拉前台服务，此时服务通常仍在运行，直接让进程管理器启动麦麦。
     private fun restartMaiBot() {
-        val serviceStarted = runCatching { ChatbotService.start(appContext) }.isSuccess
+        val serviceStarted = runCatching { MaiBotRuntimeService.start(appContext) }.isSuccess
         if (!serviceStarted) {
             processManager.start()
         }
@@ -230,7 +230,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
         logOutput: Boolean = true
     ): ContainerCommandResult =
         commandRunner.run(script) { line ->
-            if (logOutput && line.isNotBlank()) TerminalLogRepository.append(line)
+            if (logOutput && line.isNotBlank()) TerminalLog.append(line)
         }
 
     // 脚本即使中途失败也可能已经打印了部分结果（如当前版本），有值的字段都同步进状态。
@@ -253,7 +253,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     }
 
     private fun fail(action: MaiBotUpdateAction, message: String) {
-        TerminalLogRepository.append("$LOG_TAG 失败：$message")
+        TerminalLog.append("$LOG_TAG 失败：$message")
         _state.update {
             it.copy(
                 phase = MaiBotUpdatePhase.Failed,

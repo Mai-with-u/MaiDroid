@@ -82,7 +82,7 @@ import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
-import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.update.MaiBotUpdateState
@@ -772,5 +772,5 @@ private fun containerSshSummaryText(state: ContainerSshState): String {
 
 // 经前台服务按设置同步 sshd，保证切到后台后 SSH 仍由常驻服务托管。
 private fun requestContainerSshSync(context: Context) {
-    ChatbotService.start(context, ChatbotService.ACTION_SYNC_CONTAINER_SSH)
+    MaiBotRuntimeService.start(context, MaiBotRuntimeService.ACTION_SYNC_CONTAINER_SSH)
 }

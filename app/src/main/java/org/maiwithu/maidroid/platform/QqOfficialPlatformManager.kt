@@ -21,8 +21,8 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterFiles
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
 import org.maiwithu.maidroid.process.ProcessManager
-import org.maiwithu.maidroid.process.TerminalLogRepository
-import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import java.io.File
 
 internal enum class QqOfficialInstallPhase {
@@ -109,9 +109,9 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
 
     init {
         // 先翻一遍已有日志：页面打开前适配器可能已经在报错，不必等下一次重试才显示出来。
-        TerminalLogRepository.logs.value.forEach(::onLogLine)
+        TerminalLog.logs.value.forEach(::onLogLine)
         scope.launch {
-            TerminalLogRepository.lines.collect(::onLogLine)
+            TerminalLog.lines.collect(::onLogLine)
         }
         scope.launch {
             processManager.isRunning.collect { running ->
@@ -149,16 +149,16 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
                 return@launch
             }
 
-            TerminalLogRepository.append("")
+            TerminalLog.append("")
             val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir() }
             if (existingDir != null) {
-                TerminalLogRepository.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+                TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
             } else {
                 updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
-                TerminalLogRepository.append("[QQ 官方机器人] 开始安装适配器")
+                TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
                 val result = commandRunner.run(
                     script = QqOfficialAdapterScripts.install(),
-                    onLine = TerminalLogRepository::append
+                    onLine = TerminalLog::append
                 )
                 val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
                 if (!result.success || !installed) {
@@ -183,7 +183,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
                 )
             }
             refreshFileState()
-            TerminalLogRepository.append("[QQ 官方机器人] 安装完成，正在重启 MaiBot 以加载适配器")
+            TerminalLog.append("[QQ 官方机器人] 安装完成，正在重启 MaiBot 以加载适配器")
             restartMaiBot()
         }
     }
@@ -201,7 +201,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
         // 上次安装时写配置失败留下的提示，这次写成功了就不再显示。
         _state.update { it.copy(errorMessage = null) }
         refreshFileState()
-        TerminalLogRepository.append("[QQ 官方机器人] 已更新 AppID 和 AppSecret，正在重启 MaiBot 让适配器重新连接")
+        TerminalLog.append("[QQ 官方机器人] 已更新 AppID 和 AppSecret，正在重启 MaiBot 让适配器重新连接")
         restartMaiBot()
         return QqOfficialSaveResult.Restarting
     }
@@ -225,7 +225,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     // 与 NapCat 安装后一致，经前台服务重启：MaiBot 没在跑时这一步也会把它拉起来。
     private fun restartMaiBot() {
         clearConnectionError()
-        ChatbotService.start(appContext, ChatbotService.ACTION_RESTART_RUNTIME)
+        MaiBotRuntimeService.start(appContext, MaiBotRuntimeService.ACTION_RESTART_RUNTIME)
     }
 
     // MaiBot 重启或刚写过新凭据：之前的连接报错属于旧配置，不再显示。
@@ -295,6 +295,6 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
                 errorMessage = message
             )
         }
-        TerminalLogRepository.append("[QQ 官方机器人] 安装失败: $message")
+        TerminalLog.append("[QQ 官方机器人] 安装失败: $message")
     }
 }

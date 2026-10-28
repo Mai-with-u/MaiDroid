@@ -21,6 +21,7 @@ import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.maibot.MaiBotAgreement
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import java.util.concurrent.TimeUnit
@@ -255,6 +256,6 @@ class ProcessManager private constructor(context: Context) {
         }.getOrDefault("unknown")
 
     private fun appendLog(line: String) {
-        TerminalLogRepository.append(line)
+        TerminalLog.append(line)
     }
 }

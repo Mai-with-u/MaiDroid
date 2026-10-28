@@ -24,12 +24,12 @@ import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
 import org.maiwithu.maidroid.runtime.RuntimeInstallProgress
 import org.maiwithu.maidroid.maibot.MaiBotScripts
-import org.maiwithu.maidroid.process.TerminalLogRepository
-import org.maiwithu.maidroid.repository.SettingsRepository
+import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ContainerSetupScripts
 import org.maiwithu.maidroid.runtime.GitHubMirrors
-import org.maiwithu.maidroid.service.ChatbotService
+import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 
 enum class OobeSetupPhase {
@@ -157,9 +157,9 @@ data class OobeSetupState(
     }
 }
 
-class OobeSetupManager(
+internal class OobeSetupManager(
     context: Context,
-    private val settingsRepository: SettingsRepository = SettingsRepository()
+    private val settingsRepository: AppSettings = AppSettings()
 ) {
     companion object {
         private const val MAX_COMMAND_LOG_LINES = 500
@@ -312,7 +312,7 @@ class OobeSetupManager(
     }
 
     fun startInstall() {
-        if (_state.value.isComplete || settingsRepository.isSetupComplete()) return
+        if (_state.value.isComplete || settingsRepository.setupComplete) return
         if (installJob?.isActive == true) return
         installJob = scope.launch {
             RuntimeFileModes.ensureExecutableBits(config)
@@ -380,7 +380,7 @@ class OobeSetupManager(
                 buildInstallTasks().markRunning(OobeTaskKind.WebUi, "正在启动 MaiBot WebUI...")
             )
 
-            ChatbotService.start(appContext)
+            MaiBotRuntimeService.start(appContext)
 
             val webUiReady = waitForWebUi()
             if (!webUiReady) {
@@ -388,7 +388,7 @@ class OobeSetupManager(
                 return@launch
             }
 
-            settingsRepository.setSetupComplete(true)
+            settingsRepository.setupComplete = true
 
             _state.value = _state.value.copy(
                 phase = OobeSetupPhase.Complete,
@@ -604,6 +604,6 @@ class OobeSetupManager(
     private fun appendCommandLog(line: String) {
         val nextLogs = (_state.value.commandLogs + line).takeLast(MAX_COMMAND_LOG_LINES)
         _state.value = _state.value.copy(commandLogs = nextLogs)
-        TerminalLogRepository.append(line)
+        TerminalLog.append(line)
     }
 }

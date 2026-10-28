@@ -19,7 +19,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.RuntimePaths
-import org.maiwithu.maidroid.process.TerminalLogRepository
+import org.maiwithu.maidroid.log.TerminalLog
 
 object MaiBotWebUiSupport {
     private const val TAG = "MaiBotWebUiSupport"
@@ -154,7 +154,7 @@ object MaiBotWebUiSupport {
     fun resolveLaunchUrl(
         context: Context,
         baseUrl: String = MaiBotWebUi.URL,
-        terminalLogs: List<String> = TerminalLogRepository.logs.value
+        terminalLogs: List<String> = TerminalLog.logs.value
     ): String {
         val token = findAccessToken(context, terminalLogs) ?: return baseUrl
         return buildAuthUrl(baseUrl, token)
