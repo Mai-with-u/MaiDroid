@@ -16,6 +16,7 @@ import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import java.util.concurrent.TimeUnit
 
@@ -114,7 +115,7 @@ internal class ContainerSshManager private constructor(context: Context) {
             }
 
             val validationError = withContext(Dispatchers.IO) {
-                config.ensureExecutableBits()
+                RuntimeFileModes.ensureExecutableBits(config)
                 config.containerRequirements()
                     .firstOrNull { !it.ready }
                     ?.let { "${it.name} is not ready: ${it.hint}" }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.process.ProcessManager
@@ -214,7 +215,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     }
 
     private suspend fun validationError(): String? = withContext(Dispatchers.IO) {
-        config.ensureExecutableBits()
+        RuntimeFileModes.ensureExecutableBits(config)
         val notReady = config.containerRequirements().firstOrNull { !it.ready }
         when {
             notReady != null -> "${notReady.name} 未就绪：${notReady.hint}"

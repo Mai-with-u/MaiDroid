@@ -15,6 +15,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
 import org.maiwithu.maidroid.process.ProcessManager
@@ -136,7 +137,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
         installJob = scope.launch {
             updateInstallProgress(0.05f, "准备安装 QQ 官方机器人适配器")
             val validationError = withContext(Dispatchers.IO) {
-                config.ensureExecutableBits()
+                RuntimeFileModes.ensureExecutableBits(config)
                 config.containerRequirements()
                     .firstOrNull { !it.ready }
                     ?.let { "${it.name} 未就绪：${it.hint}" }

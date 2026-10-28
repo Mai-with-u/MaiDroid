@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerRequirement
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
 import org.maiwithu.maidroid.runtime.RuntimeInstallProgress
@@ -180,7 +181,7 @@ class OobeSetupManager(
 
     fun refreshContainer() {
         scope.launch {
-            config.ensureExecutableBits()
+            RuntimeFileModes.ensureExecutableBits(config)
             val containerTasks = buildContainerTasks()
             val installTasks = buildInstallTasks()
             val ready = containerTasks.all { it.status == OobeTaskStatus.Done }
@@ -203,7 +204,7 @@ class OobeSetupManager(
     fun prepareContainer() {
         if (containerJob?.isActive == true) return
         containerJob = scope.launch {
-            config.ensureExecutableBits()
+            RuntimeFileModes.ensureExecutableBits(config)
             if (config.isContainerReady()) {
                 refreshContainer()
                 return@launch
@@ -227,7 +228,7 @@ class OobeSetupManager(
                     return@launch
                 }
 
-                config.ensureExecutableBits()
+                RuntimeFileModes.ensureExecutableBits(config)
             }
 
             if (!config.prootExecutable.isFile || !config.prootLoader.isFile ||
@@ -246,7 +247,7 @@ class OobeSetupManager(
                     )
                 )
                 withContext(Dispatchers.IO) {
-                    config.ensureWritableRuntimePaths()
+                    RuntimeFileModes.makeRootfsWritable(config)
                 }
 
                 updateContainerProgress(
@@ -310,7 +311,7 @@ class OobeSetupManager(
         if (_state.value.isComplete || settingsRepository.isSetupComplete()) return
         if (installJob?.isActive == true) return
         installJob = scope.launch {
-            config.ensureExecutableBits()
+            RuntimeFileModes.ensureExecutableBits(config)
             if (!config.isContainerReady()) {
                 refreshContainer()
                 return@launch

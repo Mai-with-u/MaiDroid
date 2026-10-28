@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import java.util.concurrent.TimeUnit
@@ -125,7 +126,7 @@ class ProcessManager private constructor(context: Context) {
         }
         if (superviseJob?.isActive == true) return
 
-        containerConfig.ensureExecutableBits()
+        RuntimeFileModes.ensureExecutableBits(containerConfig)
         val notReady = containerConfig.launchRequirements().firstOrNull { !it.ready }
         if (notReady != null) {
             appendLog(

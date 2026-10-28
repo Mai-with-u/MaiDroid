@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.platform.napcat.NapCatScripts
 import org.maiwithu.maidroid.process.TerminalLogRepository
@@ -278,7 +279,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             }
 
             val validationError = withContext(Dispatchers.IO) {
-                config.ensureExecutableBits()
+                RuntimeFileModes.ensureExecutableBits(config)
                 config.containerRequirements()
                     .firstOrNull { !it.ready }
                     ?.let { "${it.name} 未就绪：${it.hint}" }
@@ -589,7 +590,7 @@ internal object NapCatRuntime {
         if (process?.isAlive == true || job?.isActive == true) return
         if (!config.isNapCatInstalled()) return
 
-        config.ensureExecutableBits()
+        RuntimeFileModes.ensureExecutableBits(config)
         job = scope.launch {
             runMaintenanceCommand(config, NapCatScripts.cleanup())
             runMaintenanceCommand(config, NapCatScripts.prepareRuntime())

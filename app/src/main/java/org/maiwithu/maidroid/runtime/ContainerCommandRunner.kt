@@ -19,64 +19,39 @@ internal data class ContainerCommandResult(
 }
 
 /**
- * 在 proot 容器里启动命令的唯一入口。
+ * 在 proot 容器里执行 ContainerScript 的唯一入口。
  *
  * 所有容器命令都以 rootfs 为工作目录、合并 stderr 并注入 proot 环境变量；
- * 会拉起 MaiBot 的命令（OOBE、NapCat 安装、MaiBot 本体）额外注入协议 hash，
- * 避免 MaiBot 启动时卡在 EULA 确认。
+ * 调用方需要的额外环境变量（例如启动 MaiBot 时的协议 hash）通过 extraEnvironment 传入。
  */
-internal class ContainerCommandRunner(private val config: RuntimePaths) {
+internal class ContainerCommandRunner(private val paths: RuntimePaths) {
+    private val proot = ProotCommand(paths)
 
     /** 脚本在宿主机上实际执行的 proot 命令行，供安装页和终端日志展示。 */
-    fun commandLine(script: ContainerScript): List<String> =
-        config.shellCommand(script.body, script.workingDirectory)
+    fun commandLine(script: ContainerScript): List<String> = proot.commandLine(script)
 
     /** 启动长驻的容器脚本（MaiBot、sshd、NapCat），输出读取和生命周期由调用方负责。 */
     fun start(script: ContainerScript, extraEnvironment: Map<String, String> = emptyMap()): Process {
         val processBuilder = ProcessBuilder(commandLine(script))
-            .directory(config.rootfsDir)
+            .directory(paths.rootfsDir)
             .redirectErrorStream(true)
-        processBuilder.environment().putAll(config.prootEnvironment())
+        processBuilder.environment().putAll(proot.environment())
         processBuilder.environment().putAll(extraEnvironment)
         return processBuilder.start()
     }
 
-    /** 执行一次性的容器脚本，行为与按命令行执行的 run 相同。 */
-    suspend fun run(
-        script: ContainerScript,
-        extraEnvironment: Map<String, String> = emptyMap(),
-        onLine: (String) -> Unit = {}
-    ): ContainerCommandResult = runProcess(onLine) { start(script, extraEnvironment) }
-
-    /** 启动长驻进程（MaiBot），输出读取和生命周期由调用方负责。 */
-    fun start(command: List<String>, includeAgreement: Boolean = false): Process {
-        val processBuilder = ProcessBuilder(command)
-            .directory(config.rootfsDir)
-            .redirectErrorStream(true)
-        processBuilder.environment().putAll(config.prootEnvironment())
-        if (includeAgreement) {
-            processBuilder.environment().putAll(config.agreementEnvironment())
-        }
-        return processBuilder.start()
-    }
-
     /**
-     * 执行一次性命令：逐行回调输出 -> 等待退出 -> 返回完整输出。
+     * 执行一次性脚本：逐行回调输出 -> 等待退出 -> 返回完整输出。
      * 进程起不来时不抛异常，而是把原因当作一行输出回调出去并以退出码 -1 返回，
      * 这样调用方只需要处理一种失败形态。
      */
     suspend fun run(
-        command: List<String>,
-        includeAgreement: Boolean = false,
+        script: ContainerScript,
+        extraEnvironment: Map<String, String> = emptyMap(),
         onLine: (String) -> Unit = {}
-    ): ContainerCommandResult = runProcess(onLine) { start(command, includeAgreement) }
-
-    private suspend fun runProcess(
-        onLine: (String) -> Unit,
-        launch: () -> Process
     ): ContainerCommandResult = withContext(Dispatchers.IO) {
         val process = try {
-            launch()
+            start(script, extraEnvironment)
         } catch (e: Exception) {
             val message = e.message.orEmpty().ifBlank { e.javaClass.simpleName }
             onLine(message)

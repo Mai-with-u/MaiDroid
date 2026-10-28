@@ -14,6 +14,15 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
+/** APK 里 assets/runtime 下随包分发的容器资源，由 RuntimeAssetInstaller 在 OOBE 时解包。 */
+internal object RuntimeAssets {
+    const val ROOTFS = "runtime/debian-rootfs.tar.xz"
+    const val BOOTSTRAP = "runtime/bootstrap-aarch64.zip"
+    const val PROOT_DEB = "runtime/proot_5.1.107.82_aarch64.deb"
+    const val LIBANDROID_SHMEM_DEB = "runtime/libandroid-shmem_0.7_aarch64.deb"
+    const val LIBTALLOC_DEB = "runtime/libtalloc_2.4.3_aarch64.deb"
+}
+
 data class RuntimeInstallProgress(
     val title: String,
     val statusText: String,
@@ -30,11 +39,11 @@ class RuntimeAssetInstaller(
         onProgress: suspend (RuntimeInstallProgress) -> Unit
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            requireAsset(RuntimePaths.ROOTFS_ASSET)
-            requireAsset(RuntimePaths.BOOTSTRAP_ASSET)
-            requireAsset(RuntimePaths.LIBANDROID_SHMEM_ASSET)
-            requireAsset(RuntimePaths.LIBTALLOC_ASSET)
-            requireAsset(RuntimePaths.PROOT_ASSET)
+            requireAsset(RuntimeAssets.ROOTFS)
+            requireAsset(RuntimeAssets.BOOTSTRAP)
+            requireAsset(RuntimeAssets.LIBANDROID_SHMEM_DEB)
+            requireAsset(RuntimeAssets.LIBTALLOC_DEB)
+            requireAsset(RuntimeAssets.PROOT_DEB)
 
             if (
                 config.rootfsMarker.isFile &&
@@ -60,7 +69,7 @@ class RuntimeAssetInstaller(
                     )
                 )
                 extractProotDependencyPackages(config.termuxDir)
-                config.ensureExecutableBits()
+                RuntimeFileModes.ensureExecutableBits(config)
                 onProgress(
                     RuntimeInstallProgress(
                         title = "容器资源",
@@ -95,7 +104,7 @@ class RuntimeAssetInstaller(
             )
             extractBootstrap(config.stagingTermuxDir)
             extractProotDependencyPackages(config.stagingTermuxDir)
-            extractTermuxDebPackage(config.stagingTermuxDir, RuntimePaths.PROOT_ASSET)
+            extractTermuxDebPackage(config.stagingTermuxDir, RuntimeAssets.PROOT_DEB)
             File(config.stagingTermuxDir, config.bootstrapMarker.name).writeText("ok")
 
             onProgress(
@@ -114,8 +123,8 @@ class RuntimeAssetInstaller(
                 "无法将 ${config.stagingTermuxDir.absolutePath} 切换为 ${config.termuxDir.absolutePath}"
             }
             config.installedMarker.writeText("ok")
-            config.ensureWritableRuntimePaths()
-            config.ensureExecutableBits()
+            RuntimeFileModes.makeRootfsWritable(config)
+            RuntimeFileModes.ensureExecutableBits(config)
 
             onProgress(
                 RuntimeInstallProgress(
@@ -133,7 +142,7 @@ class RuntimeAssetInstaller(
 
     @Suppress("DEPRECATION")
     private fun extractRootfs(targetRoot: File) {
-        appContext.assets.open(RuntimePaths.ROOTFS_ASSET).buffered().use { raw ->
+        appContext.assets.open(RuntimeAssets.ROOTFS).buffered().use { raw ->
             XZCompressorInputStream(raw).use { xz ->
                 TarArchiveInputStream(xz).use { tar ->
                     while (true) {
@@ -185,8 +194,8 @@ class RuntimeAssetInstaller(
 
     @Suppress("DEPRECATION")
     private fun extractProotDependencyPackages(targetRoot: File) {
-        extractTermuxDebPackage(targetRoot, RuntimePaths.LIBANDROID_SHMEM_ASSET)
-        extractTermuxDebPackage(targetRoot, RuntimePaths.LIBTALLOC_ASSET)
+        extractTermuxDebPackage(targetRoot, RuntimeAssets.LIBANDROID_SHMEM_DEB)
+        extractTermuxDebPackage(targetRoot, RuntimeAssets.LIBTALLOC_DEB)
     }
 
     @Suppress("DEPRECATION")
@@ -223,7 +232,7 @@ class RuntimeAssetInstaller(
     }
 
     private fun extractBootstrap(targetRoot: File) {
-        appContext.assets.open(RuntimePaths.BOOTSTRAP_ASSET).buffered().use { raw ->
+        appContext.assets.open(RuntimeAssets.BOOTSTRAP).buffered().use { raw ->
             ZipInputStream(raw).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break

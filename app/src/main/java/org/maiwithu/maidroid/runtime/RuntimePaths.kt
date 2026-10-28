@@ -1,7 +1,6 @@
 package org.maiwithu.maidroid.runtime
 
 import android.content.Context
-import android.system.Os
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -50,15 +49,9 @@ data class ContainerRequirement(
  */
 class RuntimePaths private constructor(
     private val appFilesDir: File,
-    private val nativeLibraryDir: File
+    val nativeLibraryDir: File
 ) {
     companion object {
-        private const val DEBIAN_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        const val ROOTFS_ASSET = "runtime/debian-rootfs.tar.xz"
-        const val BOOTSTRAP_ASSET = "runtime/bootstrap-aarch64.zip"
-        const val PROOT_ASSET = "runtime/proot_5.1.107.82_aarch64.deb"
-        const val LIBANDROID_SHMEM_ASSET = "runtime/libandroid-shmem_0.7_aarch64.deb"
-        const val LIBTALLOC_ASSET = "runtime/libtalloc_2.4.3_aarch64.deb"
         const val ROOTFS_DIR = "debian"
         const val STAGING_ROOTFS_DIR = "debian.tmp"
         const val TERMUX_DIR = "termux"
@@ -94,6 +87,7 @@ class RuntimePaths private constructor(
     val termuxProotExecutable: File = File(termuxDir, PROOT_BIN)
     val termuxProotLoader: File = File(termuxDir, TERMUX_PROOT_LOADER)
     val termuxProotLoader32: File = File(termuxDir, TERMUX_PROOT_LOADER_32)
+    val termuxChroot: File = File(termuxDir, "bin/termux-chroot")
     val termuxLibDir: File = File(termuxDir, "lib")
     val termuxAndroidShmem: File = File(termuxLibDir, PROOT_ANDROID_SHMEM_LIB)
     val termuxTalloc: File = File(termuxLibDir, "libtalloc.so.2")
@@ -112,7 +106,6 @@ class RuntimePaths private constructor(
     val rootfsMarker: File = File(rootfsDir, ".maidroid-rootfs-ready")
     val bootstrapMarker: File = File(termuxDir, ".maidroid-bootstrap-ready")
     val installedMarker: File = File(appFilesDir, ".maidroid-runtime-ready")
-    val permissionRepairMarker: File = File(appFilesDir, ".maidroid-runtime-permissions-ready")
     val gitExecutable: File = File(rootfsDir, "usr/bin/git")
     val curlExecutable: File = File(rootfsDir, "usr/bin/curl")
     val caCertificateBundle: File = File(rootfsDir, "etc/ssl/certs/ca-certificates.crt")
@@ -140,13 +133,13 @@ class RuntimePaths private constructor(
             name = "Debian rootfs",
             path = rootfsDir.absolutePath,
             ready = rootfsDir.isDirectory && rootfsMarker.isFile,
-            hint = "OOBE 需要先解包 $ROOTFS_ASSET"
+            hint = "OOBE 需要先解包 ${RuntimeAssets.ROOTFS}"
         ),
         ContainerRequirement(
             name = "Termux bootstrap",
             path = bootstrapMarker.absolutePath,
             ready = bootstrapMarker.isFile,
-            hint = "OOBE 需要先解包 $BOOTSTRAP_ASSET"
+            hint = "OOBE 需要先解包 ${RuntimeAssets.BOOTSTRAP}"
         ),
         ContainerRequirement(
             name = "proot",
@@ -211,41 +204,6 @@ class RuntimePaths private constructor(
             ?: false
     fun hasAgreementFiles(): Boolean = eulaFile.isFile && privacyFile.isFile
 
-    fun ensureExecutableBits() {
-        listOf(
-            prootExecutable,
-            prootLoader,
-            prootAndroidShmem,
-            prootTalloc,
-            termuxProotExecutable,
-            termuxProotLoader,
-            termuxProotLoader32,
-            File(termuxDir, "bin/termux-chroot")
-        ).forEach(::chmodExecutable)
-    }
-
-    fun ensureWritableRuntimePaths() {
-        if (!rootfsDir.isDirectory) return
-        makeWritableRecursively(rootfsDir)
-        permissionRepairMarker.writeText("ok")
-    }
-
-    fun prootEnvironment(): Map<String, String> {
-        termuxTmpDir.mkdirs()
-        return buildMap {
-            put("PATH", DEBIAN_PATH)
-            put("HOME", "/root")
-            put("USER", "root")
-            put("LOGNAME", "root")
-            put("SHELL", "/bin/sh")
-            put("TERM", "xterm-256color")
-            put("PROOT_LOADER", prootLoader.absolutePath)
-            put("PROOT_TMP_DIR", termuxTmpDir.absolutePath)
-            put("TMPDIR", termuxTmpDir.absolutePath)
-            put("LD_LIBRARY_PATH", "${nativeLibraryDir.absolutePath}:${termuxLibDir.absolutePath}")
-        }
-    }
-
     fun isNapCatInstalled(): Boolean =
         napCatReadyMarker.isFile && napCatOneBotConfig.isFile && maiBotNapCatAdapterConfig.isFile
 
@@ -272,31 +230,7 @@ class RuntimePaths private constructor(
         )
     }
 
-    fun prootCommand(
-        workingDirectory: String = MAIBOT_CONTAINER_DIR,
-        vararg args: String
-    ): List<String> {
-        termuxTmpDir.mkdirs()
-        ensureFakeProcFiles()
-        return listOf(
-            prootExecutable.absolutePath,
-            "--link2symlink",
-            "-0",
-            "-r", rootfsDir.absolutePath,
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "${fakeProcStat.absolutePath}:/proc/stat",
-            "-b", "${fakeProcLoadAvg.absolutePath}:/proc/loadavg",
-            "-b", "${fakeProcVmStat.absolutePath}:/proc/vmstat",
-            "-b", "${fakeProcUptime.absolutePath}:/proc/uptime",
-            "-b", "/sys",
-            "-b", "/sdcard",
-            "-b", "${termuxTmpDir.absolutePath}:/tmp",
-            "-w", workingDirectory
-        ) + args
-    }
-
-    private fun isProotRuntimeReady(): Boolean =
+    fun isProotRuntimeReady(): Boolean =
         prootExecutable.isFile && prootExecutable.canExecute() &&
             prootLoader.isFile && prootLoader.canExecute() &&
             prootAndroidShmem.isFile && prootAndroidShmem.canExecute() &&
@@ -304,85 +238,6 @@ class RuntimePaths private constructor(
 
     fun areTermuxProotDependenciesReady(): Boolean =
         termuxAndroidShmem.isFile && termuxTalloc.isFile
-
-    private fun chmodExecutable(file: File) {
-        if (!file.isFile) return
-        runCatching { Os.chmod(file.absolutePath, 0b111101101) }
-        file.setReadable(true, false)
-        file.setExecutable(true, false)
-    }
-
-    private fun makeWritableRecursively(file: File) {
-        if (Files.isSymbolicLink(file.toPath())) return
-
-        file.setReadable(true, true)
-        file.setWritable(true, true)
-        if (file.isDirectory || file.canExecute()) {
-            file.setExecutable(true, true)
-        }
-        if (file.isDirectory) {
-            file.listFiles()?.forEach(::makeWritableRecursively)
-        }
-    }
-
-    /** 在容器里用 /bin/sh 执行一段脚本，脚本前会先重置 PATH、HOME 等 Debian 环境变量。 */
-    internal fun shellCommand(
-        script: String,
-        workingDirectory: String
-    ): List<String> =
-        prootCommand(workingDirectory, "/bin/sh", "-c", "${shellPrelude()} $script")
-
-    private fun shellPrelude(): String =
-        "unset LD_LIBRARY_PATH; " +
-            "export PATH=${shellQuote(DEBIAN_PATH)}; " +
-            "export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh TMPDIR=/tmp; "
-
-    private fun ensureFakeProcFiles() {
-        val bootTimeSeconds = (System.currentTimeMillis() / 1000L) - 60L
-        writeIfChanged(
-            fakeProcStat,
-            """
-            cpu  0 0 0 0 0 0 0 0 0 0
-            cpu0 0 0 0 0 0 0 0 0 0 0
-            intr 0
-            ctxt 0
-            btime $bootTimeSeconds
-            processes 1
-            procs_running 1
-            procs_blocked 0
-            softirq 0 0 0 0 0 0 0 0 0 0 0
-            """.trimIndent() + "\n"
-        )
-        writeIfChanged(fakeProcLoadAvg, "0.00 0.00 0.00 1/1 1\n")
-        writeIfChanged(
-            fakeProcVmStat,
-            """
-            nr_free_pages 0
-            nr_inactive_anon 0
-            nr_active_anon 0
-            nr_inactive_file 0
-            nr_active_file 0
-            nr_unevictable 0
-            nr_mlock 0
-            pgpgin 0
-            pgpgout 0
-            pswpin 0
-            pswpout 0
-            pgfault 0
-            pgmajfault 0
-            """.trimIndent() + "\n"
-        )
-        writeIfChanged(fakeProcUptime, "60.00 60.00\n")
-    }
-
-    private fun writeIfChanged(file: File, content: String) {
-        file.parentFile?.mkdirs()
-        if (!file.isFile || file.readText() != content) {
-            file.writeText(content)
-        }
-        file.setReadable(true, false)
-        file.setWritable(true, true)
-    }
 
     private fun md5(file: File): String? {
         if (!file.isFile) return null
