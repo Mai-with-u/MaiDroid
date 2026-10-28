@@ -29,9 +29,10 @@ class HomePlatformsPageTest {
     }
 
     @Test
-    fun `official bot sits leftmost while NapCat stays the default choice`() {
+    fun `official bot sits leftmost and each adapter has its own provider text`() {
         val qq = AvailablePlatforms.first { it.name == "QQ" }
         assertEquals(listOf(QqOfficialAdapterName, NapCatAdapterName, "SnowLuma"), qq.adapters)
+        assertEquals("将由 QQ 官方接口提供服务", qq.adapterProviders[QqOfficialAdapterName] ?: qq.provider)
         assertEquals("将由 NapCat 提供服务", qq.adapterProviders[NapCatAdapterName] ?: qq.provider)
     }
 

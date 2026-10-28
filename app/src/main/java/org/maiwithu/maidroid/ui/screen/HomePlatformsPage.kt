@@ -142,8 +142,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         qqOfficialManager.refresh()
     }
     var selectedCategory by remember { mutableStateOf("全部") }
-    // QQ 卡片默认选中 NapCat；官方机器人虽然排在最左，但要先去 QQ 开放平台申请凭据，不作为默认。
-    var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to NapCatAdapterName)) }
+    // QQ 卡片默认选中最左边的官方机器人；用户切到 NapCat 等其他选项后，本次页面内记住所选。
+    var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to QqOfficialAdapterName)) }
     // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
     var showNapCatQrCode by rememberSaveable { mutableStateOf(false) }
     var showNapCatConfig by rememberSaveable { mutableStateOf(false) }

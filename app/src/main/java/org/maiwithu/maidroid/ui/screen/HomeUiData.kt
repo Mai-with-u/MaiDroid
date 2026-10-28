@@ -72,14 +72,15 @@ internal val AvailablePlatforms = listOf(
         name = "QQ",
         iconRes = R.drawable.ic_platform_qq,
         iconColor = Color(0xCC0F3BE9),
-        provider = "将由 NapCat 提供服务",
+        // 服务方说明和简介共两行，说明一折行就会把简介挤掉，所以每条都要短到窄卡片上也能一行放下。
+        provider = "将由 QQ 官方接口提供服务",
         description = "日常闲聊，水群必选平台",
         tags = listOf("国内", "常用"),
         badge = "最佳适配",
-        // 官方机器人放最左，默认仍选中 NapCat（见 MessagePlatformsPage 的 selectedAdapters 初值）。
+        // 官方机器人放最左并默认选中（见 MessagePlatformsPage 的 selectedAdapters 初值）。
         adapters = listOf(QqOfficialAdapterName, NapCatAdapterName, "SnowLuma"),
         adapterProviders = mapOf(
-            QqOfficialAdapterName to "将由 QQ 开放平台官方接口提供服务",
+            NapCatAdapterName to "将由 NapCat 提供服务",
             "SnowLuma" to "SnowLuma 暂未适配"
         )
     ),
