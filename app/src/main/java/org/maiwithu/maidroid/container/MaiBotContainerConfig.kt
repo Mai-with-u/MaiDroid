@@ -58,6 +58,8 @@ class MaiBotContainerConfig private constructor(
         const val TERMUX_PROOT_LOADER_32 = "libexec/proot/loader32"
         const val SOCKET_NAME = "maidroid_ipc_socket"
         const val WEB_UI_URL = "http://127.0.0.1:8001/"
+        const val QQ_OFFICIAL_ADAPTER_REPOSITORY_URL = "https://github.com/Mai-with-u/MaiBot-QQ-Adapter.git"
+        const val QQ_OFFICIAL_ADAPTER_DIR_NAME = "MaiBot-QQ-Adapter"
 
         // MaiBot 的 requires-python 只写了 >=3.12，没有上限也没有 .python-version，uv 会自动选最新的 Python。
         // 新版 Python 刚发布时，pydantic-core、pyarrow、zstandard 等包在 aarch64 上还没有预编译包，
@@ -122,6 +124,8 @@ class MaiBotContainerConfig private constructor(
     val napCatLauncher: File = File(rootfsDir, "root/launcher.sh")
     val maiBotNapCatAdapterDir: File = File(maiBotDir, "plugins/MaiBot-Napcat-Adapter")
     val maiBotNapCatAdapterConfig: File = File(maiBotNapCatAdapterDir, "config.toml")
+    val maiBotQqOfficialAdapterDir: File = File(maiBotDir, "plugins/$QQ_OFFICIAL_ADAPTER_DIR_NAME")
+    val maiBotQqOfficialAdapterConfig: File = File(maiBotQqOfficialAdapterDir, "config.toml")
     val sshdExecutable: File = File(rootfsDir, "usr/sbin/sshd")
 
     fun containerRequirements(): List<ContainerRequirement> = listOf(
@@ -366,6 +370,42 @@ class MaiBotContainerConfig private constructor(
 
     fun isNapCatInstalled(): Boolean =
         napCatReadyMarker.isFile && napCatOneBotConfig.isFile && maiBotNapCatAdapterConfig.isFile
+
+    // 清单和入口都在才算装好：克隆是先进临时目录再改名的，半截目录不会出现在这里。
+    fun isQqOfficialAdapterInstalled(): Boolean =
+        File(maiBotQqOfficialAdapterDir, "_manifest.json").isFile &&
+            File(maiBotQqOfficialAdapterDir, "plugin.py").isFile
+
+    /**
+     * 安装 QQ 官方机器人适配器：已装好就直接退出 -> 经 GitHub 镜像克隆到 plugins 下的点开头临时目录 ->
+     * 改名为正式目录。临时目录以点开头，MaiBot 扫插件和热重载时会跳过它，不会把克隆了一半的目录当插件加载；
+     * core.createObject=rename 避免 proot 把 packfile 硬链接变成绝对路径符号链接，改名后仓库仍可读。
+     * 凭据由宿主侧直接写 config.toml，不经过命令行，避免 AppSecret 出现在进程参数和日志里。
+     */
+    fun qqOfficialAdapterInstallCommand(): List<String> {
+        val pluginsDir = "$MAIBOT_CONTAINER_DIR/plugins"
+        val adapterDir = "$pluginsDir/$QQ_OFFICIAL_ADAPTER_DIR_NAME"
+        val stagingDir = "$pluginsDir/.$QQ_OFFICIAL_ADAPTER_DIR_NAME.tmp"
+        return shellCommand(
+            script = listOf(
+                githubMirrorScript(),
+                """
+                set -e
+                if [ -f ${shellQuote("$adapterDir/_manifest.json")} ] && [ -f ${shellQuote("$adapterDir/plugin.py")} ]; then
+                    printf "[QQ 官方机器人] 适配器已存在，跳过下载: %s\n" ${shellQuote(adapterDir)}
+                    exit 0
+                fi
+                mkdir -p ${shellQuote(pluginsDir)}
+                rm -rf ${shellQuote(stagingDir)}
+                maidroid_github_clone ${shellQuote(QQ_OFFICIAL_ADAPTER_REPOSITORY_URL)} ${shellQuote(stagingDir)} -c core.createObject=rename --depth=1 --single-branch
+                rm -rf ${shellQuote(adapterDir)}
+                mv ${shellQuote(stagingDir)} ${shellQuote(adapterDir)}
+                printf "[QQ 官方机器人] 适配器已下载到 %s\n" ${shellQuote(adapterDir)}
+                """.trimIndent()
+            ).joinToString("\n"),
+            workingDirectory = "/"
+        )
+    }
 
     fun agreementEnvironment(): Map<String, String> {
         val eulaHash = md5(eulaFile) ?: return emptyMap()
