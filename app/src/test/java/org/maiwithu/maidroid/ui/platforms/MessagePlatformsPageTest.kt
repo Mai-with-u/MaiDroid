@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class HomePlatformsPageTest {
+class MessagePlatformsPageTest {
 
     @Test
     fun `column count keeps cards above their minimum width`() {

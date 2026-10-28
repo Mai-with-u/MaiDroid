@@ -5,7 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class HomeSettingsPageTest {
+class SettingsPageTest {
     @Test
     fun `landscape window uses two panes`() {
         assertTrue(settingsUseTwoPane(widthDp = 600f, heightDp = 360f))

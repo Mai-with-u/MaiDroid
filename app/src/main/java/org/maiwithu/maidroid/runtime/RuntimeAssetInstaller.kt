@@ -47,7 +47,7 @@ internal data class RuntimeInstallProgress(
  */
 internal class RuntimeAssetInstaller(
     context: Context,
-    private val config: RuntimePaths
+    private val paths: RuntimePaths
 ) {
     private val appContext = context.applicationContext
 
@@ -62,9 +62,9 @@ internal class RuntimeAssetInstaller(
             requireAsset(RuntimeAssets.PROOT_DEB)
 
             if (
-                config.rootfsMarker.isFile &&
-                config.bootstrapMarker.isFile &&
-                RuntimeReadiness(config).areTermuxProotDependenciesReady()
+                paths.rootfsMarker.isFile &&
+                paths.bootstrapMarker.isFile &&
+                RuntimeReadiness(paths).areTermuxProotDependenciesReady()
             ) {
                 onProgress(
                     RuntimeInstallProgress(
@@ -75,15 +75,15 @@ internal class RuntimeAssetInstaller(
                 return@runCatching
             }
 
-            if (config.rootfsMarker.isFile && config.bootstrapMarker.isFile) {
+            if (paths.rootfsMarker.isFile && paths.bootstrapMarker.isFile) {
                 onProgress(
                     RuntimeInstallProgress(
                         stage = RuntimeInstallStage.TermuxBootstrap,
                         statusText = "正在补齐 proot 运行库依赖"
                     )
                 )
-                extractProotDependencyPackages(config.termuxDir)
-                RuntimeFileModes.ensureExecutableBits(config)
+                extractProotDependencyPackages(paths.termuxDir)
+                RuntimeFileModes.ensureExecutableBits(paths)
                 onProgress(
                     RuntimeInstallProgress(
                         stage = RuntimeInstallStage.WholeRuntime,
@@ -93,10 +93,10 @@ internal class RuntimeAssetInstaller(
                 return@runCatching
             }
 
-            deleteRecursively(config.stagingRootfsDir)
-            deleteRecursively(config.stagingTermuxDir)
-            config.stagingRootfsDir.mkdirs()
-            config.stagingTermuxDir.mkdirs()
+            deleteRecursively(paths.stagingRootfsDir)
+            deleteRecursively(paths.stagingTermuxDir)
+            paths.stagingRootfsDir.mkdirs()
+            paths.stagingTermuxDir.mkdirs()
 
             onProgress(
                 RuntimeInstallProgress(
@@ -104,8 +104,8 @@ internal class RuntimeAssetInstaller(
                     statusText = "正在解包 debian-rootfs.tar.xz"
                 )
             )
-            extractRootfs(config.stagingRootfsDir)
-            File(config.stagingRootfsDir, config.rootfsMarker.name).writeText("ok")
+            extractRootfs(paths.stagingRootfsDir)
+            File(paths.stagingRootfsDir, paths.rootfsMarker.name).writeText("ok")
 
             onProgress(
                 RuntimeInstallProgress(
@@ -113,10 +113,10 @@ internal class RuntimeAssetInstaller(
                     statusText = "正在合并 bootstrap-aarch64.zip 和 proot 包"
                 )
             )
-            extractBootstrap(config.stagingTermuxDir)
-            extractProotDependencyPackages(config.stagingTermuxDir)
-            extractTermuxDebPackage(config.stagingTermuxDir, RuntimeAssets.PROOT_DEB)
-            File(config.stagingTermuxDir, config.bootstrapMarker.name).writeText("ok")
+            extractBootstrap(paths.stagingTermuxDir)
+            extractProotDependencyPackages(paths.stagingTermuxDir)
+            extractTermuxDebPackage(paths.stagingTermuxDir, RuntimeAssets.PROOT_DEB)
+            File(paths.stagingTermuxDir, paths.bootstrapMarker.name).writeText("ok")
 
             onProgress(
                 RuntimeInstallProgress(
@@ -124,16 +124,16 @@ internal class RuntimeAssetInstaller(
                     statusText = "正在切换到正式目录"
                 )
             )
-            deleteRecursively(config.rootfsDir)
-            deleteRecursively(config.termuxDir)
-            check(config.stagingRootfsDir.renameTo(config.rootfsDir)) {
-                "无法将 ${config.stagingRootfsDir.absolutePath} 切换为 ${config.rootfsDir.absolutePath}"
+            deleteRecursively(paths.rootfsDir)
+            deleteRecursively(paths.termuxDir)
+            check(paths.stagingRootfsDir.renameTo(paths.rootfsDir)) {
+                "无法将 ${paths.stagingRootfsDir.absolutePath} 切换为 ${paths.rootfsDir.absolutePath}"
             }
-            check(config.stagingTermuxDir.renameTo(config.termuxDir)) {
-                "无法将 ${config.stagingTermuxDir.absolutePath} 切换为 ${config.termuxDir.absolutePath}"
+            check(paths.stagingTermuxDir.renameTo(paths.termuxDir)) {
+                "无法将 ${paths.stagingTermuxDir.absolutePath} 切换为 ${paths.termuxDir.absolutePath}"
             }
-            RuntimeFileModes.makeRootfsWritable(config)
-            RuntimeFileModes.ensureExecutableBits(config)
+            RuntimeFileModes.makeRootfsWritable(paths)
+            RuntimeFileModes.ensureExecutableBits(paths)
 
             onProgress(
                 RuntimeInstallProgress(

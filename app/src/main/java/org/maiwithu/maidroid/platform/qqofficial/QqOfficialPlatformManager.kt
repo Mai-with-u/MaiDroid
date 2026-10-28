@@ -30,12 +30,12 @@ import java.io.File
  */
 internal class QqOfficialPlatformManager(
     private val appContext: Context,
-    config: RuntimePaths,
+    paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
     private val maiBot: MaiBotSupervisor
 ) {
-    private val adapterFiles = QqOfficialAdapterFiles(config)
+    private val adapterFiles = QqOfficialAdapterFiles(paths)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var installJob: Job? = null
     // 最近一次连接报错的时间（开机时钟），只在主线程读写。

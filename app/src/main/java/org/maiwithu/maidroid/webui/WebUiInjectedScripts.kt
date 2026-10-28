@@ -26,7 +26,7 @@ internal object WebUiInjectedScripts {
     /**
      * 兜底：WebView 主框架里 vh/dvh/svh/lvh 恒为 0 时，改写样式表让页面仍能排版。
      * 已知成因是宿主给 WebView 的布局高度是 WRAP_CONTENT（Compose 的 AndroidView 默认如此），
-     * HomeWebUiTab 已显式设为铺满父视图，正常情况下这里探针量得出高度，脚本不会启用；
+     * WebUI 页签（ui/home/WebUiTab）已显式设为铺满父视图，正常情况下这里探针量得出高度，脚本不会启用；
      * 保留它是为了应对以后换宿主布局、或别的宿主再次踩到同一个坑。
      * 触发条件：页面头部脚本执行时，用探针元素量到 100vh 的高度小于 1px。
      * 执行顺序：先把可视视口高度的 1% 写进 --maidroid-vh -> 再把已加载样式表里所有 vh 类单位

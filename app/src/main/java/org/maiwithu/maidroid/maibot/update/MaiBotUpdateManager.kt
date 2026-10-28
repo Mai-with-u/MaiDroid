@@ -60,7 +60,7 @@ internal data class MaiBotUpdateState(
  */
 internal class MaiBotUpdateManager(
     private val appContext: Context,
-    private val config: RuntimePaths,
+    private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
     private val maiBot: MaiBotSupervisor
@@ -188,7 +188,7 @@ internal class MaiBotUpdateManager(
         }
 
         // OOBE 装过 uv，这里兜底处理 uv 被误删的情况。
-        if (!config.userUvExecutable.isFile) {
+        if (!paths.userUvExecutable.isFile) {
             showProgress(MaiBotUpdatePhase.Updating, "正在安装 uv...")
             val uvResult = runCommand(MaiBotScripts.installUv())
             if (!uvResult.success) return "安装 uv 失败：${uvResult.summary()}"
@@ -213,7 +213,7 @@ internal class MaiBotUpdateManager(
         when {
             containerProblem != null -> containerProblem
             !readiness.isMaiBotSourceReady() -> "MaiBot 源码尚未安装"
-            !config.maiBotGitDir.exists() -> "MaiBot 目录不是 Git 仓库，无法在线更新"
+            !paths.maiBotGitDir.exists() -> "MaiBot 目录不是 Git 仓库，无法在线更新"
             else -> null
         }
     }
