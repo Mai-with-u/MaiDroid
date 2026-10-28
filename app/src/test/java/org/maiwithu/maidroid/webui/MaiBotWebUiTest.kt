@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class MaiBotWebUiSupportTest {
+class MaiBotWebUiTest {
     @Test
     fun extractAccessTokenFromLogsFindsStartupToken() {
         val token = MaiBotWebUi.extractAccessTokenFromLogs(
@@ -46,7 +46,7 @@ class MaiBotWebUiSupportTest {
     fun injectThemeBootstrapPutsViewportFixBeforeFirstScript() {
         val html = "<html><head><link rel=\"stylesheet\" href=\"/a.css\"><script src=\"/app.js\"></script></head></html>"
 
-        val injected = MaiBotWebUiSupport.injectThemeBootstrap(html)
+        val injected = WebUiResponseRewriter.injectPageBootstrap(html)
 
         // 修补脚本必须先于页面自己的脚本，否则首帧会按 vh 为 0 的样式排版
         val fixIndex = injected.indexOf("__maidroidVhFixInstalled")
@@ -56,10 +56,10 @@ class MaiBotWebUiSupportTest {
 
     @Test
     fun injectThemeBootstrapFallsBackToHeadAndPrefix() {
-        val withHead = MaiBotWebUiSupport.injectThemeBootstrap("<head></head><body></body>")
+        val withHead = WebUiResponseRewriter.injectPageBootstrap("<head></head><body></body>")
         assertTrue(withHead.indexOf("__maidroidVhFixInstalled") < withHead.indexOf("</head>"))
 
-        val bare = MaiBotWebUiSupport.injectThemeBootstrap("plain")
+        val bare = WebUiResponseRewriter.injectPageBootstrap("plain")
         assertTrue(bare.endsWith("plain"))
         assertTrue(bare.contains("__maidroidVhFixInstalled"))
     }
@@ -70,7 +70,7 @@ class MaiBotWebUiSupportTest {
         val css = ".bottom-\\[calc\\(env\\(safe-area-inset-bottom\\)\\+14px\\)\\]" +
             "{bottom:calc(env(safe-area-inset-bottom) + 14px)}"
 
-        val rewritten = MaiBotWebUiSupport.rewriteBottomSafeArea(css, 80)
+        val rewritten = WebUiResponseRewriter.rewriteBottomSafeArea(css, 80)
 
         assertEquals(
             ".bottom-\\[calc\\(env\\(safe-area-inset-bottom\\)\\+14px\\)\\]" +
@@ -85,7 +85,7 @@ class MaiBotWebUiSupportTest {
             "b{padding:10px 10px calc(ENV(safe-area-inset-bottom) + 12px)}" +
             "c{margin-bottom:env( safe-area-inset-bottom , 0px )}"
 
-        val rewritten = MaiBotWebUiSupport.rewriteBottomSafeArea(css, 80)
+        val rewritten = WebUiResponseRewriter.rewriteBottomSafeArea(css, 80)
 
         assertTrue(rewritten.contains("max(1.5rem,calc(env(safe-area-inset-bottom) + 80px))"))
         assertTrue(rewritten.contains("calc(calc(ENV(safe-area-inset-bottom) + 80px) + 12px)"))
@@ -98,27 +98,27 @@ class MaiBotWebUiSupportTest {
         val css = "a{padding-top:env(safe-area-inset-top)}b{bottom:env(safe-area-inset-bottom)}"
 
         // 占高为 0 时不改动任何样式；只改底部安全区，顶部安全区保持原样
-        assertEquals(css, MaiBotWebUiSupport.rewriteBottomSafeArea(css, 0))
-        assertEquals(css, MaiBotWebUiSupport.rewriteBottomSafeArea(css, -8))
+        assertEquals(css, WebUiResponseRewriter.rewriteBottomSafeArea(css, 0))
+        assertEquals(css, WebUiResponseRewriter.rewriteBottomSafeArea(css, -8))
 
-        val rewritten = MaiBotWebUiSupport.rewriteBottomSafeArea(css, 80)
+        val rewritten = WebUiResponseRewriter.rewriteBottomSafeArea(css, 80)
         assertTrue(rewritten.contains("padding-top:env(safe-area-inset-top)"))
         assertTrue(rewritten.contains("bottom:calc(env(safe-area-inset-bottom) + 80px)"))
     }
 
     @Test
     fun isLocalStylesheetUrlOnlyAcceptsLoopbackCss() {
-        assertTrue(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index-abc.css"))
-        assertTrue(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "localhost", "/assets/Chat.CSS"))
-        assertTrue(MaiBotWebUiSupport.isLocalStylesheetUrl("https", "[::1]", "/a.css"))
+        assertTrue(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index-abc.css"))
+        assertTrue(WebUiResponseRewriter.isLocalStylesheetUrl("http", "localhost", "/assets/Chat.CSS"))
+        assertTrue(WebUiResponseRewriter.isLocalStylesheetUrl("https", "[::1]", "/a.css"))
 
         // 第三方站点、非 CSS 资源、非 http(s) 协议都不拦截
-        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("https", "fonts.googleapis.com", "/css/a.css"))
-        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index.js"))
-        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/font.woff2"))
-        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", "127.0.0.1", null))
-        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("file", "127.0.0.1", "/a.css"))
-        assertFalse(MaiBotWebUiSupport.isLocalStylesheetUrl("http", null, "/a.css"))
+        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("https", "fonts.googleapis.com", "/css/a.css"))
+        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index.js"))
+        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/font.woff2"))
+        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", null))
+        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("file", "127.0.0.1", "/a.css"))
+        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", null, "/a.css"))
     }
 
     @Test

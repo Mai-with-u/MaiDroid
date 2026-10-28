@@ -1,19 +1,22 @@
 package org.maiwithu.maidroid.webui
 
-import android.os.Build
 import android.util.Log
 import android.webkit.CookieManager
-import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-object MaiBotWebUiSupport {
-    private const val TAG = "MaiBotWebUiSupport"
+/**
+ * 拦截 MaiBot WebUI 的请求，在 APP 侧改写返回内容后再交给 WebView：
+ * - 页面 HTML：在第一个脚本之前注入 WebUiInjectedScripts.pageBootstrap（主题 + vh 兜底）；
+ * - 本机 .css 样式表：把 env(safe-area-inset-bottom) 加上 APP 底部导航栏的占高。
+ * 其余请求（脚本、图片、接口、第三方资源）原样放行。由 MaiBotWebViewClient 调用。
+ */
+internal object WebUiResponseRewriter {
+    private const val TAG = "WebUiResponseRewriter"
+    private const val FETCH_TIMEOUT_MS = 5_000
 
     private val firstScriptTagRegex = Regex("""<script(?:\s|>)""", RegexOption.IGNORE_CASE)
     private val closingHeadTagRegex = Regex("""</head>""", RegexOption.IGNORE_CASE)
@@ -32,7 +35,7 @@ object MaiBotWebUiSupport {
      * 原因：导航栏浮在 WebView 上，网页的 viewport 又没有 viewport-fit=cover，env 恒为 0，
      * 上游贴底的悬浮底栏会被导航栏盖住；把导航栏占高并进安全区后，上游所有贴底元素会一起上移。
      */
-    fun interceptAndInjectTheme(
+    fun intercept(
         request: WebResourceRequest,
         logTag: String = TAG,
         bottomInsetCssPx: Int = 0
@@ -46,8 +49,8 @@ object MaiBotWebUiSupport {
         return try {
             connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 5_000
-                readTimeout = 5_000
+                connectTimeout = FETCH_TIMEOUT_MS
+                readTimeout = FETCH_TIMEOUT_MS
                 instanceFollowRedirects = true
                 request.requestHeaders["User-Agent"]?.let { setRequestProperty("User-Agent", it) }
                 CookieManager.getInstance().getCookie(url)
@@ -69,7 +72,7 @@ object MaiBotWebUiSupport {
 
             val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             val modifiedBody = if (isHtml) {
-                injectThemeBootstrap(body)
+                injectPageBootstrap(body)
             } else {
                 rewriteBottomSafeArea(body, bottomInsetCssPx)
             }
@@ -78,7 +81,7 @@ object MaiBotWebUiSupport {
                 Charsets.UTF_8.name(),
                 ByteArrayInputStream(modifiedBody.toByteArray(Charsets.UTF_8))
             ).apply {
-                if (isHtml && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                if (isHtml) {
                     responseHeaders = mapOf("Cache-Control" to "no-cache")
                 }
             }
@@ -90,18 +93,7 @@ object MaiBotWebUiSupport {
         }
     }
 
-    fun patchViewportLayout(
-        webView: WebView,
-        reservedBottomCssPx: Int = 0,
-        logTag: String = TAG
-    ) {
-        webView.evaluateJavascript(
-            WebUiInjectedScripts.viewportPatch(reservedBottomCssPx)
-        ) { result ->
-            Log.d(logTag, "viewport patch $result")
-        }
-    }
-
+    // 主框架的 GET 导航，且路径是根、.html 或不带扩展名（单页应用的前端路由）才算页面 HTML。
     private fun shouldInterceptHtmlRequest(request: WebResourceRequest): Boolean {
         if (!request.isForMainFrame || !request.method.equals("GET", ignoreCase = true)) {
             return false
@@ -157,13 +149,11 @@ object MaiBotWebUiSupport {
             ?.values
             ?.flatten()
             ?.forEach { cookieManager.setCookie(url, it) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            cookieManager.flush()
-        }
+        cookieManager.flush()
     }
 
     /** 在页面第一个脚本之前注入主题和视口单位修补脚本，保证它们先于页面自己的脚本和首次渲染执行。 */
-    internal fun injectThemeBootstrap(html: String): String {
+    internal fun injectPageBootstrap(html: String): String {
         val bootstrap = WebUiInjectedScripts.pageBootstrap()
 
         firstScriptTagRegex.find(html)?.let { match ->
@@ -179,49 +169,5 @@ object MaiBotWebUiSupport {
         }
 
         return bootstrap + html
-    }
-}
-
-open class MaiBotWebViewClient(
-    private val logTag: String,
-    private val viewportReservedBottomCssPx: Int = 0,
-    private val onPageFinishedCallback: (WebView, String) -> Unit = { _, _ -> },
-    private val onMainFrameError: (WebResourceRequest, WebResourceError) -> Unit = { _, _ -> }
-) : WebViewClient() {
-    override fun shouldInterceptRequest(
-        view: WebView?,
-        request: WebResourceRequest?
-    ): WebResourceResponse? =
-        request?.let {
-            // 导航栏占高同时作为网页的底部安全区，样式表请求据此改写 env(safe-area-inset-bottom)
-            MaiBotWebUiSupport.interceptAndInjectTheme(
-                request = it,
-                logTag = logTag,
-                bottomInsetCssPx = viewportReservedBottomCssPx
-            )
-        }
-
-    override fun onPageFinished(view: WebView, url: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            CookieManager.getInstance().flush()
-        }
-        MaiBotWebUiSupport.patchViewportLayout(
-            webView = view,
-            reservedBottomCssPx = viewportReservedBottomCssPx,
-            logTag = logTag
-        )
-        onPageFinishedCallback(view, url)
-        super.onPageFinished(view, url)
-    }
-
-    override fun onReceivedError(
-        view: WebView,
-        request: WebResourceRequest,
-        error: WebResourceError
-    ) {
-        if (request.isForMainFrame) {
-            onMainFrameError(request, error)
-        }
-        super.onReceivedError(view, request, error)
     }
 }
