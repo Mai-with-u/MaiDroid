@@ -18,6 +18,7 @@ import org.maiwithu.maidroid.maibot.MaiBotDependencyStep
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.runtime.ContainerRequirement
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ContainerSetupScripts
@@ -133,7 +134,7 @@ internal class OobeSetupManager(
 
                 val setupSteps = listOf(
                     "正在配置共享存储入口..." to ContainerSetupScripts.setupStorageBridge(),
-                    "正在配置容器 DNS..." to ContainerSetupScripts.configureDns(),
+                    "正在配置容器 DNS..." to ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext)),
                     "正在配置清华 Debian 镜像源..." to ContainerSetupScripts.configureAptMirror(),
                     "正在容器内安装 Git、curl 和证书..." to ContainerSetupScripts.installSystemDependencies()
                 )
@@ -174,7 +175,7 @@ internal class OobeSetupManager(
                 OobeTaskKind.MaiBotSource
             }
             showInstallRunning(dnsTaskKind, "正在配置容器 DNS...")
-            val dnsResult = runCommand(ContainerSetupScripts.configureDns())
+            val dnsResult = runCommand(ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext)))
             if (!dnsResult.success) {
                 failInstall(dnsTaskKind, dnsResult.summary())
                 return@launch

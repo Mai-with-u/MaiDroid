@@ -46,6 +46,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
+| `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 平台网格列数、选择器宽度、平台目录 |
 | `ui/settings/*Test` | 设置页分栏规则、更新弹窗按钮与文案 |

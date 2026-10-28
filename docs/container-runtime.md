@@ -90,9 +90,9 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ## OOBE：配置容器（`OobeSetupManager.prepareContainer`）
 
-1. **解包资源**（`RuntimeAssetInstaller`，已解包就跳过）：rootfs 解到 `debian.tmp` -> bootstrap 和 deb 包合并解到 `termux.tmp` -> 写完成标记 -> 删旧目录、改名为正式目录 -> 修权限。中途被杀不会留下半成品；旧版本升级上来只缺 proot 依赖库时只补库。tar 里的硬链接、zip 里 `SYMLINKS.txt` 描述的符号链接都会还原，路径越界的条目直接报错。
+1. **解包资源**（`RuntimeAssetInstaller`，已解包就跳过）：rootfs 解到 `debian.tmp` -> bootstrap 和 deb 包合并解到 `termux.tmp` -> 写完成标记 -> 删旧目录、改名为正式目录 -> 修权限。中途被杀不会留下半成品；旧版本升级上来只缺 proot 依赖库时只补库。tar 里的硬链接、zip 里 `SYMLINKS.txt` 描述的符号链接都会还原（硬链接建不了就复制），还原不了直接报错，路径越界的条目也直接报错。删旧目录时不跟随符号链接：rootfs 里的 `/root/storage/shared -> /sdcard` 在宿主上指向手机共享存储，跟进去会删掉用户文件。
 2. **确认 proot 可执行**。
-3. **系统依赖**（缺 git/curl 时才做，见 `ContainerSetupScripts`）：修复 rootfs 权限 -> 在 `/root/storage` 下建到 `/sdcard` 各目录的链接 -> 写 DNS（阿里、114、Google、Cloudflare）-> apt 换清华源并停用其他源 -> `apt-get install git ca-certificates curl`。每段脚本可重复执行，第一次会把原文件备份成 `*.maidroid.bak`。
+3. **系统依赖**（缺 git/curl 时才做，见 `ContainerSetupScripts`）：修复 rootfs 权限 -> 在 `/root/storage` 下建到 `/sdcard` 各目录的链接 -> 写 DNS（见下文“容器 DNS”）-> apt 换清华源并停用其他源 -> 安装 git、ca-certificates、curl。每段脚本可重复执行，第一次会把原文件备份成 `*.maidroid.bak`。安装前先 `dpkg --configure -a`：OOBE 期间没有前台服务，装到一半切到后台或划掉应用都会让进程被杀，留下 dpkg 半装状态，不收拾的话之后每次都报 `dpkg was interrupted`。`apt-get update` 有源下载失败时默认只警告、返回 0，这里加 `--error-on=any` 让它如实失败。
 
 ## OOBE：安装 MaiBot（`OobeSetupManager.startInstall`）
 
@@ -111,6 +111,12 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 ### GitHub 镜像
 
 国内直连 GitHub 不稳定。`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 两个 shell 函数，依次尝试 gitproxy.mrhjx.cn、ghproxy.vip、直连、gh-proxy.com 等镜像，每个镜像重试 3 次。新增镜像改 `MIRROR_SPECS` 即可，OOBE 卡片上的说明会自动更新。
+
+git 默认不检测传输停滞，镜像连上后卡住会一直等。两个函数都带 `-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60`：连续 60 秒低于 1 KB/s 就判这一次失败，接着重试或换镜像。
+
+### 容器 DNS
+
+proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resolv.conf` 里的服务器查询。`ContainerDns` 在宿主侧读出手机当前网络的 DNS（`ConnectivityManager` 的 `LinkProperties.dnsServers`）放在最前，阿里、114、Google、Cloudflare 作兜底；有些网络会拦截公共 DNS，只写公共 DNS 时容器里所有下载都会失败。glibc 只用前三个 nameserver、按顺序尝试，所以不加 `rotate`；带网卡后缀的 IPv6 链路本地地址会被丢掉。配置容器和每次开始安装时都会重写一次。
 
 ### proot 下的 git
 

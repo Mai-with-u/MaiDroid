@@ -11,6 +11,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -180,17 +181,19 @@ internal class RuntimeAssetInstaller(
                     stripTermuxPrefix(entry.linkName) ?: entry.linkName
                 )
                 target.parentFile?.mkdirs()
-                runCatching {
-                    if (target.exists()) target.delete()
-                    Os.link(linkTarget.absolutePath, target.absolutePath)
-                }.onFailure {
-                    if (linkTarget.isFile) {
-                        linkTarget.copyTo(target, overwrite = true)
-                    }
+                deleteExisting(target)
+                // 多数机型不允许在应用私有目录建硬链接，建不了就复制一份。tar 里的硬链接总是指向前面已解出的普通文件，
+                // 那个文件也不在时说明包已损坏，直接报错，不再悄悄少一个文件。
+                val linked = runCatching { Os.link(linkTarget.absolutePath, target.absolutePath) }.isSuccess
+                if (!linked) {
+                    check(linkTarget.isFile) { "解包失败：硬链接 $entryName 指向的 ${entry.linkName} 不存在" }
+                    linkTarget.copyTo(target, overwrite = true)
                 }
             }
             entry.isFile -> {
                 target.parentFile?.mkdirs()
+                // 先删掉同名的旧链接：补装 proot 依赖库时是解到已有目录里，直接写会顺着旧链接改到别的文件。
+                deleteExisting(target)
                 FileOutputStream(target).use { output ->
                     tar.copyTo(output)
                 }
@@ -304,12 +307,22 @@ internal class RuntimeAssetInstaller(
         return targetPath.toFile()
     }
 
+    // 建不了符号链接直接报错。以前静默忽略，少了链接要到 proot 或容器命令出错时才以别的样子暴露出来。
     private fun replaceWithSymlink(link: File, target: String) {
-        runCatching {
-            if (link.exists()) {
-                if (link.isDirectory) deleteRecursively(link) else link.delete()
-            }
+        deleteExisting(link)
+        try {
             Os.symlink(target, link.absolutePath)
+        } catch (e: ErrnoException) {
+            throw IllegalStateException("解包失败：无法创建符号链接 ${link.absolutePath} -> $target（${e.message}）", e)
+        }
+    }
+
+    // 删掉某个路径上已有的东西：符号链接只删链接本身（包括 exists() 看不到的断链），目录整个删掉。
+    private fun deleteExisting(file: File) {
+        when {
+            Files.isSymbolicLink(file.toPath()) -> file.delete()
+            file.isDirectory -> deleteRecursively(file)
+            file.exists() -> file.delete()
         }
     }
 
@@ -323,7 +336,13 @@ internal class RuntimeAssetInstaller(
         }
     }
 
+    // 不跟随符号链接。rootfs 里有 /root/storage/shared -> /sdcard 这类绝对路径链接，在宿主上会解析到
+    // 手机的共享存储；跟进去删会把用户的照片、下载等文件一起删掉。遇到链接只删链接本身。
     private fun deleteRecursively(file: File) {
+        if (Files.isSymbolicLink(file.toPath())) {
+            file.delete()
+            return
+        }
         if (!file.exists()) return
         if (file.isDirectory) {
             file.listFiles()?.forEach { deleteRecursively(it) }
