@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.oobe.OobeStep
 
 class OobeFlowScreenTest {
     @Test
@@ -53,35 +54,35 @@ class OobeFlowScreenTest {
         assertFalse(
             oobeShowsEmbeddedTerminal(
                 embeddedMode = true,
-                currentStep = 0,
+                currentStep = OobeStep.Permissions,
                 terminalVisible = true
             )
         )
         assertTrue(
             oobeShowsEmbeddedTerminal(
                 embeddedMode = true,
-                currentStep = 1,
+                currentStep = OobeStep.Container,
                 terminalVisible = true
             )
         )
         assertTrue(
             oobeShowsEmbeddedTerminal(
                 embeddedMode = true,
-                currentStep = 2,
+                currentStep = OobeStep.Install,
                 terminalVisible = true
             )
         )
         assertFalse(
             oobeShowsEmbeddedTerminal(
                 embeddedMode = true,
-                currentStep = 2,
+                currentStep = OobeStep.Install,
                 terminalVisible = false
             )
         )
         assertFalse(
             oobeShowsEmbeddedTerminal(
                 embeddedMode = false,
-                currentStep = 2,
+                currentStep = OobeStep.Install,
                 terminalVisible = true
             )
         )
@@ -99,7 +100,7 @@ class OobeFlowScreenTest {
             embeddedDefaultApplied = false
         )
         val stepTwo = oobeTerminalStateForEnvironment(
-            currentStep = 1,
+            currentStep = OobeStep.Container,
             embeddedMode = true,
             visible = initial.visible,
             embeddedDefaultApplied = initial.embeddedDefaultApplied
@@ -114,7 +115,7 @@ class OobeFlowScreenTest {
 
         val manuallyClosed = stepTwo.copy(visible = false)
         val stepThree = oobeTerminalStateForEnvironment(
-            currentStep = 2,
+            currentStep = OobeStep.Install,
             embeddedMode = true,
             visible = manuallyClosed.visible,
             embeddedDefaultApplied = manuallyClosed.embeddedDefaultApplied
@@ -122,7 +123,7 @@ class OobeFlowScreenTest {
         assertEquals(manuallyClosed, stepThree)
 
         val portrait = oobeTerminalStateForEnvironment(
-            currentStep = 2,
+            currentStep = OobeStep.Install,
             embeddedMode = false,
             visible = stepThree.visible,
             embeddedDefaultApplied = stepThree.embeddedDefaultApplied
@@ -130,7 +131,7 @@ class OobeFlowScreenTest {
         assertEquals(manuallyClosed, portrait)
 
         val reset = oobeTerminalStateForEnvironment(
-            currentStep = 0,
+            currentStep = OobeStep.Permissions,
             embeddedMode = false,
             visible = true,
             embeddedDefaultApplied = true

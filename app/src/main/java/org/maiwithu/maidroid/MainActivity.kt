@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
@@ -111,19 +111,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                var oobeStep by rememberSaveable { mutableIntStateOf(0) }
+                var oobeStep by rememberSaveable { mutableStateOf(OobeStep.Permissions) }
                 val setupManager = activityViewModel.setupManager
                 val setupState by setupManager.state.collectAsState()
 
-                BackHandler(enabled = !showStartupSplash && !setupComplete && oobeStep > 0) {
-                    oobeStep -= 1
+                BackHandler(enabled = !showStartupSplash && !setupComplete && oobeStep != OobeStep.Permissions) {
+                    oobeStep = OobeStep.entries[oobeStep.ordinal - 1]
                 }
 
                 LaunchedEffect(oobeStep, setupComplete) {
                     if (setupComplete) return@LaunchedEffect
                     when (oobeStep) {
-                        1 -> setupManager.prepareContainer()
-                        2 -> setupManager.startInstall()
+                        OobeStep.Permissions -> Unit
+                        OobeStep.Container -> setupManager.prepareContainer()
+                        OobeStep.Install -> setupManager.startInstall()
                     }
                 }
 
@@ -182,10 +183,10 @@ class MainActivity : ComponentActivity() {
                                     permissionActions = permissions.oobeActions,
                                     onNext = {
                                         when (oobeStep) {
-                                            0 -> {
+                                            OobeStep.Permissions -> {
                                                 permissions.refresh()
                                                 if (permissions.isStorageGranted()) {
-                                                    oobeStep = 1
+                                                    oobeStep = OobeStep.Container
                                                 } else {
                                                     Toast.makeText(
                                                         this@MainActivity,
@@ -195,14 +196,14 @@ class MainActivity : ComponentActivity() {
                                                     permissions.oobeActions.requestStorage()
                                                 }
                                             }
-                                            1 -> {
+                                            OobeStep.Container -> {
                                                 if (setupState.canInstall) {
-                                                    oobeStep = 2
+                                                    oobeStep = OobeStep.Install
                                                 } else {
                                                     setupManager.prepareContainer()
                                                 }
                                             }
-                                            else -> {
+                                            OobeStep.Install -> {
                                                 if (setupState.isComplete) {
                                                     setupComplete = true
                                                 } else {
@@ -212,7 +213,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onRetry = {
-                                        if (oobeStep == 1) {
+                                        if (oobeStep == OobeStep.Container) {
                                             setupManager.prepareContainer()
                                         } else {
                                             setupManager.startInstall()

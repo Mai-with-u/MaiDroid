@@ -91,7 +91,13 @@ import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.oobe.AdaptiveOobeTaskList
 import org.maiwithu.maidroid.ui.oobe.CompactOobeTaskList
 import org.maiwithu.maidroid.oobe.OobeStep
+import org.maiwithu.maidroid.ui.oobe.CommandLogButton
+import org.maiwithu.maidroid.ui.oobe.OobeStepFooter
+import org.maiwithu.maidroid.ui.oobe.OobeStepHeader
 import org.maiwithu.maidroid.ui.oobe.OobeStepIndicator
+import org.maiwithu.maidroid.ui.oobe.hasFailedTask
+import org.maiwithu.maidroid.ui.oobe.oobeStepTransition
+import org.maiwithu.maidroid.ui.oobe.tasksFor
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.oobe.AdaptiveOobePermissionCards
@@ -121,9 +127,9 @@ internal fun oobeUsesEmbeddedTerminal(widthDp: Float, heightDp: Float): Boolean 
 
 internal fun oobeShowsEmbeddedTerminal(
     embeddedMode: Boolean,
-    currentStep: Int,
+    currentStep: OobeStep,
     terminalVisible: Boolean
-): Boolean = embeddedMode && currentStep > 0 && terminalVisible
+): Boolean = embeddedMode && currentStep != OobeStep.Permissions && terminalVisible
 
 internal data class OobeTerminalPresentationState(
     val visible: Boolean,
@@ -131,12 +137,12 @@ internal data class OobeTerminalPresentationState(
 )
 
 internal fun oobeTerminalStateForEnvironment(
-    currentStep: Int,
+    currentStep: OobeStep,
     embeddedMode: Boolean,
     visible: Boolean,
     embeddedDefaultApplied: Boolean
 ): OobeTerminalPresentationState = when {
-    currentStep <= 0 -> OobeTerminalPresentationState(
+    currentStep == OobeStep.Permissions -> OobeTerminalPresentationState(
         visible = false,
         embeddedDefaultApplied = false
     )
@@ -154,7 +160,7 @@ internal fun oobeTerminalStateForEnvironment(
 
 @Composable
 internal fun OobeFlowScreen(
-    currentStep: Int,
+    currentStep: OobeStep,
     setupState: OobeSetupState = OobeSetupState.beforeFirstCheck(),
     permissionState: PermissionState = PermissionState(),
     permissionActions: PermissionActions = PermissionActions(),
@@ -187,16 +193,11 @@ internal fun OobeFlowScreen(
         val contentCornerRadius = 48.dp
         val contentOverlap = contentCornerRadius
         val contentTop = maxOf(headerHeight - contentOverlap, 0.dp)
-        val currentTasks = when (currentStep) {
-            1 -> setupState.containerTasks
-            2 -> setupState.installTasks
-            else -> emptyList()
-        }
-        val setupFailed = currentTasks.hasFailedTask()
+        val setupFailed = setupState.tasksFor(currentStep).hasFailedTask()
         val stepDone = when (currentStep) {
-            1 -> setupState.canInstall
-            2 -> setupState.isComplete
-            else -> true
+            OobeStep.Permissions -> true
+            OobeStep.Container -> setupState.canInstall
+            OobeStep.Install -> setupState.isComplete
         }
         var waitedTooLong by remember { mutableStateOf(false) }
         var terminalVisible by rememberSaveable { mutableStateOf(false) }
@@ -209,7 +210,7 @@ internal fun OobeFlowScreen(
 
         LaunchedEffect(currentStep, stepDone, setupFailed) {
             waitedTooLong = false
-            if (currentStep > 0 && !stepDone && !setupFailed) {
+            if (currentStep != OobeStep.Permissions && !stepDone && !setupFailed) {
                 delay(SETUP_ATTENTION_DELAY_MS)
                 waitedTooLong = true
             }
@@ -262,7 +263,7 @@ internal fun OobeFlowScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                if (currentStep > 0) {
+                if (currentStep != OobeStep.Permissions) {
                     CommandLogButton(
                         attention = setupFailed || waitedTooLong,
                         expanded = terminalVisible,
@@ -293,7 +294,7 @@ internal fun OobeFlowScreen(
             ) {
                 Spacer(modifier = Modifier.height(32.dp))
 
-                OobeStepIndicator(currentStep = OobeStep.entries[currentStep], modifier = Modifier.fillMaxWidth())
+                OobeStepIndicator(currentStep = currentStep, modifier = Modifier.fillMaxWidth())
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -303,22 +304,7 @@ internal fun OobeFlowScreen(
                     transitionSpec = { oobeStepTransition() },
                     label = "OobeStepHeader"
                 ) { step ->
-                    when (step) {
-                        0 -> StepHeaderContent(
-                            title = "授予权限",
-                            description = "MaiSaka需要以下权限才能运行~\n可选权限也可以不给，如果你确定你在做什么的话"
-                        )
-
-                        1 -> StepHeaderContent(
-                            title = "配置容器",
-                            description = "正在自动下载运行环境，以给予麦麦一个新家\n请保持网络连接，下载完成后麦麦会自己装~"
-                        )
-
-                        else -> StepHeaderContent(
-                            title = "安装 MaiBot",
-                            description = "麦麦正在装修并入住新家……，请耐心等待"
-                        )
-                    }
+                    OobeStepHeader(step = step)
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -332,10 +318,9 @@ internal fun OobeFlowScreen(
                     label = "OobeStepCards"
                 ) { step ->
                     when (step) {
-                        0 -> CompactOobePermissionCards(permissionState, permissionActions)
-
-                        1 -> CompactOobeTaskList(setupState.containerTasks)
-                        else -> CompactOobeTaskList(setupState.installTasks)
+                        OobeStep.Permissions -> CompactOobePermissionCards(permissionState, permissionActions)
+                        OobeStep.Container -> CompactOobeTaskList(setupState.containerTasks)
+                        OobeStep.Install -> CompactOobeTaskList(setupState.installTasks)
                     }
                 }
 
@@ -347,46 +332,20 @@ internal fun OobeFlowScreen(
                     transitionSpec = { oobeStepTransition() },
                     label = "OobeStepBottom"
                 ) { step ->
-                    when (step) {
-                        0 -> NextButton(
-                            text = if (permissionState.storageGranted) "下一步" else "请先授权",
-                            enabled = permissionState.storageGranted,
-                            onNext = onNext
-                        )
-
-                        1 -> SetupFooter(
-                            footerText = setupState.footerText,
-                            canProceed = setupState.canInstall,
-                            proceedText = "开始安装",
-                            waitingText = "重新配置",
-                            waitingEnabled = setupState.containerTasks.hasFailedTask(),
-                            onProceed = onNext,
-                            onRetry = onRetry
-                        )
-
-                        else -> {
-                            val installRunning = setupState.installTasks.any {
-                                it.status == OobeTaskStatus.Running
-                            }
-                            val installFailed = setupState.installTasks.hasFailedTask()
-                            SetupFooter(
-                                footerText = setupState.footerText,
-                                canProceed = setupState.isComplete,
-                                proceedText = "进入 MaiDroid",
-                                waitingText = if (installFailed) "重试安装" else "请稍候",
-                                waitingEnabled = installFailed && !installRunning,
-                                onProceed = onNext,
-                                onRetry = onRetry
-                            )
-                        }
-                    }
+                    OobeStepFooter(
+                        step = step,
+                        setupState = setupState,
+                        storageGranted = permissionState.storageGranted,
+                        onNext = onNext,
+                        onRetry = onRetry
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
 
-        if (terminalVisible && currentStep > 0 && !useEmbeddedTerminal) {
+        if (terminalVisible && currentStep != OobeStep.Permissions && !useEmbeddedTerminal) {
             TerminalOutputDialog(
                 logs = setupState.commandLogs,
                 onDismiss = {
@@ -400,7 +359,7 @@ internal fun OobeFlowScreen(
 
 @Composable
 private fun AdaptiveOobeFlowLayout(
-    currentStep: Int,
+    currentStep: OobeStep,
     setupState: OobeSetupState,
     permissionState: PermissionState,
     permissionActions: PermissionActions,
@@ -448,7 +407,7 @@ private fun AdaptiveOobeFlowLayout(
                     )
             )
 
-            if (currentStep > 0 && !embeddedTerminalMode) {
+            if (currentStep != OobeStep.Permissions && !embeddedTerminalMode) {
                 CommandLogButton(
                     attention = commandLogAttention,
                     expanded = terminalExpanded,
@@ -470,7 +429,7 @@ private fun AdaptiveOobeFlowLayout(
                     )
             ) {
                 OobeStepIndicator(
-                    currentStep = OobeStep.entries[currentStep],
+                    currentStep = currentStep,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -482,25 +441,7 @@ private fun AdaptiveOobeFlowLayout(
                     transitionSpec = { oobeStepTransition() },
                     label = "AdaptiveOobeStepHeader"
                 ) { step ->
-                    when (step) {
-                        0 -> AdaptiveStepHeaderContent(
-                            title = "授予权限",
-                            description = "MaiSaka需要以下权限才能运行~\n可选权限也可以不给，如果你确定你在做什么的话",
-                            narrow = heroWidth < 220.dp
-                        )
-
-                        1 -> AdaptiveStepHeaderContent(
-                            title = "配置容器",
-                            description = "正在自动下载运行环境，以给予麦麦一个新家\n请保持网络连接，下载完成后麦麦会自己装~",
-                            narrow = heroWidth < 220.dp
-                        )
-
-                        else -> AdaptiveStepHeaderContent(
-                            title = "安装 MaiBot",
-                            description = "麦麦正在装修并入住新家……，请耐心等待",
-                            narrow = heroWidth < 220.dp
-                        )
-                    }
+                    OobeStepHeader(step = step, narrow = heroWidth < 220.dp, limitLines = true)
                 }
             }
         }
@@ -539,7 +480,7 @@ private fun AdaptiveOobeFlowLayout(
                             }
                         )
                 ) {
-                    if (currentStep > 0 && embeddedTerminalMode) {
+                    if (currentStep != OobeStep.Permissions && embeddedTerminalMode) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
@@ -563,10 +504,9 @@ private fun AdaptiveOobeFlowLayout(
                         label = "AdaptiveOobeStepCards"
                     ) { step ->
                         when (step) {
-                            0 -> AdaptiveOobePermissionCards(permissionState, permissionActions)
-
-                            1 -> AdaptiveOobeTaskList(setupState.containerTasks)
-                            else -> AdaptiveOobeTaskList(setupState.installTasks)
+                            OobeStep.Permissions -> AdaptiveOobePermissionCards(permissionState, permissionActions)
+                            OobeStep.Container -> AdaptiveOobeTaskList(setupState.containerTasks)
+                            OobeStep.Install -> AdaptiveOobeTaskList(setupState.installTasks)
                         }
                     }
 
@@ -578,13 +518,20 @@ private fun AdaptiveOobeFlowLayout(
                         transitionSpec = { oobeStepTransition() },
                         label = "AdaptiveOobeStepBottom"
                     ) { step ->
-                        AdaptiveOobeFooter(
-                            currentStep = step,
-                            setupState = setupState,
-                            storagePermissionGranted = permissionState.storageGranted,
-                            onNext = onNext,
-                            onRetry = onRetry
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            OobeStepFooter(
+                                step = step,
+                                setupState = setupState,
+                                storageGranted = permissionState.storageGranted,
+                                onNext = onNext,
+                                onRetry = onRetry,
+                                nextButtonModifier = Modifier.widthIn(max = 520.dp),
+                                setupFooterModifier = Modifier.widthIn(max = 560.dp)
+                            )
+                        }
                     }
                 }
 
@@ -603,338 +550,3 @@ private fun AdaptiveOobeFlowLayout(
     }
 }
 
-@Composable
-private fun AdaptiveStepHeaderContent(
-    title: String,
-    description: String,
-    narrow: Boolean
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            fontSize = if (narrow) 20.sp else 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = Orange500,
-            lineHeight = if (narrow) 24.sp else 27.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Spacer(modifier = Modifier.height(if (narrow) 7.dp else 10.dp))
-
-        Text(
-            text = description,
-            fontSize = if (narrow) 12.sp else 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            lineHeight = if (narrow) 15.sp else 17.sp,
-            maxLines = if (narrow) 6 else 5,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun AdaptiveOobeFooter(
-    currentStep: Int,
-    setupState: OobeSetupState,
-    storagePermissionGranted: Boolean,
-    onNext: () -> Unit,
-    onRetry: () -> Unit
-) {
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.CenterEnd
-    ) {
-        when (currentStep) {
-            0 -> NextButton(
-                text = if (storagePermissionGranted) "下一步" else "请先授权",
-                enabled = storagePermissionGranted,
-                onNext = onNext,
-                modifier = Modifier.widthIn(max = 520.dp)
-            )
-
-            1 -> SetupFooter(
-                footerText = setupState.footerText,
-                canProceed = setupState.canInstall,
-                proceedText = "开始安装",
-                waitingText = "重新配置",
-                waitingEnabled = setupState.containerTasks.hasFailedTask(),
-                onProceed = onNext,
-                onRetry = onRetry,
-                modifier = Modifier.widthIn(max = 560.dp)
-            )
-
-            else -> {
-                val installRunning = setupState.installTasks.any {
-                    it.status == OobeTaskStatus.Running
-                }
-                val installFailed = setupState.installTasks.hasFailedTask()
-                SetupFooter(
-                    footerText = setupState.footerText,
-                    canProceed = setupState.isComplete,
-                    proceedText = "进入 MaiDroid",
-                    waitingText = if (installFailed) "重试安装" else "请稍候",
-                    waitingEnabled = installFailed && !installRunning,
-                    onProceed = onNext,
-                    onRetry = onRetry,
-                    modifier = Modifier.widthIn(max = 560.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CommandLogButton(
-    attention: Boolean,
-    expanded: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val showLabel = attention || expanded
-    val buttonWidth by animateDpAsState(
-        targetValue = if (showLabel) 132.dp else 44.dp,
-        animationSpec = spring(
-            dampingRatio = 0.78f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "CommandLogButtonWidth"
-    )
-
-    Row(
-        modifier = modifier
-            .width(buttonWidth)
-            .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(
-                if (expanded) {
-                    Orange500.copy(alpha = 0.18f)
-                } else {
-                    SurfaceDark.copy(alpha = 0.82f)
-                }
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = if (showLabel) 12.dp else 0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (showLabel) Arrangement.Start else Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Code,
-            contentDescription = if (expanded) "收起终端输出" else "查看终端输出",
-            tint = Orange500,
-            modifier = Modifier.size(24.dp)
-        )
-
-        if (showLabel) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (expanded) "收起终端" else "遇到问题？",
-                color = TextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun StepHeaderContent(
-    title: String,
-    description: String
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = Orange500,
-            lineHeight = 27.sp
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text = description,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            lineHeight = 17.sp
-        )
-    }
-}
-
-private fun androidx.compose.animation.AnimatedContentTransitionScope<Int>.oobeStepTransition() =
-    if (targetState > initialState) {
-        slideInHorizontally(
-            animationSpec = spring(
-                dampingRatio = 0.84f,
-                stiffness = Spring.StiffnessMediumLow
-            )
-        ) { it }.togetherWith(
-            slideOutHorizontally(
-                animationSpec = spring(
-                    dampingRatio = 0.84f,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) { -it }
-        ) using SizeTransform(clip = true)
-    } else {
-        slideInHorizontally(
-            animationSpec = spring(
-                dampingRatio = 0.84f,
-                stiffness = Spring.StiffnessMediumLow
-            )
-        ) { -it }.togetherWith(
-            slideOutHorizontally(
-                animationSpec = spring(
-                    dampingRatio = 0.84f,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) { it }
-        ) using SizeTransform(clip = true)
-    }
-
-private fun List<OobeTask>.hasFailedTask(): Boolean =
-    any { it.status == OobeTaskStatus.Failed }
-
-@Composable
-private fun NextButton(
-    text: String = "下一步",
-    enabled: Boolean = true,
-    onNext: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Button(
-        onClick = onNext,
-        enabled = enabled,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Orange400,
-            contentColor = TextOnOrange,
-            disabledContainerColor = Color.White.copy(alpha = 0.12f),
-            disabledContentColor = TextSecondary
-        )
-    ) {
-        Text(
-            text = text,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.size(32.dp)
-        )
-    }
-}
-
-@Composable
-private fun SetupFooter(
-    footerText: String,
-    canProceed: Boolean,
-    proceedText: String,
-    waitingText: String,
-    waitingEnabled: Boolean = true,
-    onProceed: () -> Unit,
-    onRetry: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(19.dp))
-            .background(SurfaceDark)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            WaitingRing()
-
-            Spacer(modifier = Modifier.size(14.dp))
-
-            Text(
-                text = footerText,
-                modifier = Modifier.weight(1f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Normal,
-                color = TextSecondary,
-                lineHeight = 17.sp
-            )
-        }
-
-        Button(
-            onClick = if (canProceed) onProceed else onRetry,
-            enabled = canProceed || waitingEnabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Orange400,
-                contentColor = TextOnOrange,
-                disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                disabledContentColor = TextSecondary
-            )
-        ) {
-            Text(
-                text = if (canProceed) proceedText else waitingText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun WaitingRing() {
-    val transition = rememberInfiniteTransition(label = "WaitingRingTransition")
-    val rotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "WaitingRingRotation"
-    )
-
-    Canvas(
-        modifier = Modifier
-            .size(24.dp)
-            .rotate(rotation)
-            .clip(CircleShape)
-    ) {
-        val stroke = 2.dp.toPx()
-        val arcSize = Size(size.width - stroke, size.height - stroke)
-        val arcTopLeft = Offset(stroke / 2, stroke / 2)
-
-        drawArc(
-            color = Orange500,
-            startAngle = -20f,
-            sweepAngle = 72f,
-            useCenter = false,
-            topLeft = arcTopLeft,
-            size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-        drawArc(
-            color = Orange500,
-            startAngle = 160f,
-            sweepAngle = 72f,
-            useCenter = false,
-            topLeft = arcTopLeft,
-            size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-    }
-}
