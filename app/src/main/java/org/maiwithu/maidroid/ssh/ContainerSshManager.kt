@@ -18,6 +18,7 @@ import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import java.util.concurrent.TimeUnit
 
+/** 容器 sshd 的运行阶段。 */
 internal enum class ContainerSshPhase {
     Idle,
     Starting,
@@ -25,6 +26,7 @@ internal enum class ContainerSshPhase {
     Failed
 }
 
+/** 设置页“容器 SSH”一行展示的状态：是否开启、是否配置过、端口、运行阶段和失败原因。 */
 internal data class ContainerSshState(
     val enabled: Boolean,
     val configured: Boolean,

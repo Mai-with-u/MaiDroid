@@ -67,6 +67,7 @@ private const val StartupSplashInfoHeight = 96f
 private const val StartupSplashInfoHorizontalMargin = 16f
 private const val StartupSplashSideBlurRadius = 24f
 
+/** 宽度不小于 600dp 或横屏时插画按高度铺满、两侧留白模糊；否则按设计稿比例铺满竖屏。 */
 internal fun startupSplashUsesAdaptiveLayout(widthDp: Float, heightDp: Float): Boolean =
     widthDp >= 600f || widthDp > heightDp
 
@@ -144,6 +145,7 @@ internal fun startupSplashAdaptiveGeometry(
     )
 }
 
+/** 冷启动时的启动页：插画背景 + 底部毛玻璃信息卡（应用名和标语），停留 1.2 秒后由 MaiDroidApp 切走。 */
 @Composable
 internal fun StartupSplashPage(modifier: Modifier = Modifier) {
     BoxWithConstraints(

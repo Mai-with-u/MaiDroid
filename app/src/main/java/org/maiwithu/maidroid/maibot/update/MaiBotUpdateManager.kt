@@ -21,6 +21,7 @@ import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 
+/** 在线更新弹窗所处的阶段：空闲 -> 检查中 -> 已是最新 / 有新版本 -> 更新中 -> 已更新，任一步出错进入失败。 */
 internal enum class MaiBotUpdatePhase {
     Idle,
     Checking,
@@ -37,6 +38,7 @@ internal enum class MaiBotUpdateAction {
     Apply
 }
 
+/** 在线更新的界面状态：当前与上游版本、本地改动数、补丁备份位置、进行中的步骤说明和失败原因。 */
 internal data class MaiBotUpdateState(
     val phase: MaiBotUpdatePhase = MaiBotUpdatePhase.Idle,
     val branch: String? = null,

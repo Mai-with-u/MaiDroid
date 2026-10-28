@@ -82,6 +82,10 @@ import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 
 private const val PermissionSettingsDetail = "permissions"
 
+/**
+ * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH）、系统（权限管理）、应用（消息平台、版本）。
+ * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
+ */
 @Composable
 internal fun SettingsPage(
     webUiOnline: Boolean,

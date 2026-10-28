@@ -73,6 +73,7 @@ private val MainBottomNavigationBottomPadding = 16.dp
 internal val MainBottomNavigationOverlayHeight =
     MainBottomNavigationBarHeight + MainBottomNavigationBottomPadding
 
+/** 悬浮在页面底部的毛玻璃导航：左边三个标签（选中块带弹性滑动），右边圆形终端按钮。 */
 @Composable
 internal fun MainBottomNavigation(
     selectedTab: MainTab,

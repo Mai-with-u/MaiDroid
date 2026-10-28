@@ -71,6 +71,10 @@ import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 
+/**
+ * 全屏终端输出弹窗：显示 TerminalLog（或 OOBE 的命令日志），支持筛选、自动跟随、自动换行、复制。
+ * 按窗口宽高调整边距和工具栏排布，点弹窗外部关闭。
+ */
 @Composable
 internal fun TerminalOutputDialog(
     logs: List<String>,
@@ -152,6 +156,7 @@ internal fun TerminalOutputDialog(
     }
 }
 
+/** 嵌入在 OOBE 平板布局右下方的终端面板，功能同弹窗，工具栏压缩成一行。 */
 @Composable
 internal fun EmbeddedTerminalOutputPanel(
     logs: List<String>,

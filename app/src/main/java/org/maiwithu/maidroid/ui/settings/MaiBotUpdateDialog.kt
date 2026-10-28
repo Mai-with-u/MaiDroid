@@ -32,6 +32,7 @@ import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 
+/** 更新弹窗主按钮按下后要做的事。 */
 internal enum class MaiBotUpdateButtonAction {
     Check,
     Apply,

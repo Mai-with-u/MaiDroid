@@ -57,6 +57,10 @@ import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 
+/**
+ * 设置页里的权限管理：必选的存储权限，可选的通知、电池优化（开关），以及只能跳转系统设置的几项。
+ * 竖屏时从设置列表点进来（左上角返回），横屏时作为右侧详情常驻显示。
+ */
 @Composable
 internal fun PermissionManagementPage(
     state: PermissionState,

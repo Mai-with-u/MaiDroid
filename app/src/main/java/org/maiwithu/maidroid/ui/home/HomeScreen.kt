@@ -25,8 +25,13 @@ import org.maiwithu.maidroid.ui.settings.SettingsPage
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 
+// WebUI 离线时每隔这么久自动唤醒一次 MaiBot；唤醒页的进度条也按这个时长走满。
 internal const val WakeRetryIntervalMillis = 30_000L
 
+/**
+ * OOBE 完成后的主页。WebUI 第一次上线前显示唤醒页（每 30 秒自动唤醒一次 MaiBot），
+ * 上线后切到带底部导航的三栏外壳：WebUI、消息平台、设置；右下角按钮打开终端输出。
+ */
 @Composable
 fun HomeScreen(
     webUiOnline: Boolean,
@@ -93,6 +98,7 @@ fun HomeScreen(
     }
 }
 
+// 三栏外壳：页面内容包在 BlurTargetHost 里，底部悬浮导航栏据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
 @Composable
 private fun DashboardShell(
     selectedTab: MainTab,
