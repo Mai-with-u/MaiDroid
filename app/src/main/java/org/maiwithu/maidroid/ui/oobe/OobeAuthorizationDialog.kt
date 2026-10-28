@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,13 +40,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
@@ -62,6 +62,10 @@ import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 private const val UserAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/EULA.md"
 private const val PrivacyAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/PRIVACY.md"
 
+/**
+ * 首次启动的授权弹窗：启动页结束后浮在 OOBE 上，背景毛玻璃模糊 OOBE 画面。
+ * 同意后不再出现；点“退出”关闭应用。手机竖屏保持设计稿的固定尺寸，平板和横屏按可用空间自适应。
+ */
 @Composable
 internal fun OobeAuthorizationDialog(
     visible: Boolean,
@@ -70,31 +74,16 @@ internal fun OobeAuthorizationDialog(
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val uriHandler = LocalUriHandler.current
     val interactionSource = remember { MutableInteractionSource() }
+    // 协议名做成可点的链接，点了用系统浏览器打开 MaiBot 仓库里的协议原文。
+    val linkStyle = TextLinkStyles(
+        style = SpanStyle(color = BrandOrange, textDecoration = TextDecoration.Underline)
+    )
     val bodyText = buildAnnotatedString {
         append("使用即表示您同意并知悉")
-        pushStringAnnotation(tag = "url", annotation = UserAgreementUrl)
-        withStyle(
-            SpanStyle(
-                color = BrandOrange,
-                textDecoration = TextDecoration.Underline
-            )
-        ) {
-            append("「用户协议」")
-        }
-        pop()
+        withLink(LinkAnnotation.Url(UserAgreementUrl, linkStyle)) { append("「用户协议」") }
         append("和")
-        pushStringAnnotation(tag = "url", annotation = PrivacyAgreementUrl)
-        withStyle(
-            SpanStyle(
-                color = BrandOrange,
-                textDecoration = TextDecoration.Underline
-            )
-        ) {
-            append("「隐私协议」")
-        }
-        pop()
+        withLink(LinkAnnotation.Url(PrivacyAgreementUrl, linkStyle)) { append("「隐私协议」") }
         append("的相关内容。")
     }
 
@@ -157,12 +146,6 @@ internal fun OobeAuthorizationDialog(
                         blurTarget = blurTarget,
                         bodyText = bodyText,
                         useSideBySide = useSideBySide,
-                        onBodyTextClick = { offset ->
-                            bodyText
-                                .getStringAnnotations(tag = "url", start = offset, end = offset)
-                                .firstOrNull()
-                                ?.let { uriHandler.openUri(it.item) }
-                        },
                         onAgree = onAgree,
                         onExit = onExit,
                         modifier = Modifier
@@ -175,12 +158,6 @@ internal fun OobeAuthorizationDialog(
                 PhonePortraitAuthorizationCard(
                     blurTarget = blurTarget,
                     bodyText = bodyText,
-                    onBodyTextClick = { offset ->
-                        bodyText
-                            .getStringAnnotations(tag = "url", start = offset, end = offset)
-                            .firstOrNull()
-                            ?.let { uriHandler.openUri(it.item) }
-                    },
                     onAgree = onAgree,
                     onExit = onExit
                 )
@@ -197,7 +174,6 @@ internal fun OobeAuthorizationDialog(
 private fun PhonePortraitAuthorizationCard(
     blurTarget: BlurTarget?,
     bodyText: AnnotatedString,
-    onBodyTextClick: (Int) -> Unit,
     onAgree: () -> Unit,
     onExit: () -> Unit
 ) {
@@ -229,7 +205,7 @@ private fun PhonePortraitAuthorizationCard(
                 .width(120.dp)
         )
 
-        ClickableText(
+        Text(
             text = bodyText,
             style = TextStyle(
                 color = Color.White,
@@ -238,7 +214,6 @@ private fun PhonePortraitAuthorizationCard(
                 fontWeight = FontWeight.Bold,
                 lineHeight = 19.sp
             ),
-            onClick = onBodyTextClick,
             modifier = Modifier
                 .offset(x = 22.dp, y = 53.dp)
                 .width(271.dp)
@@ -272,7 +247,6 @@ private fun AdaptiveAuthorizationCard(
     blurTarget: BlurTarget?,
     bodyText: AnnotatedString,
     useSideBySide: Boolean,
-    onBodyTextClick: (Int) -> Unit,
     onAgree: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier
@@ -307,7 +281,6 @@ private fun AdaptiveAuthorizationCard(
 
                 AuthorizationDetails(
                     bodyText = bodyText,
-                    onBodyTextClick = onBodyTextClick,
                     onAgree = onAgree,
                     onExit = onExit,
                     modifier = Modifier.weight(1.28f)
@@ -326,7 +299,6 @@ private fun AdaptiveAuthorizationCard(
 
                 AuthorizationDetails(
                     bodyText = bodyText,
-                    onBodyTextClick = onBodyTextClick,
                     onAgree = onAgree,
                     onExit = onExit
                 )
@@ -374,13 +346,12 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
 @Composable
 private fun AuthorizationDetails(
     bodyText: AnnotatedString,
-    onBodyTextClick: (Int) -> Unit,
     onAgree: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        ClickableText(
+        Text(
             text = bodyText,
             style = TextStyle(
                 color = Color.White,
@@ -389,7 +360,6 @@ private fun AuthorizationDetails(
                 fontWeight = FontWeight.Bold,
                 lineHeight = 25.sp
             ),
-            onClick = onBodyTextClick,
             modifier = Modifier.fillMaxWidth()
         )
 

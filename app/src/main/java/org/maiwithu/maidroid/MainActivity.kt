@@ -6,12 +6,12 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import org.maiwithu.maidroid.permission.SystemPermissionController
@@ -30,7 +30,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        enableEdgeToEdge()
+        // 状态栏、导航栏都透明并用浅色图标（深色界面）；OOBE 期间显示、进入主页后隐藏导航栏见 configureSystemBars。
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+        )
         permissions.refresh()
 
         setContent {
@@ -57,15 +61,9 @@ class MainActivity : ComponentActivity() {
         permissions.refresh()
     }
 
-    // OOBE 期间显示完整系统栏；进入主页后隐藏导航栏（上滑临时呼出），状态栏保持透明。
+    // OOBE 期间显示完整系统栏；进入主页后隐藏导航栏（上滑临时呼出），状态栏一直显示。
     private fun configureSystemBars(setupComplete: Boolean) {
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-
         val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.isAppearanceLightStatusBars = false
-        controller.isAppearanceLightNavigationBars = false
         controller.show(WindowInsetsCompat.Type.statusBars())
 
         if (setupComplete) {
