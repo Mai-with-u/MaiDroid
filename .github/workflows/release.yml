@@ -1,0 +1,230 @@
+# 发布流程：推送到 main 后，读取 CHANGELOG.md 最上面一节的版本号和正文，
+# 构建并签名 release 包，创建 GitHub Release（标签 v<版本号> 由本流程创建）并上传 APK。
+# 该版本的标签已经存在时直接跳过，所以没有新增版本的推送不会重复发布。
+# 也可以在 Actions 页面手动运行：这时只构建、签名并把 APK 存为本次运行的产物，不创建 Release，
+# 适合第一次配好密钥后先试跑一遍（手动运行要求本文件已经在默认分支 main 上）。
+#
+# 需要在仓库 Settings -> Secrets and variables -> Actions 里配置：
+#   Secrets
+#     MAIDROID_KEYSTORE_BASE64    发布密钥库文件的 base64 内容
+#     MAIDROID_KEYSTORE_PASSWORD  密钥库密码
+#     MAIDROID_KEY_ALIAS          密钥别名
+#     MAIDROID_KEY_PASSWORD       密钥密码（与库密码相同也要填）
+#   Variables（可选，建议配置）
+#     MAIDROID_CERT_SHA256        期望的签名证书 SHA-256；配置后证书不一致会直接失败，防止误用了别的密钥
+#
+# 发布步骤：在 dev 分支改好 app/build.gradle.kts 里的 versionName、versionCode，
+# 在 CHANGELOG.md 最上面新增一节 "## [版本号] - 日期" 并写好说明，再合入 main 并推送。
+# 版本号里带连字符（例如 0.2.0-rc1）按预发布处理。
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 读 CHANGELOG.md 最上面带版本号的一节：标题里的版本号决定标签，正文作为 Release 说明。
+      # 推送到 main 时，标签已存在就跳过；标签不存在则要求 versionName 与之一致，防止忘了改版本号。
+      - name: 读取 ChangeLog 并决定是否发布
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          version="$(awk '/^## / { if (match($0, /[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*/)) { print substr($0, RSTART, RLENGTH); exit } }' CHANGELOG.md)"
+          if [ -z "${version}" ]; then
+            echo "::error::CHANGELOG.md 里没有找到带版本号的二级标题，格式应为 \"## [0.1.1] - 2026-01-01\""
+            exit 1
+          fi
+          tag="v${version}"
+
+          notes="$(awk '
+            /^## / {
+              if (inside) exit
+              if (match($0, /[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*/)) { inside = 1 }
+              next
+            }
+            inside { print }
+          ' CHANGELOG.md)"
+          notes="${notes#"${notes%%[![:space:]]*}"}"
+          if [ -z "${notes}" ]; then
+            echo "::error::CHANGELOG.md 里 ${version} 这一节没有正文，请先写好更新说明"
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/release"
+          printf '%s\n' "${notes}" > "${RUNNER_TEMP}/release/notes.md"
+
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null 2>&1
+          rc=$?
+          set -e
+          case "${rc}" in
+            0) exists=true ;;
+            2) exists=false ;;
+            *) echo "::error::查询标签 ${tag} 失败（退出码 ${rc}）"; exit 1 ;;
+          esac
+
+          build=true
+          publish=false
+          if [ "${EVENT_NAME}" = "push" ]; then
+            if [ "${exists}" = "true" ]; then
+              build=false
+              echo "::notice::${tag} 已经发布过，本次推送不创建新 Release。要发布新版本，请在 CHANGELOG.md 最上面新增一节并同步修改 versionName。"
+            else
+              publish=true
+            fi
+          fi
+
+          if [ "${build}" = "true" ]; then
+            actual="$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+            if [ "${actual}" != "${version}" ]; then
+              echo "::error::CHANGELOG.md 最新版本是 ${version}，但 app/build.gradle.kts 里的 versionName 是 ${actual}"
+              exit 1
+            fi
+          fi
+
+          prerelease=false
+          case "${version}" in
+            *-*) prerelease=true ;;
+          esac
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "build=${build}"
+            echo "publish=${publish}"
+            echo "prerelease=${prerelease}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 配置 JDK 和 Gradle 缓存
+        if: steps.meta.outputs.build == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      # 四个 Secret 缺任何一个都直接失败，否则 Gradle 会悄悄产出未签名包。
+      - name: 还原发布密钥库
+        if: steps.meta.outputs.build == 'true'
+        env:
+          MAIDROID_KEYSTORE_BASE64: ${{ secrets.MAIDROID_KEYSTORE_BASE64 }}
+          MAIDROID_KEYSTORE_PASSWORD: ${{ secrets.MAIDROID_KEYSTORE_PASSWORD }}
+          MAIDROID_KEY_ALIAS: ${{ secrets.MAIDROID_KEY_ALIAS }}
+          MAIDROID_KEY_PASSWORD: ${{ secrets.MAIDROID_KEY_PASSWORD }}
+        run: |
+          for name in MAIDROID_KEYSTORE_BASE64 MAIDROID_KEYSTORE_PASSWORD MAIDROID_KEY_ALIAS MAIDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::缺少 Secret ${name}，请先在仓库 Settings -> Secrets and variables -> Actions 里配置"
+              exit 1
+            fi
+          done
+          printf '%s' "${MAIDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.jks"
+          echo "MAIDROID_KEYSTORE_PATH=${RUNNER_TEMP}/release.jks" >> "${GITHUB_ENV}"
+
+      - name: 构建并签名 release 包
+        if: steps.meta.outputs.build == 'true'
+        env:
+          MAIDROID_KEYSTORE_PASSWORD: ${{ secrets.MAIDROID_KEYSTORE_PASSWORD }}
+          MAIDROID_KEY_ALIAS: ${{ secrets.MAIDROID_KEY_ALIAS }}
+          MAIDROID_KEY_PASSWORD: ${{ secrets.MAIDROID_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease
+
+      # 构建完先确认产物真的签了名、签的是发布证书而不是调试证书，再整理成带版本号的发布文件。
+      - name: 校验签名并整理产物
+        if: steps.meta.outputs.build == 'true'
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.MAIDROID_CERT_SHA256 }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          apks=(app/build/outputs/apk/release/*.apk)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::release 目录下应当只有一个 APK，实际是 ${#apks[@]} 个"
+            exit 1
+          fi
+          apk="${apks[0]}"
+
+          apksigner="$(ls -d "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          certs="$("${apksigner}" verify --print-certs "${apk}")"
+          echo "${certs}"
+
+          if grep -q 'CN=Android Debug' <<< "${certs}"; then
+            echo "::error::产物用的是调试证书，发布包必须用发布密钥签名"
+            exit 1
+          fi
+
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "${certs}" | tr 'A-F' 'a-f')"
+          if [ -n "${EXPECTED_CERT_SHA256}" ]; then
+            expected="$(tr -d ':[:space:]' <<< "${EXPECTED_CERT_SHA256}" | tr 'A-F' 'a-f')"
+            if [ "${actual}" != "${expected}" ]; then
+              echo "::error::签名证书 SHA-256 是 ${actual}，与期望值 ${expected} 不一致，已停止发布"
+              exit 1
+            fi
+          else
+            echo "::warning::没有配置变量 MAIDROID_CERT_SHA256，无法确认用的是不是预期的密钥，证书 SHA-256：${actual}"
+          fi
+
+          name="MaiDroid_${TAG}.apk"
+          mkdir -p dist
+          cp "${apk}" "dist/${name}"
+          {
+            echo "APK_PATH=dist/${name}"
+            echo "APK_SHA256=$(sha256sum "dist/${name}" | cut -d' ' -f1)"
+            echo "APK_CERT_SHA256=${actual}"
+          } >> "${GITHUB_ENV}"
+
+      # 说明正文来自 CHANGELOG.md，末尾追加 APK 和签名证书的校验值。标签由这一步按本次提交创建。
+      - name: 创建 Release 并上传 APK
+        if: steps.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          notes_file="${RUNNER_TEMP}/release/notes-final.md"
+          {
+            cat "${RUNNER_TEMP}/release/notes.md"
+            printf '\n---\n\n校验：`%s` 的 SHA-256 为 `%s`，签名证书 SHA-256 为 `%s`。\n' \
+              "$(basename "${APK_PATH}")" "${APK_SHA256}" "${APK_CERT_SHA256}"
+          } > "${notes_file}"
+
+          flags=()
+          if [ "${PRERELEASE}" = "true" ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "${TAG}" "${APK_PATH}" \
+            --target "${GITHUB_SHA}" \
+            --title "${TAG}" \
+            --notes-file "${notes_file}" \
+            "${flags[@]}"
+
+      - name: 上传试跑产物
+        if: steps.meta.outputs.build == 'true' && steps.meta.outputs.publish != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: MaiDroid-release-apk
+          path: ${{ env.APK_PATH }}
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: 清理密钥库
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/release.jks"
