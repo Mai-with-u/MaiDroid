@@ -746,7 +746,8 @@ class MaiBotContainerConfig private constructor(
         if [ -d "${'$'}INSTALL_DIR" ]; then
             mkdir -p "${'$'}INSTALL_DIR/plugins"
             if [ ! -d "${'$'}ADAPTER_DIR" ]; then
-                git clone --depth=1 --branch main https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
+                # 适配器仓库现在在 Mai-with-u 组织下，直接用现名克隆，不再依赖旧组织名的自动跳转。
+                git clone --depth=1 --branch main https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
             fi
             cat > "${'$'}ADAPTER_DIR/config.toml" <<EOF
         [plugin]
