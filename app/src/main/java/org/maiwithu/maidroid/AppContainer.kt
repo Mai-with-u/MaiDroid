@@ -2,7 +2,7 @@ package org.maiwithu.maidroid
 
 import android.content.Context
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
-import org.maiwithu.maidroid.platform.NapCatPlatformManager
+import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner

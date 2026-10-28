@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform
+package org.maiwithu.maidroid.platform.napcat
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
@@ -15,15 +15,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.log.TerminalLog
-import org.maiwithu.maidroid.platform.napcat.NapCatFiles
-import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
-import org.maiwithu.maidroid.platform.napcat.NapCatLoginAccount
-import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
-import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
-import org.maiwithu.maidroid.platform.napcat.NapCatScripts
-import org.maiwithu.maidroid.platform.napcat.NapCatStatusReader
-import org.maiwithu.maidroid.platform.napcat.NapCatWebUiClient
-import org.maiwithu.maidroid.platform.napcat.shouldAutoRefreshQrCode
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
