@@ -133,18 +133,19 @@ flowchart TB
 
 ### 发布密钥
 
-发布密钥库不入库。流程需要在仓库的 Actions Secrets 里配置 `MAIDROID_KEYSTORE_BASE64`、`MAIDROID_KEYSTORE_PASSWORD`、`MAIDROID_KEY_ALIAS`、`MAIDROID_KEY_PASSWORD`，建议再配置变量 `MAIDROID_CERT_SHA256`（期望的证书 SHA-256），证书不一致时流程会中止。首次配置可以这样做，密码由 `keytool` 和 `gh` 交互输入，不会出现在命令行里：
+发布密钥库不入库。流程需要在仓库的 Actions Secrets 里配置 `MAIDROID_KEYSTORE_BASE64`、`MAIDROID_KEYSTORE_PASSWORD`、`MAIDROID_KEY_ALIAS`、`MAIDROID_KEY_PASSWORD`，建议再配置变量 `MAIDROID_CERT_SHA256`（期望的证书 SHA-256），证书不一致时流程会中止。首次配置可以这样做（PowerShell，需要已安装 JDK 的 `keytool` 和 GitHub CLI），密码由 `keytool` 和 `gh` 交互输入，不会出现在命令行里：
 
-```bash
-keytool -genkeypair -v -keystore maidroid-release.jks -alias maidroid \
-  -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=MaiDroid, O=Mai-with-u"
-base64 -w0 maidroid-release.jks | gh secret set MAIDROID_KEYSTORE_BASE64 --repo Mai-with-u/MaiDroid
+```powershell
+keytool -genkeypair -v -keystore maidroid-release.jks -alias maidroid -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=MaiDroid, O=Mai-with-u"
+gh secret set MAIDROID_KEYSTORE_BASE64 --repo Mai-with-u/MaiDroid --body ([Convert]::ToBase64String([IO.File]::ReadAllBytes("maidroid-release.jks")))
 gh secret set MAIDROID_KEYSTORE_PASSWORD --repo Mai-with-u/MaiDroid
 gh secret set MAIDROID_KEY_PASSWORD --repo Mai-with-u/MaiDroid
 gh secret set MAIDROID_KEY_ALIAS --repo Mai-with-u/MaiDroid --body maidroid
 keytool -list -v -keystore maidroid-release.jks
 gh variable set MAIDROID_CERT_SHA256 --repo Mai-with-u/MaiDroid --body "<上一步输出的 SHA-256 指纹>"
 ```
+
+在 Git Bash 或 Linux 里，第二条可以换成 `base64 -w0 maidroid-release.jks | gh secret set MAIDROID_KEYSTORE_BASE64 --repo Mai-with-u/MaiDroid`。
 
 PKCS12 密钥库的密钥密码必须与库密码相同，`MAIDROID_KEY_PASSWORD` 填同一个值。在本地用发布密钥签名时，设置同名环境变量（另有 `MAIDROID_KEYSTORE_PATH` 指向密钥库文件）后执行 `assembleRelease`；缺少环境变量时 release 保持未签名。
 

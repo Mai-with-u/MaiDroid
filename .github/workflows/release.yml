@@ -136,7 +136,8 @@ jobs:
               exit 1
             fi
           done
-          printf '%s' "${MAIDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.jks"
+          # 先去掉混进 Secret 的空白字符：PowerShell 管道、网页粘贴都可能带上换行和回车，base64 -d 会因此报错
+          printf '%s' "${MAIDROID_KEYSTORE_BASE64}" | tr -d '[:space:]' | base64 -d > "${RUNNER_TEMP}/release.jks"
           echo "MAIDROID_KEYSTORE_PATH=${RUNNER_TEMP}/release.jks" >> "${GITHUB_ENV}"
 
       - name: 构建并签名 release 包
