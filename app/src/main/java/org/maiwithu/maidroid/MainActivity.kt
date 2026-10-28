@@ -178,16 +178,8 @@ class MainActivity : ComponentActivity() {
                                 OobeFlowScreen(
                                     currentStep = oobeStep,
                                     setupState = setupState,
-                                    storagePermissionGranted = permissions.state.storageGranted,
-                                    notificationPermissionGranted = permissions.state.notificationGranted,
-                                    batteryOptimizationGranted = permissions.state.batteryOptimizationIgnored,
-                                    onStorageAuthorize = permissions.oobeActions.requestStorage,
-                                    onNotificationAuthorize = permissions.oobeActions.enableNotification,
-                                    onBatteryOptimizationAuthorize = permissions.oobeActions.ignoreBatteryOptimization,
-                                    onAutoStartAuthorize = permissions.oobeActions.openAutoStartSettings,
-                                    onTaskLockAuthorize = permissions.oobeActions.showTaskLockHint,
-                                    onAccessibilityAuthorize = permissions.oobeActions.openAccessibilitySettings,
-                                    onDeviceAdminAuthorize = permissions.oobeActions.openDeviceAdminSettings,
+                                    permissionState = permissions.state,
+                                    permissionActions = permissions.oobeActions,
                                     onNext = {
                                         when (oobeStep) {
                                             0 -> {

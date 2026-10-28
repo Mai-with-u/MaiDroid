@@ -90,7 +90,10 @@ import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.component.DownloadResourceCard
 import org.maiwithu.maidroid.ui.component.OobeStepIndicator
-import org.maiwithu.maidroid.ui.oobe.OobePermissionCard
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.oobe.AdaptiveOobePermissionCards
+import org.maiwithu.maidroid.ui.oobe.CompactOobePermissionCards
 import org.maiwithu.maidroid.ui.theme.BackgroundDark
 import org.maiwithu.maidroid.ui.theme.Orange400
 import org.maiwithu.maidroid.ui.theme.Orange500
@@ -151,16 +154,8 @@ internal fun oobeTerminalStateForEnvironment(
 internal fun OobeFlowScreen(
     currentStep: Int,
     setupState: OobeSetupState = OobeSetupState.beforeFirstCheck(),
-    storagePermissionGranted: Boolean = false,
-    notificationPermissionGranted: Boolean = false,
-    batteryOptimizationGranted: Boolean = false,
-    onStorageAuthorize: () -> Unit = {},
-    onNotificationAuthorize: () -> Unit = {},
-    onBatteryOptimizationAuthorize: () -> Unit = {},
-    onAutoStartAuthorize: () -> Unit = {},
-    onTaskLockAuthorize: () -> Unit = {},
-    onAccessibilityAuthorize: () -> Unit = {},
-    onDeviceAdminAuthorize: () -> Unit = {},
+    permissionState: PermissionState = PermissionState(),
+    permissionActions: PermissionActions = PermissionActions(),
     onNext: () -> Unit = {},
     onRetry: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -233,16 +228,8 @@ internal fun OobeFlowScreen(
             AdaptiveOobeFlowLayout(
                 currentStep = currentStep,
                 setupState = setupState,
-                storagePermissionGranted = storagePermissionGranted,
-                notificationPermissionGranted = notificationPermissionGranted,
-                batteryOptimizationGranted = batteryOptimizationGranted,
-                onStorageAuthorize = onStorageAuthorize,
-                onNotificationAuthorize = onNotificationAuthorize,
-                onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
-                onAutoStartAuthorize = onAutoStartAuthorize,
-                onTaskLockAuthorize = onTaskLockAuthorize,
-                onAccessibilityAuthorize = onAccessibilityAuthorize,
-                onDeviceAdminAuthorize = onDeviceAdminAuthorize,
+                permissionState = permissionState,
+                permissionActions = permissionActions,
                 onNext = onNext,
                 onRetry = onRetry,
                 commandLogAttention = setupFailed || waitedTooLong,
@@ -343,18 +330,7 @@ internal fun OobeFlowScreen(
                     label = "OobeStepCards"
                 ) { step ->
                     when (step) {
-                        0 -> PermissionCards(
-                            storagePermissionGranted = storagePermissionGranted,
-                            notificationPermissionGranted = notificationPermissionGranted,
-                            batteryOptimizationGranted = batteryOptimizationGranted,
-                            onStorageAuthorize = onStorageAuthorize,
-                            onNotificationAuthorize = onNotificationAuthorize,
-                            onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
-                            onAutoStartAuthorize = onAutoStartAuthorize,
-                            onTaskLockAuthorize = onTaskLockAuthorize,
-                            onAccessibilityAuthorize = onAccessibilityAuthorize,
-                            onDeviceAdminAuthorize = onDeviceAdminAuthorize
-                        )
+                        0 -> CompactOobePermissionCards(permissionState, permissionActions)
 
                         1 -> SetupCards(setupState.containerTasks)
                         else -> SetupCards(setupState.installTasks)
@@ -371,8 +347,8 @@ internal fun OobeFlowScreen(
                 ) { step ->
                     when (step) {
                         0 -> NextButton(
-                            text = if (storagePermissionGranted) "下一步" else "请先授权",
-                            enabled = storagePermissionGranted,
+                            text = if (permissionState.storageGranted) "下一步" else "请先授权",
+                            enabled = permissionState.storageGranted,
                             onNext = onNext
                         )
 
@@ -424,16 +400,8 @@ internal fun OobeFlowScreen(
 private fun AdaptiveOobeFlowLayout(
     currentStep: Int,
     setupState: OobeSetupState,
-    storagePermissionGranted: Boolean,
-    notificationPermissionGranted: Boolean,
-    batteryOptimizationGranted: Boolean,
-    onStorageAuthorize: () -> Unit,
-    onNotificationAuthorize: () -> Unit,
-    onBatteryOptimizationAuthorize: () -> Unit,
-    onAutoStartAuthorize: () -> Unit,
-    onTaskLockAuthorize: () -> Unit,
-    onAccessibilityAuthorize: () -> Unit,
-    onDeviceAdminAuthorize: () -> Unit,
+    permissionState: PermissionState,
+    permissionActions: PermissionActions,
     onNext: () -> Unit,
     onRetry: () -> Unit,
     commandLogAttention: Boolean,
@@ -593,18 +561,7 @@ private fun AdaptiveOobeFlowLayout(
                         label = "AdaptiveOobeStepCards"
                     ) { step ->
                         when (step) {
-                            0 -> AdaptivePermissionCards(
-                                storagePermissionGranted = storagePermissionGranted,
-                                notificationPermissionGranted = notificationPermissionGranted,
-                                batteryOptimizationGranted = batteryOptimizationGranted,
-                                onStorageAuthorize = onStorageAuthorize,
-                                onNotificationAuthorize = onNotificationAuthorize,
-                                onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
-                                onAutoStartAuthorize = onAutoStartAuthorize,
-                                onTaskLockAuthorize = onTaskLockAuthorize,
-                                onAccessibilityAuthorize = onAccessibilityAuthorize,
-                                onDeviceAdminAuthorize = onDeviceAdminAuthorize
-                            )
+                            0 -> AdaptiveOobePermissionCards(permissionState, permissionActions)
 
                             1 -> AdaptiveSetupCards(setupState.containerTasks)
                             else -> AdaptiveSetupCards(setupState.installTasks)
@@ -622,7 +579,7 @@ private fun AdaptiveOobeFlowLayout(
                         AdaptiveOobeFooter(
                             currentStep = step,
                             setupState = setupState,
-                            storagePermissionGranted = storagePermissionGranted,
+                            storagePermissionGranted = permissionState.storageGranted,
                             onNext = onNext,
                             onRetry = onRetry
                         )
@@ -673,102 +630,6 @@ private fun AdaptiveStepHeaderContent(
             overflow = TextOverflow.Ellipsis
         )
     }
-}
-
-@Composable
-private fun AdaptivePermissionCards(
-    storagePermissionGranted: Boolean,
-    notificationPermissionGranted: Boolean,
-    batteryOptimizationGranted: Boolean,
-    onStorageAuthorize: () -> Unit,
-    onNotificationAuthorize: () -> Unit,
-    onBatteryOptimizationAuthorize: () -> Unit,
-    onAutoStartAuthorize: () -> Unit,
-    onTaskLockAuthorize: () -> Unit,
-    onAccessibilityAuthorize: () -> Unit,
-    onDeviceAdminAuthorize: () -> Unit
-) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        if (maxWidth >= 760.dp) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(0.4f)
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    StoragePermissionCard(
-                        granted = storagePermissionGranted,
-                        onAuthorize = onStorageAuthorize
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                Column(
-                    modifier = Modifier
-                        .weight(0.6f)
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    BackgroundKeepAliveCard(
-                        notificationPermissionGranted = notificationPermissionGranted,
-                        batteryOptimizationGranted = batteryOptimizationGranted,
-                        onNotificationAuthorize = onNotificationAuthorize,
-                        onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
-                        onAutoStartAuthorize = onAutoStartAuthorize,
-                        onTaskLockAuthorize = onTaskLockAuthorize,
-                        onAccessibilityAuthorize = onAccessibilityAuthorize,
-                        onDeviceAdminAuthorize = onDeviceAdminAuthorize
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                StoragePermissionCard(
-                    granted = storagePermissionGranted,
-                    onAuthorize = onStorageAuthorize
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                BackgroundKeepAliveCard(
-                    notificationPermissionGranted = notificationPermissionGranted,
-                    batteryOptimizationGranted = batteryOptimizationGranted,
-                    onNotificationAuthorize = onNotificationAuthorize,
-                    onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
-                    onAutoStartAuthorize = onAutoStartAuthorize,
-                    onTaskLockAuthorize = onTaskLockAuthorize,
-                    onAccessibilityAuthorize = onAccessibilityAuthorize,
-                    onDeviceAdminAuthorize = onDeviceAdminAuthorize
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun StoragePermissionCard(
-    granted: Boolean,
-    onAuthorize: () -> Unit
-) {
-    OobePermissionCard(
-        iconRes = R.drawable.ic_storage_hdd,
-        title = "存储权限",
-        description = "用于解包容器、保存 MaiBot 配置和访问外部文件。",
-        required = true,
-        granted = granted,
-        onAuthorize = onAuthorize
-    )
 }
 
 @Composable
@@ -931,275 +792,6 @@ private fun StepHeaderContent(
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
             lineHeight = 17.sp
-        )
-    }
-}
-
-@Composable
-private fun PermissionCards(
-    storagePermissionGranted: Boolean,
-    notificationPermissionGranted: Boolean,
-    batteryOptimizationGranted: Boolean,
-    onStorageAuthorize: () -> Unit,
-    onNotificationAuthorize: () -> Unit,
-    onBatteryOptimizationAuthorize: () -> Unit,
-    onAutoStartAuthorize: () -> Unit,
-    onTaskLockAuthorize: () -> Unit,
-    onAccessibilityAuthorize: () -> Unit,
-    onDeviceAdminAuthorize: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-    ) {
-        OobePermissionCard(
-            iconRes = R.drawable.ic_storage_hdd,
-            title = "存储权限",
-            description = "用于解包容器、保存 MaiBot 配置和访问外部文件。",
-            required = true,
-            granted = storagePermissionGranted,
-            onAuthorize = onStorageAuthorize
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        BackgroundKeepAliveCard(
-            notificationPermissionGranted = notificationPermissionGranted,
-            batteryOptimizationGranted = batteryOptimizationGranted,
-            onNotificationAuthorize = onNotificationAuthorize,
-            onBatteryOptimizationAuthorize = onBatteryOptimizationAuthorize,
-            onAutoStartAuthorize = onAutoStartAuthorize,
-            onTaskLockAuthorize = onTaskLockAuthorize,
-            onAccessibilityAuthorize = onAccessibilityAuthorize,
-            onDeviceAdminAuthorize = onDeviceAdminAuthorize
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-    }
-}
-
-@Composable
-private fun BackgroundKeepAliveCard(
-    notificationPermissionGranted: Boolean,
-    batteryOptimizationGranted: Boolean,
-    onNotificationAuthorize: () -> Unit,
-    onBatteryOptimizationAuthorize: () -> Unit,
-    onAutoStartAuthorize: () -> Unit,
-    onTaskLockAuthorize: () -> Unit,
-    onAccessibilityAuthorize: () -> Unit,
-    onDeviceAdminAuthorize: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(SurfaceDark)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(71.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Orange400),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_job_run),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(33.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "后台保活",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        lineHeight = 24.sp
-                    )
-
-                    Spacer(modifier = Modifier.width(5.dp))
-
-                    KeepAliveTag(
-                        text = "可选",
-                        backgroundColor = Orange400,
-                        width = 48.dp,
-                        textSize = 12
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "MaiSaka 需要后台权限才能在切换到其他应用时保持后台运行；这个设置是可选项，你可以视情况开启一部分。",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextSecondary,
-                    lineHeight = 15.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(272.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF1C1C1E))
-                .padding(8.dp)
-        ) {
-            KeepAlivePermissionRow(
-                tagText = "推荐",
-                title = "通知保活",
-                granted = notificationPermissionGranted,
-                onAuthorize = onNotificationAuthorize
-            )
-            KeepAliveDivider()
-            KeepAlivePermissionRow(
-                tagText = "推荐",
-                title = "关闭电池优化",
-                granted = batteryOptimizationGranted,
-                onAuthorize = onBatteryOptimizationAuthorize
-            )
-            KeepAliveDivider()
-            KeepAlivePermissionRow(
-                tagText = "推荐",
-                title = "开启自启动&后台活动",
-                onAuthorize = onAutoStartAuthorize
-            )
-            KeepAliveDivider()
-            KeepAlivePermissionRow(
-                tagText = "推荐",
-                title = "多任务加锁",
-                onAuthorize = onTaskLockAuthorize
-            )
-            KeepAliveDivider()
-            KeepAlivePermissionRow(
-                tagText = "不建议",
-                title = "无障碍服务",
-                actionText = "你确定？！",
-                destructive = true,
-                onAuthorize = onAccessibilityAuthorize
-            )
-            KeepAliveDivider()
-            KeepAlivePermissionRow(
-                tagText = "不建议",
-                title = "设备管理员",
-                actionText = "你确定？！",
-                destructive = true,
-                onAuthorize = onDeviceAdminAuthorize
-            )
-        }
-    }
-}
-
-@Composable
-private fun KeepAlivePermissionRow(
-    tagText: String,
-    title: String,
-    onAuthorize: () -> Unit,
-    modifier: Modifier = Modifier,
-    granted: Boolean = false,
-    actionText: String = "去授权",
-    destructive: Boolean = false
-) {
-    val actionLabel = if (granted) "已授权" else actionText
-    val actionColor = if (granted) Orange500 else Color(0xFF808080)
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = !granted, onClick = onAuthorize)
-            .padding(horizontal = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        KeepAliveTag(
-            text = tagText,
-            backgroundColor = if (destructive) Color(0xFFE90F0F) else Orange500,
-            width = if (destructive) 42.dp else 32.dp,
-            textSize = 10
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 18.sp
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End
-        ) {
-            Text(
-                text = actionLabel,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
-                color = actionColor,
-                maxLines = 1,
-                lineHeight = 14.sp
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = actionColor,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun KeepAliveDivider() {
-    Spacer(modifier = Modifier.height(4.dp))
-    HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
-    Spacer(modifier = Modifier.height(3.dp))
-}
-
-@Composable
-private fun KeepAliveTag(
-    text: String,
-    backgroundColor: Color,
-    width: androidx.compose.ui.unit.Dp,
-    textSize: Int
-) {
-    Box(
-        modifier = Modifier
-            .size(width = width, height = 18.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(backgroundColor),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            fontSize = textSize.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            maxLines = 1,
-            lineHeight = textSize.sp
         )
     }
 }
