@@ -1,7 +1,7 @@
 package org.maiwithu.maidroid.webui
 
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -68,7 +68,7 @@ internal object MaiBotWebUi {
         baseUrl: String = URL
     ): String {
         val token = readAccessTokenFromConfig(paths) ?: extractAccessTokenFromLogs(terminalLogs) ?: return baseUrl
-        return Uri.parse(baseUrl)
+        return baseUrl.toUri()
             .buildUpon()
             .encodedPath("/auth")
             .clearQuery()
@@ -91,7 +91,7 @@ internal object MaiBotWebUi {
     /** 打日志前把地址里的 token 换成 <redacted>，避免访问令牌出现在 logcat 里。 */
     fun redactUrlForLogs(url: String): String =
         runCatching {
-            val uri = Uri.parse(url)
+            val uri = url.toUri()
             if (uri.getQueryParameter("token") == null) {
                 url
             } else {

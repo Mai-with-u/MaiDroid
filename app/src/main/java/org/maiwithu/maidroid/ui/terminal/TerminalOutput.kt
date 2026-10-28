@@ -653,8 +653,8 @@ private fun TerminalLogViewport(
     horizontalScrollState: ScrollState,
     onJumpToBottom: () -> Unit,
     onUserScrollAwayFromBottom: () -> Unit,
-    compactEmptyState: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compactEmptyState: Boolean = false
 ) {
     val userScrollConnection = remember(onUserScrollAwayFromBottom) {
         object : NestedScrollConnection {

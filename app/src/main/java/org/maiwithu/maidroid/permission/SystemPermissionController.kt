@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
 
 /** MaiDroid 用到的、能读出授予情况的系统权限。 */
 data class PermissionState(
@@ -216,7 +217,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
     private fun isGranted(permission: String): Boolean =
         activity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
-    private fun packageUri(): Uri = Uri.parse("package:${activity.packageName}")
+    private fun packageUri(): Uri = "package:${activity.packageName}".toUri()
 
     private fun toast(message: String, long: Boolean = false) {
         Toast.makeText(activity, message, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()

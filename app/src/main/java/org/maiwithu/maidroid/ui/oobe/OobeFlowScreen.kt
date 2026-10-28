@@ -491,8 +491,9 @@ private fun AdaptiveOobeLayout(
                                 storageGranted = content.permissionState.storageGranted,
                                 onNext = content.onNext,
                                 onRetry = content.onRetry,
-                                nextButtonModifier = Modifier.widthIn(max = 520.dp),
-                                setupFooterModifier = Modifier.widthIn(max = 560.dp)
+                                modifier = Modifier.widthIn(
+                                    max = if (targetStep == OobeStep.Permissions) 520.dp else 560.dp
+                                )
                             )
                         }
                     }

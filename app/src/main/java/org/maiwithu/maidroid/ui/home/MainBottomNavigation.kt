@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
@@ -186,7 +187,7 @@ private fun AnimatedMainTabBar(
 
         Box(
             modifier = Modifier
-                .offset(x = indicatorOffset, y = 4.dp)
+                .offset { IntOffset(indicatorOffset.roundToPx(), 4.dp.roundToPx()) }
                 .width(tabWidth)
                 .height(56.dp)
                 .clip(RoundedCornerShape(32.dp))

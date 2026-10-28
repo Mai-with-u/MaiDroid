@@ -36,11 +36,11 @@ internal const val WakeRetryIntervalMillis = 30_000L
 fun HomeScreen(
     webUiOnline: Boolean,
     versionName: String,
+    onWakeMai: (showToast: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
     terminalLogs: List<String> = emptyList(),
     permissionState: PermissionState = PermissionState(),
-    permissionActions: PermissionActions = PermissionActions(),
-    onWakeMai: (showToast: Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    permissionActions: PermissionActions = PermissionActions()
 ) {
     var dashboardVisible by rememberSaveable { mutableStateOf(false) }
     var wakeCycle by rememberSaveable { mutableIntStateOf(0) }

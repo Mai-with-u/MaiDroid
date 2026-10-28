@@ -148,13 +148,12 @@ internal class RuntimeAssetInstaller(
         appContext.assets.open(assetPath).use { }
     }
 
-    @Suppress("DEPRECATION")
     private fun extractRootfs(targetRoot: File) {
         appContext.assets.open(RuntimeAssets.ROOTFS).buffered().use { raw ->
             XZCompressorInputStream(raw).use { xz ->
                 TarArchiveInputStream(xz).use { tar ->
                     while (true) {
-                        val entry = tar.nextTarEntry ?: break
+                        val entry = tar.nextEntry ?: break
                         extractTarEntry(targetRoot, entry, tar)
                     }
                 }
@@ -200,24 +199,22 @@ internal class RuntimeAssetInstaller(
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun extractProotDependencyPackages(targetRoot: File) {
         extractTermuxDebPackage(targetRoot, RuntimeAssets.LIBANDROID_SHMEM_DEB)
         extractTermuxDebPackage(targetRoot, RuntimeAssets.LIBTALLOC_DEB)
     }
 
-    @Suppress("DEPRECATION")
     private fun extractTermuxDebPackage(targetRoot: File, assetPath: String) {
         appContext.assets.open(assetPath).buffered().use { raw ->
             ArArchiveInputStream(raw).use { ar ->
                 while (true) {
-                    val arEntry = ar.nextArEntry ?: break
+                    val arEntry = ar.nextEntry ?: break
                     if (arEntry.name != "data.tar.xz") continue
 
                     XZCompressorInputStream(ar).use { xz ->
                         TarArchiveInputStream(xz).use { tar ->
                             while (true) {
-                                val entry = tar.nextTarEntry ?: break
+                                val entry = tar.nextEntry ?: break
                                 val entryName = stripTermuxPrefix(entry.name) ?: continue
                                 extractTarEntry(targetRoot, entry, tar, entryName)
                             }

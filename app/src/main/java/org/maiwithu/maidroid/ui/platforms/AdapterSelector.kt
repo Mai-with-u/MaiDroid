@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -88,7 +89,7 @@ internal fun AdapterSelector(
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .offset(x = selectedOffset)
+                .offset { IntOffset(selectedOffset.roundToPx(), 0) }
                 .width(itemWidth)
                 .height(38.dp)
                 .clip(RoundedCornerShape(19.dp))

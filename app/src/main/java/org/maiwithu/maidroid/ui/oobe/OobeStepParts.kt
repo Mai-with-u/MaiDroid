@@ -127,7 +127,7 @@ internal fun OobeStepHeader(
  * 权限步骤 -> 存储授权后才能点“下一步”；
  * 配置容器 -> 容器就绪时“开始安装”，失败时“重新配置”；
  * 安装 MaiBot -> 完成时“进入 MaiDroid”，失败且没有任务在跑时“重试安装”，否则“请稍候”。
- * 平板布局通过两个 modifier 限制按钮最大宽度。
+ * 平板布局通过 modifier 限制按钮区最大宽度。
  */
 @Composable
 internal fun OobeStepFooter(
@@ -136,15 +136,14 @@ internal fun OobeStepFooter(
     storageGranted: Boolean,
     onNext: () -> Unit,
     onRetry: () -> Unit,
-    nextButtonModifier: Modifier = Modifier,
-    setupFooterModifier: Modifier = Modifier
+    modifier: Modifier = Modifier
 ) {
     when (step) {
         OobeStep.Permissions -> NextButton(
             text = if (storageGranted) "下一步" else "请先授权",
             enabled = storageGranted,
             onNext = onNext,
-            modifier = nextButtonModifier
+            modifier = modifier
         )
 
         OobeStep.Container -> SetupFooter(
@@ -155,7 +154,7 @@ internal fun OobeStepFooter(
             waitingEnabled = setupState.containerTasks.hasFailedTask(),
             onProceed = onNext,
             onRetry = onRetry,
-            modifier = setupFooterModifier
+            modifier = modifier
         )
 
         OobeStep.Install -> {
@@ -169,7 +168,7 @@ internal fun OobeStepFooter(
                 waitingEnabled = installFailed && !installRunning,
                 onProceed = onNext,
                 onRetry = onRetry,
-                modifier = setupFooterModifier
+                modifier = modifier
             )
         }
     }

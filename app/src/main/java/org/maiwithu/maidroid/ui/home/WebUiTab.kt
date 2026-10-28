@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,7 +63,7 @@ internal class WebUiTabState internal constructor(
     val webView: WebView
 ) {
     var webViewError by mutableStateOf<String?>(null)
-    var reloadToken by mutableStateOf(0)
+    var reloadToken by mutableIntStateOf(0)
     var webViewHasSize by mutableStateOf(false)
 }
 
