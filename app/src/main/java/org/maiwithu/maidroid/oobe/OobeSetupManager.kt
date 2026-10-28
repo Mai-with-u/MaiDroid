@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.maibot.MaiBotAgreement
+import org.maiwithu.maidroid.maibot.MaiBotDependencyStep
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
@@ -152,7 +153,8 @@ internal class OobeSetupManager(
 
     /**
      * “安装 MaiBot”一步：进入该步或点“重试安装”时调用。
-     * 配 DNS -> 克隆 MaiBot（已有源码就跳过）-> 装 uv 并 uv sync（已装好就跳过）-> 确认协议文件 ->
+     * 配 DNS -> 克隆 MaiBot（已有源码就跳过）-> 确认 uv 能用（不能用就装）->
+     * 准备 Python 解释器并 uv sync（.venv 已装好就跳过）-> 确认协议文件 ->
      * 拉起前台服务启动 MaiBot -> 最多等 3 分钟直到 WebUI 能访问 -> 记下 OOBE 已完成。
      */
     fun startInstall() {
@@ -187,22 +189,29 @@ internal class OobeSetupManager(
                 }
             }
 
-            showInstallRunning(OobeTaskKind.PythonDependencies, "正在安装 uv 和依赖...")
-
-            if (!paths.userUvExecutable.isFile) {
-                val uvResult = runCommand(MaiBotScripts.installUv())
-                if (!uvResult.success) {
-                    failInstall(OobeTaskKind.PythonDependencies, uvResult.summary())
+            // 启动 MaiBot 靠 uv run，所以 uv 每次都要确认能用（脚本里已能运行就立刻跳过）；
+            // .venv 已经装好时不再准备 Python、不再 uv sync。三步任一步失败就停在依赖卡片上。
+            val dependencySteps = if (readiness.isMaiBotDependencyReady()) {
+                listOf(MaiBotDependencyStep.Uv)
+            } else {
+                MaiBotDependencyStep.entries
+            }
+            for (step in dependencySteps) {
+                showInstallRunning(OobeTaskKind.PythonDependencies, step.progressText)
+                val result = runCommand(step.script())
+                if (!result.success) {
+                    failInstall(OobeTaskKind.PythonDependencies, step.failureMessage(result))
                     return@launch
                 }
             }
 
+            // uv sync 返回成功也再按文件核对一次：.venv 里真有装好的包才往下走。
             if (!readiness.isMaiBotDependencyReady()) {
-                val syncResult = runCommand(MaiBotScripts.syncDependencies())
-                if (!syncResult.success) {
-                    failInstall(OobeTaskKind.PythonDependencies, syncResult.summary())
-                    return@launch
-                }
+                failInstall(
+                    OobeTaskKind.PythonDependencies,
+                    "安装 Python 依赖包失败：uv sync 已结束，但虚拟环境里没有装好的依赖包"
+                )
+                return@launch
             }
 
             showInstallRunning(OobeTaskKind.Agreement, "正在读取协议 hash...")
@@ -245,16 +254,12 @@ internal class OobeSetupManager(
         )
 
     // 安装四步按文件判断是否已完成，没完成的都显示为等待；正在做的那一步由 showInstallRunning 单独标出。
-    private fun buildInstallTasks(): List<OobeTask> {
-        fun task(kind: OobeTaskKind, title: String, done: Boolean) =
-            OobeTask(kind, title, if (done) OobeTaskStatus.Done else OobeTaskStatus.Waiting)
-        return listOf(
-            task(OobeTaskKind.MaiBotSource, "MaiBot 源码", readiness.isMaiBotSourceReady()),
-            task(OobeTaskKind.PythonDependencies, "Python 依赖", readiness.isMaiBotDependencyReady()),
-            task(OobeTaskKind.Agreement, "协议确认", MaiBotAgreement.isReady(paths)),
-            task(OobeTaskKind.WebUi, "MaiBot WebUI", webUiReady)
-        )
-    }
+    private fun buildInstallTasks(): List<OobeTask> = sequentialTasks(
+        OobeTaskCheck(OobeTaskKind.MaiBotSource, "MaiBot 源码", readiness.isMaiBotSourceReady()),
+        OobeTaskCheck(OobeTaskKind.PythonDependencies, "Python 依赖", readiness.isMaiBotDependencyReady()),
+        OobeTaskCheck(OobeTaskKind.Agreement, "协议确认", MaiBotAgreement.isReady(paths)),
+        OobeTaskCheck(OobeTaskKind.WebUi, "MaiBot WebUI", webUiReady)
+    )
 
     // 把 kind 那张卡片标为进行中，页脚显示当前在做什么。
     private fun showInstallRunning(kind: OobeTaskKind, statusText: String) {

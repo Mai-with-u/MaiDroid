@@ -62,7 +62,6 @@ internal class RuntimePaths private constructor(
     val gitExecutable: File = File(rootfsDir, "usr/bin/git")
     val curlExecutable: File = File(rootfsDir, "usr/bin/curl")
     val caCertificateBundle: File = File(rootfsDir, "etc/ssl/certs/ca-certificates.crt")
-    val userUvExecutable: File = File(rootfsDir, "root/.local/bin/uv")
 
     // ── MaiBot（容器内 /opt/MaiBot）─────────────────────────────────────
     val maiBotDir: File = File(rootfsDir, InContainerPaths.MAIBOT_DIR.removePrefix("/"))

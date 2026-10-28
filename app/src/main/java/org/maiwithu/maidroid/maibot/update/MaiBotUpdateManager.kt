@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.maibot.MaiBotDependencyStep
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
-import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -189,16 +189,13 @@ internal class MaiBotUpdateManager(
             return "源码更新失败：${updateResult.summary()}"
         }
 
-        // OOBE 装过 uv，这里兜底处理 uv 被误删的情况。
-        if (!paths.userUvExecutable.isFile) {
-            showProgress(MaiBotUpdatePhase.Updating, "正在安装 uv...")
-            val uvResult = runCommand(MaiBotScripts.installUv())
-            if (!uvResult.success) return "安装 uv 失败：${uvResult.summary()}"
+        // 源码切换后按 OOBE 同样的三步重装依赖：uv 和 Python 已就绪时脚本会立刻跳过，
+        // 兜底处理 uv 被误删、上游改了 Python 版本要求的情况；最后 uv sync 按新的 uv.lock 同步。
+        for (step in MaiBotDependencyStep.entries) {
+            showProgress(MaiBotUpdatePhase.Updating, step.progressText)
+            val result = runCommand(step.script())
+            if (!result.success) return step.failureMessage(result)
         }
-
-        showProgress(MaiBotUpdatePhase.Updating, "正在同步 Python 依赖（uv sync），可能需要几分钟...")
-        val syncResult = runCommand(MaiBotScripts.syncDependencies())
-        if (!syncResult.success) return "依赖同步失败：${syncResult.summary()}"
         return null
     }
 

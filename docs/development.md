@@ -39,8 +39,10 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 
 | 测试 | 覆盖 |
 | --- | --- |
+| `maibot/MaiBotDependencyStepTest` | 依赖安装失败文案、从 uv 输出里提炼失败原因 |
 | `maibot/PluginDirLookupTest` | 按清单 ID 找插件目录（插件市场副本、临时目录、保留目录） |
 | `maibot/update/MaiBotUpdateReportTest` | 在线更新脚本输出的解析 |
+| `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |

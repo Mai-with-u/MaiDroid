@@ -79,6 +79,27 @@ internal data class OobeSetupState(
     }
 }
 
+/** 一张卡片的检查结果：只按它自己的文件或状态判断是否完成。 */
+internal data class OobeTaskCheck(
+    val kind: OobeTaskKind,
+    val title: String,
+    val done: Boolean
+)
+
+/**
+ * 按顺序执行的几步生成卡片：某一步自己的检查通过、且前面每一步都完成，才显示为完成，其余显示为等待。
+ * 例如协议文件随源码一起下载，依赖还没装好时它的文件就已经在了；
+ * 只看自己会出现“依赖失败、后面的协议确认却打勾”的错乱状态。
+ */
+internal fun sequentialTasks(vararg checks: OobeTaskCheck): List<OobeTask> {
+    var previousDone = true
+    return checks.map { check ->
+        val done = previousDone && check.done
+        previousDone = done
+        OobeTask(check.kind, check.title, if (done) OobeTaskStatus.Done else OobeTaskStatus.Waiting)
+    }
+}
+
 /** 容器检查项与安装页卡片一一对应。 */
 internal fun RuntimeComponent.toOobeTaskKind(): OobeTaskKind = when (this) {
     RuntimeComponent.DebianRootfs -> OobeTaskKind.DebianRootfs

@@ -98,13 +98,15 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 1. 先重写一次 DNS 配置（与配置容器一步是同一段脚本），保证接下来克隆和下载时能解析域名。
 2. **克隆源码**（`MaiBotScripts.clone`，已有就跳过）：经 GitHub 镜像浅克隆到 `/opt/MaiBot.tmp`，改名为 `/opt/MaiBot`，再读一次 HEAD 确认仓库可用。克隆时加 `-c core.createObject=rename`，原因见下文“proot 下的 git”。
-3. **装 uv**（`curl … astral.sh/uv/install.sh | sh`，已有就跳过）。
-4. **装依赖**（`uv sync`，已就绪就跳过）。
+3. **确认 uv**（`MaiBotScripts.installUv`）：能运行就跳过，否则安装，见下文“依赖安装”。
+4. **准备 Python 解释器**（`installPython`）、**装依赖包**（`syncDependencies`，即 `uv sync`）：`.venv` 已就绪就一起跳过；`uv sync` 返回成功后再按文件核对一次 `.venv` 里确实有包。
 5. **协议**：EULA.md、PRIVACY.md 都在才算完成，见下文“协议 hash”。
 6. **启动并等待 WebUI**：拉起前台服务，每秒探测一次 `http://127.0.0.1:8001/`，最多等 3 分钟。
 7. 写 `setup_complete`，界面出现“进入 MaiDroid”。
 
 两步的每条命令都会把完整命令行、输出和退出码写进安装页的终端日志和 `TerminalLog`。
+
+安装页的四张卡片按顺序判断完成：前一步没完成，后面的卡片即使文件已经在（例如协议文件随源码一起下载）也显示为等待。页脚左侧的标志跟着按钮走：可以继续时打勾，只能重试时显示失败图标，其余时候转圈。
 
 ### GitHub 镜像
 
@@ -113,6 +115,21 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 ### proot 下的 git
 
 `--link2symlink` 会把 git 写 packfile 时用的硬链接换成指向绝对路径的符号链接。克隆到临时目录再改名后，这些链接还指着旧路径，git 读不到对象（`fatal: bad object HEAD`），在线更新和 MaiBot 自带的更新检查都会失败。所以容器里的 git 克隆一律加 `-c core.createObject=rename`，这个配置会写进仓库的 `.git/config`，之后的 fetch 也沿用。
+
+### 依赖安装
+
+装 uv、准备 Python 解释器、装依赖包三步由 `MaiBotDependencyStep` 定义，OOBE 和在线更新共用。三段脚本都能重复执行，已经就绪的部分会自己跳过：
+
+1. **装 uv**：先把官方安装脚本下载成文件（`astral.sh/uv/install.sh`，拿不到就经 GitHub 镜像取发布页上的同一份 `uv-installer.sh`），确认内容确实是 uv 的安装脚本再执行。安装先走官方下载源（releases.astral.sh、github.com），失败后把 `UV_INSTALLER_GITHUB_BASE_URL` 依次换成各 GitHub 镜像重试；安装脚本里带着安装包的 sha256，经镜像下载的包也会校验。每次装完都跑 `uv --version`，能运行才算成功。
+2. **准备 Python**：在 `/tmp` 下 `uv python find` 找到符合 `UV_PYTHON` 的解释器就跳过（避开 MaiBot 目录里装到一半的 `.venv`）；否则 `uv python install`，官方源失败后用 `UV_PYTHON_INSTALL_MIRROR` 依次换成各 GitHub 镜像（含直连）。
+3. **装依赖包**：`uv sync`。
+
+几点约定：
+
+- 不能写成 `curl … | sh`：管道的退出码只看 `sh`，curl 下载失败时 `sh` 读到空脚本照样返回 0，安装被当成成功，到 `uv sync` 才报 `uv: not found`。
+- uv 安装脚本自己调 curl 时不设超时，镜像卡住会一直等。装 uv 的脚本用临时 `.curlrc`（`CURL_HOME`）给其中所有 curl 加上：20 秒连不上、或连续 30 秒低于 1 KB/s 就换下一个来源。uv 自己下载 Python 和包时有内置的超时和重试。
+- 后两步开头先确认 uv 能运行，不能运行就打印中文原因、以 127 退出，不会只留下一句 `uv: not found`。
+- 失败文案：前两步的脚本退出前会自己打印中文原因（最后一行）；`uv sync` 的原因由 `uvErrorSummary` 从 uv 输出里挑第一条 `error:`/`×` 行和最后一条 `cause:`/`╰─▶` 行拼成。uv 报错后面常跟着 `hint:`，只取最后一行会丢掉真正的错误。
 
 ### uv 的参数
 
@@ -133,7 +150,7 @@ MaiBot 首次启动要在终端里确认 EULA 和隐私协议，没有交互终�
 OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新不用 `git pull`：
 
 1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。
-2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 有被改过的受版本管理文件就先 `git diff` 导出补丁到 `/root/.maidroid/maibot-backups/` -> `git reset --hard origin/<分支>` -> 必要时补装 uv -> `uv sync` -> 无论成败都重新拉起 MaiBot。
+2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 有被改过的受版本管理文件就先 `git diff` 导出补丁到 `/root/.maidroid/maibot-backups/` -> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
 
 被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。
 

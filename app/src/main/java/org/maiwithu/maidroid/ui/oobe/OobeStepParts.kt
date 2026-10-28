@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.ui.oobe
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -11,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,10 +44,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.oobe.OobeTask
@@ -272,7 +276,7 @@ private fun NextButton(
     }
 }
 
-// 配置容器、安装 MaiBot 两步的页脚：转圈 + 当前进展说明，下面一个按钮。
+// 配置容器、安装 MaiBot 两步的页脚：状态标志 + 当前进展说明，下面一个按钮。
 // 能继续时按钮执行 onProceed，否则执行 onRetry（waitingEnabled 为 false 时按钮禁用）。
 @Composable
 private fun SetupFooter(
@@ -297,7 +301,12 @@ private fun SetupFooter(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            WaitingRing()
+            // 左侧标志跟着按钮走：能继续时打勾；只能重试说明出错了，显示失败图标；其余时候转圈表示还在进行。
+            when {
+                canProceed -> FooterStatusIcon(R.drawable.oobe_status_done)
+                waitingEnabled -> FooterStatusIcon(R.drawable.oobe_status_failed)
+                else -> WaitingRing()
+            }
 
             Spacer(modifier = Modifier.size(14.dp))
 
@@ -332,6 +341,16 @@ private fun SetupFooter(
             )
         }
     }
+}
+
+// 页脚的完成、失败标志，与任务卡片右侧用同一套图标。
+@Composable
+private fun FooterStatusIcon(@DrawableRes iconRes: Int) {
+    Image(
+        painter = painterResource(iconRes),
+        contentDescription = null,
+        modifier = Modifier.size(24.dp)
+    )
 }
 
 // 两段对称圆弧持续旋转的等待标志。

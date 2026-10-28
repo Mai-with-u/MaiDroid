@@ -79,7 +79,7 @@ flowchart TB
 | `terminal` | 全应用共享的终端输出 | `TerminalLog` |
 | `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
 | `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包 | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts` |
-| `maibot` | MaiBot 本体：安装与启动脚本、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotProcessSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
+| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
 | `maibot.update` | MaiBot 在线更新 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
