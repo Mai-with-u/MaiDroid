@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.oobe
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -52,6 +52,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
+import org.maiwithu.maidroid.ui.screen.GlassStroke
+import org.maiwithu.maidroid.ui.screen.PlatformOrange
+import org.maiwithu.maidroid.ui.screen.SubtleGlassBlurRadius
+import org.maiwithu.maidroid.ui.screen.SubtleGlassSurface
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 

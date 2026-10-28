@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.oobe
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
@@ -44,17 +44,8 @@ import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.ui.oobe.AdaptiveOobePermissionCards
-import org.maiwithu.maidroid.ui.oobe.AdaptiveOobeTaskList
-import org.maiwithu.maidroid.ui.oobe.CommandLogButton
-import org.maiwithu.maidroid.ui.oobe.CompactOobePermissionCards
-import org.maiwithu.maidroid.ui.oobe.CompactOobeTaskList
-import org.maiwithu.maidroid.ui.oobe.OobeStepFooter
-import org.maiwithu.maidroid.ui.oobe.OobeStepHeader
-import org.maiwithu.maidroid.ui.oobe.OobeStepIndicator
-import org.maiwithu.maidroid.ui.oobe.hasFailedTask
-import org.maiwithu.maidroid.ui.oobe.oobeStepTransition
-import org.maiwithu.maidroid.ui.oobe.tasksFor
+import org.maiwithu.maidroid.ui.screen.EmbeddedTerminalOutputPanel
+import org.maiwithu.maidroid.ui.screen.TerminalOutputDialog
 import org.maiwithu.maidroid.ui.theme.BackgroundDark
 
 // 配置容器或安装一直没完成时，过这么久把终端按钮展开成“遇到问题？”提醒用户看日志。

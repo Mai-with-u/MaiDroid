@@ -41,8 +41,8 @@ import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.screen.HomeScreen
-import org.maiwithu.maidroid.ui.screen.OobeAuthorizationDialog
-import org.maiwithu.maidroid.ui.screen.OobeFlowScreen
+import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
+import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
 import org.maiwithu.maidroid.ui.screen.StartupSplashPage
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
