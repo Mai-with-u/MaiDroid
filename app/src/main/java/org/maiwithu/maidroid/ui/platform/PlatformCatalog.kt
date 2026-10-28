@@ -77,16 +77,16 @@ internal val AvailablePlatforms = listOf(
         name = "WhatsApp",
         iconRes = R.drawable.ic_platform_whatsapp,
         iconColor = Color(0xCC25D366),
-        provider = "将由 ??? 提供服务",
-        description = "实则根本没有做适配",
+        provider = "暂未适配",
+        description = "海外主流的即时通讯应用",
         tags = listOf("海外", "常用")
     ),
     AvailablePlatform(
         name = "Signal",
         iconRes = R.drawable.ic_platform_signal,
         iconColor = Color(0xCC3A76F0),
-        provider = "将由 ??? 提供服务",
-        description = "实则根本没有做适配",
+        provider = "暂未适配",
+        description = "注重隐私的加密通讯应用",
         tags = listOf("海外", "常用")
     )
 )

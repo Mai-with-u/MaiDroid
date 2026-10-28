@@ -34,13 +34,10 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -52,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -360,7 +358,6 @@ private fun TerminalDialogContent(
             canCopy = displayedLogs.isNotEmpty(),
             onCopy = { copyTerminalLines(context, displayedLogs) },
             inline = useInlineToolbar,
-            toolbarScrollState = viewer.toolbarScroll,
             modifier = Modifier.padding(
                 horizontal = if (isWide) 24.dp else 16.dp,
                 vertical = if (isShort) 10.dp else 14.dp
@@ -483,9 +480,9 @@ private fun TerminalToolbar(
     canCopy: Boolean,
     onCopy: () -> Unit,
     inline: Boolean,
-    toolbarScrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
+    // 搜索框和三个按钮：宽屏排成一行，手机竖屏搜索框在上、按钮在下；按钮都平分可用宽度，不再横向滚动。
     if (inline) {
         Row(
             modifier = modifier.fillMaxWidth(),
@@ -505,9 +502,8 @@ private fun TerminalToolbar(
                 onWrapLinesChange = onWrapLinesChange,
                 canCopy = canCopy,
                 onCopy = onCopy,
-                modifier = Modifier
-                    .weight(0.62f)
-                    .horizontalScroll(toolbarScrollState)
+                fillWidth = true,
+                modifier = Modifier.weight(0.58f)
             )
         }
     } else {
@@ -527,9 +523,8 @@ private fun TerminalToolbar(
                 onWrapLinesChange = onWrapLinesChange,
                 canCopy = canCopy,
                 onCopy = onCopy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(toolbarScrollState)
+                fillWidth = true,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }
@@ -589,6 +584,7 @@ private fun TerminalSearchField(
     )
 }
 
+// fillWidth 为 true 时三个按钮平分整行（弹窗工具栏）；嵌入面板的工具栏本身可以横向滚动，按内容宽度排列。
 @Composable
 private fun TerminalActions(
     autoFollow: Boolean,
@@ -597,52 +593,92 @@ private fun TerminalActions(
     onWrapLinesChange: (Boolean) -> Unit,
     canCopy: Boolean,
     onCopy: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fillWidth: Boolean = false
 ) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        FilterChip(
+        val buttonModifier = if (fillWidth) Modifier.weight(1f) else Modifier
+        TerminalToolbarButton(
+            text = "自动跟随",
             selected = autoFollow,
             onClick = { onAutoFollowChange(!autoFollow) },
-            label = { Text("自动跟随", maxLines = 1) },
-            colors = terminalFilterChipColors()
+            modifier = buttonModifier
         )
-        FilterChip(
+        TerminalToolbarButton(
+            text = "自动换行",
             selected = wrapLines,
             onClick = { onWrapLinesChange(!wrapLines) },
-            label = { Text("自动换行", maxLines = 1) },
-            colors = terminalFilterChipColors()
+            modifier = buttonModifier
         )
-        OutlinedButton(
-            onClick = onCopy,
+        TerminalToolbarButton(
+            text = "复制",
+            icon = Icons.Outlined.ContentCopy,
             enabled = canCopy,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color.White,
-                disabledContentColor = TextFaint
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.ContentCopy,
-                contentDescription = null,
-                modifier = Modifier.size(17.dp)
-            )
-            Spacer(modifier = Modifier.size(6.dp))
-            Text("复制", maxLines = 1)
-        }
+            onClick = onCopy,
+            modifier = buttonModifier
+        )
     }
 }
 
+/**
+ * 终端工具栏的按钮。selected 不为 null 时是开关：开着填品牌橙底色、白字，关着只有描边、灰字；
+ * selected 为 null 时是普通动作按钮（复制），橙色描边。没有可复制的内容时置灰、不可点。
+ */
 @Composable
-private fun terminalFilterChipColors() = FilterChipDefaults.filterChipColors(
-    containerColor = Color.Transparent,
-    labelColor = TextMuted,
-    selectedContainerColor = BrandOrange.copy(alpha = 0.16f),
-    selectedLabelColor = Color.White
-)
+private fun TerminalToolbarButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean? = null,
+    enabled: Boolean = true,
+    icon: ImageVector? = null
+) {
+    val shape = RoundedCornerShape(12.dp)
+    val contentColor = when {
+        !enabled -> TextFaint
+        selected == false -> TextMuted
+        else -> Color.White
+    }
+    val borderColor = when {
+        !enabled -> CardBorder
+        selected == null -> BrandOrange.copy(alpha = 0.7f)
+        selected -> Color.Transparent
+        else -> CardBorder
+    }
+    Row(
+        modifier = modifier
+            .heightIn(min = 40.dp)
+            .clip(shape)
+            .background(if (selected == true) BrandOrange.copy(alpha = 0.16f) else Color.Transparent)
+            .border(1.dp, borderColor, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Text(
+            text = text,
+            color = contentColor,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
 
 @Composable
 private fun TerminalLogViewport(

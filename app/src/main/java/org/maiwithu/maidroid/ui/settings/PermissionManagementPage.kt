@@ -192,7 +192,7 @@ internal fun PermissionManagementPage(
             item {
                 PermissionSystemSettingsCard(
                     icon = Icons.Outlined.Settings,
-                    title = "开启自启动&后台活动",
+                    title = "自启动和后台活动",
                     description = "在系统应用详情或厂商后台设置中管理。",
                     onClick = actions.openAutoStartSettings
                 )
@@ -376,7 +376,8 @@ private fun PermissionBaseCard(
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 19.sp,
-                    maxLines = 1,
+                    // 标题较长时换到第二行，不截断成省略号。
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )

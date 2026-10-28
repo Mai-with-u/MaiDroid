@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.ui.platform
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -35,8 +36,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +54,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -99,6 +105,22 @@ internal fun calculatePlatformGridColumnCount(availableWidthDp: Float): Int {
     return minimumColumnsForMaxCardWidth.coerceAtMost(maximumColumnsForMinCardWidth)
 }
 
+/** 发现列表实际显示的平台：先按分类筛（“全部”不筛），再按关键字匹配名称和简介，不区分大小写。 */
+internal fun filterPlatforms(
+    platforms: List<AvailablePlatform>,
+    category: String,
+    query: String
+): List<AvailablePlatform> {
+    val keyword = query.trim()
+    return platforms.filter { platform ->
+        val inCategory = category == "全部" || category in platform.tags
+        val matchesKeyword = keyword.isEmpty() ||
+            platform.name.contains(keyword, ignoreCase = true) ||
+            platform.description.contains(keyword, ignoreCase = true)
+        inCategory && matchesKeyword
+    }
+}
+
 @Composable
 internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -114,6 +136,14 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         qqOfficialManager.refresh()
     }
     var selectedCategory by remember { mutableStateOf("全部") }
+    // 右上角搜索：点开后标题下出现搜索框，按名称和简介筛选当前分类；再点一次或按返回键收起并清空关键字。
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val closeSearch = {
+        searchOpen = false
+        searchQuery = ""
+    }
+    BackHandler(enabled = searchOpen, onBack = closeSearch)
     // QQ 卡片默认选中最左边的官方机器人；用户切到 NapCat 等其他选项后，本次页面内记住所选。
     var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to PlatformAdapter.QqOfficial)) }
     // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
@@ -146,7 +176,15 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 .padding(top = statusBarTop)
         ) {
             Spacer(modifier = Modifier.height(topSpacing))
-            MessagePlatformsHeader(runningCount = installedPlatforms.count { it.running })
+            MessagePlatformsHeader(
+                runningCount = installedPlatforms.count { it.running },
+                searchOpen = searchOpen,
+                onSearchClick = { if (searchOpen) closeSearch() else searchOpen = true }
+            )
+            if (searchOpen) {
+                Spacer(modifier = Modifier.height(12.dp))
+                PlatformSearchField(query = searchQuery, onQueryChange = { searchQuery = it })
+            }
             Spacer(modifier = Modifier.height(sectionSpacing))
             InstalledPlatformsRow(
                 platforms = installedPlatforms,
@@ -165,6 +203,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
             Spacer(modifier = Modifier.height(sectionSpacing))
             DiscoverHeader(
+                platformCount = filterPlatforms(AvailablePlatforms, selectedCategory, searchQuery).size,
                 categories = categories,
                 selectedCategory = selectedCategory,
                 onCategorySelected = { selectedCategory = it }
@@ -183,12 +222,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 },
                 label = "PlatformCategoryTransition"
             ) { category ->
-                val visiblePlatforms = remember(category) {
-                    if (category == "全部") {
-                        AvailablePlatforms
-                    } else {
-                        AvailablePlatforms.filter { category in it.tags }
-                    }
+                val visiblePlatforms = remember(category, searchQuery) {
+                    filterPlatforms(AvailablePlatforms, category, searchQuery)
                 }
 
                 PlatformList(
@@ -223,7 +258,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         showQqOfficialConfig = true
                     },
                     onUnsupportedInstall = {
-                        Toast.makeText(context, "还没有做适配…… `（> _ <）.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "这个平台暂未适配，敬请期待", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -368,7 +403,11 @@ private fun PlatformList(
 }
 
 @Composable
-private fun MessagePlatformsHeader(runningCount: Int) {
+private fun MessagePlatformsHeader(
+    runningCount: Int,
+    searchOpen: Boolean,
+    onSearchClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -400,33 +439,63 @@ private fun MessagePlatformsHeader(runningCount: Int) {
             )
         }
 
-        SearchButton()
+        SearchButton(searchOpen = searchOpen, onClick = onSearchClick)
     }
 }
 
 @Composable
-private fun SearchButton() {
+private fun SearchButton(searchOpen: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .padding(top = 0.dp)
             .size(42.dp)
             .clip(CircleShape)
             .border(1.dp, Color(0x552B2B2B), CircleShape)
             .background(Color(0x552B2B2B))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {}
-            ),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.Outlined.Search,
-            contentDescription = "搜索",
+            imageVector = if (searchOpen) Icons.Outlined.Close else Icons.Outlined.Search,
+            contentDescription = if (searchOpen) "关闭搜索" else "搜索平台",
             tint = TextMuted,
             modifier = Modifier.size(25.dp)
         )
     }
+}
+
+@Composable
+private fun PlatformSearchField(query: String, onQueryChange: (String) -> Unit) {
+    val focusRequester = remember { FocusRequester() }
+    // 点开搜索后直接把焦点放进输入框、弹出键盘，不用再点一次。
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .focusRequester(focusRequester),
+        singleLine = true,
+        placeholder = { Text(text = "搜索平台名称或简介", color = TextMuted) },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = null,
+                tint = TextMuted,
+                modifier = Modifier.size(19.dp)
+            )
+        },
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White,
+            cursorColor = BrandOrange,
+            focusedBorderColor = BrandOrange.copy(alpha = 0.8f),
+            unfocusedBorderColor = CardBorder,
+            focusedContainerColor = CardSurface,
+            unfocusedContainerColor = CardSurface
+        )
+    )
 }
 
 @Composable
@@ -456,6 +525,7 @@ private fun InstalledPlatformsRow(
 
 @Composable
 private fun DiscoverHeader(
+    platformCount: Int,
     categories: List<String>,
     selectedCategory: String,
     onCategorySelected: (String) -> Unit
@@ -479,7 +549,7 @@ private fun DiscoverHeader(
             )
 
             Text(
-                text = "共 325 个",
+                text = "共 $platformCount 个",
                 color = BrandOrange,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,

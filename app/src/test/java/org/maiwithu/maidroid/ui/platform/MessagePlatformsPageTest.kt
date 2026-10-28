@@ -42,4 +42,19 @@ class MessagePlatformsPageTest {
         assertEquals(1, calculatePlatformGridColumnCount(328f))
         assertEquals(5, calculatePlatformGridColumnCount(1_888f))
     }
+
+    @Test
+    fun `platform search filters by category and keyword`() {
+        assertEquals(AvailablePlatforms.size, filterPlatforms(AvailablePlatforms, "全部", "").size)
+        assertEquals(listOf("QQ"), filterPlatforms(AvailablePlatforms, "全部", " qq ").map { it.name })
+        assertEquals(listOf("Discord"), filterPlatforms(AvailablePlatforms, "海外", "游戏").map { it.name })
+        assertTrue(filterPlatforms(AvailablePlatforms, "国内", "Discord").isEmpty())
+    }
+
+    @Test
+    fun `unsupported platforms show plain placeholder copy`() {
+        AvailablePlatforms.filter { it.adapters.isEmpty() }.forEach { platform ->
+            assertEquals("暂未适配", platform.provider)
+        }
+    }
 }

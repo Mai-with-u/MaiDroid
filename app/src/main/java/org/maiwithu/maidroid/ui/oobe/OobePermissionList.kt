@@ -223,7 +223,7 @@ private fun BackgroundKeepAliveCard(
             KeepAliveDivider()
             KeepAlivePermissionRow(
                 tagText = "推荐",
-                title = "开启自启动&后台活动",
+                title = "自启动和后台活动",
                 onAuthorize = actions.openAutoStartSettings
             )
             KeepAliveDivider()
