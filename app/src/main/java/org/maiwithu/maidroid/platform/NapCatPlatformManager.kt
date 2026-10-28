@@ -14,49 +14,54 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.maiwithu.maidroid.runtime.ContainerCommandResult
-import org.maiwithu.maidroid.runtime.ContainerCommandRunner
-import org.maiwithu.maidroid.runtime.RuntimePaths
-import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatLoginAccount
-import org.maiwithu.maidroid.platform.napcat.NapCatOneBotConfig
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
+import org.maiwithu.maidroid.platform.napcat.NapCatScripts
+import org.maiwithu.maidroid.platform.napcat.NapCatStatusReader
 import org.maiwithu.maidroid.platform.napcat.NapCatWebUiClient
 import org.maiwithu.maidroid.platform.napcat.shouldAutoRefreshQrCode
-import org.maiwithu.maidroid.platform.napcat.NapCatScripts
-import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
-import java.io.File
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.security.SecureRandom
 
+/**
+ * 消息平台页“QQ（NapCat）”这一路的业务：安装 NapCat、展示和刷新登录二维码、退出 QQ 登录，
+ * 并把这些状况汇总成 NapCatPlatformState 给界面。
+ *
+ * 创建后每 2 秒从文件和 OneBot 端口刷新一次状态（NapCatStatusReader），
+ * 只有二维码弹窗打开期间才通过 NapCat 自带 WebUI 的接口（NapCatWebUiClient）轮询扫码进度。
+ * 进程启停由 NapCatProcessSupervisor 负责。
+ */
 internal class NapCatPlatformManager(
     private val appContext: Context,
-    private val config: RuntimePaths,
+    paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
     private val napCatProcess: NapCatProcessSupervisor
 ) {
-    private val napCatFiles = NapCatFiles(config)
-    private val webUiClient = NapCatWebUiClient(napCatFiles.webUiConfig)
+    private companion object {
+        const val STATUS_REFRESH_INTERVAL_MS = 2_000L
+        const val LOGIN_STATUS_POLL_INTERVAL_MS = 3_000L
+        const val INSTALL_PROGRESS_POLL_INTERVAL_MS = 500L
+    }
+
+    private val files = NapCatFiles(paths)
+    private val statusReader = NapCatStatusReader(files)
+    private val webUiClient = NapCatWebUiClient(files.webUiConfig)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val random = SecureRandom()
-    private val json = Json { ignoreUnknownKeys = true }
     private var installJob: Job? = null
     private var progressJob: Job? = null
     private var lastQrRefreshAttemptAt = 0L
+
     // 当前登录的 QQ 账号，OneBot 端口连通后向 NapCat 查一次，端口断开即清空；只在主线程读写。
     private var loginAccount: NapCatLoginAccount? = null
 
@@ -66,15 +71,16 @@ internal class NapCatPlatformManager(
     init {
         scope.launch {
             while (isActive) {
-                refreshRuntimeState()
-                delay(2_000L)
+                refreshStatus()
+                delay(STATUS_REFRESH_INTERVAL_MS)
             }
         }
     }
 
+    /** 立即重读一次状态（打开页面、点刷新时用），不必等下一轮定时刷新。 */
     fun refresh() {
         scope.launch {
-            refreshRuntimeState()
+            refreshStatus()
         }
     }
 
@@ -97,12 +103,12 @@ internal class NapCatPlatformManager(
             webUiClient.clearAutoLoginAccount().exceptionOrNull()?.let { e ->
                 TerminalLog.append("[NapCat] 清除自动登录账号失败: ${e.message.orEmpty()}")
             }
-            withContext(Dispatchers.IO) { napCatFiles.qrCodeFile.delete() }
+            withContext(Dispatchers.IO) { files.qrCodeFile.delete() }
             loginAccount = null
             if (napCatProcess.isRunning) {
                 napCatProcess.restart()
             }
-            refreshRuntimeState()
+            refreshStatus()
             _state.update { it.copy(qqLoggingOut = false) }
         }
     }
@@ -115,7 +121,7 @@ internal class NapCatPlatformManager(
     /**
      * 二维码弹窗打开期间运行，弹窗关闭时随调用方协程一起取消。
      * 每 3 秒：向 NapCat 问扫码进度 -> 同步到弹窗提示 -> 码已失效或扫码作废就自动换新码；
-     * 新码由 NapCat 写回 qrcode.png，再经 2 秒一次的运行态刷新显示出来。
+     * 新码由 NapCat 写回 qrcode.png，再经 2 秒一次的状态刷新显示出来。
      */
     suspend fun keepQrCodeFresh() {
         try {
@@ -125,7 +131,7 @@ internal class NapCatPlatformManager(
                     _state.update { it.copy(loginPhase = status.phase) }
                     // 码龄直接看文件当前的修改时间：状态里的时间戳最多晚 2 秒，
                     // NapCat 刚自己换了码时会被误判成旧码过期而再换一次。
-                    val qrModifiedAt = withContext(Dispatchers.IO) { napCatFiles.qrCodeFile.lastModified() }
+                    val qrModifiedAt = withContext(Dispatchers.IO) { files.qrCodeFile.lastModified() }
                     val now = System.currentTimeMillis()
                     val qrAgeMs = now - qrModifiedAt
                     if (shouldAutoRefreshQrCode(status, qrAgeMs, now - lastQrRefreshAttemptAt)) {
@@ -134,7 +140,7 @@ internal class NapCatPlatformManager(
                         refreshQrCode()
                     }
                 }
-                delay(3_000L)
+                delay(LOGIN_STATUS_POLL_INTERVAL_MS)
             }
         } finally {
             // 弹窗关了就不再展示扫码进度，下次打开重新查。
@@ -149,7 +155,7 @@ internal class NapCatPlatformManager(
         lastQrRefreshAttemptAt = System.currentTimeMillis()
         _state.update { it.copy(qrRefreshing = true, qrRefreshError = null) }
         val result = webUiClient.refreshQrCode()
-        refreshRuntimeState()
+        refreshStatus()
         val error = result.exceptionOrNull()
         if (error != null) {
             TerminalLog.append("[NapCat] 刷新二维码失败: ${error.message.orEmpty()}")
@@ -162,10 +168,15 @@ internal class NapCatPlatformManager(
         }
     }
 
+    /**
+     * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就只重启运行时；否则在后台：
+     * 检查容器和 MaiBot 源码 -> 跑安装脚本（进度文件每 500 毫秒同步到进度环）->
+     * 装好后经前台服务启动 NapCat 并重启 MaiBot 加载适配器。
+     */
     fun installNapCat() {
         if (installJob?.isActive == true) return
 
-        if (napCatFiles.isInstalled()) {
+        if (files.isInstalled()) {
             refresh()
             restartRuntime()
             return
@@ -195,18 +206,18 @@ internal class NapCatPlatformManager(
                 return@launch
             }
 
-            clearProgressFiles()
+            statusReader.clearInstallProgress()
             startProgressWatcher()
 
             TerminalLog.append("")
             TerminalLog.append("[NapCat] 启动安装流程")
 
-            val result = runCommand(NapCatScripts.install(token = generateToken()))
+            val result = runInstallScript(NapCatScripts.install(token = generateToken()))
             progressJob?.cancel()
             progressJob = null
 
-            if (result.success && napCatFiles.isInstalled()) {
-                val qr = readQrCode()
+            if (result.success && files.isInstalled()) {
+                val snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = false) }
                 _state.update {
                     it.copy(
                         phase = NapCatInstallPhase.Installed,
@@ -214,8 +225,8 @@ internal class NapCatPlatformManager(
                         progress = 1f,
                         progressDescription = "NapCat 安装和自动配置完成",
                         errorMessage = null,
-                        qrCodePath = qr.path,
-                        qrCodeLastModified = qr.lastModified
+                        qrCodePath = snapshot.qrCodePath,
+                        qrCodeLastModified = snapshot.qrCodeLastModified
                     )
                 }
                 TerminalLog.append("[NapCat] 安装完成，正在启动 NapCat 并重启 MaiBot 以加载适配器")
@@ -232,7 +243,7 @@ internal class NapCatPlatformManager(
     }
 
     // 安装脚本的输出原样写进终端日志，最后补一行退出码，方便判断失败在哪一步。
-    private suspend fun runCommand(script: ContainerScript): ContainerCommandResult {
+    private suspend fun runInstallScript(script: ContainerScript): ContainerCommandResult {
         val result = commandRunner.run(script, onLine = TerminalLog::append)
         TerminalLog.append("[NapCat] 安装流程退出码: ${result.exitCode}")
         return result
@@ -242,7 +253,8 @@ internal class NapCatPlatformManager(
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive) {
-                val progress = withContext(Dispatchers.IO) { readProgressFiles() }
+                val fallback = _state.value.progress
+                val progress = withContext(Dispatchers.IO) { statusReader.readInstallProgress(fallback) }
                 if (progress != null) {
                     _state.update {
                         it.copy(
@@ -254,47 +266,21 @@ internal class NapCatPlatformManager(
                         )
                     }
                 }
-                delay(500L)
+                delay(INSTALL_PROGRESS_POLL_INTERVAL_MS)
             }
         }
     }
 
-    private fun clearProgressFiles() {
-        runCatching { config.termuxTmpDir.mkdirs() }
-        runCatching { config.termuxTmpDir.resolve("progress").delete() }
-        runCatching { config.termuxTmpDir.resolve("progress_des").delete() }
-    }
-
-    private fun readProgressFiles(): InstallProgress? {
-        val progressFile = config.termuxTmpDir.resolve("progress")
-        val descriptionFile = config.termuxTmpDir.resolve("progress_des")
-        if (!progressFile.isFile && !descriptionFile.isFile) return null
-
-        val rawProgress = progressFile.takeIf { it.isFile }
-            ?.readText()
-            ?.trim()
-            ?.toFloatOrNull()
-        val normalizedProgress = rawProgress
-            ?.let { if (it > 1f) it / 100f else it }
-            ?.coerceIn(0f, 1f)
-            ?: _state.value.progress
-        val description = descriptionFile.takeIf { it.isFile }
-            ?.readText()
-            ?.trim()
-            .orEmpty()
-        return InstallProgress(value = normalizedProgress, description = description)
-    }
-
-    private suspend fun refreshRuntimeState() {
-        var runtimeState = withContext(Dispatchers.IO) { readRuntimeState(preferredUin = loginAccount?.uin) }
+    private suspend fun refreshStatus() {
+        var snapshot = withContext(Dispatchers.IO) { statusReader.read(preferredUin = loginAccount?.uin) }
         // OneBot 端口通了说明 QQ 已登录：第一次连通时问 NapCat 登的是哪个号，按它挑 onebot11_<QQ号>.json
         // 并显示昵称（换过号后最新修改的配置文件不一定是当前账号）；端口断了就忘掉，下次登录可能换号。
-        if (!runtimeState.oneBotReachable) {
+        if (!snapshot.oneBotReachable) {
             loginAccount = null
         } else if (loginAccount == null) {
             webUiClient.loginAccount()?.let { account ->
                 loginAccount = account
-                runtimeState = withContext(Dispatchers.IO) { readRuntimeState(preferredUin = account.uin) }
+                snapshot = withContext(Dispatchers.IO) { statusReader.read(preferredUin = account.uin) }
             }
         }
         val account = loginAccount
@@ -302,146 +288,45 @@ internal class NapCatPlatformManager(
             current.copy(
                 phase = when {
                     current.isInstalling -> NapCatInstallPhase.Installing
-                    runtimeState.installed -> NapCatInstallPhase.Installed
+                    snapshot.installed -> NapCatInstallPhase.Installed
                     current.phase == NapCatInstallPhase.Failed -> NapCatInstallPhase.Failed
                     else -> NapCatInstallPhase.Idle
                 },
-                progress = if (runtimeState.installed && !current.isInstalling) 1f else current.progress,
-                progressDescription = if (runtimeState.installed && !current.isInstalling) {
+                progress = if (snapshot.installed && !current.isInstalling) 1f else current.progress,
+                progressDescription = if (snapshot.installed && !current.isInstalling) {
                     "NapCat 已安装"
                 } else {
                     current.progressDescription
                 },
-                qrCodePath = runtimeState.qrCode.path,
-                qrCodeLastModified = runtimeState.qrCode.lastModified,
-                installed = runtimeState.installed,
-                oneBotReachable = runtimeState.oneBotReachable,
-                oneBotConfig = runtimeState.oneBotConfig,
-                accountId = account?.uin ?: runtimeState.accountId,
-                accountName = account?.nick ?: runtimeState.accountName
+                qrCodePath = snapshot.qrCodePath,
+                qrCodeLastModified = snapshot.qrCodeLastModified,
+                installed = snapshot.installed,
+                oneBotReachable = snapshot.oneBotReachable,
+                oneBotConfig = snapshot.oneBotConfig,
+                accountId = account?.uin ?: snapshot.accountId,
+                accountName = account?.nick
             )
         }
     }
 
+    // 创建时在调用线程同步读一次文件（不探测端口），让界面第一帧就有安装状态。
     private fun readInitialState(): NapCatPlatformState {
-        val runtimeState = readRuntimeState(checkConnection = false)
+        val snapshot = statusReader.read(checkConnection = false)
         return NapCatPlatformState.initial(
-            installed = runtimeState.installed,
-            qrCodePath = runtimeState.qrCode.path,
-            qrCodeLastModified = runtimeState.qrCode.lastModified
+            installed = snapshot.installed,
+            qrCodePath = snapshot.qrCodePath,
+            qrCodeLastModified = snapshot.qrCodeLastModified
         ).copy(
-            oneBotReachable = runtimeState.oneBotReachable,
-            oneBotConfig = runtimeState.oneBotConfig,
-            accountId = runtimeState.accountId,
-            accountName = runtimeState.accountName
+            oneBotConfig = snapshot.oneBotConfig,
+            accountId = snapshot.accountId
         )
-    }
-
-    private fun readRuntimeState(
-        checkConnection: Boolean = true,
-        preferredUin: String? = null
-    ): RuntimeState {
-        val installed = napCatFiles.isInstalled()
-        val qr = readQrCode()
-        val oneBotConfig = readOneBotConfig(preferredUin)
-        val accountId = readAccountId(oneBotConfig)
-        return RuntimeState(
-            installed = installed,
-            qrCode = qr,
-            oneBotReachable = if (checkConnection) {
-                oneBotConfig?.let(::isOneBotReachable) ?: false
-            } else {
-                false
-            },
-            oneBotConfig = oneBotConfig,
-            accountId = accountId,
-            accountName = null
-        )
-    }
-
-    private fun readQrCode(): QrCodeState {
-        val file = napCatFiles.qrCodeFile
-        return if (file.isFile) {
-            QrCodeState(path = file.absolutePath, lastModified = file.lastModified())
-        } else {
-            QrCodeState(path = null, lastModified = 0L)
-        }
-    }
-
-    private fun readOneBotConfig(preferredUin: String?): NapCatOneBotConfig? {
-        val file = findOneBotConfigFile(preferredUin) ?: return null
-
-        return runCatching {
-            val root = json.parseToJsonElement(file.readText()).jsonObject
-            val network = root["network"]?.jsonObject
-            val server = network
-                ?.get("websocketServers")
-                ?.jsonArray
-                ?.mapNotNull { runCatching { it.jsonObject }.getOrNull() }
-                ?.let { servers ->
-                    servers.firstOrNull {
-                        it["enable"]?.jsonPrimitive?.booleanOrNull == true
-                    } ?: servers.firstOrNull()
-                }
-                ?: return null
-
-            NapCatOneBotConfig(
-                serviceType = "WebSocket Server",
-                name = server["name"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "WsServer" },
-                enabled = server["enable"]?.jsonPrimitive?.booleanOrNull ?: false,
-                host = server["host"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "127.0.0.1" },
-                port = server["port"]?.jsonPrimitive?.intOrNull,
-                token = server["token"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                messagePostFormat = server["messagePostFormat"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                reportSelfMessage = server["reportSelfMessage"]?.jsonPrimitive?.booleanOrNull,
-                enableForcePushEvent = server["enableForcePushEvent"]?.jsonPrimitive?.booleanOrNull,
-                debug = server["debug"]?.jsonPrimitive?.booleanOrNull,
-                heartInterval = server["heartInterval"]?.jsonPrimitive?.intOrNull,
-                configPath = "/root/napcat/config/${file.name}"
-            )
-        }.getOrNull()
-    }
-
-    // 知道当前登录账号时用它自己的配置；不知道（未登录或问不到 NapCat）时退回最近修改的账号配置。
-    private fun findOneBotConfigFile(preferredUin: String?): File? {
-        preferredUin
-            ?.let { napCatFiles.configDir.resolve("onebot11_$it.json") }
-            ?.takeIf { it.isFile }
-            ?.let { return it }
-        val accountConfig = napCatFiles.configDir.listFiles()
-            ?.filter { it.isFile && Regex("""onebot11_\d+\.json""").matches(it.name) }
-            ?.maxByOrNull { it.lastModified() }
-        return accountConfig ?: napCatFiles.defaultOneBotConfig.takeIf { it.isFile }
-    }
-
-    private fun readAccountId(oneBotConfig: NapCatOneBotConfig?): String? {
-        val fromConfig = oneBotConfig
-            ?.configPath
-            ?.let { Regex("""onebot11_(\d+)\.json""").find(it)?.groupValues?.getOrNull(1) }
-        if (!fromConfig.isNullOrBlank()) return fromConfig
-
-        return napCatFiles.qqLoginDataDir.listFiles()
-            ?.asSequence()
-            ?.mapNotNull { Regex("""\.(\d+)""").matchEntire(it.name)?.groupValues?.getOrNull(1) }
-            ?.firstOrNull()
-    }
-
-    private fun isOneBotReachable(config: NapCatOneBotConfig): Boolean {
-        val port = config.port ?: return false
-        if (!config.enabled) return false
-        return runCatching {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(config.host, port), 250)
-            }
-            true
-        }.getOrDefault(false)
     }
 
     private fun fail(message: String) {
         _state.update {
             it.copy(
                 phase = NapCatInstallPhase.Failed,
-                installed = napCatFiles.isInstalled(),
+                installed = files.isInstalled(),
                 progress = 0f,
                 progressDescription = "NapCat 安装失败",
                 errorMessage = message
@@ -450,28 +335,10 @@ internal class NapCatPlatformManager(
         TerminalLog.append("[NapCat] 安装失败: $message")
     }
 
+    // OneBot WebSocket 的访问 token：32 字节随机数的十六进制，只在第一次安装时使用。
     private fun generateToken(): String {
         val bytes = ByteArray(32)
         random.nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
     }
-
-    private data class InstallProgress(
-        val value: Float,
-        val description: String
-    )
-
-    private data class QrCodeState(
-        val path: String?,
-        val lastModified: Long
-    )
-
-    private data class RuntimeState(
-        val installed: Boolean,
-        val qrCode: QrCodeState,
-        val oneBotReachable: Boolean,
-        val oneBotConfig: NapCatOneBotConfig?,
-        val accountId: String?,
-        val accountName: String?
-    )
 }

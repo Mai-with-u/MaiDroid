@@ -30,6 +30,10 @@ internal class NapCatFiles(paths: RuntimePaths) {
     /** QQ 本地登录数据目录，读不到 OneBot 配置时从这里的子目录名推断 QQ 号。 */
     val qqLoginDataDir: File = File(paths.rootfsDir, "root/.config/QQ/nt_qq/global/nt_data/Login")
 
+    /** 安装脚本汇报进度的两个文件：容器内 $TMPDIR/progress 和 progress_des，宿主侧在 termux/tmp。 */
+    val installProgressFile: File = File(paths.termuxTmpDir, "progress")
+    val installProgressDescriptionFile: File = File(paths.termuxTmpDir, "progress_des")
+
     /** 安装标记、OneBot 配置、MaiBot 适配器配置三者都在才算装好。 */
     fun isInstalled(): Boolean =
         readyMarker.isFile && defaultOneBotConfig.isFile && maiBotAdapterConfig.isFile
