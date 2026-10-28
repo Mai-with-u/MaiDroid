@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
+import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 
@@ -67,12 +69,10 @@ private val HomeBottomNavigationBarHeight = 64.dp
 private val HomeBottomNavigationBottomPadding = 16.dp
 
 /**
- * 悬浮导航栏从容器底边往上盖住的总高度。
- * WebUI 页签里导航栏浮在 WebView 上方，WebView 据此把这段高度当作网页的底部安全区，
- * 让网页自己的贴底元素整体上移到导航栏之上。
+ * WebUI 页签里收起后的小按钮离底边的距离：网页自己的底部导航贴着屏幕底边，
+ * 不同主题下连同底部留白高 64~76dp，按钮放在它上方再空出十几 dp，不挡网页导航的按钮。
  */
-internal val HomeBottomNavigationOverlayHeight =
-    HomeBottomNavigationBarHeight + HomeBottomNavigationBottomPadding
+internal val CollapsedHomeNavigationBottomPadding = 88.dp
 
 /** 悬浮在页面底部的毛玻璃导航：左边三个标签（选中块带弹性滑动），右边圆形终端按钮。 */
 @Composable
@@ -143,6 +143,47 @@ internal fun HomeBottomNavigation(
                 )
             }
         }
+    }
+}
+
+/**
+ * WebUI 页签里底栏收起后留在右下角的按钮，点开弹出完整底栏。
+ * 和终端按钮同样是毛玻璃底，描边换成品牌橙，叠在各种配色的网页上都能一眼找到。
+ */
+@Composable
+internal fun CollapsedHomeNavigationButton(
+    blurTarget: BlurTarget?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.35f),
+                spotColor = Color.Black.copy(alpha = 0.35f)
+            )
+            .clip(CircleShape)
+            .border(1.5.dp, BrandOrange.copy(alpha = 0.85f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        BackdropBlurView(
+            blurTarget = blurTarget,
+            blurRadius = NavigationBlurRadius,
+            overlayColor = GlassSurface,
+            modifier = Modifier.matchParentSize()
+        )
+
+        Icon(
+            imageVector = Icons.Outlined.Menu,
+            contentDescription = "展开底部导航",
+            tint = Color.White,
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
 

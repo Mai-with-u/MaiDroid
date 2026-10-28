@@ -176,7 +176,9 @@ flowchart TB
 WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开时：
 
 1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
-2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本，样式表里把 `env(safe-area-inset-bottom)` 加上 APP 底部导航栏的占高，让 WebUI 自己的底栏、对话框整体让到导航栏上方。
-3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，给被导航栏挡住的滚动区补留白。
+2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本。构造时传了 `viewportReservedBottomCssPx` 的话，样式表里的 `env(safe-area-inset-bottom)` 会再加上这段高度，让 WebUI 自己的底栏、对话框整体上移让位。
+3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，有让位高度时给滚动区补同样的留白。
+
+WebUI 页签里 APP 底栏默认收成右下角的小按钮（`CollapsedHomeNavigationButton`），网页自己的底部导航贴着屏幕底边，所以页签和全屏 `WebUiActivity` 都不传让位高度。点小按钮会盖一层遮罩并弹出完整底栏，点遮罩、按返回键、切换标签或打开终端时收起；这个状态在 `HomeTabsShell` 里。
 
 Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数（见 `WebUiTab.rememberWebUiTabState`），否则 WebView 把页面高度当成 0，vh 恒为 0 整页空白。

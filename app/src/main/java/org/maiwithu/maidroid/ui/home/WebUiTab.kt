@@ -55,9 +55,6 @@ import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
-// 导航栏悬浮在 WebView 上，盖住的高度就是网页的底部安全区；WebView 里 1 CSS px 等于 1 dp。
-private val WebUiBottomOverlayInsetCssPx = HomeBottomNavigationOverlayHeight.value.toInt()
-
 /** WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。 */
 internal class WebUiTabState internal constructor(
     val webView: WebView
@@ -104,7 +101,8 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         WebUiTabState(webView).also { tabState ->
             webView.webViewClient = WebUiWebViewClient(
                 logTag = MaiBotWebUi.LOG_TAG,
-                viewportReservedBottomCssPx = WebUiBottomOverlayInsetCssPx,
+                // APP 底栏在 WebUI 页签默认收成右下角的小按钮，网页底部不用再给它留白；
+                // 展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
                 onPageFinishedCallback = { _, _ ->
                     tabState.webViewError = null
                 },
