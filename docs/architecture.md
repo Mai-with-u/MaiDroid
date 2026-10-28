@@ -84,9 +84,9 @@ flowchart TB
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
-| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodePolicy` |
-| `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionLog`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
-| `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本 | `MaiBotWebUi`、`createWebUiWebView`、`MaiBotWebViewClient`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
+| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh` |
+| `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
+| `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionList`、`OobeTaskList`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`WebUiTab` |
@@ -168,7 +168,7 @@ flowchart TB
 ## 日志
 
 - `TerminalLog`：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，主页右下角的终端按钮查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[GitHub]`。
-- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionLog`。
+- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionErrors`。
 - WebView 相关日志在 `MaiDroidWebUi` 标签（`MaiBotWebUi.LOG_TAG`）。
 
 ## 嵌入 MaiBot WebUI
@@ -176,7 +176,7 @@ flowchart TB
 WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开时：
 
 1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
-2. `MaiBotWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本，样式表里把 `env(safe-area-inset-bottom)` 加上 APP 底部导航栏的占高，让 WebUI 自己的底栏、对话框整体让到导航栏上方。
+2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本，样式表里把 `env(safe-area-inset-bottom)` 加上 APP 底部导航栏的占高，让 WebUI 自己的底栏、对话框整体让到导航栏上方。
 3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，给被导航栏挡住的滚动区补留白。
 
 Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数（见 `WebUiTab.rememberWebUiTabState`），否则 WebView 把页面高度当成 0，vh 恒为 0 整页空白。

@@ -52,7 +52,7 @@ import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.MaiBotWebViewClient
+import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
 // 导航栏悬浮在 WebView 上，盖住的高度就是网页的底部安全区；WebView 里 1 CSS px 等于 1 dp。
@@ -102,7 +102,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         }
 
         WebUiTabState(webView).also { tabState ->
-            webView.webViewClient = MaiBotWebViewClient(
+            webView.webViewClient = WebUiWebViewClient(
                 logTag = MaiBotWebUi.LOG_TAG,
                 viewportReservedBottomCssPx = WebUiBottomOverlayInsetCssPx,
                 onPageFinishedCallback = { _, _ ->

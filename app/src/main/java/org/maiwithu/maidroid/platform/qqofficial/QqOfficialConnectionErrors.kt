@@ -4,9 +4,8 @@ import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 
 // 适配器连上 QQ 开放平台网关后不打任何日志，只在失败时打一行报错，
 // 所以“是否在线”只能从终端日志里有没有近期报错来推断，这个文件负责从日志行里认出这些报错。
+// 传进来的行已经是纯文本：TerminalLog.lines 广播的就是纯文本，读历史时 QqOfficialPlatformManager 先用 AnsiText.plain 转过。
 
-// 终端里的 MaiBot 日志带颜色控制符，匹配前先去掉。
-private val AnsiEscape = Regex("""\u001B\[[0-9;?]*[A-Za-z]""")
 private const val QqOfficialErrorMaxLength = 160
 
 /**
@@ -17,11 +16,10 @@ private const val QqOfficialErrorMaxLength = 160
  * “QQ 官方网关连接失败，将重试: 原因”，所以这里只能识别失败，不能识别成功。
  */
 internal fun qqOfficialConnectionError(line: String): String? {
-    val text = line.replace(AnsiEscape, "")
     val message = when {
-        "QQ 官方适配器缺少凭据" in text -> "未填写 AppID 或 AppSecret"
-        "QQ 官方网关连接失败" in text -> describeQqOfficialFailure(
-            text.substringAfter("将重试:", missingDelimiterValue = "").trim()
+        "QQ 官方适配器缺少凭据" in line -> "未填写 AppID 或 AppSecret"
+        "QQ 官方网关连接失败" in line -> describeQqOfficialFailure(
+            line.substringAfter("将重试:", missingDelimiterValue = "").trim()
         )
         else -> return null
     }

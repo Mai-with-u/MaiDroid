@@ -125,7 +125,7 @@ class QqOfficialPlatformTest {
         assertEquals(
             "获取访问凭证失败，请检查 AppID 和 AppSecret（HTTP 401, code=100016）",
             qqOfficialConnectionError(
-                "\u001B[33mWARNING\u001B[0m QQ 官方网关连接失败，将重试: 获取 QQ 访问凭证失败: HTTP 401, code=100016"
+                "WARNING QQ 官方网关连接失败，将重试: 获取 QQ 访问凭证失败: HTTP 401, code=100016"
             )
         )
         assertEquals(

@@ -7,7 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.MaiBotWebViewClient
+import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
 /**
@@ -27,7 +27,7 @@ class WebUiActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         webView = createWebUiWebView(this).apply {
-            webViewClient = MaiBotWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
+            webViewClient = WebUiWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
         }
         setContentView(webView)
 

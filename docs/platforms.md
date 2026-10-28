@@ -42,7 +42,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示，点�
 
 适配器连上 QQ 网关后不打任何日志，只在失败时每隔几秒打一行“QQ 官方网关连接失败，将重试: 原因”。所以：
 
-- `QqOfficialConnectionLog` 从 `TerminalLog` 的每一行里识别这类报错，翻译成用户看得懂的说明（例如 IP 不在白名单、凭据错误）。
+- `QqOfficialConnectionErrors` 从 `TerminalLog` 的每一行里识别这类报错，翻译成用户看得懂的说明（例如 IP 不在白名单、凭据错误）。
 - 一分钟内没有新报错就认为已连上（`QqOfficialErrorStaleMs`）；MaiBot 重新启动（日志里出现 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG`）时清掉旧报错。
 - 卡片上的“已启用”= 凭据齐全 + 插件启用 + MaiBot 在跑 + 近期没有连接报错，是推断值，不是适配器上报的。
 
@@ -80,7 +80,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示，点�
 
 点 NapCat 设置时先问 NapCat QQ 是否已登录：已登录打开 NapCat 管理页（`/webui/?token=…`，结尾斜杠不能少，否则前端路由不渲染，整页白屏），未登录弹二维码。
 
-二维码弹窗打开期间每 3 秒问一次扫码进度（`keepQrCodeFresh`），按 `NapCatQrCodePolicy` 决定要不要替用户换码：
+二维码弹窗打开期间每 3 秒问一次扫码进度（`keepQrCodeFresh`），按 `NapCatQrCodeRefresh` 决定要不要替用户换码：
 
 - QQ 的二维码约 120 秒失效。NapCat 只在 QQ 回 ErrCode 3 时自己重新出码，遇到 ErrCode 10 会一直停在旧码上，所以码龄超过 125 秒（多留 5 秒给 NapCat 先自己换）就主动请求新码。
 - 已扫码、等用户在手机上确认时，再多宽限 60 秒才视为作废，避免打断正在确认的用户。

@@ -12,7 +12,7 @@ import java.net.URL
  * 拦截 MaiBot WebUI 的请求，在 APP 侧改写返回内容后再交给 WebView：
  * - 页面 HTML：在第一个脚本之前注入 WebUiInjectedScripts.pageBootstrap（主题 + vh 兜底）；
  * - 本机 .css 样式表：把 env(safe-area-inset-bottom) 加上 APP 底部导航栏的占高。
- * 其余请求（脚本、图片、接口、第三方资源）原样放行。由 MaiBotWebViewClient 调用。
+ * 其余请求（脚本、图片、接口、第三方资源）原样放行。由 WebUiWebViewClient 调用。
  */
 internal object WebUiResponseRewriter {
     private const val TAG = "WebUiResponseRewriter"
