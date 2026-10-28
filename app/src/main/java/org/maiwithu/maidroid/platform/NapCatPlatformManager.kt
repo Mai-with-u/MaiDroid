@@ -25,7 +25,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.container.ContainerCommandResult
 import org.maiwithu.maidroid.container.ContainerCommandRunner
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.platform.napcat.NapCatScripts
 import org.maiwithu.maidroid.process.TerminalLogRepository
+import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.service.ChatbotService
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -255,7 +257,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         }
     }
 
-    fun installNapCat(targetProxy: String? = null) {
+    fun installNapCat() {
         if (installJob?.isActive == true) return
 
         if (config.isNapCatInstalled()) {
@@ -294,14 +296,10 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             clearProgressFiles()
             startProgressWatcher()
 
-            val command = config.napCatInstallCommand(
-                token = generateToken(),
-                targetProxy = targetProxy?.takeIf { it.isNotBlank() }
-            )
             TerminalLogRepository.append("")
             TerminalLogRepository.append("[NapCat] 启动安装流程")
 
-            val result = runCommand(command)
+            val result = runCommand(NapCatScripts.install(token = generateToken()))
             progressJob?.cancel()
             progressJob = null
 
@@ -331,13 +329,9 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         ChatbotService.start(appContext, ChatbotService.ACTION_RESTART_RUNTIME)
     }
 
-    // 安装脚本需要读 MaiBot 目录下的协议文件来配置适配器，因此带上协议 hash 环境变量。
-    private suspend fun runCommand(command: List<String>): ContainerCommandResult {
-        val result = commandRunner.run(
-            command = command,
-            includeAgreement = true,
-            onLine = TerminalLogRepository::append
-        )
+    // 安装脚本的输出原样写进终端日志，最后补一行退出码，方便判断失败在哪一步。
+    private suspend fun runCommand(script: ContainerScript): ContainerCommandResult {
+        val result = commandRunner.run(script, onLine = TerminalLogRepository::append)
         TerminalLogRepository.append("[NapCat] 安装流程退出码: ${result.exitCode}")
         return result
     }
@@ -597,19 +591,18 @@ internal object NapCatRuntime {
 
         config.ensureExecutableBits()
         job = scope.launch {
-            runMaintenanceCommand(config, config.cleanupNapCatCommand())
-            runMaintenanceCommand(config, config.napCatPrepareRuntimeCommand())
+            runMaintenanceCommand(config, NapCatScripts.cleanup())
+            runMaintenanceCommand(config, NapCatScripts.prepareRuntime())
 
             if (!config.napCatLauncher.isFile) {
                 TerminalLogRepository.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")
                 return@launch
             }
 
-            val command = config.napCatLaunchCommand()
             TerminalLogRepository.append("")
             TerminalLogRepository.append("[NapCat] 启动: bash /root/launcher.sh")
             try {
-                val currentProcess = ContainerCommandRunner(config).start(command)
+                val currentProcess = ContainerCommandRunner(config).start(NapCatScripts.launch())
                 process = currentProcess
                 currentProcess.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { rawLine ->
@@ -660,16 +653,16 @@ internal object NapCatRuntime {
         stop()
         val config = MaiBotContainerConfig.from(context.applicationContext)
         scope.launch {
-            runMaintenanceCommand(config, config.cleanupNapCatCommand())
+            runMaintenanceCommand(config, NapCatScripts.cleanup())
         }
     }
 
     // 清理残留进程、生成 launcher.sh 这类维护命令：只记非空输出，失败不中断后续启动。
     private suspend fun runMaintenanceCommand(
         config: MaiBotContainerConfig,
-        command: List<String>
+        script: ContainerScript
     ) {
-        val result = ContainerCommandRunner(config).run(command) { line ->
+        val result = ContainerCommandRunner(config).run(script) { line ->
             if (line.isNotBlank()) TerminalLogRepository.append(line)
         }
         if (!result.success) {
