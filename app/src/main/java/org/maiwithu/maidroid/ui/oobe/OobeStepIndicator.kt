@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.component
+package org.maiwithu.maidroid.ui.oobe
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -24,33 +24,33 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.ui.theme.BackgroundDark
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.SurfaceDark
 import org.maiwithu.maidroid.ui.theme.TextDimmed
 
 /**
- * 3-step progress indicator — sizes scaled 0.67× from 540px Figma canvas.
+ * OOBE 顶部的三步指示器：当前步骤显示实心圆点，其余显示序号。尺寸按 540px 设计稿缩放 0.67 倍。
  */
 @Composable
-fun OobeStepIndicator(
-    currentStep: Int,
+internal fun OobeStepIndicator(
+    currentStep: OobeStep,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StepNode(step = 1, isActive = currentStep == 0)
-        StepConnector()
-        StepNode(step = 2, isActive = currentStep == 1)
-        StepConnector()
-        StepNode(step = 3, isActive = currentStep == 2)
+        OobeStep.entries.forEachIndexed { index, step ->
+            if (index > 0) StepConnector()
+            StepNode(number = index + 1, isActive = step == currentStep)
+        }
     }
 }
 
 @Composable
-private fun StepNode(step: Int, isActive: Boolean) {
+private fun StepNode(number: Int, isActive: Boolean) {
     val borderWidth by animateDpAsState(
         targetValue = if (isActive) 2.dp else 1.5.dp,
         label = "OobeStepBorderWidth"
@@ -77,7 +77,7 @@ private fun StepNode(step: Int, isActive: Boolean) {
             )
         } else {
             Text(
-                text = step.toString(),
+                text = number.toString(),
                 fontSize = 16.sp,  // 24 × 0.67
                 fontWeight = FontWeight.Bold,
                 color = TextDimmed,
@@ -103,7 +103,7 @@ private fun RowScope.StepConnector() {
 private fun OobeStepIndicatorPreview() {
     MaiDroidTheme {
         Box(modifier = Modifier.background(BackgroundDark).padding(24.dp)) {
-            OobeStepIndicator(currentStep = 0)
+            OobeStepIndicator(currentStep = OobeStep.Permissions)
         }
     }
 }

@@ -90,7 +90,8 @@ import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.oobe.AdaptiveOobeTaskList
 import org.maiwithu.maidroid.ui.oobe.CompactOobeTaskList
-import org.maiwithu.maidroid.ui.component.OobeStepIndicator
+import org.maiwithu.maidroid.oobe.OobeStep
+import org.maiwithu.maidroid.ui.oobe.OobeStepIndicator
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.oobe.AdaptiveOobePermissionCards
@@ -292,7 +293,7 @@ internal fun OobeFlowScreen(
             ) {
                 Spacer(modifier = Modifier.height(32.dp))
 
-                OobeStepIndicator(currentStep = currentStep, modifier = Modifier.fillMaxWidth())
+                OobeStepIndicator(currentStep = OobeStep.entries[currentStep], modifier = Modifier.fillMaxWidth())
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -469,7 +470,7 @@ private fun AdaptiveOobeFlowLayout(
                     )
             ) {
                 OobeStepIndicator(
-                    currentStep = currentStep,
+                    currentStep = OobeStep.entries[currentStep],
                     modifier = Modifier.fillMaxWidth()
                 )
 
