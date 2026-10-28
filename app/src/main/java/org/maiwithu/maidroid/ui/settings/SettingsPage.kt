@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.settings
 
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
@@ -92,6 +92,8 @@ import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.platforms.installedPlatformCards
 
 private const val PermissionSettingsDetail = "permissions"
 

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.home
 
 import android.annotation.SuppressLint
 import android.os.Build
@@ -53,6 +53,7 @@ import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.component.statusBarTopInset
 
 // 导航栏悬浮在 WebView 上，盖住的高度就是网页的底部安全区；WebView 里 1 CSS px 等于 1 dp。
 private val WebUiBottomOverlayInsetCssPx = MainBottomNavigationOverlayHeight.value.toInt()
@@ -99,7 +100,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                     Log.d(
-                        WebUiLogTag,
+                        MaiBotWebUi.LOG_TAG,
                         "console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} " +
                             "(${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
                     )
@@ -110,7 +111,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
         WebUiTabState(webView).also { tabState ->
             webView.webViewClient = MaiBotWebViewClient(
-                logTag = WebUiLogTag,
+                logTag = MaiBotWebUi.LOG_TAG,
                 viewportReservedBottomCssPx = WebUiBottomOverlayInsetCssPx,
                 onPageFinishedCallback = { _, _ ->
                     tabState.webViewError = null
@@ -163,7 +164,7 @@ internal fun WebUiTabPage(
                     webView.tag = loadRequest
                     state.webViewError = null
                     Log.d(
-                        WebUiLogTag,
+                        MaiBotWebUi.LOG_TAG,
                         "load ${MaiBotWebUiSupport.redactUrlForLogs(launchUrl)} at " +
                             "${webView.width}x${webView.height}"
                     )

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -48,6 +48,13 @@ import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
+
+/** 主页底部导航栏的三个标签，顺序即从左到右的顺序（也决定切换动画的方向）。 */
+internal enum class MainTab {
+    WebUi,
+    Platforms,
+    Settings
+}
 
 /** 导航栏毛玻璃的模糊半径。 */
 private const val NavigationBlurRadius = 22f

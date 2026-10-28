@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

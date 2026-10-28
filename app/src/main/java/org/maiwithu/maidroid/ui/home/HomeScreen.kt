@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.home
 
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
@@ -27,6 +27,9 @@ import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.platforms.MessagePlatformsPage
+import org.maiwithu.maidroid.ui.settings.SettingsPage
+import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
 
 internal const val WakeRetryIntervalMillis = 30_000L
 

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing

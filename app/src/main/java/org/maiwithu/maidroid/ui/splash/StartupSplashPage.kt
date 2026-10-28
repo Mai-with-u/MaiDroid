@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.splash
 
 import android.graphics.BitmapShader
 import android.graphics.Matrix

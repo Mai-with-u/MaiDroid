@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.splash
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

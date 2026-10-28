@@ -27,8 +27,8 @@ import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
-import org.maiwithu.maidroid.ui.screen.HomeScreen
-import org.maiwithu.maidroid.ui.screen.StartupSplashPage
+import org.maiwithu.maidroid.ui.home.HomeScreen
+import org.maiwithu.maidroid.ui.splash.StartupSplashPage
 
 // 启动页停留时长；之后若还没同意过协议，再等一小会儿弹出授权弹窗，让页面切换动画先走完。
 private const val STARTUP_SPLASH_DURATION_MS = 1_200L

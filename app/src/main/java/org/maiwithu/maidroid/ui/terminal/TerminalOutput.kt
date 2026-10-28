@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.terminal
 
 import android.content.ClipData
 import android.content.ClipboardManager

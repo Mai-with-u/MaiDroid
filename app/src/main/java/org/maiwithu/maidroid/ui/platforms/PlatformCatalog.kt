@@ -1,17 +1,9 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.platforms
 
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.StatusOnline
-
-internal const val WebUiLogTag = "MaiDroidWebUi"
-
-internal enum class MainTab {
-    WebUi,
-    Platforms,
-    Settings
-}
 
 // QQ 卡片适配器选择器里的选项名，同时作为 selectedAdapters 里记下的值。
 internal const val QqOfficialAdapterName = "官方机器人"

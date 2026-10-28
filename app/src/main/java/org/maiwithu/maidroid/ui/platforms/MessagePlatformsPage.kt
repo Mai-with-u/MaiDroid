@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.screen
+package org.maiwithu.maidroid.ui.platforms
 
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -108,6 +108,7 @@ import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.component.statusBarTopInset
 
 private const val PlatformGridMinCardWidthDp = 272f
 private const val PlatformGridMaxCardWidthDp = 420f
