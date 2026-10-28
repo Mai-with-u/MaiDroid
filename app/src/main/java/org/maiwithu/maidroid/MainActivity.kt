@@ -1,22 +1,14 @@
 package org.maiwithu.maidroid
 
-import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.os.PowerManager
-import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
@@ -36,7 +28,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -45,51 +36,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.ui.screen.BlurTargetHost
 import org.maiwithu.maidroid.ui.screen.HomeScreen
 import org.maiwithu.maidroid.ui.screen.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.screen.OobeFlowScreen
-import org.maiwithu.maidroid.ui.screen.PermissionManagementActions
-import org.maiwithu.maidroid.ui.screen.PermissionManagementState
 import org.maiwithu.maidroid.ui.screen.StartupSplashPage
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 import eightbitlab.com.blurview.BlurTarget
 
 class MainActivity : ComponentActivity() {
-    private var storagePermissionGranted by mutableStateOf(false)
-    private var notificationPermissionGranted by mutableStateOf(false)
-    private var batteryOptimizationGranted by mutableStateOf(false)
-
-    private val storagePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        storagePermissionGranted = results.values.all { it } && isStoragePermissionGranted()
-        Toast.makeText(
-            this,
-            if (storagePermissionGranted) "存储权限已授权" else "存储权限未授权",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        notificationPermissionGranted = granted && isNotificationPermissionGranted()
-        Toast.makeText(
-            this,
-            if (notificationPermissionGranted) "通知权限已授权" else "通知权限未授权",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
+    private val permissions = SystemPermissionController(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
-        refreshPermissionState()
+        permissions.refresh()
 
         setContent {
             MaiDroidTheme {
@@ -190,44 +156,8 @@ class MainActivity : ComponentActivity() {
                             webUiOnline = webUiOnline,
                             versionName = versionName,
                             terminalLogs = terminalLogs,
-                            permissionState = PermissionManagementState(
-                                storageGranted = storagePermissionGranted,
-                                notificationGranted = notificationPermissionGranted,
-                                batteryOptimizationGranted = batteryOptimizationGranted
-                            ),
-                            permissionActions = PermissionManagementActions(
-                                onStorageAuthorize = {
-                                    requestStoragePermission()
-                                },
-                                onNotificationEnable = {
-                                    requestNotificationPermission()
-                                },
-                                onNotificationDisable = {
-                                    openNotificationSettings()
-                                },
-                                onBatteryOptimizationEnable = {
-                                    requestIgnoreBatteryOptimizations()
-                                },
-                                onBatteryOptimizationDisable = {
-                                    openBatteryOptimizationSettings()
-                                },
-                                onAutoStartSettings = {
-                                    openAppDetails("请在系统设置中为 MaiDroid 开启或关闭自启动和后台活动")
-                                },
-                                onTaskLockSettings = {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "请在系统多任务界面为 MaiDroid 开启或关闭加锁",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                },
-                                onAccessibilitySettings = {
-                                    openAccessibilitySettings()
-                                },
-                                onDeviceAdminSettings = {
-                                    openDeviceAdminSettings()
-                                }
-                            ),
+                            permissionState = permissions.state,
+                            permissionActions = permissions.settingsActions,
                             onWakeMai = { showToast ->
                                 if (webUiOnline) {
                                     openWebUi()
@@ -248,39 +178,21 @@ class MainActivity : ComponentActivity() {
                                 OobeFlowScreen(
                                     currentStep = oobeStep,
                                     setupState = setupState,
-                                    storagePermissionGranted = storagePermissionGranted,
-                                    notificationPermissionGranted = notificationPermissionGranted,
-                                    batteryOptimizationGranted = batteryOptimizationGranted,
-                                    onStorageAuthorize = {
-                                        requestStoragePermission()
-                                    },
-                                    onNotificationAuthorize = {
-                                        requestNotificationPermission()
-                                    },
-                                    onBatteryOptimizationAuthorize = {
-                                        requestIgnoreBatteryOptimizations()
-                                    },
-                                    onAutoStartAuthorize = {
-                                        openAppDetails("请在系统设置中为 MaiDroid 开启自启动和后台活动")
-                                    },
-                                    onTaskLockAuthorize = {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "请在系统多任务界面将 MaiDroid 加锁",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    },
-                                    onAccessibilityAuthorize = {
-                                        openAccessibilitySettings()
-                                    },
-                                    onDeviceAdminAuthorize = {
-                                        openDeviceAdminSettings()
-                                    },
+                                    storagePermissionGranted = permissions.state.storageGranted,
+                                    notificationPermissionGranted = permissions.state.notificationGranted,
+                                    batteryOptimizationGranted = permissions.state.batteryOptimizationIgnored,
+                                    onStorageAuthorize = permissions.oobeActions.requestStorage,
+                                    onNotificationAuthorize = permissions.oobeActions.enableNotification,
+                                    onBatteryOptimizationAuthorize = permissions.oobeActions.ignoreBatteryOptimization,
+                                    onAutoStartAuthorize = permissions.oobeActions.openAutoStartSettings,
+                                    onTaskLockAuthorize = permissions.oobeActions.showTaskLockHint,
+                                    onAccessibilityAuthorize = permissions.oobeActions.openAccessibilitySettings,
+                                    onDeviceAdminAuthorize = permissions.oobeActions.openDeviceAdminSettings,
                                     onNext = {
                                         when (oobeStep) {
                                             0 -> {
-                                                storagePermissionGranted = isStoragePermissionGranted()
-                                                if (storagePermissionGranted) {
+                                                permissions.refresh()
+                                                if (permissions.isStorageGranted()) {
                                                     oobeStep = 1
                                                 } else {
                                                     Toast.makeText(
@@ -288,7 +200,7 @@ class MainActivity : ComponentActivity() {
                                                         "请先授予必选存储权限",
                                                         Toast.LENGTH_SHORT
                                                     ).show()
-                                                    requestStoragePermission()
+                                                    permissions.oobeActions.requestStorage()
                                                 }
                                             }
                                             1 -> {
@@ -344,157 +256,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshPermissionState()
-    }
-
-    private fun refreshPermissionState() {
-        storagePermissionGranted = isStoragePermissionGranted()
-        notificationPermissionGranted = isNotificationPermissionGranted()
-        batteryOptimizationGranted = isBatteryOptimizationGranted()
-    }
-
-    private fun isStoragePermissionGranted(): Boolean =
-        when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Environment.isExternalStorageManager()
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                        checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-            }
-            else -> true
-        }
-
-    private fun isNotificationPermissionGranted(): Boolean {
-        val runtimeGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        return runtimeGranted && NotificationManagerCompat.from(this).areNotificationsEnabled()
-    }
-
-    private fun isBatteryOptimizationGranted(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
-        val powerManager = getSystemService(PowerManager::class.java)
-        return powerManager.isIgnoringBatteryOptimizations(packageName)
-    }
-
-    private fun requestStoragePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (Environment.isExternalStorageManager()) {
-                storagePermissionGranted = true
-                Toast.makeText(this, "存储权限已授权", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            val packageUri = Uri.parse("package:$packageName")
-            val appSettingsIntent = Intent(
-                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                packageUri
-            )
-            val allFilesSettingsIntent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-
-            startSettingsActivity(appSettingsIntent, allFilesSettingsIntent)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            storagePermissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                )
-            )
-        } else {
-            storagePermissionGranted = true
-            Toast.makeText(this, "存储权限已授权", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun requestIgnoreBatteryOptimizations() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            batteryOptimizationGranted = true
-            Toast.makeText(this, "后台权限已授权", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val powerManager = getSystemService(PowerManager::class.java)
-        if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
-            batteryOptimizationGranted = true
-            Toast.makeText(this, "后台权限已授权", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val packageUri = Uri.parse("package:$packageName")
-        val requestIntent = Intent(
-            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-            packageUri
-        )
-        val settingsIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-
-        startSettingsActivity(requestIntent, settingsIntent)
-    }
-
-    private fun openBatteryOptimizationSettings() {
-        startSettingsActivity(
-            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
-        )
-    }
-
-    private fun requestNotificationPermission() {
-        if (isNotificationPermissionGranted()) {
-            notificationPermissionGranted = true
-            Toast.makeText(this, "通知权限已授权", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
-
-        openNotificationSettings()
-    }
-
-    private fun startSettingsActivity(primaryIntent: Intent, fallbackIntent: Intent) {
-        try {
-            startActivity(primaryIntent)
-        } catch (_: ActivityNotFoundException) {
-            startActivity(fallbackIntent)
-        }
-    }
-
-    private fun openNotificationSettings() {
-        val notificationIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-        }
-        val fallbackIntent = Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:$packageName")
-        )
-        startSettingsActivity(notificationIntent, fallbackIntent)
-    }
-
-    private fun openAppDetails(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        startActivity(
-            Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:$packageName")
-            )
-        )
-    }
-
-    private fun openAccessibilitySettings() {
-        Toast.makeText(this, "无障碍权限风险较高，请确认确实需要后再开启", Toast.LENGTH_LONG).show()
-        startSettingsActivity(
-            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
-            Intent(Settings.ACTION_SETTINGS)
-        )
-    }
-
-    private fun openDeviceAdminSettings() {
-        Toast.makeText(this, "设备管理员权限风险较高，当前请在系统安全设置中手动检查", Toast.LENGTH_LONG).show()
-        startSettingsActivity(
-            Intent(Settings.ACTION_SECURITY_SETTINGS),
-            Intent(Settings.ACTION_SETTINGS)
-        )
+        permissions.refresh()
     }
 
     private fun configureSystemBars(setupComplete: Boolean) {

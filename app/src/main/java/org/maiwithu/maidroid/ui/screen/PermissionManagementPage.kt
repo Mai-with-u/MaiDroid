@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.ui.screen
 
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,28 +49,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-data class PermissionManagementState(
-    val storageGranted: Boolean = false,
-    val notificationGranted: Boolean = false,
-    val batteryOptimizationGranted: Boolean = false
-)
-
-data class PermissionManagementActions(
-    val onStorageAuthorize: () -> Unit = {},
-    val onNotificationEnable: () -> Unit = {},
-    val onNotificationDisable: () -> Unit = {},
-    val onBatteryOptimizationEnable: () -> Unit = {},
-    val onBatteryOptimizationDisable: () -> Unit = {},
-    val onAutoStartSettings: () -> Unit = {},
-    val onTaskLockSettings: () -> Unit = {},
-    val onAccessibilitySettings: () -> Unit = {},
-    val onDeviceAdminSettings: () -> Unit = {}
-)
-
 @Composable
 internal fun PermissionManagementPage(
-    state: PermissionManagementState,
-    actions: PermissionManagementActions,
+    state: PermissionState,
+    actions: PermissionActions,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean = true
@@ -146,7 +130,7 @@ internal fun PermissionManagementPage(
                     badgeText = "必须",
                     granted = state.storageGranted,
                     actionText = if (state.storageGranted) "已授权" else "去授权",
-                    onAction = actions.onStorageAuthorize
+                    onAction = actions.requestStorage
                 )
             }
 
@@ -169,9 +153,9 @@ internal fun PermissionManagementPage(
                     checked = state.notificationGranted,
                     onCheckedChange = { checked ->
                         if (checked) {
-                            actions.onNotificationEnable()
+                            actions.enableNotification()
                         } else {
-                            actions.onNotificationDisable()
+                            actions.disableNotification()
                         }
                     }
                 )
@@ -182,12 +166,12 @@ internal fun PermissionManagementPage(
                     icon = Icons.Outlined.BatterySaver,
                     title = "关闭电池优化",
                     description = "减少系统在后台挂起 MaiDroid 的机会。",
-                    checked = state.batteryOptimizationGranted,
+                    checked = state.batteryOptimizationIgnored,
                     onCheckedChange = { checked ->
                         if (checked) {
-                            actions.onBatteryOptimizationEnable()
+                            actions.ignoreBatteryOptimization()
                         } else {
-                            actions.onBatteryOptimizationDisable()
+                            actions.restoreBatteryOptimization()
                         }
                     }
                 )
@@ -198,7 +182,7 @@ internal fun PermissionManagementPage(
                     icon = Icons.Outlined.Settings,
                     title = "开启自启动&后台活动",
                     description = "在系统应用详情或厂商后台设置中管理。",
-                    onClick = actions.onAutoStartSettings
+                    onClick = actions.openAutoStartSettings
                 )
             }
 
@@ -207,7 +191,7 @@ internal fun PermissionManagementPage(
                     icon = Icons.Outlined.Lock,
                     title = "多任务加锁",
                     description = "在系统多任务界面中手动开启或关闭。",
-                    onClick = actions.onTaskLockSettings
+                    onClick = actions.showTaskLockHint
                 )
             }
 
@@ -218,7 +202,7 @@ internal fun PermissionManagementPage(
                     description = "高风险权限，仅在确实需要时开启。",
                     badgeText = "不建议",
                     destructive = true,
-                    onClick = actions.onAccessibilitySettings
+                    onClick = actions.openAccessibilitySettings
                 )
             }
 
@@ -229,7 +213,7 @@ internal fun PermissionManagementPage(
                     description = "高风险权限，请在系统安全设置中管理。",
                     badgeText = "不建议",
                     destructive = true,
-                    onClick = actions.onDeviceAdminSettings
+                    onClick = actions.openDeviceAdminSettings
                 )
             }
         }

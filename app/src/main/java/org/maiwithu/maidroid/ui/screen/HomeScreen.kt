@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.ui.screen
 
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.SizeTransform
@@ -31,8 +33,8 @@ fun HomeScreen(
     webUiOnline: Boolean,
     versionName: String,
     terminalLogs: List<String> = emptyList(),
-    permissionState: PermissionManagementState = PermissionManagementState(),
-    permissionActions: PermissionManagementActions = PermissionManagementActions(),
+    permissionState: PermissionState = PermissionState(),
+    permissionActions: PermissionActions = PermissionActions(),
     onWakeMai: (showToast: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -98,8 +100,8 @@ private fun DashboardShell(
     webUiOnline: Boolean,
     versionName: String,
     terminalLogs: List<String>,
-    permissionState: PermissionManagementState,
-    permissionActions: PermissionManagementActions,
+    permissionState: PermissionState,
+    permissionActions: PermissionActions,
     showTerminalOutput: Boolean,
     onTabSelected: (MainTab) -> Unit,
     onWakeMai: (showToast: Boolean) -> Unit,

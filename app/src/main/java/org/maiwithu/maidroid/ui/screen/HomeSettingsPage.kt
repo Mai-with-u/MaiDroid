@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.ui.screen
 
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.appContainer
 import android.content.Context
 import android.widget.Toast
@@ -91,8 +93,8 @@ internal fun SettingsPage(
     webUiOnline: Boolean,
     versionName: String,
     modifier: Modifier = Modifier,
-    permissionState: PermissionManagementState = PermissionManagementState(),
-    permissionActions: PermissionManagementActions = PermissionManagementActions()
+    permissionState: PermissionState = PermissionState(),
+    permissionActions: PermissionActions = PermissionActions()
 ) {
     val context = LocalContext.current
     val sshManager = remember(context) { context.appContainer.containerSsh }
@@ -286,7 +288,7 @@ internal fun settingsNavigationWidthDp(availableWidthDp: Float): Float =
 private fun SettingsNavigationPane(
     webUiOnline: Boolean,
     versionName: String,
-    permissionState: PermissionManagementState,
+    permissionState: PermissionState,
     sshState: ContainerSshState,
     updateState: MaiBotUpdateState,
     runningPlatformCount: Int,
@@ -631,10 +633,10 @@ private fun maiBotUpdateAccent(state: MaiBotUpdateState): Color =
         else -> PlatformOrange
     }
 
-private fun permissionSummary(state: PermissionManagementState): String {
+private fun permissionSummary(state: PermissionState): String {
     val optionalGranted = listOf(
         state.notificationGranted,
-        state.batteryOptimizationGranted
+        state.batteryOptimizationIgnored
     ).count { it }
     val storageStatus = if (state.storageGranted) "存储已授权" else "存储未授权"
     return "$storageStatus · 可选项 $optionalGranted/2"
