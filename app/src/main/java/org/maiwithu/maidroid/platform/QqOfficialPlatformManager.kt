@@ -127,7 +127,8 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
 
     /**
      * 首次安装：检查容器和 MaiBot 源码 -> 克隆适配器到 plugins/MaiBot-QQ-Adapter ->
-     * 写入 AppID、AppSecret 并启用插件 -> 重启 MaiBot 加载插件。已经装过时克隆步骤会直接跳过。
+     * 写入 AppID、AppSecret 并启用插件 -> 重启 MaiBot 加载插件。
+     * 已经装过（包括用户从 MaiBot 插件市场装的那份）就跳过克隆，直接把凭据写进那份的配置。
      */
     fun installAndConfigure(appId: String, appSecret: String) {
         if (installJob?.isActive == true) return
@@ -145,16 +146,22 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
                 return@launch
             }
 
-            updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
             TerminalLogRepository.append("")
-            TerminalLogRepository.append("[QQ 官方机器人] 开始安装适配器")
-            val result = commandRunner.run(
-                command = config.qqOfficialAdapterInstallCommand(),
-                onLine = TerminalLogRepository::append
-            )
-            if (!result.success || !config.isQqOfficialAdapterInstalled()) {
-                fail(result.summary())
-                return@launch
+            val existingDir = withContext(Dispatchers.IO) { config.findQqOfficialAdapterDir() }
+            if (existingDir != null) {
+                TerminalLogRepository.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+            } else {
+                updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
+                TerminalLogRepository.append("[QQ 官方机器人] 开始安装适配器")
+                val result = commandRunner.run(
+                    command = config.qqOfficialAdapterInstallCommand(),
+                    onLine = TerminalLogRepository::append
+                )
+                val installed = withContext(Dispatchers.IO) { config.isQqOfficialAdapterInstalled() }
+                if (!result.success || !installed) {
+                    fail(result.summary())
+                    return@launch
+                }
             }
 
             updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
@@ -188,6 +195,8 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
             return QqOfficialSaveResult.Unchanged
         }
         writeCredentials(appId, appSecret)?.let { return QqOfficialSaveResult.Failed(it) }
+        // 上次安装时写配置失败留下的提示，这次写成功了就不再显示。
+        _state.update { it.copy(errorMessage = null) }
         refreshFileState()
         TerminalLogRepository.append("[QQ 官方机器人] 已更新 AppID 和 AppSecret，正在重启 MaiBot 让适配器重新连接")
         restartMaiBot()
@@ -198,7 +207,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     private suspend fun writeCredentials(appId: String, appSecret: String): String? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val target = config.maiBotQqOfficialAdapterConfig
+                val target = config.qqOfficialAdapterConfigFile()
                 val existing = target.takeIf { it.isFile }?.readText()
                 val content = QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim())
                 val staging = File(target.parentFile, "${target.name}.maidroid.tmp")
@@ -257,7 +266,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     private fun readCredentials(): QqOfficialCredentials =
         runCatching {
             QqOfficialAdapterConfig.read(
-                config.maiBotQqOfficialAdapterConfig.takeIf { it.isFile }?.readText()
+                config.qqOfficialAdapterConfigFile().takeIf { it.isFile }?.readText()
             )
         }.getOrDefault(QqOfficialCredentials())
 
@@ -272,11 +281,12 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
         }
     }
 
-    private fun fail(message: String) {
+    private suspend fun fail(message: String) {
+        val installed = withContext(Dispatchers.IO) { config.isQqOfficialAdapterInstalled() }
         _state.update {
             it.copy(
                 phase = QqOfficialInstallPhase.Failed,
-                installed = config.isQqOfficialAdapterInstalled(),
+                installed = installed,
                 progress = 0f,
                 progressDescription = "QQ 官方机器人适配器安装失败",
                 errorMessage = message

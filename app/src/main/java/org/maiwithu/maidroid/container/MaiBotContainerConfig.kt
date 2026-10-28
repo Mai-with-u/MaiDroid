@@ -2,9 +2,37 @@ package org.maiwithu.maidroid.container
 
 import android.content.Context
 import android.system.Os
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
+
+// MaiBot 扫插件时跳过的目录：数据目录、字节码缓存，以及点开头的目录（含安装用的临时目录）。
+private val ReservedPluginDirNames = setOf("data", "__pycache__")
+
+/**
+ * 在 MaiBot 的 plugins 目录里按清单 ID 找插件目录（大小写不敏感，与 MaiBot 的查找一致）：
+ * 优先看 preferredDirName 这个目录，再扫其他目录；清单和 plugin.py 都在才算数。
+ */
+internal fun findPluginDirById(pluginsDir: File, pluginId: String, preferredDirName: String): File? {
+    val candidates = pluginsDir.listFiles()
+        ?.filter { dir ->
+            dir.isDirectory && !dir.name.startsWith(".") &&
+                dir.name.lowercase() !in ReservedPluginDirNames
+        }
+        ?.sortedWith(compareByDescending<File> { it.name == preferredDirName }.thenBy { it.name })
+        ?: return null
+    return candidates.firstOrNull { dir ->
+        val manifest = File(dir, "_manifest.json")
+        File(dir, "plugin.py").isFile && manifest.isFile &&
+            runCatching {
+                Json.parseToJsonElement(manifest.readText()).jsonObject["id"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull().equals(pluginId, ignoreCase = true)
+    }
+}
 
 data class ContainerRequirement(
     val name: String,
@@ -60,6 +88,7 @@ class MaiBotContainerConfig private constructor(
         const val WEB_UI_URL = "http://127.0.0.1:8001/"
         const val QQ_OFFICIAL_ADAPTER_REPOSITORY_URL = "https://github.com/Mai-with-u/MaiBot-QQ-Adapter.git"
         const val QQ_OFFICIAL_ADAPTER_DIR_NAME = "MaiBot-QQ-Adapter"
+        const val QQ_OFFICIAL_ADAPTER_PLUGIN_ID = "Mai-with-u.qq-adapter"
 
         // MaiBot 的 requires-python 只写了 >=3.12，没有上限也没有 .python-version，uv 会自动选最新的 Python。
         // 新版 Python 刚发布时，pydantic-core、pyarrow、zstandard 等包在 aarch64 上还没有预编译包，
@@ -124,8 +153,9 @@ class MaiBotContainerConfig private constructor(
     val napCatLauncher: File = File(rootfsDir, "root/launcher.sh")
     val maiBotNapCatAdapterDir: File = File(maiBotDir, "plugins/MaiBot-Napcat-Adapter")
     val maiBotNapCatAdapterConfig: File = File(maiBotNapCatAdapterDir, "config.toml")
-    val maiBotQqOfficialAdapterDir: File = File(maiBotDir, "plugins/$QQ_OFFICIAL_ADAPTER_DIR_NAME")
-    val maiBotQqOfficialAdapterConfig: File = File(maiBotQqOfficialAdapterDir, "config.toml")
+    val maiBotPluginsDir: File = File(maiBotDir, "plugins")
+    // MaiDroid 自己安装时用的目录；判断是否已安装、读写配置都以 findQqOfficialAdapterDir 找到的目录为准。
+    val maiBotQqOfficialAdapterDir: File = File(maiBotPluginsDir, QQ_OFFICIAL_ADAPTER_DIR_NAME)
     val sshdExecutable: File = File(rootfsDir, "usr/sbin/sshd")
 
     fun containerRequirements(): List<ContainerRequirement> = listOf(
@@ -371,10 +401,19 @@ class MaiBotContainerConfig private constructor(
     fun isNapCatInstalled(): Boolean =
         napCatReadyMarker.isFile && napCatOneBotConfig.isFile && maiBotNapCatAdapterConfig.isFile
 
-    // 清单和入口都在才算装好：克隆是先进临时目录再改名的，半截目录不会出现在这里。
-    fun isQqOfficialAdapterInstalled(): Boolean =
-        File(maiBotQqOfficialAdapterDir, "_manifest.json").isFile &&
-            File(maiBotQqOfficialAdapterDir, "plugin.py").isFile
+    /**
+     * 和 MaiBot 一样按清单里的插件 ID 找 QQ 官方机器人适配器：用户也可能在 MaiBot WebUI 的插件市场装过
+     * （目录名是 Mai-with-u_qq-adapter），只认固定目录名会再装一份，同一插件 ID 出现两份会冲突。
+     * 先看 MaiDroid 自己的目录，再扫其他目录；清单和入口都在才算装好，克隆了一半的临时目录以点开头会被跳过。
+     */
+    fun findQqOfficialAdapterDir(): File? =
+        findPluginDirById(maiBotPluginsDir, QQ_OFFICIAL_ADAPTER_PLUGIN_ID, QQ_OFFICIAL_ADAPTER_DIR_NAME)
+
+    fun isQqOfficialAdapterInstalled(): Boolean = findQqOfficialAdapterDir() != null
+
+    // 已安装就用找到的那份目录里的配置，还没装时指向 MaiDroid 将要安装的位置。
+    fun qqOfficialAdapterConfigFile(): File =
+        File(findQqOfficialAdapterDir() ?: maiBotQqOfficialAdapterDir, "config.toml")
 
     /**
      * 安装 QQ 官方机器人适配器：已装好就直接退出 -> 经 GitHub 镜像克隆到 plugins 下的点开头临时目录 ->
