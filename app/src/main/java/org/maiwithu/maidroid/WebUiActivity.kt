@@ -46,7 +46,7 @@ class WebUiActivity : ComponentActivity() {
 
         val url = intent.getStringExtra(EXTRA_URL) ?: MaiBotWebUi.URL
         val launchUrl = if (MaiBotWebUi.isMaiBotWebUiUrl(url)) {
-            MaiBotWebUi.launchUrl(appContainer.runtimePaths, TerminalLog.logs.value, baseUrl = url)
+            MaiBotWebUi.launchUrl(appDependencies.runtimePaths, TerminalLog.logs.value, baseUrl = url)
         } else {
             url
         }

@@ -38,7 +38,7 @@ filesDir/
 nativeLibraryDir/               libproot_exec.so 等
 ```
 
-容器内的固定路径常量在 `ContainerPaths`（例如 `/opt/MaiBot`），宿主侧路径在 `RuntimePaths`；NapCat 和 QQ 官方机器人的文件位置分别在 `NapCatFiles`、`QqOfficialAdapterFiles`。
+容器内的固定路径常量在 `InContainerPaths`（例如 `/opt/MaiBot`），宿主侧路径在 `RuntimePaths`；NapCat 和 QQ 官方机器人的文件位置分别在 `NapCatFiles`、`QqOfficialAdapterFiles`。
 
 ## 在容器里执行命令
 
@@ -122,7 +122,7 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ## MaiBot 的启动
 
-`MaiBotSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程。
+`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程。
 
 ### 协议 hash
 
@@ -133,7 +133,7 @@ MaiBot 首次启动要在终端里确认 EULA 和隐私协议，没有交互终�
 OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新不用 `git pull`：
 
 1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。
-2. **更新**（`fetchAndReset`）：`MaiBotSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 有被改过的受版本管理文件就先 `git diff` 导出补丁到 `/root/.maidroid/maibot-backups/` -> `git reset --hard origin/<分支>` -> 必要时补装 uv -> `uv sync` -> 无论成败都重新拉起 MaiBot。
+2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 有被改过的受版本管理文件就先 `git diff` 导出补丁到 `/root/.maidroid/maibot-backups/` -> `git reset --hard origin/<分支>` -> 必要时补装 uv -> `uv sync` -> 无论成败都重新拉起 MaiBot。
 
 被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。
 

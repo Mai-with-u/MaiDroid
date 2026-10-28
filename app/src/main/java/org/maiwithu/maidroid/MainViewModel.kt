@@ -35,7 +35,7 @@ internal class MainViewModel(
         const val WEB_UI_OFFLINE_POLL_MS = 1_500L
     }
 
-    private val container = application.appContainer
+    private val container = application.appDependencies
     private val settings = container.settings
 
     val setupManager = OobeSetupManager(

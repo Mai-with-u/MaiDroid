@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.log.AnsiText
 import org.maiwithu.maidroid.log.TerminalLog
-import org.maiwithu.maidroid.maibot.MaiBotSupervisor
+import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
@@ -34,7 +34,7 @@ internal class QqOfficialPlatformManager(
     paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val maiBot: MaiBotSupervisor
+    private val maiBotProcess: MaiBotProcessSupervisor
 ) {
     private val adapterFiles = QqOfficialAdapterFiles(paths)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -58,7 +58,7 @@ internal class QqOfficialPlatformManager(
             TerminalLog.lines.collect(::onLogLine)
         }
         scope.launch {
-            maiBot.isRunning.collect { running ->
+            maiBotProcess.isRunning.collect { running ->
                 _state.update { it.copy(maiBotRunning = running) }
             }
         }

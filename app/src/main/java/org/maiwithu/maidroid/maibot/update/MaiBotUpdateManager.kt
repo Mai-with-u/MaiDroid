@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.maibot.MaiBotScripts
-import org.maiwithu.maidroid.maibot.MaiBotSupervisor
+import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -65,7 +65,7 @@ internal class MaiBotUpdateManager(
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val maiBot: MaiBotSupervisor
+    private val maiBotProcess: MaiBotProcessSupervisor
 ) {
     companion object {
         private const val LOG_TAG = "[MaiBot 更新]"
@@ -157,7 +157,7 @@ internal class MaiBotUpdateManager(
 
             TerminalLog.append("")
             TerminalLog.append("$LOG_TAG 停止 MaiBot，准备切换到上游最新版本")
-            val failure = maiBot.runWhileStopped { updateWhileStopped() }
+            val failure = maiBotProcess.runWhileStopped { updateWhileStopped() }
 
             TerminalLog.append("$LOG_TAG 重新启动 MaiBot")
             restartMaiBot()
@@ -206,7 +206,7 @@ internal class MaiBotUpdateManager(
     private fun restartMaiBot() {
         val serviceStarted = runCatching { MaiBotRuntimeService.start(appContext) }.isSuccess
         if (!serviceStarted) {
-            maiBot.start()
+            maiBotProcess.start()
         }
     }
 

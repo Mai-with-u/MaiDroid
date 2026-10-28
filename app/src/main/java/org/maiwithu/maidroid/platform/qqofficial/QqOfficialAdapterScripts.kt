@@ -1,6 +1,6 @@
 package org.maiwithu.maidroid.platform.qqofficial
 
-import org.maiwithu.maidroid.runtime.ContainerPaths
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -22,7 +22,7 @@ internal object QqOfficialAdapterScripts {
      * 凭据由宿主侧直接写 config.toml，不经过命令行，避免 AppSecret 出现在进程参数和日志里。
      */
     fun install(): ContainerScript {
-        val pluginsDir = ContainerPaths.MAIBOT_PLUGINS_DIR
+        val pluginsDir = InContainerPaths.MAIBOT_PLUGINS_DIR
         val adapterDir = "$pluginsDir/$DIR_NAME"
         val stagingDir = "$pluginsDir/.$DIR_NAME.tmp"
         return ContainerScript(

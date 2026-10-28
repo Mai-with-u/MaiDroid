@@ -1,6 +1,6 @@
 package org.maiwithu.maidroid.platform.napcat
 
-import org.maiwithu.maidroid.runtime.ContainerPaths
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -138,7 +138,7 @@ internal object NapCatScripts {
         EOF
 
         maidroid_progress 0.88 "Install and configure MaiBot NapCat adapter"
-        INSTALL_DIR=${shellQuote(ContainerPaths.MAIBOT_DIR)}
+        INSTALL_DIR=${shellQuote(InContainerPaths.MAIBOT_DIR)}
         ADAPTER_DIR="${'$'}INSTALL_DIR/plugins/MaiBot-Napcat-Adapter"
         if [ -d "${'$'}INSTALL_DIR" ]; then
             mkdir -p "${'$'}INSTALL_DIR/plugins"

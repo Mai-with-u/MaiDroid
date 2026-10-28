@@ -65,7 +65,7 @@ internal class RuntimePaths private constructor(
     val userUvExecutable: File = File(rootfsDir, "root/.local/bin/uv")
 
     // ── MaiBot（容器内 /opt/MaiBot）─────────────────────────────────────
-    val maiBotDir: File = File(rootfsDir, ContainerPaths.MAIBOT_DIR.removePrefix("/"))
+    val maiBotDir: File = File(rootfsDir, InContainerPaths.MAIBOT_DIR.removePrefix("/"))
     val maiBotGitDir: File = File(maiBotDir, ".git")
     val maiBotEntry: File = File(maiBotDir, "bot.py")
     val maiBotPyproject: File = File(maiBotDir, "pyproject.toml")

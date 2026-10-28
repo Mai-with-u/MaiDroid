@@ -22,8 +22,8 @@ flowchart TB
         Perm["SystemPermissionController\n权限检查与跳转"]
     end
 
-    subgraph Modules["功能模块（由 AppContainer 创建）"]
-        MaiBot["MaiBotSupervisor\nMaiBot 进程"]
+    subgraph Modules["功能模块（由 AppDependencies 创建）"]
+        MaiBot["MaiBotProcessSupervisor\nMaiBot 进程"]
         Update["MaiBotUpdateManager\n在线更新"]
         NapCat["NapCatPlatformManager\nNapCatProcessSupervisor"]
         QqOfficial["QqOfficialPlatformManager"]
@@ -74,12 +74,12 @@ flowchart TB
 
 | 包 | 职责 | 主要类 |
 | --- | --- | --- |
-| （根） | 进程入口、依赖容器、两个 Activity | `MaiDroidApplication`、`AppContainer`、`MainActivity`、`MainViewModel`、`WebUiActivity` |
+| （根） | 进程入口、依赖创建处、两个 Activity | `MaiDroidApplication`、`AppDependencies`、`MainActivity`、`MainViewModel`、`WebUiActivity` |
 | `settings` | MMKV 持久化的应用设置 | `AppSettings` |
 | `log` | 全应用共享的终端输出 | `TerminalLog` |
 | `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
 | `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包 | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts` |
-| `maibot` | MaiBot 本体：安装与启动脚本、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
+| `maibot` | MaiBot 本体：安装与启动脚本、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotProcessSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
 | `maibot.update` | MaiBot 在线更新 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
@@ -99,9 +99,9 @@ flowchart TB
 
 命名约定：`*Manager` 管一项功能的业务流程和界面状态；`*Supervisor` 管一个长驻进程的启停和重启；`*Scripts` 只产出容器脚本；`*Files` 只描述文件位置；`*State` 是给界面的不可变状态。
 
-## 依赖从哪来：AppContainer
+## 依赖从哪来：AppDependencies
 
-所有长生命周期的组件都在 `AppContainer` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appContainer.xxx` 用同一份实例：
+所有长生命周期的组件都在 `AppDependencies` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appDependencies.xxx` 用同一份实例：
 
 - 立即创建：`settings`、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
 - 第一次用时创建（`lazy`）：`maiBot`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`。平台管理器和更新管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
@@ -110,7 +110,7 @@ flowchart TB
 
 ## 一次启动的流程
 
-1. `MaiDroidApplication.onCreate`：初始化 MMKV -> 创建 `AppContainer` -> 注册前台服务的通知渠道。
+1. `MaiDroidApplication.onCreate`：初始化 MMKV -> 创建 `AppDependencies` -> 注册前台服务的通知渠道。
 2. `MainActivity.onCreate`：常亮屏幕、透明系统栏、读一次权限状态，`setContent` 进入 `MaiDroidApp`。
 3. `MaiDroidApp` 按 `MainViewModel` 的状态切页面：
    - 全新启动先播 1.2 秒启动页（`showStartupSplash`，存在 `SavedStateHandle` 里，旋转屏幕不重播）。
@@ -137,7 +137,7 @@ flowchart TB
 
 三个长驻进程的监管方式：
 
-- **MaiBot**（`MaiBotSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下。
+- **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下。
 - **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 
@@ -168,7 +168,7 @@ flowchart TB
 ## 日志
 
 - `TerminalLog`：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，主页右下角的终端按钮查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[GitHub]`。
-- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionLog`。
+- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionLog`。
 - WebView 相关日志在 `MaiDroidWebUi` 标签（`MaiBotWebUi.LOG_TAG`）。
 
 ## 嵌入 MaiBot WebUI

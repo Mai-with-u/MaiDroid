@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.maiwithu.maidroid.BuildConfig
-import org.maiwithu.maidroid.appContainer
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -151,7 +151,7 @@ internal fun WebUiTabPage(
             },
             update = { webView ->
                 val launchUrl = MaiBotWebUi.launchUrl(
-                    paths = webView.context.appContainer.runtimePaths,
+                    paths = webView.context.appDependencies.runtimePaths,
                     terminalLogs = terminalLogs,
                     baseUrl = url
                 )

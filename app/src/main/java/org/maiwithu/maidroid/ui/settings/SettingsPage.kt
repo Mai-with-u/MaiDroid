@@ -62,7 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.appContainer
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
@@ -95,13 +95,13 @@ internal fun SettingsPage(
     permissionActions: PermissionActions = PermissionActions()
 ) {
     val context = LocalContext.current
-    val sshManager = remember(context) { context.appContainer.containerSsh }
+    val sshManager = remember(context) { context.appDependencies.containerSsh }
     val sshState by sshManager.state.collectAsState()
-    val napCatManager = remember(context) { context.appContainer.napCat }
+    val napCatManager = remember(context) { context.appDependencies.napCat }
     val napCatState by napCatManager.state.collectAsState()
-    val updateManager = remember(context) { context.appContainer.maiBotUpdater }
+    val updateManager = remember(context) { context.appDependencies.maiBotUpdater }
     val updateState by updateManager.state.collectAsState()
-    val qqOfficialManager = remember(context) { context.appContainer.qqOfficial }
+    val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 在线、官方机器人已启用且无连接报错都算。
     val runningPlatformCount = remember(napCatState, qqOfficialState) {

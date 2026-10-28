@@ -43,7 +43,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示，点�
 适配器连上 QQ 网关后不打任何日志，只在失败时每隔几秒打一行“QQ 官方网关连接失败，将重试: 原因”。所以：
 
 - `QqOfficialConnectionLog` 从 `TerminalLog` 的每一行里识别这类报错，翻译成用户看得懂的说明（例如 IP 不在白名单、凭据错误）。
-- 一分钟内没有新报错就认为已连上（`QqOfficialErrorStaleMs`）；MaiBot 重新启动（日志里出现 `MaiBotSupervisor.PROCESS_STARTED_LOG`）时清掉旧报错。
+- 一分钟内没有新报错就认为已连上（`QqOfficialErrorStaleMs`）；MaiBot 重新启动（日志里出现 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG`）时清掉旧报错。
 - 卡片上的“已启用”= 凭据齐全 + 插件启用 + MaiBot 在跑 + 近期没有连接报错，是推断值，不是适配器上报的。
 
 群聊里默认要 @机器人 才会收到消息，这是 QQ 开放平台的规则。
@@ -103,7 +103,7 @@ NapCat 没有注销 QQ 的接口，QQ 只随进程结束下线。所以“退出
    - `XxxPlatformState`：界面状态；
    - `XxxPlatformManager`：安装、配置、状态汇总，构造函数注入 `RuntimeReadiness`、`ContainerCommandRunner` 等。
 2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停。
-3. 在 `AppContainer` 里加一个 `lazy` 属性。
+3. 在 `AppDependencies` 里加一个 `lazy` 属性。
 4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `PlatformAdapter` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platforms/` 的独立文件里。
 5. 装好或改了配置后经 `ACTION_RESTART_RUNTIME` 重启 MaiBot。
 6. 给状态推断、配置读写这类纯逻辑写 JVM 单元测试（参考 `NapCatQrCodeRefreshTest`、`QqOfficialPlatformTest`）。

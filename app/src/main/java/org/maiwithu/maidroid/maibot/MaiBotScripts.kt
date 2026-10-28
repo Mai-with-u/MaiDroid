@@ -1,6 +1,6 @@
 package org.maiwithu.maidroid.maibot
 
-import org.maiwithu.maidroid.runtime.ContainerPaths
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
@@ -20,7 +20,7 @@ internal object MaiBotScripts {
     // 已经装好 3.12 的旧环境也不会被重建。
     const val UV_PYTHON_REQUEST = ">=3.12,<3.14"
 
-    private const val MAIBOT_DIR = ContainerPaths.MAIBOT_DIR
+    private const val MAIBOT_DIR = InContainerPaths.MAIBOT_DIR
 
     // 克隆 -> 改名 -> 立刻读一次 HEAD 确认仓库可用。
     // proot 的 --link2symlink 会把 git 落盘 packfile 用的硬链接改成指向绝对路径的符号链接，

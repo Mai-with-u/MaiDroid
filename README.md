@@ -37,7 +37,7 @@ flowchart TB
         UI["界面 ui/\n启动页、OOBE、主页、消息平台、设置"]
         VM["MainViewModel / OobeSetupManager\n流程状态与安装步骤"]
         Service["MaiBotRuntimeService\n前台服务"]
-        Modules["MaiBotSupervisor / NapCat / QQ 官方机器人 / 容器 SSH / 在线更新"]
+        Modules["MaiBotProcessSupervisor / NapCat / QQ 官方机器人 / 容器 SSH / 在线更新"]
         Runner["ContainerCommandRunner\n在 proot 容器里执行 ContainerScript"]
         Settings["AppSettings（MMKV）"]
     end
@@ -80,7 +80,7 @@ flowchart TB
 
 | 包 | 内容 |
 | --- | --- |
-| （根） | `MaiDroidApplication`、`AppContainer`（依赖创建处）、`MainActivity`、`MainViewModel`、`WebUiActivity` |
+| （根） | `MaiDroidApplication`、`AppDependencies`（依赖创建处）、`MainActivity`、`MainViewModel`、`WebUiActivity` |
 | `runtime/` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 镜像 |
 | `maibot/` | MaiBot 的安装与启动脚本、进程监管、在线更新（`maibot/update/`） |
 | `oobe/` | 首次引导“配置容器”“安装 MaiBot”两步 |

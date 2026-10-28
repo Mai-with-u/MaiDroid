@@ -12,7 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.appContainer
+import org.maiwithu.maidroid.appDependencies
 
 /**
  * 托管容器里所有长驻进程的前台服务：MaiBot、NapCat（装了才启动）和容器 sshd（开了才启动）。
@@ -57,9 +57,9 @@ class MaiBotRuntimeService : Service() {
         }
     }
 
-    private val maiBot get() = appContainer.maiBot
-    private val containerSsh get() = appContainer.containerSsh
-    private val napCatProcess get() = appContainer.napCatProcess
+    private val maiBotProcess get() = appDependencies.maiBotProcess
+    private val containerSsh get() = appDependencies.containerSsh
+    private val napCatProcess get() = appDependencies.napCatProcess
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -81,9 +81,9 @@ class MaiBotRuntimeService : Service() {
 
         napCatProcess.start()
         if (intent?.action == ACTION_RESTART_RUNTIME) {
-            maiBot.restart()
+            maiBotProcess.restart()
         } else {
-            maiBot.start()
+            maiBotProcess.start()
         }
 
         return START_STICKY
@@ -95,7 +95,7 @@ class MaiBotRuntimeService : Service() {
         Log.d(TAG, "Service onDestroy")
         containerSsh.stop()
         napCatProcess.stop()
-        maiBot.stop()
+        maiBotProcess.stop()
         releaseWakeLock()
         super.onDestroy()
     }

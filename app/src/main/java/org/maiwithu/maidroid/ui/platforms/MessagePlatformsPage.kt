@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.WebUiActivity
-import org.maiwithu.maidroid.appContainer
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
@@ -102,10 +102,10 @@ internal fun calculatePlatformGridColumnCount(availableWidthDp: Float): Int {
 @Composable
 internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val napCatManager = remember(context) { context.appContainer.napCat }
+    val napCatManager = remember(context) { context.appDependencies.napCat }
     val napCatState by napCatManager.state.collectAsState()
     val uiScope = rememberCoroutineScope()
-    val qqOfficialManager = remember(context) { context.appContainer.qqOfficial }
+    val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
     LaunchedEffect(napCatManager) {
         napCatManager.refresh()

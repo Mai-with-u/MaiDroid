@@ -1,7 +1,7 @@
 package org.maiwithu.maidroid.maibot.update
 
 import org.maiwithu.maidroid.maibot.MaiBotScripts
-import org.maiwithu.maidroid.runtime.ContainerPaths
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -44,12 +44,12 @@ internal object MaiBotUpdateScripts {
     private fun script(vararg parts: String): ContainerScript =
         ContainerScript(
             body = parts.joinToString("\n"),
-            workingDirectory = ContainerPaths.MAIBOT_DIR
+            workingDirectory = InContainerPaths.MAIBOT_DIR
         )
 
     // 进入 MaiBot 仓库并确定要跟随的分支；分离 HEAD 时退回上游默认分支 main。
     private fun repositoryPrelude(): String {
-        val installDir = shellQuote(ContainerPaths.MAIBOT_DIR)
+        val installDir = shellQuote(InContainerPaths.MAIBOT_DIR)
         return """
         set -e
         install_dir=$installDir

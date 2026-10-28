@@ -1,6 +1,6 @@
 package org.maiwithu.maidroid.platform.qqofficial
 
-import org.maiwithu.maidroid.maibot.MaiBotSupervisor
+import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 
 // 适配器连上 QQ 开放平台网关后不打任何日志，只在失败时打一行报错，
 // 所以“是否在线”只能从终端日志里有没有近期报错来推断，这个文件负责从日志行里认出这些报错。
@@ -38,6 +38,6 @@ private fun describeQqOfficialFailure(reason: String): String = when {
     else -> "连接 QQ 开放平台失败：$reason"
 }
 
-/** MaiBot 进程重新拉起时 MaiBotSupervisor 打的行；之前的连接报错都属于上一轮，不再作数。 */
+/** MaiBot 进程重新拉起时 MaiBotProcessSupervisor 打的行；之前的连接报错都属于上一轮，不再作数。 */
 internal fun isMaiBotStartLine(line: String): Boolean =
-    line.startsWith(MaiBotSupervisor.PROCESS_STARTED_LOG)
+    line.startsWith(MaiBotProcessSupervisor.PROCESS_STARTED_LOG)

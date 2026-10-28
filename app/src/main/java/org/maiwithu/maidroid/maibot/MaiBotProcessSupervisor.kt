@@ -24,7 +24,7 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.runtime.terminateGracefully
 
 /**
- * 管理容器里 MaiBot 进程的生命周期。由 AppContainer 持有唯一实例，前台服务和在线更新共用同一份运行状态。
+ * 管理容器里 MaiBot 进程的生命周期。由 AppDependencies 持有唯一实例，前台服务和在线更新共用同一份运行状态。
  *
  * - 用 MaiBotScripts.launch（installation.md 里的 uv 命令）启动 MaiBot，输出逐行写进终端日志
  * - 进程意外退出时按指数退避自动重启
@@ -34,14 +34,14 @@ import org.maiwithu.maidroid.runtime.terminateGracefully
  * 启动、停止、重启都在同一把生命周期锁里依次执行，
  * 避免服务启动和主页唤醒几乎同时到达时拉起两个 MaiBot 抢占 WebUI 端口。
  */
-internal class MaiBotSupervisor(
+internal class MaiBotProcessSupervisor(
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner
 ) {
 
     companion object {
-        private const val TAG = "MaiBotSupervisor"
+        private const val TAG = "MaiBotProcessSupervisor"
         private const val LOG_TAG = "[MaiBot]"
 
         /** 每次拉起 MaiBot 都会打这一行；QQ 官方机器人据此判断之前的连接报错已经属于上一轮。 */

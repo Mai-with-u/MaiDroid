@@ -60,7 +60,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | --- | --- |
 | `TerminalLog` | 终端输出的每一行：MaiBot、NapCat、sshd、OOBE 命令、在线更新（D 级别） |
 | `MaiDroidWebUi` | WebView 加载、网页 console 输出、视口修补结果 |
-| `MaiBotSupervisor`、`MaiBotRuntimeService`、`BootCompletedReceiver` | 进程监管、前台服务、开机广播 |
+| `MaiBotProcessSupervisor`、`MaiBotRuntimeService`、`BootCompletedReceiver` | 进程监管、前台服务、开机广播 |
 
 ```bash
 adb logcat -s TerminalLog
@@ -101,7 +101,7 @@ adb forward tcp:16099 tcp:6099
 ### 东西放哪
 
 - 包按功能划分，职责见 architecture.md 的包结构表。不要再建 `screen`、`utils`、`common` 这类按技术分的包。
-- 长生命周期的组件在 `AppContainer` 里创建、用构造函数注入依赖，不写 `get(context)` 式的单例，也不要在 `object` 里放可变状态。
+- 长生命周期的组件在 `AppDependencies` 里创建、用构造函数注入依赖，不写 `get(context)` 式的单例，也不要在 `object` 里放可变状态。
 - 任何要在容器里跑的东西都写成 `ContainerScript`，放进所属模块的 `*Scripts` 对象，交给 `ContainerCommandRunner` 执行；不要自己拼 proot 命令行。
 - 宿主侧文件位置放 `RuntimePaths`（运行时通用）或模块自己的 `*Files`；就绪判断放 `RuntimeReadiness`。
 
