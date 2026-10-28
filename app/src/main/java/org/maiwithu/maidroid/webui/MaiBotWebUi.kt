@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.maiwithu.maidroid.log.AnsiText
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import java.net.HttpURLConnection
 import java.net.URL
@@ -78,10 +79,13 @@ internal object MaiBotWebUi {
             .toString()
     }
 
-    /** 从日志里取最近一次打印的访问令牌（MaiBot 重启后令牌可能变化，所以从后往前找）。 */
+    /**
+     * 从日志里取最近一次打印的访问令牌（MaiBot 重启后令牌可能变化，所以从后往前找）。
+     * 终端日志里还留着 SGR 颜色序列，先转成纯文本再匹配，否则令牌后面紧跟的 ESC[0m 会被当成令牌的一部分。
+     */
     fun extractAccessTokenFromLogs(terminalLogs: List<String>): String? =
         terminalLogs.asReversed().firstNotNullOfOrNull { line ->
-            tokenLogRegex.find(line)
+            tokenLogRegex.find(AnsiText.plain(line))
                 ?.groupValues
                 ?.getOrNull(1)
                 ?.trim()

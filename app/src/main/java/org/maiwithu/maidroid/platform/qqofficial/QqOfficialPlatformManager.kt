@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.log.AnsiText
 import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
@@ -51,7 +52,8 @@ internal class QqOfficialPlatformManager(
 
     init {
         // 先翻一遍已有日志：页面打开前适配器可能已经在报错，不必等下一次重试才显示出来。
-        TerminalLog.logs.value.forEach(::onLogLine)
+        // 历史行还带着颜色序列，转成纯文本再判断；lines 广播的本来就是纯文本。
+        TerminalLog.logs.value.forEach { line -> onLogLine(AnsiText.plain(line)) }
         scope.launch {
             TerminalLog.lines.collect(::onLogLine)
         }

@@ -57,6 +57,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -186,7 +187,7 @@ private fun EmbeddedTerminalContent(
 ) {
     val context = LocalContext.current
     val viewer = rememberTerminalViewerState()
-    val displayedLogs = remember(logs, viewer.query) { filterTerminalLines(logs, viewer.query) }
+    val displayedLogs = rememberDisplayedLines(logs, viewer.query)
     val terminalText = remember(displayedLogs) { displayedLogs.toTerminalText() }
     FollowLatestOutputEffect(viewer, terminalText)
 
@@ -334,7 +335,7 @@ private fun TerminalDialogContent(
 ) {
     val context = LocalContext.current
     val viewer = rememberTerminalViewerState()
-    val displayedLogs = remember(logs, viewer.query) { filterTerminalLines(logs, viewer.query) }
+    val displayedLogs = rememberDisplayedLines(logs, viewer.query)
     val terminalText = remember(displayedLogs) { displayedLogs.toTerminalText() }
     FollowLatestOutputEffect(viewer, terminalText)
 
@@ -645,7 +646,7 @@ private fun terminalFilterChipColors() = FilterChipDefaults.filterChipColors(
 
 @Composable
 private fun TerminalLogViewport(
-    terminalText: String,
+    terminalText: AnnotatedString,
     hasAnyLogs: Boolean,
     query: String,
     wrapLines: Boolean,

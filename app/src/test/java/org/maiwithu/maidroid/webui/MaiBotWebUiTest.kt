@@ -34,6 +34,16 @@ class MaiBotWebUiTest {
     }
 
     @Test
+    fun extractAccessTokenFromLogsIgnoresColorSequences() {
+        // 终端日志里留着 SGR 颜色序列：令牌后面紧跟的 ESC[0m 不能被当成令牌的一部分
+        val token = MaiBotWebUi.extractAccessTokenFromLogs(
+            listOf("\u001B[33mINFO\u001B[0m startup: \u001B[1mWebUI\u001B[0m access token: \u001B[36mabc123TOKEN\u001B[0m")
+        )
+
+        assertEquals("abc123TOKEN", token)
+    }
+
+    @Test
     fun extractAccessTokenFromLogsReturnsNullWhenMissing() {
         val token = MaiBotWebUi.extractAccessTokenFromLogs(
             listOf("INFO startup: WebUI started")
