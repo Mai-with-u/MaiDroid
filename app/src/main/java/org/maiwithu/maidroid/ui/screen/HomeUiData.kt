@@ -32,7 +32,18 @@ internal enum class MainTab {
     Settings
 }
 
+// QQ 卡片适配器选择器里的选项名，同时作为 selectedAdapters 里记下的值。
+internal const val QqOfficialAdapterName = "官方机器人"
+internal const val NapCatAdapterName = "NapCat"
+
+// 已安装卡片点齿轮时按来源打开对应的配置弹窗。
+internal enum class InstalledPlatformKind {
+    NapCat,
+    QqOfficial
+}
+
 internal data class InstalledPlatform(
+    val kind: InstalledPlatformKind,
     val name: String,
     @param:DrawableRes val iconRes: Int,
     val account: String,
@@ -49,10 +60,12 @@ internal data class AvailablePlatform(
     val description: String,
     val tags: List<String>,
     val badge: String? = null,
-    val adapters: List<String> = emptyList()
+    val adapters: List<String> = emptyList(),
+    // 选中某个适配器时卡片上的服务方说明换成这里的文字，没列出的适配器沿用 provider。
+    val adapterProviders: Map<String, String> = emptyMap()
 )
 
-// 已安装平台只由 installedPlatformCards 按 NapCat 的真实运行状态生成，
+// 已安装平台只由 installedPlatformCards 按 NapCat 和 QQ 官方机器人的真实状态生成，
 // 这里不再放写死的假账号，避免没适配的平台被误显示成"在线"。
 internal val AvailablePlatforms = listOf(
     AvailablePlatform(
@@ -63,7 +76,12 @@ internal val AvailablePlatforms = listOf(
         description = "日常闲聊，水群必选平台",
         tags = listOf("国内", "常用"),
         badge = "最佳适配",
-        adapters = listOf("NapCat", "SnowLuma")
+        // 官方机器人放最左，默认仍选中 NapCat（见 MessagePlatformsPage 的 selectedAdapters 初值）。
+        adapters = listOf(QqOfficialAdapterName, NapCatAdapterName, "SnowLuma"),
+        adapterProviders = mapOf(
+            QqOfficialAdapterName to "将由 QQ 开放平台官方接口提供服务",
+            "SnowLuma" to "SnowLuma 暂未适配"
+        )
     ),
     AvailablePlatform(
         name = "Discord",

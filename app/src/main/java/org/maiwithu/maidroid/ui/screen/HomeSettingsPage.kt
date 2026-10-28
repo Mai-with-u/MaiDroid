@@ -81,6 +81,7 @@ import org.maiwithu.maidroid.container.ContainerSshManager
 import org.maiwithu.maidroid.container.ContainerSshPhase
 import org.maiwithu.maidroid.container.ContainerSshState
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
+import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
 import org.maiwithu.maidroid.service.ChatbotService
 import org.maiwithu.maidroid.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.update.MaiBotUpdatePhase
@@ -103,8 +104,11 @@ internal fun SettingsPage(
     val napCatState by napCatManager.state.collectAsState()
     val updateManager = remember(context) { MaiBotUpdateManager.get(context) }
     val updateState by updateManager.state.collectAsState()
-    val runningPlatformCount = remember(napCatState) {
-        installedPlatformCards(napCatState).count { it.running }
+    val qqOfficialManager = remember(context) { QqOfficialPlatformManager.get(context) }
+    val qqOfficialState by qqOfficialManager.state.collectAsState()
+    // 设置页的“运行中平台”与消息平台页同一口径：NapCat 在线、官方机器人已启用且无连接报错都算。
+    val runningPlatformCount = remember(napCatState, qqOfficialState) {
+        installedPlatformCards(napCatState, qqOfficialState).count { it.running }
     }
     var showSshDialog by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }

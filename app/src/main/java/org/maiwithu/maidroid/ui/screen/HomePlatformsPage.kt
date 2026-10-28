@@ -46,6 +46,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
@@ -54,6 +55,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +80,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,6 +93,11 @@ import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.platform.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.NapCatPlatformState
+import org.maiwithu.maidroid.platform.QqOfficialInstallPhase
+import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
+import org.maiwithu.maidroid.platform.QqOfficialPlatformState
+import org.maiwithu.maidroid.platform.QqOfficialSaveResult
+import org.maiwithu.maidroid.platform.qqOfficialStatusText
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -124,17 +133,24 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val napCatManager = remember(context) { NapCatPlatformManager.get(context) }
     val napCatState by napCatManager.state.collectAsState()
     val uiScope = rememberCoroutineScope()
+    val qqOfficialManager = remember(context) { QqOfficialPlatformManager.get(context) }
+    val qqOfficialState by qqOfficialManager.state.collectAsState()
     LaunchedEffect(napCatManager) {
         napCatManager.refresh()
     }
+    LaunchedEffect(qqOfficialManager) {
+        qqOfficialManager.refresh()
+    }
     var selectedCategory by remember { mutableStateOf("全部") }
-    var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to "NapCat")) }
+    // QQ 卡片默认选中 NapCat；官方机器人虽然排在最左，但要先去 QQ 开放平台申请凭据，不作为默认。
+    var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to NapCatAdapterName)) }
     // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
     var showNapCatQrCode by rememberSaveable { mutableStateOf(false) }
     var showNapCatConfig by rememberSaveable { mutableStateOf(false) }
     var showQqLogoutConfirm by rememberSaveable { mutableStateOf(false) }
+    var showQqOfficialConfig by rememberSaveable { mutableStateOf(false) }
     val categories = listOf("全部", "国内", "海外", "其他")
-    val installedPlatforms = installedPlatformCards(napCatState)
+    val installedPlatforms = installedPlatformCards(napCatState, qqOfficialState)
 
     BoxWithConstraints(
         modifier = modifier
@@ -162,9 +178,17 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(sectionSpacing))
             InstalledPlatformsRow(
                 platforms = installedPlatforms,
-                onNapCatConfigSettings = {
-                    napCatManager.refresh()
-                    showNapCatConfig = true
+                onSettingsClick = { platform ->
+                    when (platform.kind) {
+                        InstalledPlatformKind.NapCat -> {
+                            napCatManager.refresh()
+                            showNapCatConfig = true
+                        }
+                        InstalledPlatformKind.QqOfficial -> {
+                            qqOfficialManager.refresh()
+                            showQqOfficialConfig = true
+                        }
+                    }
                 }
             )
             Spacer(modifier = Modifier.height(sectionSpacing))
@@ -213,6 +237,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     platforms = visiblePlatforms,
                     selectedAdapters = selectedAdapters,
                     napCatState = napCatState,
+                    qqOfficialState = qqOfficialState,
                     onAdapterSelected = { platform, adapter ->
                         selectedAdapters = selectedAdapters + (platform.name to adapter)
                     },
@@ -233,6 +258,11 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                                 showNapCatQrCode = true
                             }
                         }
+                    },
+                    // 官方机器人没装时点下载、装好后点齿轮都打开同一个凭据弹窗：先填 AppID 再安装。
+                    onQqOfficialSettings = {
+                        qqOfficialManager.refresh()
+                        showQqOfficialConfig = true
                     },
                     onUnsupportedInstall = {
                         Toast.makeText(context, "还没有做适配…… `（> _ <）.", Toast.LENGTH_SHORT).show()
@@ -266,6 +296,31 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 onRefresh = { napCatManager.refresh() },
                 onLogoutQq = { showQqLogoutConfirm = true },
                 onDismiss = { showNapCatConfig = false }
+            )
+        }
+
+        // 未安装时确认 -> 后台克隆适配器、写凭据、重启 MaiBot，进度显示在卡片的进度环上；
+        // 已安装时确认 -> 只改写凭据并重启 MaiBot，凭据没变就直接关掉。
+        if (showQqOfficialConfig) {
+            QqOfficialConfigDialog(
+                state = qqOfficialState,
+                onConfirm = { appId, appSecret ->
+                    showQqOfficialConfig = false
+                    if (!qqOfficialState.installed) {
+                        qqOfficialManager.installAndConfigure(appId, appSecret)
+                        Toast.makeText(context, "正在安装 QQ 官方机器人适配器", Toast.LENGTH_SHORT).show()
+                    } else {
+                        uiScope.launch {
+                            val message = when (val result = qqOfficialManager.saveCredentials(appId, appSecret)) {
+                                QqOfficialSaveResult.Unchanged -> null
+                                QqOfficialSaveResult.Restarting -> "已保存，正在重启 MaiBot 让适配器重新连接"
+                                is QqOfficialSaveResult.Failed -> "保存失败：${result.message}"
+                            }
+                            message?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                        }
+                    }
+                },
+                onDismiss = { showQqOfficialConfig = false }
             )
         }
 
@@ -341,9 +396,11 @@ private fun PlatformList(
     platforms: List<AvailablePlatform>,
     selectedAdapters: Map<String, String>,
     napCatState: NapCatPlatformState,
+    qqOfficialState: QqOfficialPlatformState,
     onAdapterSelected: (AvailablePlatform, String) -> Unit,
     onNapCatInstall: () -> Unit,
     onNapCatSettings: () -> Unit,
+    onQqOfficialSettings: () -> Unit,
     onUnsupportedInstall: () -> Unit
 ) {
     BoxWithConstraints(
@@ -393,9 +450,11 @@ private fun PlatformList(
                             ?: platform.adapters.firstOrNull()
                             ?: "",
                         napCatState = napCatState,
+                        qqOfficialState = qqOfficialState,
                         onAdapterSelected = { adapter -> onAdapterSelected(platform, adapter) },
                         onNapCatInstall = onNapCatInstall,
                         onNapCatSettings = onNapCatSettings,
+                        onQqOfficialSettings = onQqOfficialSettings,
                         onUnsupportedInstall = onUnsupportedInstall
                     )
                 }
@@ -404,9 +463,17 @@ private fun PlatformList(
     }
 }
 
-internal fun installedPlatformCards(napCatState: NapCatPlatformState): List<InstalledPlatform> {
+internal fun installedPlatformCards(
+    napCatState: NapCatPlatformState,
+    qqOfficialState: QqOfficialPlatformState
+): List<InstalledPlatform> = listOfNotNull(
+    napCatInstalledCard(napCatState),
+    qqOfficialInstalledCard(qqOfficialState)
+)
+
+private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlatform? {
     if (!napCatState.installed && !napCatState.hasQrCode && napCatState.oneBotConfig == null) {
-        return emptyList()
+        return null
     }
 
     val account = when {
@@ -415,16 +482,39 @@ internal fun installedPlatformCards(napCatState: NapCatPlatformState): List<Inst
         else -> "NapCat 待配置"
     }
 
-    return listOf(
-        InstalledPlatform(
-            name = "QQ（NapCat）",
-            iconRes = R.drawable.ic_platform_qq,
-            account = account,
-            iconColor = Color(0xCC0F3BE9),
-            statusColor = if (napCatState.oneBotReachable) PlatformOnline else PlatformTextSecondary,
-            running = napCatState.oneBotReachable
-        )
+    return InstalledPlatform(
+        kind = InstalledPlatformKind.NapCat,
+        name = "QQ（NapCat）",
+        iconRes = R.drawable.ic_platform_qq,
+        account = account,
+        iconColor = Color(0xCC0F3BE9),
+        statusColor = if (napCatState.oneBotReachable) PlatformOnline else PlatformTextSecondary,
+        running = napCatState.oneBotReachable
     )
+}
+
+/**
+ * 官方机器人装好后才出现在已安装行里。适配器连上 QQ 时不上报，
+ * 所以“已启用”只表示凭据齐全、MaiBot 在跑且近一分钟没有连接报错。
+ */
+private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPlatform? {
+    if (!state.installed) return null
+    return InstalledPlatform(
+        kind = InstalledPlatformKind.QqOfficial,
+        // 卡片标题只有 130dp 宽，“QQ（官方机器人）”会折行压住状态行，所以不加括号。
+        name = "QQ 官方机器人",
+        iconRes = R.drawable.ic_platform_qq,
+        account = qqOfficialStatusText(state),
+        iconColor = Color(0xCC0F3BE9),
+        statusColor = qqOfficialStatusColor(state),
+        running = state.presumedOnline
+    )
+}
+
+private fun qqOfficialStatusColor(state: QqOfficialPlatformState): Color = when {
+    state.presumedOnline -> PlatformOnline
+    state.connectionError != null -> PlatformDanger
+    else -> PlatformTextSecondary
 }
 
 @Composable
@@ -492,7 +582,7 @@ private fun SearchButton() {
 @Composable
 private fun InstalledPlatformsRow(
     platforms: List<InstalledPlatform>,
-    onNapCatConfigSettings: () -> Unit
+    onSettingsClick: (InstalledPlatform) -> Unit
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
@@ -507,7 +597,7 @@ private fun InstalledPlatformsRow(
             items(platforms) { platform ->
                 InstalledPlatformCard(
                     platform = platform,
-                    onSettingsClick = onNapCatConfigSettings
+                    onSettingsClick = { onSettingsClick(platform) }
                 )
             }
         }
@@ -748,13 +838,32 @@ private fun PlatformInstallCard(
     platform: AvailablePlatform,
     selectedAdapter: String,
     napCatState: NapCatPlatformState,
+    qqOfficialState: QqOfficialPlatformState,
     onAdapterSelected: (String) -> Unit,
     onNapCatInstall: () -> Unit,
     onNapCatSettings: () -> Unit,
+    onQqOfficialSettings: () -> Unit,
     onUnsupportedInstall: () -> Unit
 ) {
     val hasAdapters = platform.adapters.isNotEmpty()
-    val isNapCatTarget = platform.name == "QQ" && selectedAdapter == "NapCat"
+    val isNapCatTarget = platform.name == "QQ" && selectedAdapter == NapCatAdapterName
+    val isQqOfficialTarget = platform.name == "QQ" && selectedAdapter == QqOfficialAdapterName
+    // 右上角按钮跟着选中的适配器显示各自的安装进度；没适配的选项一律显示下载图标。
+    val buttonState = when {
+        isNapCatTarget -> InstallButtonState(
+            installing = napCatState.isInstalling,
+            progress = napCatState.progress,
+            installed = napCatState.canOpenSettings,
+            failed = napCatState.phase == NapCatInstallPhase.Failed
+        )
+        isQqOfficialTarget -> InstallButtonState(
+            installing = qqOfficialState.isInstalling,
+            progress = qqOfficialState.progress,
+            installed = qqOfficialState.installed,
+            failed = qqOfficialState.phase == QqOfficialInstallPhase.Failed
+        )
+        else -> InstallButtonState()
+    }
 
     Box(
         modifier = Modifier
@@ -799,8 +908,10 @@ private fun PlatformInstallCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                // 服务方说明跟着选择器走：选官方机器人时不再写“将由 NapCat 提供服务”。
+                val provider = platform.adapterProviders[selectedAdapter] ?: platform.provider
                 Text(
-                    text = "${platform.provider}\n${platform.description}",
+                    text = "$provider\n${platform.description}",
                     color = PlatformTextDim,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -820,9 +931,10 @@ private fun PlatformInstallCard(
         }
 
         DownloadIconButton(
-            napCatState = if (isNapCatTarget) napCatState else null,
+            state = buttonState,
             onClick = {
                 when {
+                    isQqOfficialTarget -> if (!qqOfficialState.isInstalling) onQqOfficialSettings()
                     !isNapCatTarget -> onUnsupportedInstall()
                     napCatState.isInstalling -> Unit
                     napCatState.canOpenSettings -> onNapCatSettings()
@@ -841,7 +953,7 @@ private fun PlatformInstallCard(
                 onAdapterSelected = onAdapterSelected,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .width(172.dp)
+                    .width(adapterSelectorWidth(platform.adapters.size))
                     .height(42.dp)
             )
         }
@@ -944,15 +1056,23 @@ private fun SmallTag(text: String) {
     }
 }
 
+// 卡片右上角按钮的样子：安装中显示进度环，已安装显示齿轮，否则显示下载图标（上次失败时标红）。
+private data class InstallButtonState(
+    val installing: Boolean = false,
+    val progress: Float = 0f,
+    val installed: Boolean = false,
+    val failed: Boolean = false
+)
+
 @Composable
 private fun DownloadIconButton(
-    napCatState: NapCatPlatformState?,
+    state: InstallButtonState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val installing = napCatState?.isInstalling == true
-    val installed = napCatState?.canOpenSettings == true
-    val failed = napCatState?.phase == NapCatInstallPhase.Failed
+    val installing = state.installing
+    val installed = state.installed
+    val failed = state.failed
 
     Box(
         modifier = modifier
@@ -966,7 +1086,7 @@ private fun DownloadIconButton(
         contentAlignment = Alignment.Center
     ) {
         when {
-            installing -> ProgressRing(progress = napCatState.progress)
+            installing -> ProgressRing(progress = state.progress)
             installed -> Icon(
                 imageVector = Icons.Outlined.Settings,
                 contentDescription = "设置",
@@ -983,6 +1103,21 @@ private fun DownloadIconButton(
     }
 }
 
+private val AdapterSelectorItemWidth = 72.dp
+private val AdapterSelectorItemSpacing = 2.dp
+private val AdapterSelectorPadding = 2.dp
+
+/**
+ * 选择器按选项数定宽：每格 72dp 正好放下 12sp 的“官方机器人”五个字不折行。
+ * 三个选项时约 224dp，卡片最窄 272dp 减去内边距还剩 240dp，放得下。
+ */
+internal fun adapterSelectorWidth(adapterCount: Int): Dp {
+    val count = adapterCount.coerceAtLeast(1)
+    return AdapterSelectorItemWidth * count.toFloat() +
+        AdapterSelectorItemSpacing * (count - 1).toFloat() +
+        AdapterSelectorPadding * 2f
+}
+
 @Composable
 private fun AdapterSelector(
     adapters: List<String>,
@@ -991,8 +1126,8 @@ private fun AdapterSelector(
     modifier: Modifier = Modifier
 ) {
     val selectedIndex = adapters.indexOf(selectedAdapter).coerceAtLeast(0)
-    val itemSpacing = 2.dp
-    val horizontalPadding = 2.dp
+    val itemSpacing = AdapterSelectorItemSpacing
+    val horizontalPadding = AdapterSelectorPadding
 
     BoxWithConstraints(
         modifier = modifier
@@ -1053,12 +1188,15 @@ private fun AdapterSelector(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
+                    // 字号被系统放大时宁可截断也不折成两行，避免撑破 38dp 高的胶囊。
                     Text(
                         text = adapter,
                         color = textColor,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 14.sp
+                        lineHeight = 14.sp,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
@@ -1321,6 +1459,128 @@ private fun NapCatConfigDialog(
         titleContentColor = Color.White,
         textContentColor = PlatformTextSecondary
     )
+}
+
+/**
+ * QQ 官方机器人的凭据弹窗，安装前和安装后共用：
+ * 未安装时确认按钮是“安装并启用”，已安装时是“保存”（凭据变了才会重启 MaiBot）。
+ */
+@Composable
+private fun QqOfficialConfigDialog(
+    state: QqOfficialPlatformState,
+    onConfirm: (appId: String, appSecret: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // 输入内容在 Activity 重建后保留：用户可能切去浏览器从 QQ 开放平台复制 AppSecret 再回来。
+    var appIdText by rememberSaveable { mutableStateOf(state.credentials.appId) }
+    var appSecretText by rememberSaveable { mutableStateOf(state.credentials.appSecret) }
+    val canConfirm = appIdText.isNotBlank() && appSecretText.isNotBlank() && !state.isInstalling
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "QQ 官方机器人",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 22.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (state.installed) {
+                    ConfigValueRow(
+                        label = "连接状态",
+                        value = qqOfficialStatusDetail(state),
+                        valueColor = qqOfficialStatusColor(state)
+                    )
+                }
+
+                state.errorMessage?.let { error ->
+                    Text(
+                        text = "安装失败：$error",
+                        color = PlatformDanger,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                OutlinedTextField(
+                    value = appIdText,
+                    onValueChange = { appIdText = it.trim() },
+                    singleLine = true,
+                    label = { Text("AppID") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+
+                OutlinedTextField(
+                    value = appSecretText,
+                    onValueChange = { appSecretText = it.trim() },
+                    singleLine = true,
+                    label = { Text("AppSecret") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                )
+
+                Text(
+                    text = "在 QQ 开放平台（q.qq.com）创建机器人并开通群聊、单聊能力，" +
+                        "把开发设置里的 AppID 和 AppSecret 填到这里。\n" +
+                        "IP 白名单请留空：手机网络的 IP 会变，填了容易被拦。\n" +
+                        "群里要 @机器人 才会收到消息。确认后会重启 MaiBot，期间所有平台暂停收发消息。",
+                    color = PlatformTextDim,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PlatformBorder,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(text = "取消", fontWeight = FontWeight.Bold)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(appIdText, appSecretText) },
+                enabled = canConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PlatformOrange,
+                    contentColor = Color.White,
+                    disabledContainerColor = PlatformBorder,
+                    disabledContentColor = PlatformTextDim
+                )
+            ) {
+                Text(
+                    text = if (state.installed) "保存" else "安装并启用",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        containerColor = PlatformCardSurface,
+        titleContentColor = Color.White,
+        textContentColor = PlatformTextSecondary
+    )
+}
+
+// 弹窗里比卡片多说一句：连接失败带上原因，“已启用”说明是按没有报错推断的。
+private fun qqOfficialStatusDetail(state: QqOfficialPlatformState): String {
+    val summary = qqOfficialStatusText(state)
+    return when {
+        state.connectionError != null -> "$summary：${state.connectionError}"
+        state.presumedOnline -> "$summary，近一分钟没有连接报错"
+        else -> summary
+    }
 }
 
 @Composable
