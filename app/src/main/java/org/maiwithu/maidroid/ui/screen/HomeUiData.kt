@@ -52,28 +52,8 @@ internal data class AvailablePlatform(
     val adapters: List<String> = emptyList()
 )
 
-internal val InstalledPlatforms = listOf(
-    InstalledPlatform(
-        name = "微信",
-        iconRes = R.drawable.ic_platform_wechat,
-        account = "野兽先辈 在线",
-        iconColor = Color(0xFF07C160)
-    ),
-    InstalledPlatform(
-        name = "Telegram",
-        iconRes = R.drawable.ic_platform_telegram,
-        account = "Harry Poorter 在线",
-        iconColor = Color(0xFF229ED9)
-    ),
-    InstalledPlatform(
-        name = "iMessage",
-        iconRes = R.drawable.ic_platform_imessage,
-        account = "325799 在线",
-        iconColor = Color(0xFF06C755),
-        statusColor = PlatformTextSecondary
-    )
-)
-
+// 已安装平台只由 installedPlatformCards 按 NapCat 的真实运行状态生成，
+// 这里不再放写死的假账号，避免没适配的平台被误显示成"在线"。
 internal val AvailablePlatforms = listOf(
     AvailablePlatform(
         name = "QQ",
@@ -89,7 +69,8 @@ internal val AvailablePlatforms = listOf(
         name = "Discord",
         iconRes = R.drawable.ic_platform_discord,
         iconColor = Color(0xCC5865F2),
-        provider = "将由 Discord 官方 API 提供服务",
+        // Discord 还没有适配器，点安装只会走"暂不支持"提示，所以不能写成已经有服务方，和 WhatsApp、Signal 保持一致。
+        provider = "暂未适配",
         description = "游戏玩家必选平台",
         tags = listOf("海外", "游戏平台", "常用")
     ),
