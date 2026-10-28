@@ -8,13 +8,11 @@
 
 当前仓库已经包含以下主要模块：
 
-- OOBE 配置页和安装流程
-- 容器资源解包
-- 前台服务
-- 开机自启控制
-- MaiBot 容器配置
-- WebUI 页面
-- 基础 IPC 客户端
+- 首次启动引导（OOBE）：授权、配置容器、安装 MaiBot
+- 容器运行时：解包内置的 Debian rootfs 与 proot，在容器里执行安装和运行脚本
+- 前台服务：托管 MaiBot、NapCat 和可选的容器 SSH，开机自启
+- 主页：嵌入 MaiBot WebUI、消息平台（QQ 官方机器人、NapCat）、设置（权限、在线更新、容器 SSH）
+- 终端输出：集中查看容器里所有进程的日志
 
 ## 当前能力
 
@@ -35,72 +33,70 @@
 
 ```mermaid
 flowchart TB
-    subgraph Android["Android App / MaiDroid"]
-        OOBE["OOBE\n授权、容器准备、安装"]
-        UI["MainActivity / HomeScreen\n主页、WebUI、设置"]
-        Service["ChatbotService\n前台服务"]
-        PM["ProcessManager\nMaiBot 进程管理"]
-        SSH["ContainerSshManager\n容器 SSH"]
-        NapCatCtl["NapCatRuntime\nNapCat 启停"]
-        IPC["ChatbotIpcClient\n抽象 socket IPC"]
-        Storage["SettingsRepository / MMKV\n状态与配置"]
+    subgraph Android["MaiDroid（Android 应用）"]
+        UI["界面 ui/\n启动页、OOBE、主页、消息平台、设置"]
+        VM["MainViewModel / OobeSetupManager\n流程状态与安装步骤"]
+        Service["MaiBotRuntimeService\n前台服务"]
+        Modules["MaiBotSupervisor / NapCat / QQ 官方机器人 / 容器 SSH / 在线更新"]
+        Runner["ContainerCommandRunner\n在 proot 容器里执行 ContainerScript"]
+        Settings["AppSettings（MMKV）"]
     end
 
-    subgraph Runtime["Container Runtime / proot + Debian rootfs"]
-        Rootfs["Debian rootfs / Termux bootstrap"]
-        MaiBot["MaiBot"]
-        WebUI["MaiBot WebUI\n127.0.0.1:8001"]
-        NapCat["NapCat / OneBot WebSocket"]
-        SSHD["sshd\n可选容器 SSH"]
+    subgraph Container["容器（proot + Debian rootfs）"]
+        MaiBot["MaiBot\nWebUI 127.0.0.1:8001"]
+        NapCat["NapCat + LinuxQQ\nOneBot WebSocket"]
+        SSHD["sshd（可选）"]
     end
 
-    subgraph External["External Resources"]
-        Assets["APK assets\nrootfs / bootstrap / proot / deb packages"]
-        GitHub["MaiBot GitHub / 镜像"]
-        OneBot["OneBot / QQ 客户端"]
-    end
+    Assets["APK assets / jniLibs\nrootfs、bootstrap、proot"]
+    GitHub["GitHub（经镜像）\nMaiBot、适配器插件"]
+    QQ["QQ / QQ 开放平台"]
 
-    UI --> OOBE
-    UI --> Service
-
-    OOBE -->|解包容器资源| Assets
-    OOBE -->|初始化运行环境| Rootfs
-    OOBE -->|clone / uv sync| MaiBot
-    OOBE -->|写入完成状态| Storage
-
-    Service --> PM
-    Service --> NapCatCtl
-    Service --> SSH
-
-    PM -->|proot 启动| MaiBot
-    PM --> IPC
-    IPC <-->|聊天 / 配置 / 健康检查| MaiBot
-
-    NapCatCtl --> NapCat
-    NapCat --> OneBot
-    SSH --> SSHD
-
-    MaiBot --> WebUI
-    GitHub --> OOBE
-    GitHub --> MaiBot
-    Storage <-->|设置 / 路径 / 开关| Service
-    Storage <-->|OOBE 完成标记| OOBE
+    UI --> VM
+    VM -->|OOBE 完成后拉起| Service
+    UI --> Modules
+    Service --> Modules
+    Modules --> Runner
+    VM --> Runner
+    Runner --> MaiBot
+    Runner --> NapCat
+    Runner --> SSHD
+    VM -->|解包| Assets
+    Runner -->|clone / fetch| GitHub
+    MaiBot <-->|适配器插件| NapCat
+    MaiBot <-->|QQ 官方机器人适配器| QQ
+    NapCat <--> QQ
+    UI -->|WebView| MaiBot
+    VM --> Settings
 ```
 
-这张图主要表达三层关系：
-
-- Android 负责引导、配置、启动和管理
-- 容器里跑 Debian / MaiBot / NapCat / sshd
-- 外部资源来自 APK assets 和 GitHub 镜像，最终由 OOBE 拉起来
+- Android 侧负责引导、配置、启动和管理，所有容器命令都经 `ContainerCommandRunner` 执行
+- 容器里跑 Debian、MaiBot、NapCat、sshd
+- 容器资源随 APK 分发，MaiBot 源码和适配器经 GitHub 镜像下载
 
 ## 项目结构
 
-- `app/src/main/java/org/maiwithu/maidroid/oobe/`：OOBE 安装流程
-- `app/src/main/java/org/maiwithu/maidroid/container/`：容器资源、路径和安装脚本
-- `app/src/main/java/org/maiwithu/maidroid/process/`：MaiBot 进程管理
-- `app/src/main/java/org/maiwithu/maidroid/service/`：前台服务
-- `app/src/main/java/org/maiwithu/maidroid/ui/`：主界面、OOBE 和 WebUI 页面
-- `app/src/main/java/org/maiwithu/maidroid/ipc/`：Android 侧 IPC 客户端
+代码在 `app/src/main/java/org/maiwithu/maidroid/` 下，按功能分包：
+
+| 包 | 内容 |
+| --- | --- |
+| （根） | `MaiDroidApplication`、`AppContainer`（依赖创建处）、`MainActivity`、`MainViewModel`、`WebUiActivity` |
+| `runtime/` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 镜像 |
+| `maibot/` | MaiBot 的安装与启动脚本、进程监管、在线更新（`maibot/update/`） |
+| `oobe/` | 首次引导“配置容器”“安装 MaiBot”两步 |
+| `service/` | 前台服务、开机广播 |
+| `platform/napcat/`、`platform/qqofficial/` | QQ 的两种接入方式 |
+| `ssh/` | 容器 SSH |
+| `webui/` | 嵌入 MaiBot WebUI：令牌、WebView、请求改写、注入脚本 |
+| `permission/`、`settings/`、`log/` | 系统权限、持久化设置、终端输出 |
+| `ui/` | 界面，按页面分为 `oobe`、`home`、`platforms`、`settings`、`terminal`、`splash`，公共组件在 `component`，配色字体在 `theme` |
+
+开发文档：
+
+- [架构总览](docs/architecture.md)：分层、各包职责、启动流程、前台服务与长驻进程
+- [容器运行时](docs/container-runtime.md)：文件布局、proot 命令、OOBE 每一步、MaiBot 启动与在线更新、容器 SSH
+- [消息平台接入](docs/platforms.md)：QQ 官方机器人、NapCat，以及新增平台的步骤
+- [开发指南](docs/development.md)：构建、测试、真机调试、代码约定
 
 ## 本地构建
 
@@ -110,7 +106,13 @@ flowchart TB
 .\gradlew.bat assembleDebug
 ```
 
-构建产物通常位于 `app/build/outputs/`。
+运行单元测试：
+
+```powershell
+.\gradlew.bat testDebugUnitTest
+```
+
+构建产物通常位于 `app/build/outputs/`。环境要求、Git Bash 下的注意事项和真机调试方法见[开发指南](docs/development.md)。
 
 ## 发布与签名
 

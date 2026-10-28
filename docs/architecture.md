@@ -1,0 +1,182 @@
+# MaiDroid 架构总览
+
+MaiDroid 在 Android 手机上跑 MaiBot：APK 里带着一个 Debian rootfs 和 proot，首次启动时解包成容器，在容器里装好 MaiBot，再用前台服务让它常驻；界面负责引导安装、嵌入 MaiBot 的 WebUI、接入 QQ 等消息平台。
+
+这份文档讲“代码怎么分层、各包管什么、一次启动经过哪些类”。容器怎么搭、脚本怎么跑见 [container-runtime.md](container-runtime.md)，消息平台接入见 [platforms.md](platforms.md)，本地构建和调试见 [development.md](development.md)。
+
+## 分层
+
+```mermaid
+flowchart TB
+    subgraph UI["界面（ui/、MainActivity、WebUiActivity）"]
+        App["MaiDroidApp\n启动页 / OOBE / 主页切换"]
+        Oobe["ui/oobe\n首次引导三步"]
+        Home["ui/home\nWebUI 页签、唤醒页、底部导航"]
+        Platforms["ui/platforms\n消息平台页"]
+        Settings["ui/settings\n设置、权限、更新、SSH"]
+    end
+
+    subgraph State["状态与流程"]
+        VM["MainViewModel\n流程状态"]
+        OobeMgr["OobeSetupManager\n配置容器、安装 MaiBot"]
+        Perm["SystemPermissionController\n权限检查与跳转"]
+    end
+
+    subgraph Modules["功能模块（由 AppContainer 创建）"]
+        MaiBot["MaiBotSupervisor\nMaiBot 进程"]
+        Update["MaiBotUpdateManager\n在线更新"]
+        NapCat["NapCatPlatformManager\nNapCatProcessSupervisor"]
+        QqOfficial["QqOfficialPlatformManager"]
+        Ssh["ContainerSshManager"]
+    end
+
+    subgraph Runtime["容器运行时（runtime/）"]
+        Paths["RuntimePaths / RuntimeReadiness"]
+        Runner["ContainerCommandRunner\n+ ProotCommand"]
+        Scripts["各模块的 *Scripts\n产出 ContainerScript"]
+    end
+
+    Service["MaiBotRuntimeService\n前台服务"]
+
+    App --> VM
+    App --> Perm
+    Oobe --> VM
+    VM --> OobeMgr
+    Home --> VM
+    Platforms --> NapCat
+    Platforms --> QqOfficial
+    Settings --> Update
+    Settings --> Ssh
+
+    VM -->|OOBE 完成后拉起| Service
+    Service --> MaiBot
+    Service --> NapCat
+    Service --> Ssh
+
+    OobeMgr --> Runner
+    MaiBot --> Runner
+    Update --> Runner
+    NapCat --> Runner
+    QqOfficial --> Runner
+    Ssh --> Runner
+    Runner --> Scripts
+    Runner --> Paths
+```
+
+从下往上：
+
+1. **容器运行时**（`runtime/`）只知道“文件在哪、东西齐没齐、怎么在容器里跑一段 shell 脚本”，不知道 MaiBot、NapCat 是什么。
+2. **功能模块**（`maibot/`、`platform/`、`ssh/`）各自写好自己的容器脚本（`*Scripts`，返回 `ContainerScript`），交给 `ContainerCommandRunner` 执行，并把结果整理成界面要的状态（`StateFlow`）。
+3. **前台服务**（`service/`）托管长驻进程：MaiBot、NapCat、sshd。所有“把 MaiBot 拉起来 / 重启”的入口都经 `MaiBotRuntimeService.start(...)`。
+4. **界面**只读状态、调用模块的方法，不直接跑命令。
+
+## 包结构
+
+| 包 | 职责 | 主要类 |
+| --- | --- | --- |
+| （根） | 进程入口、依赖容器、两个 Activity | `MaiDroidApplication`、`AppContainer`、`MainActivity`、`MainViewModel`、`WebUiActivity` |
+| `settings` | MMKV 持久化的应用设置 | `AppSettings` |
+| `log` | 全应用共享的终端输出 | `TerminalLog` |
+| `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
+| `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包 | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts` |
+| `maibot` | MaiBot 本体：安装与启动脚本、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
+| `maibot.update` | MaiBot 在线更新 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
+| `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
+| `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
+| `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
+| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodePolicy` |
+| `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionLog`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
+| `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本 | `MaiBotWebUi`、`createWebUiWebView`、`MaiBotWebViewClient`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
+| `ui` | 根界面 | `MaiDroidApp` |
+| `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionCards`、`OobeTaskList`、`OobeAuthorizationDialog` |
+| `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiGatePage`、`MainBottomNavigation`、`WebUiTab` |
+| `ui.platforms` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
+| `ui.settings` | 设置页、权限管理、在线更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`ContainerSshSettings` |
+| `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalViewerState` |
+| `ui.splash` | 启动页 | `StartupSplashPage` |
+| `ui.component` | 跨页面的小组件 | `BackdropBlurView`、`BlurTargetHost`、`horizontalSlideTransition`、`statusBarTopInset` |
+| `ui.theme` | 配色、字体、Material 主题 | `Color.kt`、`Type.kt`、`MaiDroidTheme` |
+
+命名约定：`*Manager` 管一项功能的业务流程和界面状态；`*Supervisor` 管一个长驻进程的启停和重启；`*Scripts` 只产出容器脚本；`*Files` 只描述文件位置；`*State` 是给界面的不可变状态。
+
+## 依赖从哪来：AppContainer
+
+所有长生命周期的组件都在 `AppContainer` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appContainer.xxx` 用同一份实例：
+
+- 立即创建：`settings`、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
+- 第一次用时创建（`lazy`）：`maiBot`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`。平台管理器和更新管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
+
+新增模块时在这里加一个属性，构造函数里写清依赖，不要再写 `get(context)` 式的单例。
+
+## 一次启动的流程
+
+1. `MaiDroidApplication.onCreate`：初始化 MMKV -> 创建 `AppContainer` -> 注册前台服务的通知渠道。
+2. `MainActivity.onCreate`：常亮屏幕、透明系统栏、读一次权限状态，`setContent` 进入 `MaiDroidApp`。
+3. `MaiDroidApp` 按 `MainViewModel` 的状态切页面：
+   - 全新启动先播 1.2 秒启动页（`showStartupSplash`，存在 `SavedStateHandle` 里，旋转屏幕不重播）。
+   - OOBE 没完成：显示 `OobeFlowScreen`。没同意过协议时，启动页结束后约 0.4 秒弹出 `OobeAuthorizationDialog`。
+   - OOBE 完成：显示 `HomeScreen`。
+4. OOBE 三步（`OobeStep`）：
+   - **授予权限**：存储权限必需，其余可选。点“下一步”时现查一次存储权限。
+   - **配置容器**：进入这一步就自动调用 `OobeSetupManager.prepareContainer()`，解包 APK 资源、装系统依赖。
+   - **安装 MaiBot**：进入就调用 `startInstall()`，克隆源码、装依赖、确认协议、拉起前台服务、等 WebUI 能访问，最后写 `AppSettings.setupComplete = true`。
+5. OOBE 完成后，`MainViewModel` 拉起 `MaiBotRuntimeService`，并每 1.5 秒（在线后每 5 秒）探测一次 WebUI。主页在 WebUI 第一次在线前显示唤醒页，每 30 秒自动唤醒一次；上线后切到三栏外壳（WebUI、消息平台、设置）。
+6. 开机后，`BootCompletedReceiver` 在 OOBE 已完成、开机自启没关时拉起前台服务。
+
+## 前台服务与长驻进程
+
+`MaiBotRuntimeService` 每次收到 `start` 都会：挂常驻通知 -> 按设置同步 sshd ->（只同步 SSH 时到此为止）-> 拉起 NapCat（装了才拉）-> 启动或重启 MaiBot。三种入口：
+
+| 调用 | 作用 | 谁在用 |
+| --- | --- | --- |
+| `start(context)` | 启动 NapCat 和 MaiBot，已在运行的不重复启动 | OOBE 安装、主页唤醒、开机广播、在线更新结束 |
+| `start(context, ACTION_RESTART_RUNTIME)` | 重启 MaiBot（NapCat 没跑就拉起） | 装好或改了平台适配器后 |
+| `start(context, ACTION_SYNC_CONTAINER_SSH)` | 只按设置启停 sshd | 设置页开关 SSH、改 SSH 配置 |
+
+服务持有部分唤醒锁（只保 CPU，不亮屏），销毁时依次停 sshd、NapCat、MaiBot。
+
+三个长驻进程的监管方式：
+
+- **MaiBot**（`MaiBotSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下。
+- **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。
+- **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
+
+三者停止时都用 `Process.terminateGracefully()`：先 SIGTERM，3 秒后还活着再强杀；启动前还会用脚本按进程名清掉上次异常退出留下的残留。
+
+## 界面状态的流向
+
+- 模块用 `StateFlow` 暴露状态（`NapCatPlatformState`、`QqOfficialPlatformState`、`MaiBotUpdateState`、`ContainerSshState`、`OobeSetupState`），界面 `collectAsState()` 读。
+- 界面动作直接调用模块方法（`installNapCat()`、`saveCredentials()`、`applyUpdate()`……），模块内部用自己的协程作用域跑，离开页面也不会中断。
+- 权限状态不进 ViewModel：它依赖 Activity（结果回调要在 Activity 启动前注册），放在 `SystemPermissionController` 里，用 Compose 状态保存，`onResume` 时刷新。
+
+## 持久化
+
+只有 `AppSettings`（MMKV 默认实例）。键名已经在用户设备上存在，改名会丢数据：
+
+| 键 | 含义 | 默认 |
+| --- | --- | --- |
+| `setup_complete` | OOBE 已完成 | false |
+| `authorization_accepted` | 已同意用户协议和隐私协议 | false |
+| `service_auto_start` | 开机自启（目前没有界面开关） | true |
+| `container_ssh_enabled` | 容器 SSH 开关 | false |
+| `container_ssh_configured` | 保存过 SSH 端口和密码 | false |
+| `container_ssh_port` | SSH 端口（1024~65535） | 2222 |
+| `container_ssh_root_password` | 容器 root 密码 | 空 |
+
+其余状态都从文件系统现读（容器是否就绪、平台是否已装、凭据），不另存一份，避免两边不一致。
+
+## 日志
+
+- `TerminalLog`：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，主页右下角的终端按钮查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[GitHub]`。
+- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionLog`。
+- WebView 相关日志在 `MaiDroidWebUi` 标签（`MaiBotWebUi.LOG_TAG`）。
+
+## 嵌入 MaiBot WebUI
+
+WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开时：
+
+1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
+2. `MaiBotWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本，样式表里把 `env(safe-area-inset-bottom)` 加上 APP 底部导航栏的占高，让 WebUI 自己的底栏、对话框整体让到导航栏上方。
+3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，给被导航栏挡住的滚动区补留白。
+
+Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数（见 `WebUiTab.rememberWebUiTabState`），否则 WebView 把页面高度当成 0，vh 恒为 0 整页空白。
