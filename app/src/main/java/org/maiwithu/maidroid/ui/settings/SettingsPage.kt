@@ -79,6 +79,7 @@ import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val PermissionSettingsDetail = "permissions"
 
@@ -327,7 +328,7 @@ private fun SettingsNavigationPane(
                 Text(
                     text = if (compact) "MaiDroid 控制中心" else "管理服务、权限和应用状态",
                     color = TextMuted,
-                    fontSize = 13.sp,
+                    fontSize = TextSizes.Body,
                     lineHeight = 17.sp
                 )
             }
@@ -472,7 +473,7 @@ private fun SettingsSection(
         Text(
             text = title,
             color = TextMuted,
-            fontSize = 12.sp,
+            fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Bold,
             lineHeight = 14.sp,
             modifier = Modifier.padding(start = 6.dp)
@@ -540,7 +541,7 @@ private fun SettingsNavigationRow(
             Text(
                 text = title,
                 color = Color.White,
-                fontSize = 15.sp,
+                fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 18.sp,
                 maxLines = 1,
@@ -552,7 +553,7 @@ private fun SettingsNavigationRow(
             Text(
                 text = supportingText,
                 color = TextMuted,
-                fontSize = 11.sp,
+                fontSize = TextSizes.Caption,
                 lineHeight = 14.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -609,7 +610,7 @@ private fun CompactSshSwitchRow(
         Text(
             text = "启用 SSH",
             color = TextMuted,
-            fontSize = 11.sp,
+            fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Bold,
             maxLines = 1
         )

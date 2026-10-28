@@ -28,6 +28,7 @@ import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -120,7 +121,7 @@ internal fun MaiBotUpdateDialog(
             Text(
                 text = "MaiBot 更新",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
             )
@@ -203,7 +204,7 @@ private fun RevisionBlock(
         Text(
             text = label,
             color = TextMuted,
-            fontSize = 12.sp,
+            fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Bold,
             lineHeight = 14.sp
         )
@@ -212,7 +213,7 @@ private fun RevisionBlock(
             Text(
                 text = "尚未读取到版本信息",
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = TextSizes.Body,
                 lineHeight = 18.sp
             )
             return@Column
@@ -221,7 +222,7 @@ private fun RevisionBlock(
         Text(
             text = "${revision.shortCommit} · ${formatRevisionTime(revision.committedAtEpochSeconds)}",
             color = if (highlight) BrandOrange else Color.White,
-            fontSize = 14.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp
         )
@@ -230,7 +231,7 @@ private fun RevisionBlock(
             Text(
                 text = revision.subject,
                 color = TextMuted,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -264,7 +265,7 @@ private fun UpdateStatusLine(state: MaiBotUpdateState) {
         Text(
             text = maiBotUpdateStatusText(state),
             color = color,
-            fontSize = 13.sp,
+            fontSize = TextSizes.Body,
             lineHeight = 17.sp
         )
     }
@@ -275,7 +276,7 @@ private fun UpdateNote(text: String) {
     Text(
         text = text,
         color = TextMuted,
-        fontSize = 12.sp,
+        fontSize = TextSizes.Caption,
         lineHeight = 16.sp
     )
 }

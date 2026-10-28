@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** 安装页的一张任务卡片：图标和说明按任务种类选，右侧显示进行中（旋转）、完成、失败图标。 */
 @Composable
@@ -127,7 +128,7 @@ private fun OobeTaskCard(
         ) {
             Text(
                 text = title,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 color = OobeTextPrimary,
                 lineHeight = 23.sp,
@@ -139,7 +140,7 @@ private fun OobeTaskCard(
 
             Text(
                 text = description,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Medium,
                 color = OobeTextSecondary,
                 lineHeight = 14.sp,

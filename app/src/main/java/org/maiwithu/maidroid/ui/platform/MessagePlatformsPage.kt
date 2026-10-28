@@ -75,6 +75,7 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 import kotlin.math.ceil
 import kotlin.math.floor
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -419,7 +420,7 @@ private fun MessagePlatformsHeader(
             Text(
                 text = "消息平台",
                 color = Color.White,
-                fontSize = 32.sp,
+                fontSize = TextSizes.Display,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 34.sp
             )
@@ -433,7 +434,7 @@ private fun MessagePlatformsHeader(
                     "暂无平台正在运行"
                 },
                 color = TextMuted,
-                fontSize = 16.sp,
+                fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 18.sp
             )
@@ -542,7 +543,7 @@ private fun DiscoverHeader(
             Text(
                 text = "发现",
                 color = Color.White,
-                fontSize = 28.sp,
+                fontSize = TextSizes.Headline,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 30.sp,
                 modifier = Modifier.weight(1f)
@@ -551,7 +552,7 @@ private fun DiscoverHeader(
             Text(
                 text = "共 $platformCount 个",
                 color = BrandOrange,
-                fontSize = 14.sp,
+                fontSize = TextSizes.Body,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 16.sp
             )
@@ -633,7 +634,7 @@ private fun CategoryChip(
         Text(
             text = text,
             color = Color.White,
-            fontSize = 18.sp,
+            fontSize = TextSizes.Title,
             fontWeight = FontWeight.Bold,
             lineHeight = 20.sp
         )

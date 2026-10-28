@@ -58,6 +58,7 @@ import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
 import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val UserAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/EULA.md"
 private const val PrivacyAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/PRIVACY.md"
@@ -197,7 +198,7 @@ private fun PhonePortraitAuthorizationCard(
             text = "需要授权",
             color = BrandOrange,
             fontFamily = DouyinSans,
-            fontSize = 24.sp,
+            fontSize = TextSizes.Headline,
             fontWeight = FontWeight.Bold,
             lineHeight = 25.sp,
             modifier = Modifier
@@ -210,7 +211,7 @@ private fun PhonePortraitAuthorizationCard(
             style = TextStyle(
                 color = Color.White,
                 fontFamily = HarmonySans,
-                fontSize = 15.sp,
+                fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 19.sp
             ),
@@ -314,7 +315,7 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
             text = "首次使用",
             color = Color.White.copy(alpha = 0.64f),
             fontFamily = HarmonySans,
-            fontSize = 14.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 20.sp
         )
@@ -325,7 +326,7 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
             text = "需要授权",
             color = BrandOrange,
             fontFamily = DouyinSans,
-            fontSize = 30.sp,
+            fontSize = TextSizes.Display,
             fontWeight = FontWeight.Bold,
             lineHeight = 36.sp
         )
@@ -336,7 +337,7 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
             text = "继续使用 MaiSaka 前，请先确认相关条款。",
             color = Color.White.copy(alpha = 0.78f),
             fontFamily = HarmonySans,
-            fontSize = 15.sp,
+            fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Medium,
             lineHeight = 22.sp
         )
@@ -356,7 +357,7 @@ private fun AuthorizationDetails(
             style = TextStyle(
                 color = Color.White,
                 fontFamily = HarmonySans,
-                fontSize = 17.sp,
+                fontSize = TextSizes.Title,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 25.sp
             ),
@@ -406,7 +407,7 @@ private fun AdaptiveDialogActionButton(
             text = text,
             color = Color.White,
             fontFamily = DouyinSans,
-            fontSize = 20.sp,
+            fontSize = TextSizes.TitleLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 24.sp
         )
@@ -433,7 +434,7 @@ private fun DialogActionButton(
             text = text,
             color = Color.White,
             fontFamily = DouyinSans,
-            fontSize = 22.sp,
+            fontSize = TextSizes.TitleLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 24.sp
         )

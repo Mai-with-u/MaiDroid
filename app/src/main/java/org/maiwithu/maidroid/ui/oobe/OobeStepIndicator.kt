@@ -29,6 +29,7 @@ import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextDimmed
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
  * OOBE 顶部的三步指示器：当前步骤显示实心圆点，其余显示序号。尺寸按 540px 设计稿缩放 0.67 倍。
@@ -78,7 +79,7 @@ private fun StepNode(number: Int, isActive: Boolean) {
         } else {
             Text(
                 text = number.toString(),
-                fontSize = 16.sp,  // 24 × 0.67
+                fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
                 color = OobeTextDimmed,
                 textAlign = TextAlign.Center,

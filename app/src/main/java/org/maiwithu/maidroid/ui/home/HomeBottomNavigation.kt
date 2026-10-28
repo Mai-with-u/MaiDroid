@@ -51,6 +51,7 @@ import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** 主页底部导航栏的三个标签，顺序即从左到右的顺序（也决定切换动画的方向）。 */
 internal enum class HomeTab {
@@ -321,7 +322,7 @@ private fun RowScope.HomeTabButton(
             Text(
                 text = label,
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 12.sp,
                 maxLines = 1

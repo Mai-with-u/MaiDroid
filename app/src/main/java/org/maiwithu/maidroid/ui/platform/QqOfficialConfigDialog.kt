@@ -32,6 +32,7 @@ import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** 已启用标绿，有连接报错标红，其余（未安装、待填写、等待 MaiBot）标灰。 */
 internal fun qqOfficialStatusColor(state: QqOfficialPlatformState): Color = when {
@@ -61,7 +62,7 @@ internal fun QqOfficialConfigDialog(
             Text(
                 text = "QQ 官方机器人",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
             )
@@ -85,7 +86,7 @@ internal fun QqOfficialConfigDialog(
                     Text(
                         text = "安装失败：$error",
                         color = StatusDanger,
-                        fontSize = 12.sp,
+                        fontSize = TextSizes.Caption,
                         lineHeight = 15.sp
                     )
                 }
@@ -113,7 +114,7 @@ internal fun QqOfficialConfigDialog(
                         "IP 白名单请留空：手机网络的 IP 会变，填了容易被拦。\n" +
                         "群里要 @机器人 才会收到消息。确认后会重启 MaiBot，期间所有平台暂停收发消息。",
                     color = TextFaint,
-                    fontSize = 11.sp,
+                    fontSize = TextSizes.Caption,
                     lineHeight = 15.sp
                 )
             }

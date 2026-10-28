@@ -42,6 +42,7 @@ import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // OOBE 第一步“授予权限”的内容：必需的存储权限卡片 + 可选的后台保活卡片（六项保活设置）。
 
@@ -169,7 +170,7 @@ private fun BackgroundKeepAliveCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "后台保活",
-                        fontSize = 20.sp,
+                        fontSize = TextSizes.TitleLarge,
                         fontWeight = FontWeight.Bold,
                         color = OobeTextPrimary,
                         lineHeight = 24.sp
@@ -189,7 +190,7 @@ private fun BackgroundKeepAliveCard(
 
                 Text(
                     text = "MaiSaka 需要后台权限才能在切换到其他应用时保持后台运行；这个设置是可选项，你可以视情况开启一部分。",
-                    fontSize = 12.sp,
+                    fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Medium,
                     color = OobeTextSecondary,
                     lineHeight = 15.sp,
@@ -287,7 +288,7 @@ private fun KeepAlivePermissionRow(
         Text(
             text = title,
             modifier = Modifier.weight(1f),
-            fontSize = 16.sp,
+            fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Bold,
             color = OobeTextPrimary,
             maxLines = 1,
@@ -301,7 +302,7 @@ private fun KeepAlivePermissionRow(
         ) {
             Text(
                 text = actionLabel,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Normal,
                 color = actionColor,
                 maxLines = 1,

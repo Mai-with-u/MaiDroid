@@ -37,6 +37,7 @@ import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** OOBE 里的单项权限卡片：图标、名称、必须/可选标签、说明和“去授权”按钮，授予后整体变暗。 */
 @Composable
@@ -91,7 +92,7 @@ internal fun OobePermissionCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = title,
-                        fontSize = 17.sp,
+                        fontSize = TextSizes.Title,
                         fontWeight = FontWeight.Bold,
                         color = primaryTextColor,
                         maxLines = 1,
@@ -100,7 +101,7 @@ internal fun OobePermissionCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = if (required) "必须" else "可选",
-                        fontSize = 10.sp,
+                        fontSize = TextSizes.Tag,
                         fontWeight = FontWeight.Bold,
                         color = if (granted) OobeTextSecondary else OnBrandOrange,
                         modifier = Modifier
@@ -114,7 +115,7 @@ internal fun OobePermissionCard(
 
                 Text(
                     text = description,
-                    fontSize = 13.sp,
+                    fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Medium,
                     color = secondaryTextColor,
                     maxLines = 3,
@@ -140,7 +141,7 @@ internal fun OobePermissionCard(
             ) {
                 Text(
                     text = if (granted) "已授权" else "去授权",
-                    fontSize = 12.sp,
+                    fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Bold
                 )
             }

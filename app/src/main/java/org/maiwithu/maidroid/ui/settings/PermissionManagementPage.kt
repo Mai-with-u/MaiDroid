@@ -56,6 +56,7 @@ import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
  * 设置页里的权限管理：必选的存储权限，可选的通知、电池优化（开关），以及只能跳转系统设置的几项。
@@ -116,7 +117,7 @@ internal fun PermissionManagementPage(
                     Text(
                         text = "权限管理",
                         color = Color.White,
-                        fontSize = 30.sp,
+                        fontSize = TextSizes.Display,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 32.sp
                     )
@@ -127,7 +128,7 @@ internal fun PermissionManagementPage(
                 Text(
                     text = "必选权限",
                     color = TextMuted,
-                    fontSize = 13.sp,
+                    fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
                     modifier = Modifier.padding(top = 4.dp, start = 2.dp)
@@ -150,7 +151,7 @@ internal fun PermissionManagementPage(
                 Text(
                     text = "可选权限",
                     color = TextMuted,
-                    fontSize = 13.sp,
+                    fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
                     modifier = Modifier.padding(top = 8.dp, start = 2.dp)
@@ -267,7 +268,7 @@ private fun PermissionActionCard(
         ) {
             Text(
                 text = actionText,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
@@ -373,7 +374,7 @@ private fun PermissionBaseCard(
                 Text(
                     text = title,
                     color = Color.White,
-                    fontSize = 17.sp,
+                    fontSize = TextSizes.Title,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 19.sp,
                     // 标题较长时换到第二行，不截断成省略号。
@@ -387,7 +388,7 @@ private fun PermissionBaseCard(
                 Text(
                     text = badgeText,
                     color = Color.White,
-                    fontSize = 10.sp,
+                    fontSize = TextSizes.Tag,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 12.sp,
                     modifier = Modifier
@@ -402,7 +403,7 @@ private fun PermissionBaseCard(
             Text(
                 text = description,
                 color = TextMuted,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -413,7 +414,7 @@ private fun PermissionBaseCard(
             Text(
                 text = statusText,
                 color = statusColor,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 14.sp,
                 maxLines = 1

@@ -51,6 +51,7 @@ import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
@@ -209,7 +210,7 @@ internal fun WebUiTabPage(
                 Text(
                     text = "WebUI 离线",
                     color = Color.White,
-                    fontSize = 14.sp,
+                    fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
@@ -217,7 +218,7 @@ internal fun WebUiTabPage(
                 Text(
                     text = "唤醒",
                     color = BrandOrange,
-                    fontSize = 14.sp,
+                    fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -302,7 +303,7 @@ private fun WebUiStatusBanner(
         Text(
             text = message,
             color = Color.White,
-            fontSize = 13.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 16.sp,
             modifier = Modifier.weight(1f)
@@ -311,7 +312,7 @@ private fun WebUiStatusBanner(
         Text(
             text = action,
             color = BrandOrange,
-            fontSize = 14.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable(
                 interactionSource = remember { MutableInteractionSource() },

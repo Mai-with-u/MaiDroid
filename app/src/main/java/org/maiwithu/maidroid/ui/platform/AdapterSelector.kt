@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private val AdapterSelectorItemWidth = 72.dp
 
@@ -128,7 +129,7 @@ internal fun AdapterSelector(
                     Text(
                         text = adapter.label,
                         color = textColor,
-                        fontSize = 12.sp,
+                        fontSize = TextSizes.Caption,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 14.sp,
                         maxLines = 1,

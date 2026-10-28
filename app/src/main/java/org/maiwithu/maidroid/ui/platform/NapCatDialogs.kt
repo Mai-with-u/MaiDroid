@@ -43,6 +43,7 @@ import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // QQ（NapCat）这一路的三个弹窗：登录二维码、NapCat 配置详情、退出 QQ 登录的二次确认。
 
@@ -58,7 +59,7 @@ internal fun QqLogoutConfirmDialog(
             Text(
                 text = "退出 QQ 登录？",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
             )
@@ -67,7 +68,7 @@ internal fun QqLogoutConfirmDialog(
             Text(
                 text = "将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。",
                 color = TextMuted,
-                fontSize = 13.sp,
+                fontSize = TextSizes.Body,
                 lineHeight = 18.sp
             )
         },
@@ -130,7 +131,7 @@ internal fun NapCatQrCodeDialog(
             Text(
                 text = "QQ 登录二维码",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
             )
@@ -162,7 +163,7 @@ internal fun NapCatQrCodeDialog(
                             "NapCat 尚未安装。"
                         },
                         color = TextMuted,
-                        fontSize = 13.sp,
+                        fontSize = TextSizes.Body,
                         lineHeight = 17.sp
                     )
                 }
@@ -172,7 +173,7 @@ internal fun NapCatQrCodeDialog(
                 Text(
                     text = "请使用QQ扫码登录……或者截图发给其他设备，然后用QQ扫码",
                     color = TextFaint,
-                    fontSize = 11.sp,
+                    fontSize = TextSizes.Caption,
                     lineHeight = 14.sp
                 )
 
@@ -182,7 +183,7 @@ internal fun NapCatQrCodeDialog(
                     Text(
                         text = hint,
                         color = TextMuted,
-                        fontSize = 12.sp,
+                        fontSize = TextSizes.Caption,
                         lineHeight = 15.sp
                     )
                 }
@@ -192,7 +193,7 @@ internal fun NapCatQrCodeDialog(
                     Text(
                         text = error,
                         color = Color(0xFFFF6B6B),
-                        fontSize = 12.sp,
+                        fontSize = TextSizes.Caption,
                         lineHeight = 15.sp
                     )
                 }
@@ -259,7 +260,7 @@ internal fun NapCatConfigDialog(
             Text(
                 text = "NapCat 配置",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
             )

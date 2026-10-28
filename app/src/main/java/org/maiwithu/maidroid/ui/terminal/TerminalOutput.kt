@@ -69,6 +69,7 @@ import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
  * 全屏终端输出弹窗：显示 TerminalLog（或 OOBE 的命令日志），支持筛选、自动跟随、自动换行、复制。
@@ -672,7 +673,7 @@ private fun TerminalToolbarButton(
         Text(
             text = text,
             color = contentColor,
-            fontSize = 14.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -740,7 +741,7 @@ private fun TerminalLogViewport(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                         color = Color(0xFFD0D0D4),
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
+                        fontSize = TextSizes.Caption,
                         lineHeight = 17.sp,
                         softWrap = wrapLines
                     )

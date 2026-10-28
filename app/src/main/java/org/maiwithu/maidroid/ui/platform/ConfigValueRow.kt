@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 消息平台各配置弹窗共用的小部件。
 
@@ -30,14 +31,14 @@ internal fun ConfigValueRow(
         Text(
             text = label,
             color = TextFaint,
-            fontSize = 11.sp,
+            fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Bold,
             lineHeight = 13.sp
         )
         Text(
             text = value,
             color = valueColor,
-            fontSize = 13.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 17.sp
         )

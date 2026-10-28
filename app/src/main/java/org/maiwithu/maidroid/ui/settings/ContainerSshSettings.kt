@@ -24,6 +24,7 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 设置页“容器 SSH”一行用到的弹窗、状态文案和同步动作。
 
@@ -52,7 +53,7 @@ internal fun ContainerSshConfigDialog(
             Text(
                 text = "容器 SSH 设置",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
             )
@@ -82,7 +83,7 @@ internal fun ContainerSshConfigDialog(
                     Text(
                         text = errorText,
                         color = StatusWarning,
-                        fontSize = 12.sp,
+                        fontSize = TextSizes.Caption,
                         lineHeight = 14.sp
                     )
                 }

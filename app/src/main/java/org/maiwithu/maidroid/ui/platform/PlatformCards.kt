@@ -48,6 +48,7 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 消息平台页的卡片：上方“已安装”横排的小卡片，下方“发现”网格里的平台卡片，以及它们共用的图标、徽标、标签。
 
@@ -99,7 +100,7 @@ internal fun InstalledPlatformCard(
         Text(
             text = platform.name,
             color = Color.White,
-            fontSize = 16.sp,
+            fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp,
             modifier = Modifier
@@ -125,7 +126,7 @@ internal fun InstalledPlatformCard(
             Text(
                 text = platform.account,
                 color = platform.statusColor,
-                fontSize = 12.sp,
+                fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 14.sp,
                 maxLines = 1
@@ -149,7 +150,7 @@ internal fun EmptyInstalledPlatformCard() {
         Text(
             text = "暂无消息平台",
             color = Color.White,
-            fontSize = 16.sp,
+            fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp
         )
@@ -159,7 +160,7 @@ internal fun EmptyInstalledPlatformCard() {
         Text(
             text = "安装并登录消息平台后会在这里显示状态",
             color = TextFaint,
-            fontSize = 12.sp,
+            fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Bold,
             lineHeight = 15.sp
         )
@@ -182,7 +183,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
         Text(
             text = "暂无其他平台",
             color = Color.White,
-            fontSize = 20.sp,
+            fontSize = TextSizes.TitleLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 22.sp
         )
@@ -192,7 +193,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
         Text(
             text = "后续适配项会出现在这里。",
             color = TextFaint,
-            fontSize = 13.sp,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 16.sp
         )
@@ -236,7 +237,7 @@ private fun PlatformBadge(text: String) {
         Text(
             text = text,
             color = Color.White,
-            fontSize = 8.sp,
+            fontSize = TextSizes.Tag,
             fontWeight = FontWeight.Bold,
             lineHeight = 10.sp
         )
@@ -256,7 +257,7 @@ private fun SmallTag(text: String) {
         Text(
             text = text,
             color = Color.White,
-            fontSize = 10.sp,
+            fontSize = TextSizes.Tag,
             fontWeight = FontWeight.Bold,
             lineHeight = 11.sp
         )
@@ -329,7 +330,7 @@ internal fun PlatformInstallCard(
                     Text(
                         text = platform.name,
                         color = Color.White,
-                        fontSize = 24.sp,
+                        fontSize = TextSizes.Headline,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 25.sp
                     )
@@ -347,7 +348,7 @@ internal fun PlatformInstallCard(
                 Text(
                     text = "$provider\n${platform.description}",
                     color = TextFaint,
-                    fontSize = 12.sp,
+                    fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
                     maxLines = 2,
