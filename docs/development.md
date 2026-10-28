@@ -115,7 +115,9 @@ adb forward tcp:16099 tcp:6099
 
 ### 界面
 
-- 颜色只从 `ui/theme/Color.kt` 取，按用途命名；只有某一页专用的配色才在那一页私有定义。
+- 颜色只从 `ui/theme/Color.kt` 取，按用途命名；只有某一页专用的配色才在那一页私有定义。文字和图标的主色用 `TextPrimary`，次要文字用 `TextMuted`、`TextFaint`。
+- 字号从 `TextSizes`、圆角从 `Corners` 取（都在 `ui/theme/Dimens.kt`，按角色分档），不在页面里写死 sp、dp。唤醒页、启动页的插画按设计稿等比缩放，是例外。
+- 可点击的东西用默认的按压水波纹；只有遮罩、吞点击的全屏背景才写 `indication = null`，并在旁边注明原因。
 - 页面切换动画用 `horizontalSlideTransition`，毛玻璃用 `BackdropBlurView`，WebView 用 `createWebUiWebView` 创建。
 - Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数，否则 vh 恒为 0、页面空白。
 - 跨 Activity 重建要保留的界面状态用 `rememberSaveable` 或放进 `MainViewModel` 的 `SavedStateHandle`。
