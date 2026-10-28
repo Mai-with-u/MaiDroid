@@ -68,8 +68,11 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.TerminalBackground
+import org.maiwithu.maidroid.ui.theme.TerminalText
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
@@ -108,6 +111,7 @@ internal fun TerminalOutputDialog(
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    // 弹窗外的遮罩：点空白处关闭，不需要按压反馈。
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -138,7 +142,7 @@ internal fun TerminalOutputDialog(
                         },
                     shape = RoundedCornerShape(Corners.Card),
                     color = CardSurface,
-                    contentColor = Color.White,
+                    contentColor = TextPrimary,
                     tonalElevation = 8.dp,
                     shadowElevation = 20.dp,
                     border = BorderStroke(1.dp, CardBorder)
@@ -168,7 +172,7 @@ internal fun EmbeddedTerminalOutputPanel(
         modifier = modifier,
         shape = RoundedCornerShape(Corners.Panel),
         color = CardSurface,
-        contentColor = Color.White,
+        contentColor = TextPrimary,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         border = BorderStroke(1.dp, CardBorder)
@@ -272,7 +276,7 @@ private fun EmbeddedTerminalToolbar(
                 text = "终端输出",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 maxLines = 1
             )
             Text(
@@ -443,7 +447,7 @@ private fun TerminalDialogHeader(
                 text = "终端输出",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 maxLines = 1
             )
             if (!compact) {
@@ -575,8 +579,8 @@ private fun TerminalSearchField(
         },
         shape = RoundedCornerShape(Corners.Control),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary,
             cursorColor = BrandOrange,
             focusedBorderColor = BrandOrange.copy(alpha = 0.8f),
             unfocusedBorderColor = CardBorder,
@@ -643,7 +647,7 @@ private fun TerminalToolbarButton(
     val contentColor = when {
         !enabled -> TextFaint
         selected == false -> TextMuted
-        else -> Color.White
+        else -> TextPrimary
     }
     val borderColor = when {
         !enabled -> CardBorder
@@ -710,7 +714,7 @@ private fun TerminalLogViewport(
         modifier = modifier
             .nestedScroll(userScrollConnection)
             .clip(RoundedCornerShape(Corners.Panel))
-            .background(Color(0xFF0B0B0C))
+            .background(TerminalBackground)
             .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(Corners.Panel))
     ) {
         if (terminalText.isEmpty()) {
@@ -740,7 +744,7 @@ private fun TerminalLogViewport(
                     Text(
                         text = terminalText,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        color = Color(0xFFD0D0D4),
+                        color = TerminalText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = TextSizes.Caption,
                         lineHeight = 17.sp,
@@ -756,7 +760,7 @@ private fun TerminalLogViewport(
                         .padding(12.dp),
                     shape = CircleShape,
                     color = CardSurface.copy(alpha = 0.96f),
-                    contentColor = Color.White,
+                    contentColor = TextPrimary,
                     border = BorderStroke(1.dp, CardBorder),
                     shadowElevation = 6.dp
                 ) {
@@ -815,7 +819,7 @@ private fun TerminalEmptyState(
                 MaterialTheme.typography.titleSmall
             },
             fontWeight = FontWeight.SemiBold,
-            color = Color.White.copy(alpha = 0.86f),
+            color = TextPrimary.copy(alpha = 0.86f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -880,7 +884,7 @@ private fun TerminalDialogFooter(
             shape = RoundedCornerShape(Corners.Control),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BrandOrange,
-                contentColor = Color.White
+                contentColor = TextPrimary
             )
         ) {
             Text(text = "关闭", fontWeight = FontWeight.Bold)

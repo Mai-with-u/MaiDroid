@@ -8,7 +8,6 @@ import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +51,7 @@ import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
@@ -210,7 +210,7 @@ internal fun WebUiTabPage(
 
                 Text(
                     text = "WebUI 离线",
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -221,11 +221,11 @@ internal fun WebUiTabPage(
                     color = BrandOrange,
                     fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onWakeMai
-                    )
+                    // 文字按钮：裁成圆角再加内边距，按下的水波纹有个按钮的样子，也更好点中。
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Corners.Control))
+                        .clickable(onClick = onWakeMai)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
         }
@@ -260,17 +260,13 @@ private fun WebUiRefreshButton(
             .clip(CircleShape)
             .border(1.dp, GlassStroke, CircleShape)
             .background(GlassSurface)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            ),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = Icons.Outlined.Refresh,
             contentDescription = "刷新 WebUI",
-            tint = Color.White,
+            tint = TextPrimary,
             modifier = Modifier.size(20.dp)
         )
     }
@@ -303,7 +299,7 @@ private fun WebUiStatusBanner(
 
         Text(
             text = message,
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 16.sp,
@@ -315,11 +311,10 @@ private fun WebUiStatusBanner(
             color = BrandOrange,
             fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onAction
-            )
+            modifier = Modifier
+                .clip(RoundedCornerShape(Corners.Control))
+                .clickable(onClick = onAction)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }

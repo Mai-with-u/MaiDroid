@@ -10,7 +10,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -24,6 +23,7 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 设置页“容器 SSH”一行用到的弹窗、状态文案和同步动作。
@@ -52,7 +52,7 @@ internal fun ContainerSshConfigDialog(
         title = {
             Text(
                 text = "容器 SSH 设置",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
@@ -94,7 +94,7 @@ internal fun ContainerSshConfigDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CardBorder,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "取消", fontWeight = FontWeight.Bold)
@@ -109,14 +109,14 @@ internal fun ContainerSshConfigDialog(
                 enabled = errorText == null,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrange,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "确定", fontWeight = FontWeight.Bold)
             }
         },
         containerColor = CardSurface,
-        titleContentColor = Color.White,
+        titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
 }

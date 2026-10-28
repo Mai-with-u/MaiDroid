@@ -32,6 +32,7 @@ import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** 已启用标绿，有连接报错标红，其余（未安装、待填写、等待 MaiBot）标灰。 */
@@ -61,7 +62,7 @@ internal fun QqOfficialConfigDialog(
         title = {
             Text(
                 text = "QQ 官方机器人",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
@@ -124,7 +125,7 @@ internal fun QqOfficialConfigDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CardBorder,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "取消", fontWeight = FontWeight.Bold)
@@ -136,7 +137,7 @@ internal fun QqOfficialConfigDialog(
                 enabled = canConfirm,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrange,
-                    contentColor = Color.White,
+                    contentColor = TextPrimary,
                     disabledContainerColor = CardBorder,
                     disabledContentColor = TextFaint
                 )
@@ -148,7 +149,7 @@ internal fun QqOfficialConfigDialog(
             }
         },
         containerColor = CardSurface,
-        titleContentColor = Color.White,
+        titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
 }

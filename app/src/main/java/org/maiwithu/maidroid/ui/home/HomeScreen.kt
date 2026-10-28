@@ -188,6 +188,7 @@ private fun HomeTabsShell(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.55f))
+                    // 遮罩只负责收起底栏，不需要按压反馈。
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

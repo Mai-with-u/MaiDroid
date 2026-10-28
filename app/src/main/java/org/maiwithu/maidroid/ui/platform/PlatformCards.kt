@@ -6,7 +6,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,8 +46,10 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 消息平台页的卡片：上方“已安装”横排的小卡片，下方“发现”网格里的平台卡片，以及它们共用的图标、徽标、标签。
@@ -83,11 +84,7 @@ internal fun InstalledPlatformCard(
                 .padding(top = 10.dp, end = 10.dp)
                 .size(34.dp)
                 .clip(CircleShape)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onSettingsClick
-                ),
+                .clickable(onClick = onSettingsClick),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -100,7 +97,7 @@ internal fun InstalledPlatformCard(
 
         Text(
             text = platform.name,
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp,
@@ -150,7 +147,7 @@ internal fun EmptyInstalledPlatformCard() {
     ) {
         Text(
             text = "暂无消息平台",
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp
@@ -183,7 +180,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
     ) {
         Text(
             text = "暂无其他平台",
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.TitleLarge,
             fontWeight = FontWeight.Bold,
             lineHeight = 22.sp
@@ -237,7 +234,7 @@ private fun PlatformBadge(text: String) {
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.Tag,
             fontWeight = FontWeight.Bold,
             lineHeight = 10.sp
@@ -257,7 +254,7 @@ private fun SmallTag(text: String) {
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.Tag,
             fontWeight = FontWeight.Bold,
             lineHeight = 11.sp
@@ -330,7 +327,7 @@ internal fun PlatformInstallCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = platform.name,
-                        color = Color.White,
+                        color = TextPrimary,
                         fontSize = TextSizes.Headline,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 25.sp
@@ -418,11 +415,7 @@ private fun DownloadIconButton(
         modifier = modifier
             .size(36.dp)
             .clip(CircleShape)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            ),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         when {
@@ -430,13 +423,13 @@ private fun DownloadIconButton(
             installed -> Icon(
                 imageVector = Icons.Outlined.Settings,
                 contentDescription = "设置",
-                tint = Color.White,
+                tint = TextPrimary,
                 modifier = Modifier.size(28.dp)
             )
             else -> Icon(
                 painter = painterResource(R.drawable.ic_platform_download),
                 contentDescription = "下载",
-                tint = if (failed) Color(0xFFFF6B6B) else Color.White,
+                tint = if (failed) StatusDanger else TextPrimary,
                 modifier = Modifier.size(32.dp)
             )
         }

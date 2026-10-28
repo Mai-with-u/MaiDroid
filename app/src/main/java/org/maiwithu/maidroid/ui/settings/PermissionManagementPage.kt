@@ -54,9 +54,11 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
@@ -108,7 +110,7 @@ internal fun PermissionManagementPage(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "返回",
-                                tint = Color.White
+                                tint = TextPrimary
                             )
                         }
 
@@ -117,7 +119,7 @@ internal fun PermissionManagementPage(
 
                     Text(
                         text = "权限管理",
-                        color = Color.White,
+                        color = TextPrimary,
                         fontSize = TextSizes.Display,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 32.sp
@@ -261,7 +263,7 @@ private fun PermissionActionCard(
             shape = RoundedCornerShape(Corners.Control),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BrandOrange,
-                contentColor = Color.White,
+                contentColor = TextPrimary,
                 disabledContainerColor = CardBorder,
                 disabledContentColor = TextMuted
             ),
@@ -319,7 +321,7 @@ private fun PermissionSystemSettingsCard(
         badgeText = badgeText,
         statusText = "系统设置",
         statusColor = if (destructive) StatusWarning else TextMuted,
-        badgeColor = if (destructive) Color(0xFFE5484D) else BrandOrange,
+        badgeColor = if (destructive) StatusDanger else BrandOrange,
         modifier = modifier.clickable(onClick = onClick)
     ) {
         Icon(
@@ -374,7 +376,7 @@ private fun PermissionBaseCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = TextSizes.Title,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 19.sp,
@@ -388,7 +390,7 @@ private fun PermissionBaseCard(
 
                 Text(
                     text = badgeText,
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = TextSizes.Tag,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 12.sp,

@@ -39,10 +39,14 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
+import org.maiwithu.maidroid.ui.theme.StatusDanger
+import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // OOBE 第一步“授予权限”的内容：必需的存储权限卡片 + 可选的后台保活卡片（六项保活设置）。
@@ -160,7 +164,7 @@ private fun BackgroundKeepAliveCard(
                 Icon(
                     painter = painterResource(R.drawable.ic_job_run),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier.size(33.dp)
                 )
             }
@@ -206,7 +210,7 @@ private fun BackgroundKeepAliveCard(
                 .fillMaxWidth()
                 .height(272.dp)
                 .clip(RoundedCornerShape(Corners.Panel))
-                .background(Color(0xFF1C1C1E))
+                .background(CardSurface)
                 .padding(8.dp)
         ) {
             KeepAlivePermissionRow(
@@ -266,7 +270,7 @@ private fun KeepAlivePermissionRow(
     destructive: Boolean = false
 ) {
     val actionLabel = if (granted) "已授权" else actionText
-    val actionColor = if (granted) BrandOrange else Color(0xFF808080)
+    val actionColor = if (granted) BrandOrange else TextMuted
 
     Row(
         modifier = modifier
@@ -279,7 +283,7 @@ private fun KeepAlivePermissionRow(
     ) {
         KeepAliveTag(
             text = tagText,
-            backgroundColor = if (destructive) Color(0xFFE90F0F) else BrandOrange,
+            backgroundColor = if (destructive) StatusDanger else BrandOrange,
             width = if (destructive) 42.dp else 32.dp,
             textSize = 10
         )
@@ -322,7 +326,7 @@ private fun KeepAlivePermissionRow(
 @Composable
 private fun KeepAliveDivider() {
     Spacer(modifier = Modifier.height(4.dp))
-    HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+    HorizontalDivider(color = TextPrimary.copy(alpha = 0.08f), thickness = 1.dp)
     Spacer(modifier = Modifier.height(3.dp))
 }
 
@@ -344,7 +348,7 @@ private fun KeepAliveTag(
             text = text,
             fontSize = textSize.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = TextPrimary,
             maxLines = 1,
             lineHeight = textSize.sp
         )

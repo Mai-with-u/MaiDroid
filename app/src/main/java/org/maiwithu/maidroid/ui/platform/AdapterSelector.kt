@@ -7,7 +7,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -34,8 +33,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private val AdapterSelectorItemWidth = 72.dp
@@ -95,7 +96,7 @@ internal fun AdapterSelector(
                 .width(itemWidth)
                 .height(38.dp)
                 .clip(RoundedCornerShape(Corners.Chip))
-                .background(Color(0xFF3C3C3E))
+                .background(CardSurfaceSelected)
         )
 
         Row(
@@ -107,7 +108,7 @@ internal fun AdapterSelector(
             adapters.forEach { adapter ->
                 val selected = adapter == selectedAdapter
                 val textColor by animateColorAsState(
-                    targetValue = if (selected) Color.White else TextMuted,
+                    targetValue = if (selected) TextPrimary else TextMuted,
                     animationSpec = spring(
                         dampingRatio = 1f,
                         stiffness = Spring.StiffnessMediumLow
@@ -119,11 +120,7 @@ internal fun AdapterSelector(
                         .weight(1f)
                         .height(38.dp)
                         .clip(RoundedCornerShape(Corners.Chip))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onAdapterSelected(adapter) }
-                        ),
+                        .clickable(onClick = { onAdapterSelected(adapter) }),
                     contentAlignment = Alignment.Center
                 ) {
                     // 字号被系统放大时宁可截断也不折成两行，避免撑破 38dp 高的胶囊。

@@ -12,7 +12,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -56,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -74,8 +72,10 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -420,7 +420,7 @@ private fun MessagePlatformsHeader(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "消息平台",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.Display,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 34.sp
@@ -451,8 +451,8 @@ private fun SearchButton(searchOpen: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(42.dp)
             .clip(CircleShape)
-            .border(1.dp, Color(0x552B2B2B), CircleShape)
-            .background(Color(0x552B2B2B))
+            .border(1.dp, GlassButtonSurface, CircleShape)
+            .background(GlassButtonSurface)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -489,8 +489,8 @@ private fun PlatformSearchField(query: String, onQueryChange: (String) -> Unit) 
         },
         shape = RoundedCornerShape(Corners.Control),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary,
             cursorColor = BrandOrange,
             focusedBorderColor = BrandOrange.copy(alpha = 0.8f),
             unfocusedBorderColor = CardBorder,
@@ -543,7 +543,7 @@ private fun DiscoverHeader(
         ) {
             Text(
                 text = "发现",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.Headline,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 30.sp,
@@ -625,16 +625,12 @@ private fun CategoryChip(
                     stiffness = Spring.StiffnessMediumLow
                 )
             )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            ),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = TextPrimary,
             fontSize = TextSizes.Title,
             fontWeight = FontWeight.Bold,
             lineHeight = 20.sp

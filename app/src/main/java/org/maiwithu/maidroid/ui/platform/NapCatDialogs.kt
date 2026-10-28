@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // QQ（NapCat）这一路的三个弹窗：登录二维码、NapCat 配置详情、退出 QQ 登录的二次确认。
@@ -59,7 +60,7 @@ internal fun QqLogoutConfirmDialog(
         title = {
             Text(
                 text = "退出 QQ 登录？",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
@@ -78,7 +79,7 @@ internal fun QqLogoutConfirmDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CardBorder,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "取消", fontWeight = FontWeight.Bold)
@@ -89,14 +90,14 @@ internal fun QqLogoutConfirmDialog(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = StatusDanger,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "退出登录", fontWeight = FontWeight.Bold)
             }
         },
         containerColor = CardSurface,
-        titleContentColor = Color.White,
+        titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
 }
@@ -131,7 +132,7 @@ internal fun NapCatQrCodeDialog(
         title = {
             Text(
                 text = "QQ 登录二维码",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
@@ -193,7 +194,7 @@ internal fun NapCatQrCodeDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = error,
-                        color = Color(0xFFFF6B6B),
+                        color = StatusDanger,
                         fontSize = TextSizes.Caption,
                         lineHeight = 15.sp
                     )
@@ -207,7 +208,7 @@ internal fun NapCatQrCodeDialog(
                 enabled = !state.qrRefreshing,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CardBorder,
-                    contentColor = Color.White,
+                    contentColor = TextPrimary,
                     disabledContainerColor = CardBorder,
                     disabledContentColor = TextFaint
                 )
@@ -223,14 +224,14 @@ internal fun NapCatQrCodeDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrange,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "关闭", fontWeight = FontWeight.Bold)
             }
         },
         containerColor = CardSurface,
-        titleContentColor = Color.White,
+        titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
 }
@@ -260,7 +261,7 @@ internal fun NapCatConfigDialog(
         title = {
             Text(
                 text = "NapCat 配置",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
@@ -304,7 +305,7 @@ internal fun NapCatConfigDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = StatusDanger,
-                        contentColor = Color.White,
+                        contentColor = TextPrimary,
                         disabledContainerColor = CardBorder,
                         disabledContentColor = TextFaint
                     )
@@ -321,7 +322,7 @@ internal fun NapCatConfigDialog(
                 onClick = onRefresh,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CardBorder,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "刷新", fontWeight = FontWeight.Bold)
@@ -332,14 +333,14 @@ internal fun NapCatConfigDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrange,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = "关闭", fontWeight = FontWeight.Bold)
             }
         },
         containerColor = CardSurface,
-        titleContentColor = Color.White,
+        titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
 }

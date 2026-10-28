@@ -80,6 +80,7 @@ import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val PermissionSettingsDetail = "permissions"
@@ -318,7 +319,7 @@ private fun SettingsNavigationPane(
             Column(modifier = Modifier.padding(horizontal = if (compact) 4.dp else 2.dp)) {
                 Text(
                     text = "设置",
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = if (compact) 27.sp else 34.sp,
                     fontWeight = FontWeight.Bold,
                     lineHeight = if (compact) 30.sp else 38.sp
@@ -541,7 +542,7 @@ private fun SettingsNavigationRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 18.sp,

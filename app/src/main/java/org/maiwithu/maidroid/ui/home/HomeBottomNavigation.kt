@@ -8,7 +8,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,8 +49,10 @@ import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** 主页底部导航栏的三个标签，顺序即从左到右的顺序（也决定切换动画的方向）。 */
@@ -123,11 +124,7 @@ internal fun HomeBottomNavigation(
                     )
                     .clip(CircleShape)
                     .border(1.dp, GlassStroke, CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onTerminalClick
-                    ),
+                    .clickable(onClick = onTerminalClick),
                 contentAlignment = Alignment.Center
             ) {
                 BackdropBlurView(
@@ -140,7 +137,7 @@ internal fun HomeBottomNavigation(
                 Icon(
                     painter = painterResource(R.drawable.ic_terminal_code),
                     contentDescription = "查看终端输出",
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -183,7 +180,7 @@ internal fun CollapsedHomeNavigationButton(
         Icon(
             imageVector = Icons.Outlined.Menu,
             contentDescription = "展开底部导航",
-            tint = Color.White,
+            tint = TextPrimary,
             modifier = Modifier.size(24.dp)
         )
     }
@@ -234,7 +231,7 @@ private fun AnimatedHomeTabBar(
                 .width(tabWidth)
                 .height(56.dp)
                 .clip(RoundedCornerShape(Corners.Pill))
-                .background(Color(0x54717171))
+                .background(GlassSelectedIndicator)
         )
 
         Row(
@@ -263,7 +260,7 @@ private fun AnimatedHomeTabBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_platform_plug),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -276,7 +273,7 @@ private fun AnimatedHomeTabBar(
                 Icon(
                     imageVector = Icons.Outlined.Settings,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -305,11 +302,7 @@ private fun RowScope.HomeTabButton(
             .weight(1f)
             .height(56.dp)
             .clip(RoundedCornerShape(Corners.Pill))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            ),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -322,7 +315,7 @@ private fun RowScope.HomeTabButton(
 
             Text(
                 text = label,
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 12.sp,

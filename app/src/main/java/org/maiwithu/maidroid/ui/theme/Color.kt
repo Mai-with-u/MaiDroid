@@ -20,8 +20,10 @@ val OobeTextDimmed = Color(0x66FFFFFF)     // 40% 白
 
 // ── 主页各页（WebUI、消息平台、设置、终端）：近黑底 + 深灰卡片 ─────────────
 val PageBackground = Color(0xFF0F0F0F)
+val TextPrimary = Color.White      // 主要文字、图标
 val CardSurface = Color(0xFF1C1C1E)
 val CardBorder = Color(0xFF2C2C2E)
+val CardSurfaceSelected = Color(0xFF3C3C3E)  // 卡片里选中的一格（接入方式选择器）
 val TextMuted = Color(0xFF8E8E93)  // 次要说明文字
 val TextFaint = Color(0xFF717171)  // 更弱一级的提示文字
 
@@ -34,7 +36,13 @@ val StatusDanger = Color(0xFFFF453A)   // 危险操作按钮（退出登录等�
 val GlassSurface = Color(0x802B2B2B)
 val GlassStroke = Color(0x55FFFFFF)
 val SubtleGlassSurface = Color(0x332B2B2B)
+val GlassButtonSurface = Color(0x552B2B2B)      // 圆形小按钮、启动页信息卡的半透明底
+val GlassSelectedIndicator = Color(0x54717171)  // 悬浮底栏里选中标签的滑块
 const val SubtleGlassBlurRadius = 6f
+
+// ── 终端输出 ─────────────────────────────────────────────────────
+val TerminalBackground = Color(0xFF0B0B0C)  // 日志区底色，比卡片更黑一档
+val TerminalText = Color(0xFFD0D0D4)        // 没有颜色序列的日志文字
 
 // 唤醒页、启动页的插画按这个尺寸（dp）的设计稿绘制，运行时按实际屏幕等比缩放。
 const val DesignFrameWidthDp = 412f

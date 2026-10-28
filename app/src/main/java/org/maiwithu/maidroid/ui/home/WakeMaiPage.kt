@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 
 // 唤醒页专用的冷色科技风配色（其余页面不用）。
 private val WakeBackground = Color(0xFF07090D)
@@ -161,7 +162,7 @@ internal fun WakeMaiPage(
 
         Text(
             text = "麦麦Bot",
-            color = Color.White,
+            color = TextPrimary,
             fontSize = scale.sp(48f),
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = scale.sp(4f),
@@ -338,7 +339,7 @@ private fun WakeProgressBar(
             .drawWithContent {
                 drawContent()
                 drawLine(
-                    color = Color.White.copy(alpha = 0.18f),
+                    color = TextPrimary.copy(alpha = 0.18f),
                     start = Offset(0f, 0f),
                     end = Offset(size.width, 0f),
                     strokeWidth = 1.dp.toPx()
@@ -362,7 +363,7 @@ private fun WakeProgressBar(
 
         Text(
             text = if (webUiOnline) "麦麦已唤醒" else "正在唤醒麦麦",
-            color = Color.White,
+            color = TextPrimary,
             fontSize = (20f * textScale).sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = (2f * textScale).sp,

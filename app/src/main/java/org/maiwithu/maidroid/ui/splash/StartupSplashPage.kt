@@ -50,12 +50,15 @@ import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
+import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
 import org.maiwithu.maidroid.ui.theme.DouyinSans
+import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
 import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 
 private const val StartupSplashArtDesignWidth = 424f
 private const val StartupSplashArtDesignHeight = 917f
@@ -150,7 +153,7 @@ internal fun startupSplashAdaptiveGeometry(
 internal fun StartupSplashPage(modifier: Modifier = Modifier) {
     BoxWithConstraints(
         modifier = modifier
-            .background(Color(0xFF1C1C1E))
+            .background(CardSurface)
     ) {
         val useAdaptiveLayout = startupSplashUsesAdaptiveLayout(
             widthDp = maxWidth.value,
@@ -323,7 +326,7 @@ private fun StartupInfoCard(
             .clip(infoShape)
             .border(
                 width = 1.dp,
-                color = Color(0x542B2B2B),
+                color = GlassButtonSurface,
                 shape = infoShape
             )
     ) {
@@ -355,7 +358,7 @@ private fun StartupInfoCard(
             ) {
                 Text(
                     text = "MaiDroid × MaiSaka",
-                    color = Color.White,
+                    color = TextPrimary,
                     fontFamily = DouyinSans,
                     fontSize = scaledSp(20f),
                     fontWeight = FontWeight.Bold,
@@ -366,7 +369,7 @@ private fun StartupInfoCard(
 
                 Text(
                     text = "一个正在努力成为人类的BOT",
-                    color = Color.White,
+                    color = TextPrimary,
                     fontFamily = HarmonySans,
                     fontSize = scaledSp(12f),
                     fontWeight = FontWeight.Medium,

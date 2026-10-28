@@ -12,7 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +27,7 @@ import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import java.time.Instant
 import java.time.ZoneId
@@ -120,7 +120,7 @@ internal fun MaiBotUpdateDialog(
         title = {
             Text(
                 text = "MaiBot 更新",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.TitleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 22.sp
@@ -161,7 +161,7 @@ internal fun MaiBotUpdateDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CardBorder,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(
@@ -182,14 +182,14 @@ internal fun MaiBotUpdateDialog(
                 enabled = primaryButton.enabled,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrange,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Text(text = primaryButton.label, fontWeight = FontWeight.Bold)
             }
         },
         containerColor = CardSurface,
-        titleContentColor = Color.White,
+        titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
 }
@@ -212,7 +212,7 @@ private fun RevisionBlock(
         if (revision == null) {
             Text(
                 text = "尚未读取到版本信息",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = TextSizes.Body,
                 lineHeight = 18.sp
             )
@@ -221,7 +221,7 @@ private fun RevisionBlock(
 
         Text(
             text = "${revision.shortCommit} · ${formatRevisionTime(revision.committedAtEpochSeconds)}",
-            color = if (highlight) BrandOrange else Color.White,
+            color = if (highlight) BrandOrange else TextPrimary,
             fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp

@@ -35,9 +35,11 @@ import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** OOBE 里的单项权限卡片：图标、名称、必须/可选标签、说明和“去授权”按钮，授予后整体变暗。 */
@@ -80,7 +82,7 @@ internal fun OobePermissionCard(
                     painter = painterResource(iconRes),
                     contentDescription = title,
                     modifier = Modifier.size(28.dp),
-                    tint = if (granted) OobeTextSecondary else Color.White
+                    tint = if (granted) OobeTextSecondary else TextPrimary
                 )
             }
 
@@ -154,7 +156,7 @@ internal fun OobePermissionCard(
 @Composable
 private fun OobePermissionCardPreview() {
     MaiDroidTheme {
-        Box(modifier = Modifier.background(Color(0xFF121212)).padding(24.dp)) {
+        Box(modifier = Modifier.background(OobeBackground).padding(24.dp)) {
             OobePermissionCard(
                 iconRes = R.drawable.ic_storage_hdd,
                 title = "存储权限",

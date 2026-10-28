@@ -53,12 +53,15 @@ import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
 import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val UserAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/EULA.md"
@@ -120,6 +123,7 @@ internal fun OobeAuthorizationDialog(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
+                // 铺满全屏的背景吞掉点击，免得点到弹窗下面的页面；它不是按钮，不需要按压反馈。
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -210,7 +214,7 @@ private fun PhonePortraitAuthorizationCard(
         Text(
             text = bodyText,
             style = TextStyle(
-                color = Color.White,
+                color = TextPrimary,
                 fontFamily = HarmonySans,
                 fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
@@ -230,13 +234,13 @@ private fun PhonePortraitAuthorizationCard(
         ) {
             DialogActionButton(
                 text = "同意",
-                background = Color(0x99E97F0F),
+                background = BrandOrange.copy(alpha = 0.6f),
                 onClick = onAgree
             )
 
             DialogActionButton(
                 text = "退出",
-                background = Color(0x992C2C2E),
+                background = CardBorder.copy(alpha = 0.6f),
                 onClick = onExit,
                 modifier = Modifier.offset(x = 14.dp)
             )
@@ -314,7 +318,7 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(
             text = "首次使用",
-            color = Color.White.copy(alpha = 0.64f),
+            color = TextPrimary.copy(alpha = 0.64f),
             fontFamily = HarmonySans,
             fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
@@ -336,7 +340,7 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
 
         Text(
             text = "继续使用 MaiSaka 前，请先确认相关条款。",
-            color = Color.White.copy(alpha = 0.78f),
+            color = TextPrimary.copy(alpha = 0.78f),
             fontFamily = HarmonySans,
             fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Medium,
@@ -356,7 +360,7 @@ private fun AuthorizationDetails(
         Text(
             text = bodyText,
             style = TextStyle(
-                color = Color.White,
+                color = TextPrimary,
                 fontFamily = HarmonySans,
                 fontSize = TextSizes.Title,
                 fontWeight = FontWeight.Bold,
@@ -374,14 +378,14 @@ private fun AuthorizationDetails(
         ) {
             AdaptiveDialogActionButton(
                 text = "同意",
-                background = Color(0xCCE97F0F),
+                background = BrandOrangeMuted,
                 onClick = onAgree,
                 modifier = Modifier.weight(1f)
             )
 
             AdaptiveDialogActionButton(
                 text = "退出",
-                background = Color(0xCC2C2C2E),
+                background = CardBorder.copy(alpha = 0.8f),
                 onClick = onExit,
                 modifier = Modifier.weight(1f)
             )
@@ -406,7 +410,7 @@ private fun AdaptiveDialogActionButton(
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = TextPrimary,
             fontFamily = DouyinSans,
             fontSize = TextSizes.TitleLarge,
             fontWeight = FontWeight.Bold,
@@ -433,7 +437,7 @@ private fun DialogActionButton(
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = TextPrimary,
             fontFamily = DouyinSans,
             fontSize = TextSizes.TitleLarge,
             fontWeight = FontWeight.Bold,
