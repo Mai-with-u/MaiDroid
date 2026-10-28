@@ -58,20 +58,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appContainer
 import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
-import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import kotlin.math.ceil
 import kotlin.math.floor
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
-import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -368,54 +365,6 @@ private fun PlatformList(
             }
         }
     }
-}
-
-internal fun installedPlatformCards(
-    napCatState: NapCatPlatformState,
-    qqOfficialState: QqOfficialPlatformState
-): List<InstalledPlatform> = listOfNotNull(
-    napCatInstalledCard(napCatState),
-    qqOfficialInstalledCard(qqOfficialState)
-)
-
-private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlatform? {
-    if (!napCatState.installed && !napCatState.hasQrCode && napCatState.oneBotConfig == null) {
-        return null
-    }
-
-    val account = when {
-        napCatState.oneBotReachable -> "${napCatState.accountDisplayName ?: "QQ"} 在线"
-        napCatState.installed -> "NapCat 等待连接"
-        else -> "NapCat 待配置"
-    }
-
-    return InstalledPlatform(
-        kind = InstalledPlatformKind.NapCat,
-        name = "QQ（NapCat）",
-        iconRes = R.drawable.ic_platform_qq,
-        account = account,
-        iconColor = Color(0xCC0F3BE9),
-        statusColor = if (napCatState.oneBotReachable) StatusOnline else TextMuted,
-        running = napCatState.oneBotReachable
-    )
-}
-
-/**
- * 官方机器人装好后才出现在已安装行里。适配器连上 QQ 时不上报，
- * 所以“已启用”只表示凭据齐全、MaiBot 在跑且近一分钟没有连接报错。
- */
-private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPlatform? {
-    if (!state.installed) return null
-    return InstalledPlatform(
-        kind = InstalledPlatformKind.QqOfficial,
-        // 卡片标题只有 130dp 宽，“QQ（官方机器人）”会折行压住状态行，所以不加括号。
-        name = "QQ 官方机器人",
-        iconRes = R.drawable.ic_platform_qq,
-        account = qqOfficialStatusText(state),
-        iconColor = Color(0xCC0F3BE9),
-        statusColor = qqOfficialStatusColor(state),
-        running = state.presumedOnline
-    )
 }
 
 @Composable

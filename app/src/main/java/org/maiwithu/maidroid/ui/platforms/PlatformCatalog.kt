@@ -4,6 +4,10 @@ import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
+import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 /** 平台卡片下方选择器里的接入方式，label 是选择器上显示的文字。目前只有 QQ 有多种接入方式。 */
 internal enum class PlatformAdapter(val label: String) {
@@ -86,3 +90,55 @@ internal val AvailablePlatforms = listOf(
         tags = listOf("海外", "常用")
     )
 )
+
+/**
+ * “已安装”一行显示哪些卡片：按 NapCat 和 QQ 官方机器人的真实状态生成，没装的不显示。
+ * 设置页“消息平台”一行的运行中数量也按这里的 running 统计，两处口径一致。
+ */
+internal fun installedPlatformCards(
+    napCatState: NapCatPlatformState,
+    qqOfficialState: QqOfficialPlatformState
+): List<InstalledPlatform> = listOfNotNull(
+    napCatInstalledCard(napCatState),
+    qqOfficialInstalledCard(qqOfficialState)
+)
+
+private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlatform? {
+    if (!napCatState.installed && !napCatState.hasQrCode && napCatState.oneBotConfig == null) {
+        return null
+    }
+
+    val account = when {
+        napCatState.oneBotReachable -> "${napCatState.accountDisplayName ?: "QQ"} 在线"
+        napCatState.installed -> "NapCat 等待连接"
+        else -> "NapCat 待配置"
+    }
+
+    return InstalledPlatform(
+        kind = InstalledPlatformKind.NapCat,
+        name = "QQ（NapCat）",
+        iconRes = R.drawable.ic_platform_qq,
+        account = account,
+        iconColor = Color(0xCC0F3BE9),
+        statusColor = if (napCatState.oneBotReachable) StatusOnline else TextMuted,
+        running = napCatState.oneBotReachable
+    )
+}
+
+/**
+ * 官方机器人装好后才出现在已安装行里。适配器连上 QQ 时不上报，
+ * 所以“已启用”只表示凭据齐全、MaiBot 在跑且近一分钟没有连接报错。
+ */
+private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPlatform? {
+    if (!state.installed) return null
+    return InstalledPlatform(
+        kind = InstalledPlatformKind.QqOfficial,
+        // 卡片标题只有 130dp 宽，“QQ（官方机器人）”会折行压住状态行，所以不加括号。
+        name = "QQ 官方机器人",
+        iconRes = R.drawable.ic_platform_qq,
+        account = qqOfficialStatusText(state),
+        iconColor = Color(0xCC0F3BE9),
+        statusColor = qqOfficialStatusColor(state),
+        running = state.presumedOnline
+    )
+}
