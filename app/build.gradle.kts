@@ -4,6 +4,23 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// 发布签名：密钥库路径、库密码、别名、密钥密码都从环境变量读取（CI 里来自 GitHub Secrets），
+// 密钥库本身不进仓库。持有密钥的人在本地发布时设置同名环境变量即可。
+// 环境变量为空串（CI 里 Secret 没配时就是这样）按没配处理。
+fun signingEnv(name: String): String? =
+    providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+
+val releaseKeystorePath = signingEnv("MAIDROID_KEYSTORE_PATH")
+val releaseKeystorePassword = signingEnv("MAIDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingEnv("MAIDROID_KEY_ALIAS")
+val releaseKeyPassword = signingEnv("MAIDROID_KEY_PASSWORD")
+
+// 路径、库密码、别名三项齐全才启用发布签名；任何一项缺失时 release 保持未签名，
+// 日常 debug 构建和本地 assembleRelease 都照旧，不会因为没有密钥而失败。
+val hasReleaseSigning = releaseKeystorePath != null &&
+    releaseKeystorePassword != null &&
+    releaseKeyAlias != null
+
 android {
     namespace = "org.maiwithu.maidroid"
     compileSdk {
@@ -22,10 +39,26 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(checkNotNull(releaseKeystorePath))
+                storePassword = checkNotNull(releaseKeystorePassword)
+                keyAlias = checkNotNull(releaseKeyAlias)
+                // 密钥密码没单独提供时沿用库密码（PKCS12 密钥库本来就要求两者一致）
+                keyPassword = releaseKeyPassword ?: checkNotNull(releaseKeystorePassword)
+            }
+        }
+    }
+
     buildTypes {
         release {
             optimization {
                 enable = false
+            }
+            // 有发布签名时 release 直接产出已签名的 APK，没有时仍是未签名包
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }

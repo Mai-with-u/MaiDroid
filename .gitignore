@@ -35,3 +35,11 @@ tmp_*.svg
 installation.md
 MaiDroid.md
 /assets/runtime
+# ── Signing keys（发布密钥库绝不入库）────────────────────────────
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pk8
+keystore.properties
+key.properties
