@@ -1,26 +1,11 @@
 package org.maiwithu.maidroid.ui.screen
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.annotation.DrawableRes
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,30 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,62 +30,51 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.oobe.OobeSetupState
-import org.maiwithu.maidroid.oobe.OobeTaskKind
-import org.maiwithu.maidroid.oobe.OobeTask
-import org.maiwithu.maidroid.oobe.OobeTaskStatus
-import org.maiwithu.maidroid.ui.oobe.AdaptiveOobeTaskList
-import org.maiwithu.maidroid.ui.oobe.CompactOobeTaskList
 import org.maiwithu.maidroid.oobe.OobeStep
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.oobe.AdaptiveOobePermissionCards
+import org.maiwithu.maidroid.ui.oobe.AdaptiveOobeTaskList
 import org.maiwithu.maidroid.ui.oobe.CommandLogButton
+import org.maiwithu.maidroid.ui.oobe.CompactOobePermissionCards
+import org.maiwithu.maidroid.ui.oobe.CompactOobeTaskList
 import org.maiwithu.maidroid.ui.oobe.OobeStepFooter
 import org.maiwithu.maidroid.ui.oobe.OobeStepHeader
 import org.maiwithu.maidroid.ui.oobe.OobeStepIndicator
 import org.maiwithu.maidroid.ui.oobe.hasFailedTask
 import org.maiwithu.maidroid.ui.oobe.oobeStepTransition
 import org.maiwithu.maidroid.ui.oobe.tasksFor
-import org.maiwithu.maidroid.permission.PermissionActions
-import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.ui.oobe.AdaptiveOobePermissionCards
-import org.maiwithu.maidroid.ui.oobe.CompactOobePermissionCards
 import org.maiwithu.maidroid.ui.theme.BackgroundDark
-import org.maiwithu.maidroid.ui.theme.Orange400
-import org.maiwithu.maidroid.ui.theme.Orange500
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextOnOrange
-import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSecondary
 
+// 配置容器或安装一直没完成时，过这么久把终端按钮展开成“遇到问题？”提醒用户看日志。
 private const val SETUP_ATTENTION_DELAY_MS = 5 * 60 * 1000L
+
+// 平板布局左右两栏的比例：左侧插画与步骤说明占 1，右侧工作区占 2；
+// 右侧嵌入终端时，工作内容与终端再按 2 : 1 分高度。
 internal const val OOBE_HERO_PANE_WEIGHT = 1f
 internal const val OOBE_WORK_PANE_WEIGHT = 2f
 internal const val OOBE_WORK_CONTENT_WEIGHT = 2f
 internal const val OOBE_TERMINAL_PANE_WEIGHT = 1f
 
+/** 宽度不小于 600dp 或横屏时用左右分栏的平板布局，否则用手机竖屏布局。 */
 internal fun oobeUsesAdaptiveLayout(widthDp: Float, heightDp: Float): Boolean =
     widthDp >= 600f || widthDp > heightDp
 
 internal fun oobeHeroWidthDp(availableWidthDp: Float): Float =
     availableWidthDp.coerceAtLeast(0f) / 3f
 
+/** 横屏且短边不小于 600dp（大平板横放）时，终端输出直接嵌在右侧工作区下方，而不是弹窗。 */
 internal fun oobeUsesEmbeddedTerminal(widthDp: Float, heightDp: Float): Boolean =
     widthDp > heightDp && minOf(widthDp, heightDp) >= 600f
 
@@ -131,11 +84,16 @@ internal fun oobeShowsEmbeddedTerminal(
     terminalVisible: Boolean
 ): Boolean = embeddedMode && currentStep != OobeStep.Permissions && terminalVisible
 
+/** 终端是否展开，以及“嵌入模式默认展开一次”是否已经生效过（之后尊重用户手动收起）。 */
 internal data class OobeTerminalPresentationState(
     val visible: Boolean,
     val embeddedDefaultApplied: Boolean
 )
 
+/**
+ * 步骤或布局变化时决定终端的展开状态：
+ * 回到权限步骤 -> 收起并重置；第一次进入嵌入模式 -> 默认展开一次；其余保持用户上次的选择。
+ */
 internal fun oobeTerminalStateForEnvironment(
     currentStep: OobeStep,
     embeddedMode: Boolean,
@@ -158,14 +116,20 @@ internal fun oobeTerminalStateForEnvironment(
     )
 }
 
+/**
+ * 首次启动引导（OOBE）：授予权限 -> 配置容器 -> 安装 MaiBot。
+ *
+ * 只负责展示，步骤切换和安装动作由调用方（MaiDroidApp + MainViewModel）通过 onNext / onRetry 处理。
+ * 手机竖屏是“上方插画 + 下方圆角内容区”，平板和横屏是“左侧插画与步骤说明 + 右侧工作区”。
+ */
 @Composable
 internal fun OobeFlowScreen(
     currentStep: OobeStep,
-    setupState: OobeSetupState = OobeSetupState.beforeFirstCheck(),
-    permissionState: PermissionState = PermissionState(),
-    permissionActions: PermissionActions = PermissionActions(),
-    onNext: () -> Unit = {},
-    onRetry: () -> Unit = {},
+    setupState: OobeSetupState,
+    permissionState: PermissionState,
+    permissionActions: PermissionActions,
+    onNext: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(
@@ -175,24 +139,16 @@ internal fun OobeFlowScreen(
     ) {
         val density = LocalDensity.current
         val layoutDirection = LocalLayoutDirection.current
-        val statusBarTop = with(density) {
-            WindowInsets.statusBars.getTop(this).toDp()
-        }
-        val safeDrawingLeft = with(density) {
-            WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp()
-        }
-        val safeDrawingRight = with(density) {
-            WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp()
-        }
-        val safeDrawingBottom = with(density) {
-            WindowInsets.safeDrawing.getBottom(this).toDp()
+        val insets = with(density) {
+            OobeInsets(
+                statusBarTop = WindowInsets.statusBars.getTop(this).toDp(),
+                safeLeft = WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp(),
+                safeRight = WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp(),
+                safeBottom = WindowInsets.safeDrawing.getBottom(this).toDp()
+            )
         }
         val useAdaptiveLayout = oobeUsesAdaptiveLayout(maxWidth.value, maxHeight.value)
         val useEmbeddedTerminal = oobeUsesEmbeddedTerminal(maxWidth.value, maxHeight.value)
-        val headerHeight = maxHeight * 0.33f
-        val contentCornerRadius = 48.dp
-        val contentOverlap = contentCornerRadius
-        val contentTop = maxOf(headerHeight - contentOverlap, 0.dp)
         val setupFailed = setupState.tasksFor(currentStep).hasFailedTask()
         val stepDone = when (currentStep) {
             OobeStep.Permissions -> true
@@ -202,12 +158,18 @@ internal fun OobeFlowScreen(
         var waitedTooLong by remember { mutableStateOf(false) }
         var terminalVisible by rememberSaveable { mutableStateOf(false) }
         var embeddedTerminalDefaultApplied by rememberSaveable { mutableStateOf(false) }
-        val showEmbeddedTerminal = oobeShowsEmbeddedTerminal(
+        val terminal = OobeTerminalControl(
+            attention = setupFailed || waitedTooLong,
+            expanded = terminalVisible,
             embeddedMode = useEmbeddedTerminal,
-            currentStep = currentStep,
-            terminalVisible = terminalVisible
+            showEmbedded = oobeShowsEmbeddedTerminal(useEmbeddedTerminal, currentStep, terminalVisible),
+            onToggle = {
+                terminalVisible = !terminalVisible
+                embeddedTerminalDefaultApplied = true
+            }
         )
 
+        // 每进入一步重新计时：这一步既没完成也没失败，等满 5 分钟就提醒查看终端。
         LaunchedEffect(currentStep, stepDone, setupFailed) {
             waitedTooLong = false
             if (currentStep != OobeStep.Permissions && !stepDone && !setupFailed) {
@@ -227,122 +189,21 @@ internal fun OobeFlowScreen(
             embeddedTerminalDefaultApplied = resolvedState.embeddedDefaultApplied
         }
 
+        val stepContent = OobeStepContent(currentStep, setupState, permissionState, permissionActions, onNext, onRetry)
         if (useAdaptiveLayout) {
-            AdaptiveOobeFlowLayout(
-                currentStep = currentStep,
-                setupState = setupState,
-                permissionState = permissionState,
-                permissionActions = permissionActions,
-                onNext = onNext,
-                onRetry = onRetry,
-                commandLogAttention = setupFailed || waitedTooLong,
-                embeddedTerminalMode = useEmbeddedTerminal,
-                terminalExpanded = terminalVisible,
-                showEmbeddedTerminal = showEmbeddedTerminal,
-                onTerminalToggle = {
-                    terminalVisible = !terminalVisible
-                    embeddedTerminalDefaultApplied = true
-                },
-                statusBarTop = statusBarTop,
-                safeDrawingLeft = safeDrawingLeft,
-                safeDrawingRight = safeDrawingRight,
-                safeDrawingBottom = safeDrawingBottom,
+            AdaptiveOobeLayout(
+                content = stepContent,
+                terminal = terminal,
+                insets = insets,
                 availableWidth = maxWidth
             )
         } else {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(headerHeight)
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.oobe_mascot),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                if (currentStep != OobeStep.Permissions) {
-                    CommandLogButton(
-                        attention = setupFailed || waitedTooLong,
-                        expanded = terminalVisible,
-                        onClick = {
-                            terminalVisible = true
-                            embeddedTerminalDefaultApplied = true
-                        },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = statusBarTop + 8.dp, end = 20.dp)
-                    )
-                }
-            }
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(maxHeight - contentTop)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = contentCornerRadius,
-                            topEnd = contentCornerRadius
-                        )
-                    )
-                    .background(BackgroundDark)
-                    .padding(horizontal = 24.dp)
-            ) {
-                Spacer(modifier = Modifier.height(32.dp))
-
-                OobeStepIndicator(currentStep = currentStep, modifier = Modifier.fillMaxWidth())
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                AnimatedContent(
-                    targetState = currentStep,
-                    modifier = Modifier.fillMaxWidth(),
-                    transitionSpec = { oobeStepTransition() },
-                    label = "OobeStepHeader"
-                ) { step ->
-                    OobeStepHeader(step = step)
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                AnimatedContent(
-                    targetState = currentStep,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    transitionSpec = { oobeStepTransition() },
-                    label = "OobeStepCards"
-                ) { step ->
-                    when (step) {
-                        OobeStep.Permissions -> CompactOobePermissionCards(permissionState, permissionActions)
-                        OobeStep.Container -> CompactOobeTaskList(setupState.containerTasks)
-                        OobeStep.Install -> CompactOobeTaskList(setupState.installTasks)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                AnimatedContent(
-                    targetState = currentStep,
-                    modifier = Modifier.fillMaxWidth(),
-                    transitionSpec = { oobeStepTransition() },
-                    label = "OobeStepBottom"
-                ) { step ->
-                    OobeStepFooter(
-                        step = step,
-                        setupState = setupState,
-                        storageGranted = permissionState.storageGranted,
-                        onNext = onNext,
-                        onRetry = onRetry
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-            }
+            CompactOobeLayout(
+                content = stepContent,
+                terminal = terminal,
+                insets = insets,
+                maxHeight = maxHeight
+            )
         }
 
         if (terminalVisible && currentStep != OobeStep.Permissions && !useEmbeddedTerminal) {
@@ -357,27 +218,150 @@ internal fun OobeFlowScreen(
     }
 }
 
+// 两种布局都要用到的当前步骤数据和回调。
+private class OobeStepContent(
+    val step: OobeStep,
+    val setupState: OobeSetupState,
+    val permissionState: PermissionState,
+    val permissionActions: PermissionActions,
+    val onNext: () -> Unit,
+    val onRetry: () -> Unit
+)
+
+// 终端按钮与嵌入式终端面板的显示状态。
+private class OobeTerminalControl(
+    val attention: Boolean,
+    val expanded: Boolean,
+    val embeddedMode: Boolean,
+    val showEmbedded: Boolean,
+    val onToggle: () -> Unit
+)
+
+private class OobeInsets(
+    val statusBarTop: Dp,
+    val safeLeft: Dp,
+    val safeRight: Dp,
+    val safeBottom: Dp
+)
+
+/**
+ * 手机竖屏：上方三分之一是插画（右上角放终端按钮），下方是向上盖住插画 48dp 的圆角内容区，
+ * 依次是步骤指示器、步骤标题、权限卡片或任务列表、底部按钮区。终端以弹窗形式打开。
+ */
 @Composable
-private fun AdaptiveOobeFlowLayout(
-    currentStep: OobeStep,
-    setupState: OobeSetupState,
-    permissionState: PermissionState,
-    permissionActions: PermissionActions,
-    onNext: () -> Unit,
-    onRetry: () -> Unit,
-    commandLogAttention: Boolean,
-    embeddedTerminalMode: Boolean,
-    terminalExpanded: Boolean,
-    showEmbeddedTerminal: Boolean,
-    onTerminalToggle: () -> Unit,
-    statusBarTop: Dp,
-    safeDrawingLeft: Dp,
-    safeDrawingRight: Dp,
-    safeDrawingBottom: Dp,
+private fun BoxScope.CompactOobeLayout(
+    content: OobeStepContent,
+    terminal: OobeTerminalControl,
+    insets: OobeInsets,
+    maxHeight: Dp
+) {
+    val step = content.step
+    val headerHeight = maxHeight * 0.33f
+    val contentCornerRadius = 48.dp
+    val contentTop = maxOf(headerHeight - contentCornerRadius, 0.dp)
+
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .fillMaxWidth()
+            .height(headerHeight)
+    ) {
+        Image(
+            painter = painterResource(R.drawable.oobe_mascot),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        if (step != OobeStep.Permissions) {
+            CommandLogButton(
+                attention = terminal.attention,
+                expanded = terminal.expanded,
+                onClick = terminal.onToggle,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = insets.statusBarTop + 8.dp, end = 20.dp)
+            )
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .height(maxHeight - contentTop)
+            .clip(RoundedCornerShape(topStart = contentCornerRadius, topEnd = contentCornerRadius))
+            .background(BackgroundDark)
+            .padding(horizontal = 24.dp)
+    ) {
+        Spacer(modifier = Modifier.height(32.dp))
+
+        OobeStepIndicator(currentStep = step, modifier = Modifier.fillMaxWidth())
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        AnimatedContent(
+            targetState = step,
+            modifier = Modifier.fillMaxWidth(),
+            transitionSpec = { oobeStepTransition() },
+            label = "OobeStepHeader"
+        ) { targetStep ->
+            OobeStepHeader(step = targetStep)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        AnimatedContent(
+            targetState = step,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            transitionSpec = { oobeStepTransition() },
+            label = "OobeStepCards"
+        ) { targetStep ->
+            when (targetStep) {
+                OobeStep.Permissions -> CompactOobePermissionCards(content.permissionState, content.permissionActions)
+                OobeStep.Container -> CompactOobeTaskList(content.setupState.containerTasks)
+                OobeStep.Install -> CompactOobeTaskList(content.setupState.installTasks)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        AnimatedContent(
+            targetState = step,
+            modifier = Modifier.fillMaxWidth(),
+            transitionSpec = { oobeStepTransition() },
+            label = "OobeStepBottom"
+        ) { targetStep ->
+            OobeStepFooter(
+                step = targetStep,
+                setupState = content.setupState,
+                storageGranted = content.permissionState.storageGranted,
+                onNext = content.onNext,
+                onRetry = content.onRetry
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+/**
+ * 平板和横屏：左侧三分之一是插画，底部压着步骤指示器和步骤标题；右侧是圆角工作区，
+ * 放卡片或任务列表、底部按钮区，大平板横屏时下方再嵌一块终端输出。
+ */
+@Composable
+private fun AdaptiveOobeLayout(
+    content: OobeStepContent,
+    terminal: OobeTerminalControl,
+    insets: OobeInsets,
     availableWidth: Dp
 ) {
+    val step = content.step
     val heroWidth = oobeHeroWidthDp(availableWidth.value).dp
-    val heroHorizontalPadding = if (heroWidth < 220.dp) 16.dp else 24.dp
+    val narrowHero = heroWidth < 220.dp
+    val heroHorizontalPadding = if (narrowHero) 16.dp else 24.dp
     val workHorizontalPadding = if (availableWidth < 700.dp) 16.dp else 24.dp
 
     Row(modifier = Modifier.fillMaxSize()) {
@@ -393,6 +377,7 @@ private fun AdaptiveOobeFlowLayout(
                 modifier = Modifier.fillMaxSize()
             )
 
+            // 插画底部渐暗，让压在上面的步骤标题看得清。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -407,14 +392,14 @@ private fun AdaptiveOobeFlowLayout(
                     )
             )
 
-            if (currentStep != OobeStep.Permissions && !embeddedTerminalMode) {
+            if (step != OobeStep.Permissions && !terminal.embeddedMode) {
                 CommandLogButton(
-                    attention = commandLogAttention,
-                    expanded = terminalExpanded,
-                    onClick = onTerminalToggle,
+                    attention = terminal.attention,
+                    expanded = terminal.expanded,
+                    onClick = terminal.onToggle,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = statusBarTop + 12.dp, end = 16.dp)
+                        .padding(top = insets.statusBarTop + 12.dp, end = 16.dp)
                 )
             }
 
@@ -423,25 +408,22 @@ private fun AdaptiveOobeFlowLayout(
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .padding(
-                        start = heroHorizontalPadding + safeDrawingLeft,
+                        start = heroHorizontalPadding + insets.safeLeft,
                         end = heroHorizontalPadding,
-                        bottom = safeDrawingBottom + 24.dp
+                        bottom = insets.safeBottom + 24.dp
                     )
             ) {
-                OobeStepIndicator(
-                    currentStep = currentStep,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OobeStepIndicator(currentStep = step, modifier = Modifier.fillMaxWidth())
 
                 Spacer(modifier = Modifier.height(20.dp))
 
                 AnimatedContent(
-                    targetState = currentStep,
+                    targetState = step,
                     modifier = Modifier.fillMaxWidth(),
                     transitionSpec = { oobeStepTransition() },
                     label = "AdaptiveOobeStepHeader"
-                ) { step ->
-                    OobeStepHeader(step = step, narrow = heroWidth < 220.dp, limitLines = true)
+                ) { targetStep ->
+                    OobeStepHeader(step = targetStep, narrow = narrowHero, limitLines = true)
                 }
             }
         }
@@ -450,45 +432,34 @@ private fun AdaptiveOobeFlowLayout(
             modifier = Modifier
                 .weight(OOBE_WORK_PANE_WEIGHT)
                 .fillMaxHeight()
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 36.dp,
-                        bottomStart = 36.dp
-                    )
-                )
+                .clip(RoundedCornerShape(topStart = 36.dp, bottomStart = 36.dp))
                 .background(BackgroundDark)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight()
+                    .fillMaxSize()
                     .padding(
                         start = workHorizontalPadding,
-                        top = statusBarTop + 16.dp,
-                        end = workHorizontalPadding + safeDrawingRight,
-                        bottom = safeDrawingBottom + 20.dp
+                        top = insets.statusBarTop + 16.dp,
+                        end = workHorizontalPadding + insets.safeRight,
+                        bottom = insets.safeBottom + 20.dp
                     )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(
-                            if (showEmbeddedTerminal) {
-                                OOBE_WORK_CONTENT_WEIGHT
-                            } else {
-                                1f
-                            }
-                        )
+                        .weight(if (terminal.showEmbedded) OOBE_WORK_CONTENT_WEIGHT else 1f)
                 ) {
-                    if (currentStep != OobeStep.Permissions && embeddedTerminalMode) {
+                    // 嵌入终端模式下，终端开关放在工作区右上角，而不是插画上。
+                    if (step != OobeStep.Permissions && terminal.embeddedMode) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
                         ) {
                             CommandLogButton(
-                                attention = commandLogAttention,
-                                expanded = terminalExpanded,
-                                onClick = onTerminalToggle
+                                attention = terminal.attention,
+                                expanded = terminal.expanded,
+                                onClick = terminal.onToggle
                             )
                         }
 
@@ -496,38 +467,38 @@ private fun AdaptiveOobeFlowLayout(
                     }
 
                     AnimatedContent(
-                        targetState = currentStep,
+                        targetState = step,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
                         transitionSpec = { oobeStepTransition() },
                         label = "AdaptiveOobeStepCards"
-                    ) { step ->
-                        when (step) {
-                            OobeStep.Permissions -> AdaptiveOobePermissionCards(permissionState, permissionActions)
-                            OobeStep.Container -> AdaptiveOobeTaskList(setupState.containerTasks)
-                            OobeStep.Install -> AdaptiveOobeTaskList(setupState.installTasks)
+                    ) { targetStep ->
+                        when (targetStep) {
+                            OobeStep.Permissions -> AdaptiveOobePermissionCards(content.permissionState, content.permissionActions)
+                            OobeStep.Container -> AdaptiveOobeTaskList(content.setupState.containerTasks)
+                            OobeStep.Install -> AdaptiveOobeTaskList(content.setupState.installTasks)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     AnimatedContent(
-                        targetState = currentStep,
+                        targetState = step,
                         modifier = Modifier.fillMaxWidth(),
                         transitionSpec = { oobeStepTransition() },
                         label = "AdaptiveOobeStepBottom"
-                    ) { step ->
+                    ) { targetStep ->
                         Box(
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.CenterEnd
                         ) {
                             OobeStepFooter(
-                                step = step,
-                                setupState = setupState,
-                                storageGranted = permissionState.storageGranted,
-                                onNext = onNext,
-                                onRetry = onRetry,
+                                step = targetStep,
+                                setupState = content.setupState,
+                                storageGranted = content.permissionState.storageGranted,
+                                onNext = content.onNext,
+                                onRetry = content.onRetry,
                                 nextButtonModifier = Modifier.widthIn(max = 520.dp),
                                 setupFooterModifier = Modifier.widthIn(max = 560.dp)
                             )
@@ -535,10 +506,10 @@ private fun AdaptiveOobeFlowLayout(
                     }
                 }
 
-                if (showEmbeddedTerminal) {
+                if (terminal.showEmbedded) {
                     EmbeddedTerminalOutputPanel(
-                        logs = setupState.commandLogs,
-                        onDismiss = onTerminalToggle,
+                        logs = content.setupState.commandLogs,
+                        onDismiss = terminal.onToggle,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(OOBE_TERMINAL_PANE_WEIGHT)
@@ -549,4 +520,3 @@ private fun AdaptiveOobeFlowLayout(
         }
     }
 }
-
