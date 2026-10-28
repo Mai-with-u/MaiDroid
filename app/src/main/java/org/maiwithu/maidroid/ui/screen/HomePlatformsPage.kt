@@ -91,8 +91,9 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appContainer
 import org.maiwithu.maidroid.WebUiActivity
-import org.maiwithu.maidroid.platform.NapCatInstallPhase
-import org.maiwithu.maidroid.platform.NapCatPlatformState
+import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
+import org.maiwithu.maidroid.platform.napcat.NapCatLoginPhase
+import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.QqOfficialInstallPhase
 import org.maiwithu.maidroid.platform.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.QqOfficialSaveResult
@@ -1355,10 +1356,10 @@ private fun NapCatQrCodeDialog(
 /** 二维码弹窗里的扫码进度提示；NapCat 未汇报进度（未运行或弹窗刚打开）时不显示。 */
 internal fun napCatQrLoginHint(state: NapCatPlatformState): String? = when {
     state.qrRefreshing -> "正在获取新的二维码…"
-    state.loginPhase == "qrcode_scanned" -> "已扫码，请在手机 QQ 上确认登录"
-    state.loginPhase == "initializing" -> "登录成功，NapCat 正在初始化…"
-    state.loginPhase == "reconnecting" -> "QQ 登录服务正在重连，稍后会自动生成新二维码"
-    state.loginPhase == "waiting_qrcode" -> "二维码约 2 分钟有效，过期后会自动刷新"
+    state.loginPhase == NapCatLoginPhase.QrCodeScanned -> "已扫码，请在手机 QQ 上确认登录"
+    state.loginPhase == NapCatLoginPhase.Initializing -> "登录成功，NapCat 正在初始化…"
+    state.loginPhase == NapCatLoginPhase.Reconnecting -> "QQ 登录服务正在重连，稍后会自动生成新二维码"
+    state.loginPhase == NapCatLoginPhase.WaitingQrCode -> "二维码约 2 分钟有效，过期后会自动刷新"
     else -> null
 }
 

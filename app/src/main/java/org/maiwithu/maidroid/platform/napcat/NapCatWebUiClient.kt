@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform
+package org.maiwithu.maidroid.platform.napcat
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,11 +18,26 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 
+/** CheckLoginStatus 接口返回的 loginPhase；NapCat 新增或改名的取值统一归为 Other。 */
+internal enum class NapCatLoginPhase(val wireValue: String) {
+    WaitingQrCode("waiting_qrcode"),
+    GeneratingQrCode("generating_qrcode"),
+    QrCodeScanned("qrcode_scanned"),
+    Initializing("initializing"),
+    Reconnecting("reconnecting"),
+    Ready("ready"),
+    Other("");
+
+    companion object {
+        fun fromWireValue(value: String): NapCatLoginPhase =
+            entries.firstOrNull { it != Other && it.wireValue == value } ?: Other
+    }
+}
+
 /** NapCat 后端汇报的 QQ 登录进度，取自 WebUI 的 CheckLoginStatus 接口。 */
 internal data class NapCatLoginStatus(
     val isLogin: Boolean,
-    val phase: String,
-    val qrCodeUrl: String,
+    val phase: NapCatLoginPhase,
     val loginError: String
 )
 
@@ -60,8 +75,7 @@ internal class NapCatWebUiClient(private val webUiConfigFile: File) {
             val data = callAuthorized("/api/QQLogin/CheckLoginStatus").data ?: return@runCatching null
             NapCatLoginStatus(
                 isLogin = data["isLogin"]?.jsonPrimitive?.booleanOrNull == true,
-                phase = data["loginPhase"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                qrCodeUrl = data["qrcodeurl"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                phase = NapCatLoginPhase.fromWireValue(data["loginPhase"]?.jsonPrimitive?.contentOrNull.orEmpty()),
                 loginError = data["loginError"]?.jsonPrimitive?.contentOrNull.orEmpty()
             )
         }.getOrNull()

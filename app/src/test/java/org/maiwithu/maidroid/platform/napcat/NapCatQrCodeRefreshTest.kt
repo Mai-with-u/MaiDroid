@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform
+package org.maiwithu.maidroid.platform.napcat
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -6,14 +6,14 @@ import org.junit.Test
 
 class NapCatQrCodeRefreshTest {
 
+    // 按 NapCat 接口原样的 loginPhase 字符串构造，顺带覆盖取值解析。
     private fun status(
         phase: String,
         isLogin: Boolean = false,
         loginError: String = ""
     ) = NapCatLoginStatus(
         isLogin = isLogin,
-        phase = phase,
-        qrCodeUrl = "https://txz.qq.com/p?k=test",
+        phase = NapCatLoginPhase.fromWireValue(phase),
         loginError = loginError
     )
 

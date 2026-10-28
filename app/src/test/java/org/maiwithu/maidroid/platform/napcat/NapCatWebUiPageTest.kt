@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform
+package org.maiwithu.maidroid.platform.napcat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,9 +30,9 @@ class NapCatWebUiPageTest {
     @Test
     fun `qr login completes once napcat is ready or onebot is reachable`() {
         val waiting = NapCatPlatformState.initial(installed = true, qrCodePath = null, qrCodeLastModified = 0L)
-            .copy(loginPhase = "qrcode_scanned")
+            .copy(loginPhase = NapCatLoginPhase.QrCodeScanned)
         assertFalse(waiting.qrLoginCompleted)
-        assertTrue(waiting.copy(loginPhase = "ready").qrLoginCompleted)
+        assertTrue(waiting.copy(loginPhase = NapCatLoginPhase.Ready).qrLoginCompleted)
         assertTrue(waiting.copy(oneBotReachable = true).qrLoginCompleted)
     }
 }
