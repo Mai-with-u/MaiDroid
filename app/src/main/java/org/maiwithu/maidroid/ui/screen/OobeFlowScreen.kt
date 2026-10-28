@@ -88,7 +88,8 @@ import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeTaskKind
 import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
-import org.maiwithu.maidroid.ui.component.DownloadResourceCard
+import org.maiwithu.maidroid.ui.oobe.AdaptiveOobeTaskList
+import org.maiwithu.maidroid.ui.oobe.CompactOobeTaskList
 import org.maiwithu.maidroid.ui.component.OobeStepIndicator
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
@@ -332,8 +333,8 @@ internal fun OobeFlowScreen(
                     when (step) {
                         0 -> CompactOobePermissionCards(permissionState, permissionActions)
 
-                        1 -> SetupCards(setupState.containerTasks)
-                        else -> SetupCards(setupState.installTasks)
+                        1 -> CompactOobeTaskList(setupState.containerTasks)
+                        else -> CompactOobeTaskList(setupState.installTasks)
                     }
                 }
 
@@ -563,8 +564,8 @@ private fun AdaptiveOobeFlowLayout(
                         when (step) {
                             0 -> AdaptiveOobePermissionCards(permissionState, permissionActions)
 
-                            1 -> AdaptiveSetupCards(setupState.containerTasks)
-                            else -> AdaptiveSetupCards(setupState.installTasks)
+                            1 -> AdaptiveOobeTaskList(setupState.containerTasks)
+                            else -> AdaptiveOobeTaskList(setupState.installTasks)
                         }
                     }
 
@@ -629,38 +630,6 @@ private fun AdaptiveStepHeaderContent(
             maxLines = if (narrow) 6 else 5,
             overflow = TextOverflow.Ellipsis
         )
-    }
-}
-
-@Composable
-private fun AdaptiveSetupCards(tasks: List<OobeTask>) {
-    val gridState = rememberLazyGridState()
-    val focusIndex = remember(tasks) {
-        tasks.indexOfFirst { it.status == OobeTaskStatus.Running }.takeIf { it >= 0 }
-            ?: tasks.indexOfFirst { it.status != OobeTaskStatus.Done }.takeIf { it >= 0 }
-            ?: tasks.lastIndex.takeIf { it >= 0 }
-    }
-
-    LaunchedEffect(focusIndex) {
-        focusIndex?.let { gridState.animateScrollToItem(it) }
-    }
-
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 300.dp),
-        state = gridState,
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        gridItemsIndexed(tasks) { _, task ->
-            DownloadResourceCard(
-                iconRes = task.iconRes(),
-                title = task.title,
-                description = task.cardDescription(),
-                status = task.status,
-                height = 76.dp
-            )
-        }
     }
 }
 
@@ -796,40 +765,6 @@ private fun StepHeaderContent(
     }
 }
 
-@Composable
-private fun SetupCards(tasks: List<OobeTask>) {
-    val listState = rememberLazyListState()
-    val focusIndex = remember(tasks) {
-        tasks.indexOfFirst { it.status == OobeTaskStatus.Running }.takeIf { it >= 0 }
-            ?: tasks.indexOfFirst { it.status != OobeTaskStatus.Done }.takeIf { it >= 0 }
-            ?: tasks.lastIndex.takeIf { it >= 0 }
-    }
-
-    LaunchedEffect(focusIndex) {
-        focusIndex?.let { listState.animateScrollToItem(it) }
-    }
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        itemsIndexed(tasks) { _, task ->
-            DownloadResourceCard(
-                iconRes = task.iconRes(),
-                title = task.title,
-                description = task.cardDescription(),
-                status = task.status,
-                height = 76.dp
-            )
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-    }
-}
-
 private fun androidx.compose.animation.AnimatedContentTransitionScope<Int>.oobeStepTransition() =
     if (targetState > initialState) {
         slideInHorizontally(
@@ -863,31 +798,6 @@ private fun androidx.compose.animation.AnimatedContentTransitionScope<Int>.oobeS
 
 private fun List<OobeTask>.hasFailedTask(): Boolean =
     any { it.status == OobeTaskStatus.Failed }
-
-@DrawableRes
-private fun OobeTask.iconRes(): Int = when (kind) {
-    OobeTaskKind.DebianRootfs -> R.drawable.oobe_icon_debian_rootfs
-    OobeTaskKind.TermuxBootstrap -> R.drawable.oobe_icon_termux_bootstrap
-    OobeTaskKind.Proot -> R.drawable.oobe_icon_proot
-    OobeTaskKind.Git -> R.drawable.oobe_icon_git
-    OobeTaskKind.CurlCa -> R.drawable.oobe_icon_curl_ca
-    OobeTaskKind.MaiBotSource -> R.drawable.oobe_icon_git
-    OobeTaskKind.PythonDependencies -> R.drawable.oobe_icon_python
-    OobeTaskKind.Agreement -> R.drawable.oobe_icon_curl_ca
-    OobeTaskKind.WebUi -> R.drawable.oobe_icon_webui
-}
-
-private fun OobeTask.cardDescription(): String = when (kind) {
-    OobeTaskKind.DebianRootfs -> "准备 Debian 根文件系统"
-    OobeTaskKind.TermuxBootstrap -> "准备基础运行环境"
-    OobeTaskKind.Proot -> "准备容器启动器"
-    OobeTaskKind.Git -> "安装源码下载工具"
-    OobeTaskKind.CurlCa -> "配置 HTTPS 下载能力"
-    OobeTaskKind.MaiBotSource -> "下载 MaiBot 源码"
-    OobeTaskKind.PythonDependencies -> "安装 Python 运行依赖"
-    OobeTaskKind.Agreement -> "自动确认运行协议"
-    OobeTaskKind.WebUi -> "启动 MaiBot WebUI"
-}
 
 @Composable
 private fun NextButton(

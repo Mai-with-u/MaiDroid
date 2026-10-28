@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.component
+package org.maiwithu.maidroid.ui.oobe
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.LinearEasing
@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.oobe.OobeTask
+import org.maiwithu.maidroid.oobe.OobeTaskKind
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.Orange400
@@ -43,8 +45,47 @@ import org.maiwithu.maidroid.ui.theme.SurfaceDark
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSecondary
 
+/** 安装页的一张任务卡片：图标和说明按任务种类选，右侧显示进行中（旋转）、完成、失败图标。 */
 @Composable
-internal fun DownloadResourceCard(
+internal fun OobeTaskCard(task: OobeTask, modifier: Modifier = Modifier) {
+    OobeTaskCard(
+        iconRes = task.kind.iconRes,
+        title = task.title,
+        description = task.kind.description,
+        status = task.status,
+        modifier = modifier
+    )
+}
+
+@get:DrawableRes
+private val OobeTaskKind.iconRes: Int
+    get() = when (this) {
+        OobeTaskKind.DebianRootfs -> R.drawable.oobe_icon_debian_rootfs
+        OobeTaskKind.TermuxBootstrap -> R.drawable.oobe_icon_termux_bootstrap
+        OobeTaskKind.Proot -> R.drawable.oobe_icon_proot
+        OobeTaskKind.Git -> R.drawable.oobe_icon_git
+        OobeTaskKind.CurlCa -> R.drawable.oobe_icon_curl_ca
+        OobeTaskKind.MaiBotSource -> R.drawable.oobe_icon_git
+        OobeTaskKind.PythonDependencies -> R.drawable.oobe_icon_python
+        OobeTaskKind.Agreement -> R.drawable.oobe_icon_curl_ca
+        OobeTaskKind.WebUi -> R.drawable.oobe_icon_webui
+    }
+
+private val OobeTaskKind.description: String
+    get() = when (this) {
+        OobeTaskKind.DebianRootfs -> "准备 Debian 根文件系统"
+        OobeTaskKind.TermuxBootstrap -> "准备基础运行环境"
+        OobeTaskKind.Proot -> "准备容器启动器"
+        OobeTaskKind.Git -> "安装源码下载工具"
+        OobeTaskKind.CurlCa -> "配置 HTTPS 下载能力"
+        OobeTaskKind.MaiBotSource -> "下载 MaiBot 源码"
+        OobeTaskKind.PythonDependencies -> "安装 Python 运行依赖"
+        OobeTaskKind.Agreement -> "自动确认运行协议"
+        OobeTaskKind.WebUi -> "启动 MaiBot WebUI"
+    }
+
+@Composable
+private fun OobeTaskCard(
     @DrawableRes iconRes: Int,
     title: String,
     description: String,
@@ -156,10 +197,10 @@ private fun TaskStatusIcon(status: OobeTaskStatus) {
 
 @Preview(showBackground = true, backgroundColor = 0xFF121212, widthDp = 360)
 @Composable
-private fun DownloadResourceCardPreview() {
+private fun OobeTaskCardPreview() {
     MaiDroidTheme {
         Box(modifier = Modifier.padding(24.dp)) {
-            DownloadResourceCard(
+            OobeTaskCard(
                 iconRes = R.drawable.oobe_icon_termux_bootstrap,
                 title = "Termux 容器",
                 description = "正在准备本地运行环境",
