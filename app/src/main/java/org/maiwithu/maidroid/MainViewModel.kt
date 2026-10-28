@@ -43,7 +43,8 @@ internal class MainViewModel(
         settings,
         container.runtimePaths,
         container.runtimeReadiness,
-        container.commandRunner
+        container.commandRunner,
+        container.maiBotProcess
     )
 
     private val _setupComplete = MutableStateFlow(settings.setupComplete)
@@ -92,7 +93,17 @@ internal class MainViewModel(
         when (step) {
             OobeStep.Permissions -> Unit
             OobeStep.Container -> setupManager.prepareContainer()
-            OobeStep.Install -> setupManager.startInstall()
+            OobeStep.Install -> startInstallOrReturnToContainer()
+        }
+    }
+
+    // 进入或重试“安装 MaiBot”：容器没配好（例如进程被回收后恢复到这一步、容器文件被清掉一部分）
+    // 就退回“配置容器”一步，由它补齐后再进来，而不是在安装页上报一个只能返回才能解决的错误。
+    private fun startInstallOrReturnToContainer() {
+        if (container.runtimeReadiness.containerProblem() == null) {
+            setupManager.startInstall()
+        } else {
+            savedState[KEY_OOBE_STEP] = OobeStep.Container
         }
     }
 
@@ -125,7 +136,7 @@ internal class MainViewModel(
                 if (state.isComplete) {
                     _setupComplete.value = true
                 } else {
-                    setupManager.startInstall()
+                    startInstallOrReturnToContainer()
                 }
             }
         }
@@ -137,13 +148,17 @@ internal class MainViewModel(
         if (oobeStep.value == OobeStep.Container) {
             setupManager.prepareContainer()
         } else {
-            setupManager.startInstall()
+            startInstallOrReturnToContainer()
         }
     }
 
-    /** 唤醒麦麦：拉起前台服务，服务内部对已在运行的 MaiBot 不会重复启动。 */
+    /**
+     * 唤醒麦麦：拉起前台服务，服务内部对已在运行的 MaiBot 不会重复启动。
+     * 系统不让开前台服务时（应用已退到后台）直接让进程监管器启动，不让异常把应用带崩。
+     */
     fun wakeMaiBot() {
-        MaiBotRuntimeService.start(getApplication())
+        runCatching { MaiBotRuntimeService.start(getApplication()) }
+            .onFailure { container.maiBotProcess.start() }
     }
 
     override fun onCleared() {

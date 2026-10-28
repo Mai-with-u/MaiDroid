@@ -78,8 +78,8 @@ flowchart TB
 | `settings` | MMKV 持久化的应用设置 | `AppSettings` |
 | `terminal` | 全应用共享的终端输出 | `TerminalLog` |
 | `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
-| `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包 | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts` |
-| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
+| `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包、容器 DNS | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts`、`ContainerDns` |
+| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管与启动判断、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotStartup`、`MaiBotAgreement`、`MaiBotPlugins` |
 | `maibot.update` | MaiBot 在线更新 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
@@ -119,7 +119,8 @@ flowchart TB
 4. OOBE 三步（`OobeStep`）：
    - **授予权限**：存储权限必需，其余可选。点“下一步”时现查一次存储权限。
    - **配置容器**：进入这一步就自动调用 `OobeSetupManager.prepareContainer()`，解包 APK 资源、装系统依赖。
-   - **安装 MaiBot**：进入就调用 `startInstall()`，克隆源码、装依赖、确认协议、拉起前台服务、等 WebUI 能访问，最后写 `AppSettings.setupComplete = true`。
+   - **安装 MaiBot**：进入时 `MainViewModel` 先确认容器就绪（没就绪就退回“配置容器”），再调用 `startInstall()`：克隆源码、装依赖、计算协议 hash、拉起 MaiBot、等 WebUI 能访问，最后写 `AppSettings.setupComplete = true`。
+   - 两步结束时要么完成、要么有一张失败卡片且页脚按钮可以重试：脚本返回成功后还会按文件核对一次，意外异常也落到失败卡片上，不会停在只能等、没有按钮可点的页面，也不会让应用闪退。
 5. OOBE 完成后，`MainViewModel` 拉起 `MaiBotRuntimeService`，并每 1.5 秒（在线后每 5 秒）探测一次 WebUI。主页在 WebUI 第一次在线前显示唤醒页，每 30 秒自动唤醒一次；上线后切到三栏外壳（WebUI、消息平台、设置）。
 6. 开机后，`BootCompletedReceiver` 在 OOBE 已完成、开机自启没关时拉起前台服务。
 
@@ -137,7 +138,8 @@ flowchart TB
 
 三个长驻进程的监管方式：
 
-- **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下。
+- **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下。运行状态在 `status`（`MaiBotProcessStatus`）：是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算）、启动前检查没过时被拦下的原因。OOBE 等 WebUI 时据此判断 MaiBot 是还在起、起来就崩还是根本没拉起，规则在 `MaiBotStartup`。
+- 启动前台服务的入口（OOBE、主页唤醒）都兜住了系统拒绝：应用在后台时 Android 12+ 不让新开前台服务，这时直接让 `MaiBotProcessSupervisor` 启动，回到前台进入主页时再拉服务。
 - **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 

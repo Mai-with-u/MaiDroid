@@ -96,15 +96,18 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ## OOBE：安装 MaiBot（`OobeSetupManager.startInstall`）
 
+进入这一步前 `MainViewModel` 先用 `containerProblem()` 确认容器就绪，没就绪就退回“配置容器”一步。
+
 1. 先重写一次 DNS 配置（与配置容器一步是同一段脚本），保证接下来克隆和下载时能解析域名。
 2. **克隆源码**（`MaiBotScripts.clone`，已有就跳过）：经 GitHub 镜像浅克隆到 `/opt/MaiBot.tmp`，改名为 `/opt/MaiBot`，再读一次 HEAD 确认仓库可用。克隆时加 `-c core.createObject=rename`，原因见下文“proot 下的 git”。
-3. **确认 uv**（`MaiBotScripts.installUv`）：能运行就跳过，否则安装，见下文“依赖安装”。
-4. **准备 Python 解释器**（`installPython`）、**装依赖包**（`syncDependencies`，即 `uv sync`）：`.venv` 已就绪就一起跳过；`uv sync` 返回成功后再按文件核对一次 `.venv` 里确实有包。
-5. **协议**：EULA.md、PRIVACY.md 都在才算完成，见下文“协议 hash”。
-6. **启动并等待 WebUI**：拉起前台服务，每秒探测一次 `http://127.0.0.1:8001/`，最多等 3 分钟。
-7. 写 `setup_complete`，界面出现“进入 MaiDroid”。
+3. **依赖**：装 uv、准备 Python 解释器、`uv sync` 三步每次都跑，见下文“依赖安装”。已就绪时 uv、Python 立刻跳过，`uv sync` 只核对一遍（真机上几十毫秒）；以前按“site-packages 非空”整段跳过，装包时被打断留下的半套依赖会被当成装好。`uv sync` 返回成功后再按文件核对一次 `.venv` 里确实有包。
+4. **协议**：hash 在启动 MaiBot 时现算现注入，这一步只在协议文件缺失时往终端里提示一句，不拦着安装，见下文“协议 hash”。
+5. **启动并等待 WebUI**：先请求前台服务，再直接调 `MaiBotProcessSupervisor.start()`（应用在后台时系统会拒绝新开前台服务，这样 MaiBot 照样能起来）。之后每秒按 `maiBotStartupVerdict` 判断一次，见下文“等 WebUI 的判断”。
+6. 写 `setup_complete`，界面出现“进入 MaiDroid”。
 
 两步的每条命令都会把完整命令行、输出和退出码写进安装页的终端日志和 `TerminalLog`。
+
+两步结束时要么完成、要么有一张失败卡片且页脚按钮可以重试：脚本返回成功后还会按文件核对一次（配置容器最后核对容器五件套），意外异常也记成当前那张卡片失败。
 
 安装页的四张卡片按顺序判断完成：前一步没完成，后面的卡片即使文件已经在（例如协议文件随源码一起下载）也显示为等待。页脚左侧的标志跟着按钮走：可以继续时打勾，只能重试时显示失败图标，其余时候转圈。
 
@@ -126,7 +129,7 @@ proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resol
 
 装 uv、准备 Python 解释器、装依赖包三步由 `MaiBotDependencyStep` 定义，OOBE 和在线更新共用。三段脚本都能重复执行，已经就绪的部分会自己跳过：
 
-1. **装 uv**：先把官方安装脚本下载成文件（`astral.sh/uv/install.sh`，拿不到就经 GitHub 镜像取发布页上的同一份 `uv-installer.sh`），确认内容确实是 uv 的安装脚本再执行。安装先走官方下载源（releases.astral.sh、github.com），失败后把 `UV_INSTALLER_GITHUB_BASE_URL` 依次换成各 GitHub 镜像重试；安装脚本里带着安装包的 sha256，经镜像下载的包也会校验。每次装完都跑 `uv --version`，能运行才算成功。
+1. **装 uv**：先把官方安装脚本下载成文件（`astral.sh/uv/install.sh`，拿不到就经 GitHub 镜像取发布页上的同一份 `uv-installer.sh`），确认是 shell 脚本（以 `#!` 开头、提到 `astral-sh/uv`，不依赖安装脚本内部写法）再执行。安装先走官方下载源（releases.astral.sh、github.com），失败后把 `UV_INSTALLER_GITHUB_BASE_URL` 依次换成各 GitHub 镜像重试；安装脚本里带着安装包的 sha256，经镜像下载的包也会校验。每次装完都跑 `uv --version`，能运行才算成功。
 2. **准备 Python**：在 `/tmp` 下 `uv python find` 找到符合 `UV_PYTHON` 的解释器就跳过（避开 MaiBot 目录里装到一半的 `.venv`）；否则 `uv python install`，官方源失败后用 `UV_PYTHON_INSTALL_MIRROR` 依次换成各 GitHub 镜像（含直连）。
 3. **装依赖包**：`uv sync`。
 
@@ -147,9 +150,25 @@ proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resol
 
 `MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程。
 
+### 等 WebUI 的判断
+
+`MaiBotProcessSupervisor.status` 记着进程是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算），以及启动前检查没过时被拦下的原因。OOBE 拉起 MaiBot 前记下当时的退出次数，之后每秒把状态和 WebUI 探测结果交给 `maiBotStartupVerdict`（`MaiBotStartup.kt`）：
+
+| 情况 | 结论 |
+| --- | --- |
+| WebUI 有响应且进程在跑 | 完成（只看端口会把占着 8001 的别的程序当成 MaiBot） |
+| 启动前检查没过 | 立刻失败，报被拦下的原因 |
+| 拉起后意外退出满 2 次 | 立刻失败，报退出次数和最后退出码；允许一次是因为 MaiBot 可能自己退出请求重启 |
+| 60 秒内进程没起来也没退出过 | 失败：进程一直没有启动 |
+| 进程活着满 10 分钟 WebUI 仍不通 | 失败：超时 |
+
+以前只等 3 分钟有没有 HTTP 响应：MaiBot 起来就崩也要空等满 3 分钟、只报一句超时，低端机首次启动超过 3 分钟又会被误判。
+
 ### 协议 hash
 
 MaiBot 首次启动要在终端里确认 EULA 和隐私协议，没有交互终端会一直卡住。它也接受环境变量预先确认：`EULA_AGREE`、`PRIVACY_AGREE` 分别等于两份协议文件的 MD5。用户已经在 MaiDroid 的授权弹窗里同意过，所以 `MaiBotAgreement.environment()` 算好 hash，只注入给启动 MaiBot 的那条命令。
+
+hash 要按 MaiBot 的算法算（`agreementHash`）：它用 Python 文本模式读文件，`\r\n` 和单独的 `\r` 都变成 `\n`，再按 UTF-8 算 MD5。直接对原始字节算的话，上游提交了 CRLF 换行的协议文件时 hash 对不上，MaiBot 会停在终端里等人输入“同意”。文件缺失的那份不注入，也不拦着安装：上游不再要求确认时照常启动，仍要求时 MaiBot 自己报错退出，由上面的“反复退出”报出来。
 
 ## 在线更新（`maibot.update`）
 

@@ -10,6 +10,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -58,7 +60,7 @@ internal class QqOfficialPlatformManager(
             TerminalLog.lines.collect(::onLogLine)
         }
         scope.launch {
-            maiBotProcess.isRunning.collect { running ->
+            maiBotProcess.status.map { it.running }.distinctUntilChanged().collect { running ->
                 _state.update { it.copy(maiBotRunning = running) }
             }
         }

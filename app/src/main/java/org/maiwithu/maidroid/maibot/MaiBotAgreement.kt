@@ -11,30 +11,29 @@ import java.security.MessageDigest
  */
 internal object MaiBotAgreement {
 
-    /** 两份协议文件都在时返回要注入的环境变量；任一文件缺失（源码还没克隆）返回空表。 */
-    fun environment(paths: RuntimePaths): Map<String, String> {
-        val eulaHash = md5(paths.maiBotEula) ?: return emptyMap()
-        val privacyHash = md5(paths.maiBotPrivacy) ?: return emptyMap()
-        return mapOf(
-            "EULA_AGREE" to eulaHash,
-            "PRIVACY_AGREE" to privacyHash
-        )
+    /**
+     * 启动 MaiBot 时要注入的环境变量，每份在的协议文件给一项。
+     * 文件不在就不注入那一项，也不拦着安装：上游不再要求确认时照常启动；仍要求时 MaiBot 自己会报错退出，
+     * 由等 WebUI 的一方按“反复退出”报出来。
+     */
+    fun environment(paths: RuntimePaths): Map<String, String> = buildMap {
+        hashOf(paths.maiBotEula)?.let { put("EULA_AGREE", it) }
+        hashOf(paths.maiBotPrivacy)?.let { put("PRIVACY_AGREE", it) }
     }
 
-    /** 协议文件齐全，能算出 hash。OOBE 的“协议确认”一步以此为完成条件。 */
-    fun isReady(paths: RuntimePaths): Boolean = environment(paths).isNotEmpty()
+    /** 两份协议文件是否都在；只用于在终端里提示，不作为安装的前提。 */
+    fun filesPresent(paths: RuntimePaths): Boolean = paths.maiBotEula.isFile && paths.maiBotPrivacy.isFile
 
-    private fun md5(file: File): String? {
-        if (!file.isFile) return null
-        val digest = MessageDigest.getInstance("MD5")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
+    private fun hashOf(file: File): String? =
+        if (file.isFile) agreementHash(file.readText(Charsets.UTF_8)) else null
+}
+
+/**
+ * 按 MaiBot 的算法算协议 hash：它用 Python 文本模式读文件，\r\n 和单独的 \r 都会变成 \n，再按 UTF-8 编码算 MD5。
+ * 以前直接对原始字节算，上游哪天提交了 CRLF 换行的协议文件，hash 就对不上，MaiBot 会停在终端里等人输入“同意”。
+ */
+internal fun agreementHash(text: String): String {
+    val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
+    val digest = MessageDigest.getInstance("MD5").digest(normalized.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
 }

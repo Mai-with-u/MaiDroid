@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -73,13 +74,15 @@ internal class MaiBotProcessSupervisor(
     @Volatile
     private var maintenanceInProgress = false
 
-    private val _isRunning = MutableStateFlow(false)
+    private val _status = MutableStateFlow(MaiBotProcessStatus())
 
-    /** MaiBot 进程是否活着（不代表 WebUI 已经能访问，那要看 MaiBotWebUi 的探测）。 */
-    val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+    /** 进程是否活着、意外退出过几次、为什么没能拉起；WebUI 能不能访问要另看 MaiBotWebUi 的探测。 */
+    val status: StateFlow<MaiBotProcessStatus> = _status.asStateFlow()
 
     /** 启动 MaiBot；已在运行或正在维护时不做任何事。 */
     fun start() {
+        // 新的启动请求先清掉上一次被拦下的原因，免得等 WebUI 的一方在 startLocked 跑到之前读到旧结论。
+        _status.update { it.copy(launchBlockedReason = null) }
         scope.launch {
             lifecycleMutex.withLock { startLocked() }
         }
@@ -133,8 +136,11 @@ internal class MaiBotProcessSupervisor(
                 "$LOG_TAG Runtime validation failed: " +
                     "${notReady.name} is not ready: ${notReady.path}. ${notReady.hint}"
             )
+            // 记下没拉起的原因，等 WebUI 的一方（OOBE）据此立刻报错，而不是空等到超时。
+            _status.update { it.copy(launchBlockedReason = "${notReady.name} 未就绪：${notReady.hint}") }
             return
         }
+        _status.update { it.copy(launchBlockedReason = null) }
 
         val currentGeneration = ++generation
         superviseJob = scope.launch { superviseProcess(currentGeneration) }
@@ -151,7 +157,7 @@ internal class MaiBotProcessSupervisor(
             withTimeoutOrNull(STOP_JOIN_TIMEOUT_MS) { runningJob.join() }
         }
         cleanupStaleProcesses()
-        _isRunning.value = false
+        _status.update { it.copy(running = false) }
     }
 
     /**
@@ -192,7 +198,7 @@ internal class MaiBotProcessSupervisor(
                 return
             }
 
-            _isRunning.value = true
+            _status.update { it.copy(running = true) }
             appendLog("$PROCESS_STARTED_LOG (PID: ${currentProcess.pidOrUnknown()})")
 
             currentProcess.inputStream.bufferedReader().useLines { lines ->
@@ -201,16 +207,24 @@ internal class MaiBotProcessSupervisor(
 
             val exitCode = currentProcess.waitFor()
             appendLog("$LOG_TAG Process exited with code: $exitCode")
+            recordUnexpectedExit(ownGeneration, exitCode)
         } catch (e: Exception) {
             appendLog("$LOG_TAG Failed to start process: ${e.message}")
             Log.e(TAG, "Failed to start MaiBot process", e)
+            recordUnexpectedExit(ownGeneration, exitCode = null)
         } finally {
             // 只清理本轮自己的进程引用：停止超时后迟迟退出的旧一轮不能覆盖新一轮的运行状态。
             if (process === startedProcess) {
                 process = null
-                _isRunning.value = false
+                _status.update { it.copy(running = false) }
             }
         }
+    }
+
+    // 主动停止、重启、维护时进程被结束不算意外退出；其余的退出（含没能起来）计数，供 OOBE 判断是否起不来。
+    private fun recordUnexpectedExit(ownGeneration: Int, exitCode: Int?) {
+        if (shouldStayStopped(ownGeneration)) return
+        _status.update { it.copy(exitCount = it.exitCount + 1, lastExitCode = exitCode) }
     }
 
     private suspend fun killProcess() {
@@ -247,3 +261,17 @@ internal class MaiBotProcessSupervisor(
         TerminalLog.append(line)
     }
 }
+
+/**
+ * MaiBot 进程的状态快照。
+ *
+ * exitCount 是进程启动后意外退出（含没能启动起来）的累计次数，主动停止、重启不算；
+ * 等 WebUI 的一方先记下当前值，之后看它涨了几次就知道 MaiBot 是不是起来就崩。
+ * launchBlockedReason 是最近一次启动请求因启动前检查没通过而被拦下的原因，成功拉起后清空。
+ */
+internal data class MaiBotProcessStatus(
+    val running: Boolean = false,
+    val exitCount: Int = 0,
+    val lastExitCode: Int? = null,
+    val launchBlockedReason: String? = null
+)

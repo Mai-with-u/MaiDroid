@@ -81,11 +81,14 @@ internal object MaiBotScripts {
             printf 'connect-timeout = 20\nspeed-limit = 1024\nspeed-time = 30\n' > "${'$'}work_dir/.curlrc"
             export CURL_HOME="${'$'}work_dir"
 
-            # 下载到文件再执行，并确认内容真是 uv 的安装脚本：镜像出错时可能返回 200 的网页。
+            # 下载到文件再执行，并确认下到的是 shell 脚本：镜像出错时可能返回 200 的网页。
+            # 只看开头的 #! 和里面提到 uv 的发布地址，不依赖安装脚本内部的写法，Astral 改版也不会被误判。
             maidroid_fetch_uv_installer() {
                 printf "[uv] downloading installer: %s\n" "${'$'}1"
                 rm -f "${'$'}installer"
-                curl -fsSL -o "${'$'}installer" "${'$'}1" && grep -q '^APP_NAME="uv"' "${'$'}installer"
+                curl -fsSL -o "${'$'}installer" "${'$'}1" &&
+                    head -n 1 "${'$'}installer" | grep -q '^#!' &&
+                    grep -q 'astral-sh/uv' "${'$'}installer"
             }
 
             maidroid_install_uv_via() {
