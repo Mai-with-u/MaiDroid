@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.imageResource
@@ -47,10 +46,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import eightbitlab.com.blurview.BlurTarget
-import eightbitlab.com.blurview.BlurView
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.ui.component.BackdropBlurView
+import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 
@@ -168,14 +167,14 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
 
             val sideWidth = geometry.artLeftDp.coerceAtLeast(0f).dp
             if (sideWidth > 0.dp) {
-                StartupSideBlurLayer(
+                StartupSideBlur(
                     blurTarget = blurTarget,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .width(sideWidth)
                         .fillMaxHeight()
                 )
-                StartupSideBlurLayer(
+                StartupSideBlur(
                     blurTarget = blurTarget,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -295,36 +294,6 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StartupSideBlurLayer(
-    blurTarget: BlurTarget?,
-    modifier: Modifier = Modifier
-) {
-    val overlayColor = Color.Black.copy(alpha = 0.06f).toArgb()
-
-    AndroidView(
-        factory = { context -> BlurView(context) },
-        update = { view ->
-            if (blurTarget != null && view.tag !== blurTarget) {
-                view.tag = blurTarget
-                view.setupWith(blurTarget, 5f, false)
-                    .setBlurRadius(StartupSplashSideBlurRadius)
-                    .setOverlayColor(overlayColor)
-                    .setBlurAutoUpdate(true)
-            } else if (blurTarget != null) {
-                view.setBlurEnabled(true)
-                view.setBlurAutoUpdate(true)
-                view.setBlurRadius(StartupSplashSideBlurRadius)
-                view.setOverlayColor(overlayColor)
-            } else {
-                view.setBlurEnabled(false)
-                view.setOverlayColor(overlayColor)
-            }
-        },
-        modifier = modifier
-    )
-}
-
-@Composable
 private fun StartupInfoCard(
     blurTarget: BlurTarget?,
     positionScaleX: Float,
@@ -352,8 +321,10 @@ private fun StartupInfoCard(
                 shape = infoShape
             )
     ) {
-        StartupInfoBlurLayer(
+        BackdropBlurView(
             blurTarget = blurTarget,
+            blurRadius = SubtleGlassBlurRadius,
+            overlayColor = SubtleGlassSurface,
             modifier = Modifier.matchParentSize()
         )
 
@@ -405,32 +376,16 @@ private fun StartupInfoCard(
     }
 }
 
+// 宽屏时插画两侧的留白：模糊插画边缘并压一层很淡的黑，让留白和插画自然衔接。
 @Composable
-private fun StartupInfoBlurLayer(
+private fun StartupSideBlur(
     blurTarget: BlurTarget?,
     modifier: Modifier = Modifier
 ) {
-    val overlayColor = SubtleGlassSurface.toArgb()
-
-    AndroidView(
-        factory = { context -> BlurView(context) },
-        update = { view ->
-            if (blurTarget != null && view.tag !== blurTarget) {
-                view.tag = blurTarget
-                view.setupWith(blurTarget, 5f, false)
-                    .setBlurRadius(SubtleGlassBlurRadius)
-                    .setOverlayColor(overlayColor)
-                    .setBlurAutoUpdate(true)
-            } else if (blurTarget != null) {
-                view.setBlurEnabled(true)
-                view.setBlurAutoUpdate(true)
-                view.setBlurRadius(SubtleGlassBlurRadius)
-                view.setOverlayColor(overlayColor)
-            } else {
-                view.setBlurEnabled(false)
-                view.setOverlayColor(overlayColor)
-            }
-        },
+    BackdropBlurView(
+        blurTarget = blurTarget,
+        blurRadius = StartupSplashSideBlurRadius,
+        overlayColor = Color.Black.copy(alpha = 0.06f),
         modifier = modifier
     )
 }

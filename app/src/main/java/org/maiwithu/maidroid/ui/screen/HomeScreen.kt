@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import eightbitlab.com.blurview.BlurTarget
+import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import kotlinx.coroutines.delay
 
 internal const val WakeRetryIntervalMillis = 30_000L

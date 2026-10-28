@@ -39,7 +39,7 @@ import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
-import org.maiwithu.maidroid.ui.screen.BlurTargetHost
+import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.screen.HomeScreen
 import org.maiwithu.maidroid.ui.screen.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.screen.OobeFlowScreen

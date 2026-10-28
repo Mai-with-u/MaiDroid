@@ -39,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalUriHandler
@@ -51,9 +50,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import eightbitlab.com.blurview.BlurTarget
-import eightbitlab.com.blurview.BlurView
+import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 
@@ -208,8 +206,10 @@ private fun PhonePortraitAuthorizationCard(
             .clip(cardShape)
             .border(1.dp, GlassStroke, cardShape)
     ) {
-        AuthorizationBlurLayer(
+        BackdropBlurView(
             blurTarget = blurTarget,
+            blurRadius = SubtleGlassBlurRadius,
+            overlayColor = SubtleGlassSurface,
             modifier = Modifier.matchParentSize()
         )
 
@@ -281,8 +281,10 @@ private fun AdaptiveAuthorizationCard(
             .clip(cardShape)
             .border(1.dp, GlassStroke, cardShape)
     ) {
-        AuthorizationBlurLayer(
+        BackdropBlurView(
             blurTarget = blurTarget,
+            blurRadius = SubtleGlassBlurRadius,
+            overlayColor = SubtleGlassSurface,
             modifier = Modifier.matchParentSize()
         )
 
@@ -435,36 +437,6 @@ private fun AdaptiveDialogActionButton(
             lineHeight = 24.sp
         )
     }
-}
-
-@Composable
-private fun AuthorizationBlurLayer(
-    blurTarget: BlurTarget?,
-    modifier: Modifier = Modifier
-) {
-    val overlayColor = SubtleGlassSurface.toArgb()
-
-    AndroidView(
-        factory = { context -> BlurView(context) },
-        update = { view ->
-            if (blurTarget != null && view.tag !== blurTarget) {
-                view.tag = blurTarget
-                view.setupWith(blurTarget, 5f, false)
-                    .setBlurRadius(SubtleGlassBlurRadius)
-                    .setOverlayColor(overlayColor)
-                    .setBlurAutoUpdate(true)
-            } else if (blurTarget != null) {
-                view.setBlurEnabled(true)
-                view.setBlurAutoUpdate(true)
-                view.setBlurRadius(SubtleGlassBlurRadius)
-                view.setOverlayColor(overlayColor)
-            } else {
-                view.setBlurEnabled(false)
-                view.setOverlayColor(overlayColor)
-            }
-        },
-        modifier = modifier
-    )
 }
 
 @Composable

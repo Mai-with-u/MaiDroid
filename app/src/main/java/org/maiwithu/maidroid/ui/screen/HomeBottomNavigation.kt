@@ -38,16 +38,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import eightbitlab.com.blurview.BlurTarget
-import eightbitlab.com.blurview.BlurView
+
+/** 导航栏毛玻璃的模糊半径。 */
+private const val NavigationBlurRadius = 22f
 
 /** 悬浮导航栏本体高度（标签栏与终端按钮同高）。 */
 private val MainBottomNavigationBarHeight = 64.dp
@@ -116,9 +117,10 @@ internal fun MainBottomNavigation(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                BackdropBlurLayer(
+                BackdropBlurView(
                     blurTarget = blurTarget,
-                    cornerRadius = 32.dp,
+                    blurRadius = NavigationBlurRadius,
+                    overlayColor = GlassSurface,
                     modifier = Modifier.matchParentSize()
                 )
 
@@ -131,38 +133,6 @@ internal fun MainBottomNavigation(
             }
         }
     }
-}
-
-@Composable
-private fun BackdropBlurLayer(
-    cornerRadius: Dp,
-    blurTarget: BlurTarget?,
-    modifier: Modifier = Modifier
-) {
-    val overlayColor = GlassSurface.toArgb()
-
-    AndroidView(
-        factory = { context ->
-            BlurView(context)
-        },
-        update = { view ->
-            if (blurTarget != null && view.tag !== blurTarget) {
-                view.tag = blurTarget
-                view.setupWith(blurTarget, 5f, false)
-                    .setBlurRadius(22f)
-                    .setOverlayColor(overlayColor)
-                    .setBlurAutoUpdate(true)
-            } else if (blurTarget != null) {
-                view.setBlurEnabled(true)
-                view.setBlurAutoUpdate(true)
-                view.setBlurRadius(22f)
-                view.setOverlayColor(overlayColor)
-            } else {
-                view.setBlurEnabled(false)
-            }
-        },
-        modifier = modifier
-    )
 }
 
 @Composable
@@ -197,9 +167,10 @@ private fun AnimatedMainTabBar(
             label = "MainTabIndicatorOffset"
         )
 
-        BackdropBlurLayer(
+        BackdropBlurView(
             blurTarget = blurTarget,
-            cornerRadius = 32.dp,
+            blurRadius = NavigationBlurRadius,
+            overlayColor = GlassSurface,
             modifier = Modifier.matchParentSize()
         )
 
