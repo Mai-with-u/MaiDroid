@@ -115,6 +115,7 @@ class MaiBotContainerConfig private constructor(
     val napCatDir: File = File(rootfsDir, "root/napcat")
     val napCatConfigDir: File = File(napCatDir, "config")
     val napCatOneBotConfig: File = File(napCatConfigDir, "onebot11.json")
+    val napCatWebUiConfig: File = File(napCatConfigDir, "webui.json")
     val napCatQrCodeFile: File = File(napCatDir, "cache/qrcode.png")
     val napCatTokenFile: File = File(rootfsDir, "root/.maidroid/napcat_token")
     val napCatReadyMarker: File = File(rootfsDir, "root/.maidroid/napcat_ready")

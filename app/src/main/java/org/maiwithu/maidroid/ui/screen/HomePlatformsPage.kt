@@ -230,9 +230,13 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         }
 
         if (showNapCatQrCode) {
+            // 弹窗开着才盯扫码进度：码过期或扫码作废时自动换新码，关掉弹窗协程取消即停止。
+            LaunchedEffect(napCatManager) {
+                napCatManager.keepQrCodeFresh()
+            }
             NapCatQrCodeDialog(
                 state = napCatState,
-                onRefresh = { napCatManager.refresh() },
+                onRefresh = { napCatManager.refreshQrCode() },
                 onDismiss = { showNapCatQrCode = false }
             )
         }
@@ -1007,11 +1011,14 @@ private fun NapCatQrCodeDialog(
         state.qrCodePath,
         state.qrCodeLastModified
     ) {
-        value = withContext(Dispatchers.IO) {
+        val decoded = withContext(Dispatchers.IO) {
             state.qrCodePath
                 ?.let { BitmapFactory.decodeFile(it) }
                 ?.asImageBitmap()
         }
+        // NapCat 覆盖写 qrcode.png 的瞬间可能读到半截文件而解码失败，这时先留着旧图，
+        // 写完后修改时间再变一次会重新解码；文件确实没了才清空。
+        value = decoded ?: value.takeIf { state.qrCodePath != null }
     }
 
     AlertDialog(
@@ -1066,7 +1073,18 @@ private fun NapCatQrCodeDialog(
                     lineHeight = 14.sp
                 )
 
-                state.errorMessage?.let { error ->
+                // 扫码进度来自 NapCat：已扫码时提示去手机确认，换码中提示稍等，二维码过期会自动换新。
+                napCatQrLoginHint(state)?.let { hint ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = hint,
+                        color = PlatformTextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                (state.qrRefreshError ?: state.errorMessage)?.let { error ->
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = error,
@@ -1078,14 +1096,21 @@ private fun NapCatQrCodeDialog(
             }
         },
         dismissButton = {
+            // 刷新请求进行中禁用按钮，避免连点把 QQ 登录服务打成频繁出码。
             Button(
                 onClick = onRefresh,
+                enabled = !state.qrRefreshing,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = PlatformBorder,
-                    contentColor = Color.White
+                    contentColor = Color.White,
+                    disabledContainerColor = PlatformBorder,
+                    disabledContentColor = PlatformTextDim
                 )
             ) {
-                Text(text = "刷新", fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (state.qrRefreshing) "刷新中…" else "刷新",
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         confirmButton = {
@@ -1103,6 +1128,16 @@ private fun NapCatQrCodeDialog(
         titleContentColor = Color.White,
         textContentColor = PlatformTextSecondary
     )
+}
+
+/** 二维码弹窗里的扫码进度提示；NapCat 未汇报进度（未运行或弹窗刚打开）时不显示。 */
+internal fun napCatQrLoginHint(state: NapCatPlatformState): String? = when {
+    state.qrRefreshing -> "正在获取新的二维码…"
+    state.loginPhase == "qrcode_scanned" -> "已扫码，请在手机 QQ 上确认登录"
+    state.loginPhase == "initializing" -> "登录成功，NapCat 正在初始化…"
+    state.loginPhase == "reconnecting" -> "QQ 登录服务正在重连，稍后会自动生成新二维码"
+    state.loginPhase == "waiting_qrcode" -> "二维码约 2 分钟有效，过期后会自动刷新"
+    else -> null
 }
 
 @Composable

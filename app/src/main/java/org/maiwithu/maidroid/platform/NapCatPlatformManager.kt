@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +49,11 @@ internal data class NapCatPlatformState(
     val oneBotReachable: Boolean,
     val oneBotConfig: NapCatOneBotConfig?,
     val accountId: String?,
-    val accountName: String?
+    val accountName: String?,
+    // 以下三项只在二维码弹窗打开期间由 keepQrCodeFresh / refreshQrCode 维护。
+    val loginPhase: String? = null,
+    val qrRefreshing: Boolean = false,
+    val qrRefreshError: String? = null
 ) {
     val isInstalling: Boolean = phase == NapCatInstallPhase.Installing
     val hasQrCode: Boolean = qrCodePath != null && qrCodeLastModified > 0L
@@ -90,6 +95,35 @@ internal data class NapCatOneBotConfig(
     val endpoint: String = if (port != null) "$host:$port" else host
 }
 
+// 真机实测 QQ 登录二维码出码约 120 秒后失效，QQ 有时回 ErrType 1 / ErrCode 3，有时回 ErrCode 10。
+// 当前 NapCat 只在 ErrCode 3 时自己重新出码，遇到 10 就一直停在旧码上，所以要由我们按码龄主动换。
+// 门限比 120 秒多留 5 秒：ErrCode 3 时让 NapCat 先自己出码，免得我们紧跟着再换一次把新码作废。
+internal const val NapCatQrCodeLifetimeMs = 125_000L
+// 已扫码但迟迟没在手机上确认：再多等这么久仍未登录，说明这次扫码已作废（取消或超时）。
+internal const val NapCatQrScannedGraceMs = 60_000L
+// 刷新失败（QQ 登录服务重连中等）时不要连着打，至少隔这么久再自动重试。
+internal const val NapCatQrRetryIntervalMs = 15_000L
+
+/**
+ * 二维码弹窗开着时，每轮轮询后判断要不要替用户换新码：
+ * 已登录、登录后初始化中、登录服务重连中、正在出码 -> 不动，等 NapCat 自己推进；
+ * 已扫码 -> 码龄超过有效期再加确认宽限仍未登录，才视为扫码作废并换码，避免打断正在手机上确认的用户；
+ * 其余（等待扫码、离线）-> NapCat 报“过期”或码龄超过有效期就换；还没有码时码龄视为无穷大，直接要一张。
+ */
+internal fun shouldAutoRefreshQrCode(
+    status: NapCatLoginStatus,
+    qrAgeMs: Long,
+    sinceLastAttemptMs: Long
+): Boolean {
+    if (status.isLogin) return false
+    if (sinceLastAttemptMs < NapCatQrRetryIntervalMs) return false
+    return when (status.phase) {
+        "ready", "initializing", "reconnecting", "generating_qrcode" -> false
+        "qrcode_scanned" -> qrAgeMs >= NapCatQrCodeLifetimeMs + NapCatQrScannedGraceMs
+        else -> status.loginError.contains("过期") || qrAgeMs >= NapCatQrCodeLifetimeMs
+    }
+}
+
 internal class NapCatPlatformManager private constructor(context: Context) {
     companion object {
         @Volatile
@@ -104,11 +138,13 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val config = MaiBotContainerConfig.from(appContext)
     private val commandRunner = ContainerCommandRunner(config)
+    private val webUiClient = NapCatWebUiClient(config.napCatWebUiConfig)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val random = SecureRandom()
     private val json = Json { ignoreUnknownKeys = true }
     private var installJob: Job? = null
     private var progressJob: Job? = null
+    private var lastQrRefreshAttemptAt = 0L
 
     private val _state = MutableStateFlow(readInitialState())
     val state: StateFlow<NapCatPlatformState> = _state.asStateFlow()
@@ -125,6 +161,61 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     fun refresh() {
         scope.launch {
             refreshRuntimeState()
+        }
+    }
+
+    /** 用户在二维码弹窗点“刷新”：让 NapCat 重新向 QQ 要一张新码，而不是只重读磁盘上的旧图。 */
+    fun refreshQrCode() {
+        scope.launch { requestNewQrCode() }
+    }
+
+    /**
+     * 二维码弹窗打开期间运行，弹窗关闭时随调用方协程一起取消。
+     * 每 3 秒：向 NapCat 问扫码进度 -> 同步到弹窗提示 -> 码已失效或扫码作废就自动换新码；
+     * 新码由 NapCat 写回 qrcode.png，再经 2 秒一次的运行态刷新显示出来。
+     */
+    suspend fun keepQrCodeFresh() {
+        try {
+            while (currentCoroutineContext().isActive) {
+                val status = webUiClient.loginStatus()
+                if (status != null) {
+                    _state.update { it.copy(loginPhase = status.phase) }
+                    // 码龄直接看文件当前的修改时间：状态里的时间戳最多晚 2 秒，
+                    // NapCat 刚自己换了码时会被误判成旧码过期而再换一次。
+                    val qrModifiedAt = withContext(Dispatchers.IO) { config.napCatQrCodeFile.lastModified() }
+                    val now = System.currentTimeMillis()
+                    val qrAgeMs = now - qrModifiedAt
+                    if (shouldAutoRefreshQrCode(status, qrAgeMs, now - lastQrRefreshAttemptAt)) {
+                        TerminalLogRepository.append("[NapCat] 登录二维码已失效，自动请求新二维码")
+                        // 刷新放到管理器自己的作用域里跑：用户中途关弹窗也能跑完并复位 qrRefreshing。
+                        refreshQrCode()
+                    }
+                }
+                delay(3_000L)
+            }
+        } finally {
+            // 弹窗关了就不再展示扫码进度，下次打开重新查。
+            _state.update { it.copy(loginPhase = null, qrRefreshError = null) }
+        }
+    }
+
+    // 手动刷新和自动换码共用：同一时刻只发一个刷新请求，结果写回弹窗状态。
+    // 全程跑在主线程调度器上，判断和置位 qrRefreshing 之间没有挂起点，不会并发重入。
+    private suspend fun requestNewQrCode() {
+        if (_state.value.qrRefreshing) return
+        lastQrRefreshAttemptAt = System.currentTimeMillis()
+        _state.update { it.copy(qrRefreshing = true, qrRefreshError = null) }
+        val result = webUiClient.refreshQrCode()
+        refreshRuntimeState()
+        val error = result.exceptionOrNull()
+        if (error != null) {
+            TerminalLogRepository.append("[NapCat] 刷新二维码失败: ${error.message.orEmpty()}")
+        }
+        _state.update {
+            it.copy(
+                qrRefreshing = false,
+                qrRefreshError = error?.let { e -> "刷新二维码失败：${e.message.orEmpty()}" }
+            )
         }
     }
 
