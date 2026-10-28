@@ -37,11 +37,11 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.ui.theme.Orange400
-import org.maiwithu.maidroid.ui.theme.Orange500
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSecondary
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.OobeSurface
+import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
+import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 
 // OOBE 第一步“授予权限”的内容：必需的存储权限卡片 + 可选的后台保活卡片（六项保活设置）。
 
@@ -138,7 +138,7 @@ private fun BackgroundKeepAliveCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(SurfaceDark)
+            .background(OobeSurface)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -152,7 +152,7 @@ private fun BackgroundKeepAliveCard(
                 modifier = Modifier
                     .size(52.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Orange400),
+                    .background(BrandOrangeMuted),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -171,7 +171,7 @@ private fun BackgroundKeepAliveCard(
                         text = "后台保活",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        color = OobeTextPrimary,
                         lineHeight = 24.sp
                     )
 
@@ -179,7 +179,7 @@ private fun BackgroundKeepAliveCard(
 
                     KeepAliveTag(
                         text = "可选",
-                        backgroundColor = Orange400,
+                        backgroundColor = BrandOrangeMuted,
                         width = 48.dp,
                         textSize = 12
                     )
@@ -191,7 +191,7 @@ private fun BackgroundKeepAliveCard(
                     text = "MaiSaka 需要后台权限才能在切换到其他应用时保持后台运行；这个设置是可选项，你可以视情况开启一部分。",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    color = TextSecondary,
+                    color = OobeTextSecondary,
                     lineHeight = 15.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
@@ -264,7 +264,7 @@ private fun KeepAlivePermissionRow(
     destructive: Boolean = false
 ) {
     val actionLabel = if (granted) "已授权" else actionText
-    val actionColor = if (granted) Orange500 else Color(0xFF808080)
+    val actionColor = if (granted) BrandOrange else Color(0xFF808080)
 
     Row(
         modifier = modifier
@@ -277,7 +277,7 @@ private fun KeepAlivePermissionRow(
     ) {
         KeepAliveTag(
             text = tagText,
-            backgroundColor = if (destructive) Color(0xFFE90F0F) else Orange500,
+            backgroundColor = if (destructive) Color(0xFFE90F0F) else BrandOrange,
             width = if (destructive) 42.dp else 32.dp,
             textSize = 10
         )
@@ -289,7 +289,7 @@ private fun KeepAlivePermissionRow(
             modifier = Modifier.weight(1f),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = OobeTextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 18.sp

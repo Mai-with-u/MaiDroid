@@ -100,6 +100,14 @@ import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import kotlin.math.ceil
 import kotlin.math.floor
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.StatusDanger
+import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.TextFaint
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 private const val PlatformGridMinCardWidthDp = 272f
 private const val PlatformGridMaxCardWidthDp = 420f
@@ -155,7 +163,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(MainSurface)
+            .background(PageBackground)
     ) {
         val statusBarTop = statusBarTopInset()
         // Grow the generous portrait spacing back gradually instead of jumping
@@ -170,7 +178,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MainSurface)
+                .background(PageBackground)
                 .padding(top = statusBarTop)
         ) {
             Spacer(modifier = Modifier.height(topSpacing))
@@ -204,7 +212,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .background(MainSurface),
+                    .background(PageBackground),
                 transitionSpec = {
                     val direction = categories.indexOf(targetState) - categories.indexOf(initialState)
                     slideInHorizontally(
@@ -358,7 +366,7 @@ private fun QqLogoutConfirmDialog(
         text = {
             Text(
                 text = "将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。",
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp
             )
@@ -367,7 +375,7 @@ private fun QqLogoutConfirmDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformBorder,
+                    containerColor = CardBorder,
                     contentColor = Color.White
                 )
             ) {
@@ -378,16 +386,16 @@ private fun QqLogoutConfirmDialog(
             Button(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformDanger,
+                    containerColor = StatusDanger,
                     contentColor = Color.White
                 )
             ) {
                 Text(text = "退出登录", fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = PlatformCardSurface,
+        containerColor = CardSurface,
         titleContentColor = Color.White,
-        textContentColor = PlatformTextSecondary
+        textContentColor = TextMuted
     )
 }
 
@@ -406,7 +414,7 @@ private fun PlatformList(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MainSurface),
+            .background(PageBackground),
         contentAlignment = Alignment.TopCenter
     ) {
         val availableWidth = (maxWidth - PlatformGridHorizontalPadding * 2f)
@@ -488,7 +496,7 @@ private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlat
         iconRes = R.drawable.ic_platform_qq,
         account = account,
         iconColor = Color(0xCC0F3BE9),
-        statusColor = if (napCatState.oneBotReachable) PlatformOnline else PlatformTextSecondary,
+        statusColor = if (napCatState.oneBotReachable) StatusOnline else TextMuted,
         running = napCatState.oneBotReachable
     )
 }
@@ -512,9 +520,9 @@ private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPl
 }
 
 private fun qqOfficialStatusColor(state: QqOfficialPlatformState): Color = when {
-    state.presumedOnline -> PlatformOnline
-    state.connectionError != null -> PlatformDanger
-    else -> PlatformTextSecondary
+    state.presumedOnline -> StatusOnline
+    state.connectionError != null -> StatusDanger
+    else -> TextMuted
 }
 
 @Composable
@@ -543,7 +551,7 @@ private fun MessagePlatformsHeader(runningCount: Int) {
                 } else {
                     "暂无平台正在运行"
                 },
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 18.sp
@@ -573,7 +581,7 @@ private fun SearchButton() {
         Icon(
             imageVector = Icons.Outlined.Search,
             contentDescription = "搜索",
-            tint = PlatformTextSecondary,
+            tint = TextMuted,
             modifier = Modifier.size(25.dp)
         )
     }
@@ -614,7 +622,7 @@ private fun InstalledPlatformCard(
             .width(170.dp)
             .height(135.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(PlatformCardSurface)
+            .background(CardSurface)
     ) {
         PlatformLogo(
             iconRes = platform.iconRes,
@@ -643,7 +651,7 @@ private fun InstalledPlatformCard(
             Icon(
                 imageVector = Icons.Outlined.Settings,
                 contentDescription = "设置",
-                tint = PlatformTextSecondary,
+                tint = TextMuted,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -693,7 +701,7 @@ private fun EmptyInstalledPlatformCard() {
             .width(170.dp)
             .height(135.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(PlatformCardSurface)
+            .background(CardSurface)
             .padding(16.dp),
         verticalArrangement = Arrangement.Center
     ) {
@@ -709,7 +717,7 @@ private fun EmptyInstalledPlatformCard() {
 
         Text(
             text = "安装并登录消息平台后会在这里显示状态",
-            color = PlatformTextDim,
+            color = TextFaint,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 15.sp
@@ -743,7 +751,7 @@ private fun DiscoverHeader(
 
             Text(
                 text = "共 325 个",
-                color = PlatformOrange,
+                color = BrandOrange,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 16.sp
@@ -771,7 +779,7 @@ private fun CategoryChip(
     onClick: () -> Unit
 ) {
     val backgroundColor by animateColorAsState(
-        targetValue = if (selected) PlatformOrange else PlatformCardSurface,
+        targetValue = if (selected) BrandOrange else CardSurface,
         animationSpec = spring(
             dampingRatio = 1f,
             stiffness = Spring.StiffnessMediumLow
@@ -779,7 +787,7 @@ private fun CategoryChip(
         label = "CategoryChipBackground"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (selected) PlatformOrange else PlatformBorder,
+        targetValue = if (selected) BrandOrange else CardBorder,
         animationSpec = spring(
             dampingRatio = 1f,
             stiffness = Spring.StiffnessMediumLow
@@ -870,8 +878,8 @@ private fun PlatformInstallCard(
             .fillMaxWidth()
             .height(if (hasAdapters) 172.dp else 120.dp)
             .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
-            .background(PlatformCardSurface)
+            .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+            .background(CardSurface)
             .padding(16.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -912,7 +920,7 @@ private fun PlatformInstallCard(
                 val provider = platform.adapterProviders[selectedAdapter] ?: platform.provider
                 Text(
                     text = "$provider\n${platform.description}",
-                    color = PlatformTextDim,
+                    color = TextFaint,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
@@ -967,8 +975,8 @@ private fun EmptyPlatformCard(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .height(120.dp)
             .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
-            .background(PlatformCardSurface)
+            .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+            .background(CardSurface)
             .padding(18.dp),
         verticalArrangement = Arrangement.Center
     ) {
@@ -984,7 +992,7 @@ private fun EmptyPlatformCard(modifier: Modifier = Modifier) {
 
         Text(
             text = "后续适配项会出现在这里。",
-            color = PlatformTextDim,
+            color = TextFaint,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 16.sp
@@ -1022,7 +1030,7 @@ private fun Badge(text: String) {
         modifier = Modifier
             .height(16.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(PlatformOrange.copy(alpha = 0.5f))
+            .background(BrandOrange.copy(alpha = 0.5f))
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -1042,7 +1050,7 @@ private fun SmallTag(text: String) {
         modifier = Modifier
             .height(20.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(PlatformBorder)
+            .background(CardBorder)
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -1132,8 +1140,8 @@ private fun AdapterSelector(
     BoxWithConstraints(
         modifier = modifier
             .clip(RoundedCornerShape(21.dp))
-            .background(PlatformBorder)
-            .border(1.dp, PlatformBorder, RoundedCornerShape(21.dp))
+            .background(CardBorder)
+            .border(1.dp, CardBorder, RoundedCornerShape(21.dp))
     ) {
         val itemWidth = if (adapters.isNotEmpty()) {
             (maxWidth - horizontalPadding * 2f - itemSpacing * (adapters.size - 1).toFloat()) /
@@ -1169,7 +1177,7 @@ private fun AdapterSelector(
             adapters.forEach { adapter ->
                 val selected = adapter == selectedAdapter
                 val textColor by animateColorAsState(
-                    targetValue = if (selected) Color.White else PlatformTextSecondary,
+                    targetValue = if (selected) Color.White else TextMuted,
                     animationSpec = spring(
                         dampingRatio = 1f,
                         stiffness = Spring.StiffnessMediumLow
@@ -1210,11 +1218,11 @@ private fun ProgressRing(progress: Float) {
     Canvas(modifier = Modifier.size(32.dp)) {
         val strokeWidth = 3.dp.toPx()
         drawCircle(
-            color = PlatformBorder,
+            color = CardBorder,
             style = Stroke(width = strokeWidth)
         )
         drawArc(
-            color = PlatformOrange,
+            color = BrandOrange,
             startAngle = -90f,
             sweepAngle = 360f * clampedProgress,
             useCenter = false,
@@ -1281,7 +1289,7 @@ private fun NapCatQrCodeDialog(
                         } else {
                             "NapCat 尚未安装。"
                         },
-                        color = PlatformTextSecondary,
+                        color = TextMuted,
                         fontSize = 13.sp,
                         lineHeight = 17.sp
                     )
@@ -1291,7 +1299,7 @@ private fun NapCatQrCodeDialog(
 
                 Text(
                     text = "请使用QQ扫码登录……或者截图发给其他设备，然后用QQ扫码",
-                    color = PlatformTextDim,
+                    color = TextFaint,
                     fontSize = 11.sp,
                     lineHeight = 14.sp
                 )
@@ -1301,7 +1309,7 @@ private fun NapCatQrCodeDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = hint,
-                        color = PlatformTextSecondary,
+                        color = TextMuted,
                         fontSize = 12.sp,
                         lineHeight = 15.sp
                     )
@@ -1324,10 +1332,10 @@ private fun NapCatQrCodeDialog(
                 onClick = onRefresh,
                 enabled = !state.qrRefreshing,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformBorder,
+                    containerColor = CardBorder,
                     contentColor = Color.White,
-                    disabledContainerColor = PlatformBorder,
-                    disabledContentColor = PlatformTextDim
+                    disabledContainerColor = CardBorder,
+                    disabledContentColor = TextFaint
                 )
             ) {
                 Text(
@@ -1340,16 +1348,16 @@ private fun NapCatQrCodeDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformOrange,
+                    containerColor = BrandOrange,
                     contentColor = Color.White
                 )
             ) {
                 Text(text = "关闭", fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = PlatformCardSurface,
+        containerColor = CardSurface,
         titleContentColor = Color.White,
-        textContentColor = PlatformTextSecondary
+        textContentColor = TextMuted
     )
 }
 
@@ -1398,7 +1406,7 @@ private fun NapCatConfigDialog(
                         config != null -> "配置存在但未启用"
                         else -> "未找到 onebot11.json"
                     },
-                    valueColor = if (state.oneBotReachable) PlatformOnline else PlatformTextSecondary
+                    valueColor = if (state.oneBotReachable) StatusOnline else TextMuted
                 )
                 ConfigValueRow("账号", state.accountDisplayName ?: "-")
                 ConfigValueRow("服务类型", config?.serviceType ?: "-")
@@ -1420,10 +1428,10 @@ private fun NapCatConfigDialog(
                     enabled = state.installed && !state.qqLoggingOut,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PlatformDanger,
+                        containerColor = StatusDanger,
                         contentColor = Color.White,
-                        disabledContainerColor = PlatformBorder,
-                        disabledContentColor = PlatformTextDim
+                        disabledContainerColor = CardBorder,
+                        disabledContentColor = TextFaint
                     )
                 ) {
                     Text(
@@ -1437,7 +1445,7 @@ private fun NapCatConfigDialog(
             Button(
                 onClick = onRefresh,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformBorder,
+                    containerColor = CardBorder,
                     contentColor = Color.White
                 )
             ) {
@@ -1448,16 +1456,16 @@ private fun NapCatConfigDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformOrange,
+                    containerColor = BrandOrange,
                     contentColor = Color.White
                 )
             ) {
                 Text(text = "关闭", fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = PlatformCardSurface,
+        containerColor = CardSurface,
         titleContentColor = Color.White,
-        textContentColor = PlatformTextSecondary
+        textContentColor = TextMuted
     )
 }
 
@@ -1505,7 +1513,7 @@ private fun QqOfficialConfigDialog(
                 state.errorMessage?.let { error ->
                     Text(
                         text = "安装失败：$error",
-                        color = PlatformDanger,
+                        color = StatusDanger,
                         fontSize = 12.sp,
                         lineHeight = 15.sp
                     )
@@ -1533,7 +1541,7 @@ private fun QqOfficialConfigDialog(
                         "把开发设置里的 AppID 和 AppSecret 填到这里。\n" +
                         "IP 白名单请留空：手机网络的 IP 会变，填了容易被拦。\n" +
                         "群里要 @机器人 才会收到消息。确认后会重启 MaiBot，期间所有平台暂停收发消息。",
-                    color = PlatformTextDim,
+                    color = TextFaint,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
                 )
@@ -1543,7 +1551,7 @@ private fun QqOfficialConfigDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformBorder,
+                    containerColor = CardBorder,
                     contentColor = Color.White
                 )
             ) {
@@ -1555,10 +1563,10 @@ private fun QqOfficialConfigDialog(
                 onClick = { onConfirm(appIdText, appSecretText) },
                 enabled = canConfirm,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformOrange,
+                    containerColor = BrandOrange,
                     contentColor = Color.White,
-                    disabledContainerColor = PlatformBorder,
-                    disabledContentColor = PlatformTextDim
+                    disabledContainerColor = CardBorder,
+                    disabledContentColor = TextFaint
                 )
             ) {
                 Text(
@@ -1567,9 +1575,9 @@ private fun QqOfficialConfigDialog(
                 )
             }
         },
-        containerColor = PlatformCardSurface,
+        containerColor = CardSurface,
         titleContentColor = Color.White,
-        textContentColor = PlatformTextSecondary
+        textContentColor = TextMuted
     )
 }
 
@@ -1587,7 +1595,7 @@ private fun qqOfficialStatusDetail(state: QqOfficialPlatformState): String {
 private fun ConfigValueRow(
     label: String,
     value: String,
-    valueColor: Color = PlatformTextSecondary
+    valueColor: Color = TextMuted
 ) {
     Column(
         modifier = Modifier
@@ -1596,7 +1604,7 @@ private fun ConfigValueRow(
     ) {
         Text(
             text = label,
-            color = PlatformTextDim,
+            color = TextFaint,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 13.sp

@@ -2,18 +2,40 @@ package org.maiwithu.maidroid.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// ── Primary (Orange accent) ──────────────────────────────────────
-val Orange500 = Color(0xFFE97F0F)
-val Orange400 = Color(0xCCE97F0F)  // 80% opacity
-val Orange300 = Color(0x66E97F0F)  // 40% opacity
+// 全应用配色。按用途命名：同一个色值只定义一次，页面里不要再写同值的新常量。
 
-// ── Backgrounds ──────────────────────────────────────────────────
-val BackgroundDark = Color(0xFF121212)
-val SurfaceDark = Color(0xFF2B2B2B)
-val SurfaceContainer = Color(0xFF1E1E1E)
+// ── 品牌橙：按钮、选中态、标题强调 ─────────────────────────────────
+val BrandOrange = Color(0xFFE97F0F)
+val BrandOrangeMuted = Color(0xCCE97F0F)  // 80% 不透明，OOBE 的按钮和图标底色
+val BrandOrangeFaint = Color(0x66E97F0F)  // 40% 不透明，只用于 Material 描边
+val OnBrandOrange = Color.White
 
-// ── Text ─────────────────────────────────────────────────────────
-val TextPrimary = Color(0xFFFAFAFA)
-val TextSecondary = Color(0x80FFFFFF)  // 50% white
-val TextDimmed = Color(0x66FFFFFF)     // 40% white
-val TextOnOrange = Color.White
+// ── OOBE（首次引导）页面：底色更亮一档，卡片是灰色块 ───────────────────
+val OobeBackground = Color(0xFF121212)
+val OobeSurface = Color(0xFF2B2B2B)
+val OobeSurfaceVariant = Color(0xFF1E1E1E)
+val OobeTextPrimary = Color(0xFFFAFAFA)
+val OobeTextSecondary = Color(0x80FFFFFF)  // 50% 白
+val OobeTextDimmed = Color(0x66FFFFFF)     // 40% 白
+
+// ── 主页各页（WebUI、消息平台、设置、终端）：近黑底 + 深灰卡片 ─────────────
+val PageBackground = Color(0xFF0F0F0F)
+val CardSurface = Color(0xFF1C1C1E)
+val CardBorder = Color(0xFF2C2C2E)
+val TextMuted = Color(0xFF8E8E93)  // 次要说明文字
+val TextFaint = Color(0xFF717171)  // 更弱一级的提示文字
+
+// ── 状态色 ───────────────────────────────────────────────────────
+val StatusOnline = Color(0xFF30D158)   // 在线、已开启、已是最新
+val StatusWarning = Color(0xFFE8A064)  // 离线、未授权、启动失败
+val StatusDanger = Color(0xFFFF453A)   // 危险操作按钮（退出登录等）
+
+// ── 毛玻璃：悬浮导航栏、刷新按钮、授权弹窗、启动页信息卡 ──────────────────
+val GlassSurface = Color(0x802B2B2B)
+val GlassStroke = Color(0x55FFFFFF)
+val SubtleGlassSurface = Color(0x332B2B2B)
+const val SubtleGlassBlurRadius = 6f
+
+// 唤醒页、启动页的插画按这个尺寸（dp）的设计稿绘制，运行时按实际屏幕等比缩放。
+const val DesignFrameWidthDp = 412f
+const val DesignFrameHeightDp = 917f

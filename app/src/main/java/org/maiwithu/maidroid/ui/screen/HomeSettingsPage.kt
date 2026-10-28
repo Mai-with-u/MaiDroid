@@ -85,6 +85,13 @@ import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 private const val PermissionSettingsDetail = "permissions"
 
@@ -129,7 +136,7 @@ internal fun SettingsPage(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(MainSurface)
+            .background(PageBackground)
     ) {
         val density = LocalDensity.current
         val layoutDirection = LocalLayoutDirection.current
@@ -167,7 +174,7 @@ internal fun SettingsPage(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MainSurface)
+                    .background(PageBackground)
                     .absolutePadding(left = safeDrawingLeft, right = safeDrawingRight)
             ) {
                 SettingsNavigationPane(
@@ -192,14 +199,14 @@ internal fun SettingsPage(
                     modifier = Modifier
                         .width(1.dp)
                         .fillMaxHeight()
-                        .background(PlatformBorder.copy(alpha = 0.8f))
+                        .background(CardBorder.copy(alpha = 0.8f))
                 )
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize()
-                        .background(MainSurface)
+                        .background(PageBackground)
                 ) {
                     PermissionManagementPage(
                         state = permissionState,
@@ -215,7 +222,7 @@ internal fun SettingsPage(
                 targetState = selectedDetail != null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MainSurface),
+                    .background(PageBackground),
                 transitionSpec = { settingsDetailTransition() },
                 label = "SettingsPermissionTransition"
             ) { showingPermissionPage ->
@@ -304,7 +311,7 @@ private fun SettingsNavigationPane(
 
     LazyColumn(
         modifier = modifier
-            .background(MainSurface)
+            .background(PageBackground)
             .padding(top = statusBarTop),
         contentPadding = PaddingValues(
             top = if (compact) 4.dp else 44.dp,
@@ -328,7 +335,7 @@ private fun SettingsNavigationPane(
 
                 Text(
                     text = if (compact) "MaiDroid 控制中心" else "管理服务、权限和应用状态",
-                    color = PlatformTextSecondary,
+                    color = TextMuted,
                     fontSize = 13.sp,
                     lineHeight = 17.sp
                 )
@@ -341,10 +348,10 @@ private fun SettingsNavigationPane(
                     icon = Icons.Outlined.Settings,
                     title = "WebUI",
                     supportingText = if (webUiOnline) "服务在线" else "服务离线",
-                    accent = if (webUiOnline) PlatformOnline else HomeOffline,
+                    accent = if (webUiOnline) StatusOnline else StatusWarning,
                     trailing = if (compact) null else {
                         {
-                            SettingsStatusDot(if (webUiOnline) PlatformOnline else HomeOffline)
+                            SettingsStatusDot(if (webUiOnline) StatusOnline else StatusWarning)
                         }
                     }
                 )
@@ -362,7 +369,7 @@ private fun SettingsNavigationPane(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = "打开 MaiBot 更新",
-                                tint = PlatformTextSecondary,
+                                tint = TextMuted,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -376,9 +383,9 @@ private fun SettingsNavigationPane(
                     title = "容器 SSH",
                     supportingText = containerSshSummaryText(sshState),
                     accent = when {
-                        sshState.phase == ContainerSshPhase.Failed -> HomeOffline
-                        sshState.isRunning -> PlatformOnline
-                        else -> PlatformOrange
+                        sshState.phase == ContainerSshPhase.Failed -> StatusWarning
+                        sshState.isRunning -> StatusOnline
+                        else -> BrandOrange
                     },
                     onClick = onSshConfigureClick,
                     trailing = if (compact) {
@@ -410,7 +417,7 @@ private fun SettingsNavigationPane(
                     icon = Icons.Outlined.Security,
                     title = "权限管理",
                     supportingText = permissionSummary(permissionState),
-                    accent = if (permissionState.storageGranted) PlatformOnline else HomeOffline,
+                    accent = if (permissionState.storageGranted) StatusOnline else StatusWarning,
                     selected = permissionSelected,
                     exposesSelection = true,
                     onClick = onPermissionClick,
@@ -420,9 +427,9 @@ private fun SettingsNavigationPane(
                                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = "进入权限管理",
                                 tint = if (permissionSelected) {
-                                    PlatformOrange
+                                    BrandOrange
                                 } else {
-                                    PlatformTextSecondary
+                                    TextMuted
                                 },
                                 modifier = Modifier.size(24.dp)
                             )
@@ -442,11 +449,11 @@ private fun SettingsNavigationPane(
                     } else {
                         "暂无平台正在运行"
                     },
-                    accent = if (runningPlatformCount > 0) PlatformOnline else HomeOffline,
+                    accent = if (runningPlatformCount > 0) StatusOnline else StatusWarning,
                     trailing = if (compact) null else {
                         {
                             SettingsStatusDot(
-                                if (runningPlatformCount > 0) PlatformOnline else HomeOffline
+                                if (runningPlatformCount > 0) StatusOnline else StatusWarning
                             )
                         }
                     }
@@ -458,7 +465,7 @@ private fun SettingsNavigationPane(
                     icon = Icons.Outlined.Info,
                     title = "应用版本",
                     supportingText = "v$versionName",
-                    accent = PlatformOrange
+                    accent = BrandOrange
                 )
             }
         }
@@ -473,7 +480,7 @@ private fun SettingsSection(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = title,
-            color = PlatformTextSecondary,
+            color = TextMuted,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 14.sp,
@@ -484,8 +491,8 @@ private fun SettingsSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
-                .background(PlatformCardSurface),
+                .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+                .background(CardSurface),
             content = content
         )
     }
@@ -516,7 +523,7 @@ private fun SettingsNavigationRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(if (selected) PlatformOrange.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (selected) BrandOrange.copy(alpha = 0.10f) else Color.Transparent)
             .then(clickModifier)
             .padding(horizontal = 13.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -553,7 +560,7 @@ private fun SettingsNavigationRow(
 
             Text(
                 text = supportingText,
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 fontSize = 11.sp,
                 lineHeight = 14.sp,
                 maxLines = 2,
@@ -575,7 +582,7 @@ private fun SettingsDivider() {
             .fillMaxWidth()
             .padding(start = 62.dp, end = 14.dp)
             .height(1.dp)
-            .background(PlatformBorder.copy(alpha = 0.72f))
+            .background(CardBorder.copy(alpha = 0.72f))
     )
 }
 
@@ -610,7 +617,7 @@ private fun CompactSshSwitchRow(
     ) {
         Text(
             text = "启用 SSH",
-            color = PlatformTextSecondary,
+            color = TextMuted,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1
@@ -627,10 +634,10 @@ private fun CompactSshSwitchRow(
 // 失败标红，可更新和进行中用主题橙，已是最新或刚更新完标绿。
 private fun maiBotUpdateAccent(state: MaiBotUpdateState): Color =
     when (state.phase) {
-        MaiBotUpdatePhase.Failed -> HomeOffline
+        MaiBotUpdatePhase.Failed -> StatusWarning
         MaiBotUpdatePhase.UpToDate,
-        MaiBotUpdatePhase.Updated -> PlatformOnline
-        else -> PlatformOrange
+        MaiBotUpdatePhase.Updated -> StatusOnline
+        else -> BrandOrange
     }
 
 private fun permissionSummary(state: PermissionState): String {
@@ -712,7 +719,7 @@ private fun ContainerSshConfigDialog(
                 if (errorText != null) {
                     Text(
                         text = errorText,
-                        color = HomeOffline,
+                        color = StatusWarning,
                         fontSize = 12.sp,
                         lineHeight = 14.sp
                     )
@@ -723,7 +730,7 @@ private fun ContainerSshConfigDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformBorder,
+                    containerColor = CardBorder,
                     contentColor = Color.White
                 )
             ) {
@@ -738,16 +745,16 @@ private fun ContainerSshConfigDialog(
                 },
                 enabled = errorText == null,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformOrange,
+                    containerColor = BrandOrange,
                     contentColor = Color.White
                 )
             ) {
                 Text(text = "确定", fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = PlatformCardSurface,
+        containerColor = CardSurface,
         titleContentColor = Color.White,
-        textContentColor = PlatformTextSecondary
+        textContentColor = TextMuted
     )
 }
 

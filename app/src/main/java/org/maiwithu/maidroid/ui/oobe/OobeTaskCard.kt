@@ -40,10 +40,10 @@ import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskKind
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
-import org.maiwithu.maidroid.ui.theme.Orange400
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSecondary
+import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.OobeSurface
+import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
+import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 
 /** 安装页的一张任务卡片：图标和说明按任务种类选，右侧显示进行中（旋转）、完成、失败图标。 */
 @Composable
@@ -98,7 +98,7 @@ private fun OobeTaskCard(
             .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(24.dp))
-            .background(SurfaceDark)
+            .background(OobeSurface)
             .padding(start = 12.dp, end = 26.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -106,7 +106,7 @@ private fun OobeTaskCard(
             modifier = Modifier
                 .size(52.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Orange400),
+                .background(BrandOrangeMuted),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -129,7 +129,7 @@ private fun OobeTaskCard(
                 text = title,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = OobeTextPrimary,
                 lineHeight = 23.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -141,7 +141,7 @@ private fun OobeTaskCard(
                 text = description,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                color = TextSecondary,
+                color = OobeTextSecondary,
                 lineHeight = 14.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis

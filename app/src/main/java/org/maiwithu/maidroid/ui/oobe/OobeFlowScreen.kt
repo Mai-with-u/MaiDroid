@@ -46,7 +46,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.screen.EmbeddedTerminalOutputPanel
 import org.maiwithu.maidroid.ui.screen.TerminalOutputDialog
-import org.maiwithu.maidroid.ui.theme.BackgroundDark
+import org.maiwithu.maidroid.ui.theme.OobeBackground
 
 // 配置容器或安装一直没完成时，过这么久把终端按钮展开成“遇到问题？”提醒用户看日志。
 private const val SETUP_ATTENTION_DELAY_MS = 5 * 60 * 1000L
@@ -126,7 +126,7 @@ internal fun OobeFlowScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(OobeBackground)
     ) {
         val density = LocalDensity.current
         val layoutDirection = LocalLayoutDirection.current
@@ -282,7 +282,7 @@ private fun BoxScope.CompactOobeLayout(
             .fillMaxWidth()
             .height(maxHeight - contentTop)
             .clip(RoundedCornerShape(topStart = contentCornerRadius, topEnd = contentCornerRadius))
-            .background(BackgroundDark)
+            .background(OobeBackground)
             .padding(horizontal = 24.dp)
     ) {
         Spacer(modifier = Modifier.height(32.dp))
@@ -377,7 +377,7 @@ private fun AdaptiveOobeLayout(
                             colorStops = arrayOf(
                                 0f to Color.Black.copy(alpha = 0.08f),
                                 0.42f to Color.Transparent,
-                                1f to BackgroundDark.copy(alpha = 0.96f)
+                                1f to OobeBackground.copy(alpha = 0.96f)
                             )
                         )
                     )
@@ -424,7 +424,7 @@ private fun AdaptiveOobeLayout(
                 .weight(OOBE_WORK_PANE_WEIGHT)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(topStart = 36.dp, bottomStart = 36.dp))
-                .background(BackgroundDark)
+                .background(OobeBackground)
         ) {
             Column(
                 modifier = Modifier

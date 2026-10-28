@@ -3,27 +3,8 @@ package org.maiwithu.maidroid.ui.screen
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.ui.theme.StatusOnline
 
-internal val HomeBackground = Color(0xFF07090D)
-internal val HomeOrange = Color(0xFFE8921E)
-internal val HomeTextBlue = Color(0xFFA0B4C8)
-internal val HomeMutedBlue = Color(0xFF788CA0)
-internal val HomeOnline = Color(0xFF64C88C)
-internal val HomeOffline = Color(0xFFE8A064)
-internal const val HomeDesignWidth = 412f
-internal const val HomeDesignHeight = 917f
-internal val MainSurface = Color(0xFF0F0F0F)
-internal val PlatformCardSurface = Color(0xFF1C1C1E)
-internal val PlatformBorder = Color(0xFF2C2C2E)
-internal val PlatformTextSecondary = Color(0xFF8E8E93)
-internal val PlatformTextDim = Color(0xFF717171)
-internal val PlatformOnline = Color(0xFF30D158)
-internal val PlatformOrange = Color(0xFFE97F0F)
-internal val PlatformDanger = Color(0xFFFF453A)
-internal val GlassSurface = Color(0x802B2B2B)
-internal val GlassStroke = Color(0x55FFFFFF)
-internal val SubtleGlassSurface = Color(0x332B2B2B)
-internal const val SubtleGlassBlurRadius = 6f
 internal const val WebUiLogTag = "MaiDroidWebUi"
 
 internal enum class MainTab {
@@ -48,7 +29,7 @@ internal data class InstalledPlatform(
     @param:DrawableRes val iconRes: Int,
     val account: String,
     val iconColor: Color,
-    val statusColor: Color = PlatformOnline,
+    val statusColor: Color = StatusOnline,
     val running: Boolean = true
 )
 

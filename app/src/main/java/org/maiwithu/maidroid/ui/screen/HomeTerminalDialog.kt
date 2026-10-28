@@ -77,6 +77,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.TextFaint
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 @Composable
 internal fun TerminalOutputDialog(
@@ -139,11 +145,11 @@ internal fun TerminalOutputDialog(
                             }
                         },
                     shape = RoundedCornerShape(if (isWide) 28.dp else 24.dp),
-                    color = PlatformCardSurface,
+                    color = CardSurface,
                     contentColor = Color.White,
                     tonalElevation = 8.dp,
                     shadowElevation = 20.dp,
-                    border = BorderStroke(1.dp, PlatformBorder)
+                    border = BorderStroke(1.dp, CardBorder)
                 ) {
                     TerminalDialogContent(
                         logs = logs,
@@ -168,11 +174,11 @@ internal fun EmbeddedTerminalOutputPanel(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = PlatformCardSurface,
+        color = CardSurface,
         contentColor = Color.White,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        border = BorderStroke(1.dp, PlatformBorder)
+        border = BorderStroke(1.dp, CardBorder)
     ) {
         EmbeddedTerminalContent(
             logs = logs,
@@ -241,7 +247,7 @@ private fun EmbeddedTerminalContent(
             onDismiss = onDismiss
         )
 
-        HorizontalDivider(color = PlatformBorder)
+        HorizontalDivider(color = CardBorder)
 
         TerminalLogViewport(
             terminalText = terminalText,
@@ -291,13 +297,13 @@ private fun EmbeddedTerminalToolbar(
             modifier = Modifier
                 .size(32.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(PlatformOrange.copy(alpha = 0.14f)),
+                .background(BrandOrange.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Outlined.Terminal,
                 contentDescription = null,
-                tint = PlatformOrange,
+                tint = BrandOrange,
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -322,7 +328,7 @@ private fun EmbeddedTerminalToolbar(
                     append(if (autoFollow) " 行 · 跟随" else " 行 · 已暂停")
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -357,7 +363,7 @@ private fun EmbeddedTerminalToolbar(
             Icon(
                 imageVector = Icons.Outlined.Close,
                 contentDescription = "收起终端输出",
-                tint = PlatformTextSecondary
+                tint = TextMuted
             )
         }
     }
@@ -407,7 +413,7 @@ private fun TerminalDialogContent(
             onDismiss = onDismiss
         )
 
-        HorizontalDivider(color = PlatformBorder)
+        HorizontalDivider(color = CardBorder)
 
         TerminalToolbar(
             query = query,
@@ -501,13 +507,13 @@ private fun TerminalDialogHeader(
             modifier = Modifier
                 .size(if (compact) 38.dp else 44.dp)
                 .clip(RoundedCornerShape(13.dp))
-                .background(PlatformOrange.copy(alpha = 0.14f)),
+                .background(BrandOrange.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Outlined.Terminal,
                 contentDescription = null,
-                tint = PlatformOrange,
+                tint = BrandOrange,
                 modifier = Modifier.size(if (compact) 20.dp else 23.dp)
             )
         }
@@ -533,7 +539,7 @@ private fun TerminalDialogHeader(
                 Text(
                     text = detail,
                     style = MaterialTheme.typography.bodySmall,
-                    color = PlatformTextSecondary,
+                    color = TextMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -544,7 +550,7 @@ private fun TerminalDialogHeader(
             Icon(
                 imageVector = Icons.Outlined.Close,
                 contentDescription = "关闭终端输出",
-                tint = PlatformTextSecondary
+                tint = TextMuted
             )
         }
     }
@@ -628,7 +634,7 @@ private fun TerminalSearchField(
         placeholder = {
             Text(
                 text = "筛选输出",
-                color = PlatformTextDim,
+                color = TextFaint,
                 style = MaterialTheme.typography.bodyMedium
             )
         },
@@ -636,7 +642,7 @@ private fun TerminalSearchField(
             Icon(
                 imageVector = Icons.Outlined.Search,
                 contentDescription = null,
-                tint = PlatformTextSecondary,
+                tint = TextMuted,
                 modifier = Modifier.size(19.dp)
             )
         },
@@ -646,7 +652,7 @@ private fun TerminalSearchField(
                     Icon(
                         imageVector = Icons.Outlined.Close,
                         contentDescription = "清除筛选条件",
-                        tint = PlatformTextSecondary,
+                        tint = TextMuted,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -658,9 +664,9 @@ private fun TerminalSearchField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
-            cursorColor = PlatformOrange,
-            focusedBorderColor = PlatformOrange.copy(alpha = 0.8f),
-            unfocusedBorderColor = PlatformBorder,
+            cursorColor = BrandOrange,
+            focusedBorderColor = BrandOrange.copy(alpha = 0.8f),
+            unfocusedBorderColor = CardBorder,
             focusedContainerColor = Color.Black.copy(alpha = 0.16f),
             unfocusedContainerColor = Color.Black.copy(alpha = 0.12f)
         )
@@ -700,7 +706,7 @@ private fun TerminalActions(
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = Color.White,
-                disabledContentColor = PlatformTextDim
+                disabledContentColor = TextFaint
             )
         ) {
             Icon(
@@ -717,8 +723,8 @@ private fun TerminalActions(
 @Composable
 private fun terminalFilterChipColors() = FilterChipDefaults.filterChipColors(
     containerColor = Color.Transparent,
-    labelColor = PlatformTextSecondary,
-    selectedContainerColor = PlatformOrange.copy(alpha = 0.16f),
+    labelColor = TextMuted,
+    selectedContainerColor = BrandOrange.copy(alpha = 0.16f),
     selectedLabelColor = Color.White
 )
 
@@ -795,9 +801,9 @@ private fun TerminalLogViewport(
                         .align(Alignment.BottomEnd)
                         .padding(12.dp),
                     shape = CircleShape,
-                    color = PlatformCardSurface.copy(alpha = 0.96f),
+                    color = CardSurface.copy(alpha = 0.96f),
                     contentColor = Color.White,
-                    border = BorderStroke(1.dp, PlatformBorder),
+                    border = BorderStroke(1.dp, CardBorder),
                     shadowElevation = 6.dp
                 ) {
                     IconButton(
@@ -843,7 +849,7 @@ private fun TerminalEmptyState(
         Icon(
             imageVector = Icons.Outlined.Terminal,
             contentDescription = null,
-            tint = PlatformTextDim,
+            tint = TextFaint,
             modifier = Modifier.size(if (compact) 20.dp else 30.dp)
         )
         Spacer(modifier = Modifier.size(if (compact) 4.dp else 10.dp))
@@ -863,7 +869,7 @@ private fun TerminalEmptyState(
         Text(
             text = detail,
             style = MaterialTheme.typography.bodySmall,
-            color = PlatformTextSecondary,
+            color = TextMuted,
             maxLines = if (compact) 1 else Int.MAX_VALUE,
             overflow = TextOverflow.Ellipsis
         )
@@ -893,7 +899,7 @@ private fun TerminalDialogFooter(
                     .size(7.dp)
                     .clip(CircleShape)
                     .background(
-                        if (autoFollow) PlatformOnline else PlatformTextDim
+                        if (autoFollow) StatusOnline else TextFaint
                     )
             )
             Spacer(modifier = Modifier.size(8.dp))
@@ -909,7 +915,7 @@ private fun TerminalDialogFooter(
                     }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -919,7 +925,7 @@ private fun TerminalDialogFooter(
             onClick = onDismiss,
             shape = RoundedCornerShape(13.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = PlatformOrange,
+                containerColor = BrandOrange,
                 contentColor = Color.White
             )
         ) {

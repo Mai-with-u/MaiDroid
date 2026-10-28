@@ -46,6 +46,13 @@ import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.GlassSurface
+import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.StatusWarning
 
 // 导航栏悬浮在 WebView 上，盖住的高度就是网页的底部安全区；WebView 里 1 CSS px 等于 1 dp。
 private val WebUiBottomOverlayInsetCssPx = MainBottomNavigationOverlayHeight.value.toInt()
@@ -138,7 +145,7 @@ internal fun WebUiTabPage(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MainSurface)
+            .background(PageBackground)
     ) {
         AndroidView(
             factory = {
@@ -190,8 +197,8 @@ internal fun WebUiTabPage(
                     .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(22.dp))
-                    .border(1.dp, PlatformBorder, RoundedCornerShape(22.dp))
-                    .background(PlatformCardSurface.copy(alpha = 0.92f))
+                    .border(1.dp, CardBorder, RoundedCornerShape(22.dp))
+                    .background(CardSurface.copy(alpha = 0.92f))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -199,7 +206,7 @@ internal fun WebUiTabPage(
                     modifier = Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(HomeOffline)
+                        .background(StatusWarning)
                 )
 
                 Spacer(modifier = Modifier.width(10.dp))
@@ -214,7 +221,7 @@ internal fun WebUiTabPage(
 
                 Text(
                     text = "唤醒",
-                    color = PlatformOrange,
+                    color = BrandOrange,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable(
@@ -283,8 +290,8 @@ private fun WebUiStatusBanner(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(22.dp))
-            .border(1.dp, PlatformBorder, RoundedCornerShape(22.dp))
-            .background(PlatformCardSurface.copy(alpha = 0.94f))
+            .border(1.dp, CardBorder, RoundedCornerShape(22.dp))
+            .background(CardSurface.copy(alpha = 0.94f))
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -292,7 +299,7 @@ private fun WebUiStatusBanner(
             modifier = Modifier
                 .size(10.dp)
                 .clip(CircleShape)
-                .background(HomeOffline)
+                .background(StatusWarning)
         )
 
         Spacer(modifier = Modifier.width(10.dp))
@@ -308,7 +315,7 @@ private fun WebUiStatusBanner(
 
         Text(
             text = action,
-            color = PlatformOrange,
+            color = BrandOrange,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable(

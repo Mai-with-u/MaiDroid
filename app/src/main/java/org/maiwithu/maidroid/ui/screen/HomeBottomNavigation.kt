@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import eightbitlab.com.blurview.BlurTarget
+import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.GlassSurface
 
 /** 导航栏毛玻璃的模糊半径。 */
 private const val NavigationBlurRadius = 22f

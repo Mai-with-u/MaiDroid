@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import kotlinx.coroutines.delay
+import org.maiwithu.maidroid.ui.theme.PageBackground
 
 internal const val WakeRetryIntervalMillis = 30_000L
 
@@ -65,7 +66,7 @@ fun HomeScreen(
         targetState = dashboardVisible,
         modifier = modifier
             .fillMaxSize()
-            .background(MainSurface),
+            .background(PageBackground),
         transitionSpec = { entryTransition() },
         label = "HomeEntryTransition"
     ) { showDashboard ->
@@ -116,19 +117,19 @@ private fun DashboardShell(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MainSurface)
+            .background(PageBackground)
     ) {
         BlurTargetHost(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MainSurface),
+                .background(PageBackground),
             onTargetChanged = { blurTarget = it }
         ) {
             AnimatedContent(
                 targetState = selectedTab,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MainSurface),
+                    .background(PageBackground),
                 transitionSpec = { tabTransition() },
                 label = "HomeTabTransition"
             ) { tab ->

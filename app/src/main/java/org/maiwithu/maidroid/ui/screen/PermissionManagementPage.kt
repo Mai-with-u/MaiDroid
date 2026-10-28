@@ -48,6 +48,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 @Composable
 internal fun PermissionManagementPage(
@@ -62,7 +69,7 @@ internal fun PermissionManagementPage(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MainSurface)
+            .background(PageBackground)
     ) {
         LazyColumn(
             modifier = Modifier
@@ -89,7 +96,7 @@ internal fun PermissionManagementPage(
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
-                                .background(PlatformCardSurface)
+                                .background(CardSurface)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -114,7 +121,7 @@ internal fun PermissionManagementPage(
             item {
                 Text(
                     text = "必选权限",
-                    color = PlatformTextSecondary,
+                    color = TextMuted,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
@@ -137,7 +144,7 @@ internal fun PermissionManagementPage(
             item {
                 Text(
                     text = "可选权限",
-                    color = PlatformTextSecondary,
+                    color = TextMuted,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
@@ -237,7 +244,7 @@ private fun PermissionActionCard(
         description = description,
         badgeText = badgeText,
         statusText = if (granted) "已开启" else "未开启",
-        statusColor = if (granted) PlatformOnline else HomeOffline,
+        statusColor = if (granted) StatusOnline else StatusWarning,
         modifier = modifier
     ) {
         Button(
@@ -246,10 +253,10 @@ private fun PermissionActionCard(
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = PlatformOrange,
+                containerColor = BrandOrange,
                 contentColor = Color.White,
-                disabledContainerColor = PlatformBorder,
-                disabledContentColor = PlatformTextSecondary
+                disabledContainerColor = CardBorder,
+                disabledContentColor = TextMuted
             ),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
         ) {
@@ -278,7 +285,7 @@ private fun PermissionSwitchCard(
         description = description,
         badgeText = "可选",
         statusText = if (checked) "已开启" else "未开启",
-        statusColor = if (checked) PlatformOnline else PlatformTextSecondary,
+        statusColor = if (checked) StatusOnline else TextMuted,
         modifier = modifier
     ) {
         Switch(
@@ -304,14 +311,14 @@ private fun PermissionSystemSettingsCard(
         description = description,
         badgeText = badgeText,
         statusText = "系统设置",
-        statusColor = if (destructive) HomeOffline else PlatformTextSecondary,
-        badgeColor = if (destructive) Color(0xFFE5484D) else PlatformOrange,
+        statusColor = if (destructive) StatusWarning else TextMuted,
+        badgeColor = if (destructive) Color(0xFFE5484D) else BrandOrange,
         modifier = modifier.clickable(onClick = onClick)
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = PlatformTextSecondary,
+            tint = TextMuted,
             modifier = Modifier.size(28.dp)
         )
     }
@@ -326,7 +333,7 @@ private fun PermissionBaseCard(
     statusText: String,
     statusColor: Color,
     modifier: Modifier = Modifier,
-    badgeColor: Color = PlatformOrange,
+    badgeColor: Color = BrandOrange,
     trailingContent: @Composable () -> Unit
 ) {
     Row(
@@ -334,8 +341,8 @@ private fun PermissionBaseCard(
             .fillMaxWidth()
             .heightIn(min = 92.dp)
             .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, PlatformBorder, RoundedCornerShape(24.dp))
-            .background(PlatformCardSurface)
+            .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+            .background(CardSurface)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -343,13 +350,13 @@ private fun PermissionBaseCard(
             modifier = Modifier
                 .size(42.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(PlatformOrange.copy(alpha = 0.18f)),
+                .background(BrandOrange.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = PlatformOrange,
+                tint = BrandOrange,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -388,7 +395,7 @@ private fun PermissionBaseCard(
 
             Text(
                 text = description,
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
                 maxLines = 2,

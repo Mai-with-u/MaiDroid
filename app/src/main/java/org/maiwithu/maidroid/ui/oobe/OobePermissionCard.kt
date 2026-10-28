@@ -32,11 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
-import org.maiwithu.maidroid.ui.theme.Orange400
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextOnOrange
-import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSecondary
+import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.OobeSurface
+import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
+import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 
 /** OOBE 里的单项权限卡片：图标、名称、必须/可选标签、说明和“去授权”按钮，授予后整体变暗。 */
 @Composable
@@ -49,11 +49,11 @@ internal fun OobePermissionCard(
     modifier: Modifier = Modifier,
     granted: Boolean = false
 ) {
-    val cardColor = if (granted) SurfaceDark.copy(alpha = 0.62f) else SurfaceDark
-    val iconBackground = if (granted) Color.White.copy(alpha = 0.12f) else Orange400
-    val primaryTextColor = if (granted) TextSecondary else TextPrimary
-    val secondaryTextColor = if (granted) TextSecondary.copy(alpha = 0.72f) else TextSecondary
-    val badgeBackground = if (granted) Color.White.copy(alpha = 0.1f) else Orange400
+    val cardColor = if (granted) OobeSurface.copy(alpha = 0.62f) else OobeSurface
+    val iconBackground = if (granted) Color.White.copy(alpha = 0.12f) else BrandOrangeMuted
+    val primaryTextColor = if (granted) OobeTextSecondary else OobeTextPrimary
+    val secondaryTextColor = if (granted) OobeTextSecondary.copy(alpha = 0.72f) else OobeTextSecondary
+    val badgeBackground = if (granted) Color.White.copy(alpha = 0.1f) else BrandOrangeMuted
 
     Box(
         modifier = modifier
@@ -78,7 +78,7 @@ internal fun OobePermissionCard(
                     painter = painterResource(iconRes),
                     contentDescription = title,
                     modifier = Modifier.size(28.dp),
-                    tint = if (granted) TextSecondary else Color.White
+                    tint = if (granted) OobeTextSecondary else Color.White
                 )
             }
 
@@ -102,7 +102,7 @@ internal fun OobePermissionCard(
                         text = if (required) "必须" else "可选",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (granted) TextSecondary else TextOnOrange,
+                        color = if (granted) OobeTextSecondary else OnBrandOrange,
                         modifier = Modifier
                             .clip(RoundedCornerShape(5.dp))
                             .background(badgeBackground)
@@ -131,10 +131,10 @@ internal fun OobePermissionCard(
                 modifier = Modifier.size(width = 64.dp, height = 28.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Orange400,
-                    contentColor = TextOnOrange,
+                    containerColor = BrandOrangeMuted,
+                    contentColor = OnBrandOrange,
                     disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                    disabledContentColor = TextSecondary
+                    disabledContentColor = OobeTextSecondary
                 ),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
             ) {

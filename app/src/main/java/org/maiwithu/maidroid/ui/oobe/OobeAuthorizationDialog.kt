@@ -52,12 +52,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
-import org.maiwithu.maidroid.ui.screen.GlassStroke
-import org.maiwithu.maidroid.ui.screen.PlatformOrange
-import org.maiwithu.maidroid.ui.screen.SubtleGlassBlurRadius
-import org.maiwithu.maidroid.ui.screen.SubtleGlassSurface
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.HarmonySans
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
+import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 
 private const val UserAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/EULA.md"
 private const val PrivacyAgreementUrl = "https://github.com/Mai-with-u/MaiBot/blob/main/PRIVACY.md"
@@ -77,7 +77,7 @@ internal fun OobeAuthorizationDialog(
         pushStringAnnotation(tag = "url", annotation = UserAgreementUrl)
         withStyle(
             SpanStyle(
-                color = PlatformOrange,
+                color = BrandOrange,
                 textDecoration = TextDecoration.Underline
             )
         ) {
@@ -88,7 +88,7 @@ internal fun OobeAuthorizationDialog(
         pushStringAnnotation(tag = "url", annotation = PrivacyAgreementUrl)
         withStyle(
             SpanStyle(
-                color = PlatformOrange,
+                color = BrandOrange,
                 textDecoration = TextDecoration.Underline
             )
         ) {
@@ -219,7 +219,7 @@ private fun PhonePortraitAuthorizationCard(
 
         Text(
             text = "需要授权",
-            color = PlatformOrange,
+            color = BrandOrange,
             fontFamily = DouyinSans,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
@@ -351,7 +351,7 @@ private fun AuthorizationHeading(modifier: Modifier = Modifier) {
 
         Text(
             text = "需要授权",
-            color = PlatformOrange,
+            color = BrandOrange,
             fontFamily = DouyinSans,
             fontSize = 30.sp,
             fontWeight = FontWeight.Bold,

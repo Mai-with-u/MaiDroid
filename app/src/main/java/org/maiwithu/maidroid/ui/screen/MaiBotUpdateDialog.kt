@@ -25,6 +25,12 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 internal enum class MaiBotUpdateButtonAction {
     Check,
@@ -152,7 +158,7 @@ internal fun MaiBotUpdateDialog(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformBorder,
+                    containerColor = CardBorder,
                     contentColor = Color.White
                 )
             ) {
@@ -173,16 +179,16 @@ internal fun MaiBotUpdateDialog(
                 },
                 enabled = primaryButton.enabled,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PlatformOrange,
+                    containerColor = BrandOrange,
                     contentColor = Color.White
                 )
             ) {
                 Text(text = primaryButton.label, fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = PlatformCardSurface,
+        containerColor = CardSurface,
         titleContentColor = Color.White,
-        textContentColor = PlatformTextSecondary
+        textContentColor = TextMuted
     )
 }
 
@@ -195,7 +201,7 @@ private fun RevisionBlock(
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
             text = label,
-            color = PlatformTextSecondary,
+            color = TextMuted,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 14.sp
@@ -213,7 +219,7 @@ private fun RevisionBlock(
 
         Text(
             text = "${revision.shortCommit} · ${formatRevisionTime(revision.committedAtEpochSeconds)}",
-            color = if (highlight) PlatformOrange else Color.White,
+            color = if (highlight) BrandOrange else Color.White,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 18.sp
@@ -222,7 +228,7 @@ private fun RevisionBlock(
         if (revision.subject.isNotBlank()) {
             Text(
                 text = revision.subject,
-                color = PlatformTextSecondary,
+                color = TextMuted,
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
                 maxLines = 2,
@@ -235,11 +241,11 @@ private fun RevisionBlock(
 @Composable
 private fun UpdateStatusLine(state: MaiBotUpdateState) {
     val color = when (state.phase) {
-        MaiBotUpdatePhase.Failed -> HomeOffline
+        MaiBotUpdatePhase.Failed -> StatusWarning
         MaiBotUpdatePhase.UpToDate,
-        MaiBotUpdatePhase.Updated -> PlatformOnline
-        MaiBotUpdatePhase.Available -> PlatformOrange
-        else -> PlatformTextSecondary
+        MaiBotUpdatePhase.Updated -> StatusOnline
+        MaiBotUpdatePhase.Available -> BrandOrange
+        else -> TextMuted
     }
 
     Row(
@@ -248,7 +254,7 @@ private fun UpdateStatusLine(state: MaiBotUpdateState) {
     ) {
         if (state.isBusy) {
             CircularProgressIndicator(
-                color = PlatformOrange,
+                color = BrandOrange,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(16.dp)
             )
@@ -267,7 +273,7 @@ private fun UpdateStatusLine(state: MaiBotUpdateState) {
 private fun UpdateNote(text: String) {
     Text(
         text = text,
-        color = PlatformTextSecondary,
+        color = TextMuted,
         fontSize = 12.sp,
         lineHeight = 16.sp
     )

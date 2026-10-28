@@ -25,10 +25,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.oobe.OobeStep
-import org.maiwithu.maidroid.ui.theme.BackgroundDark
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextDimmed
+import org.maiwithu.maidroid.ui.theme.OobeBackground
+import org.maiwithu.maidroid.ui.theme.OobeSurface
+import org.maiwithu.maidroid.ui.theme.OobeTextDimmed
 
 /**
  * OOBE 顶部的三步指示器：当前步骤显示实心圆点，其余显示序号。尺寸按 540px 设计稿缩放 0.67 倍。
@@ -56,7 +56,7 @@ private fun StepNode(number: Int, isActive: Boolean) {
         label = "OobeStepBorderWidth"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (isActive) Color.White else SurfaceDark,
+        targetValue = if (isActive) Color.White else OobeSurface,
         label = "OobeStepBorderColor"
     )
 
@@ -80,7 +80,7 @@ private fun StepNode(number: Int, isActive: Boolean) {
                 text = number.toString(),
                 fontSize = 16.sp,  // 24 × 0.67
                 fontWeight = FontWeight.Bold,
-                color = TextDimmed,
+                color = OobeTextDimmed,
                 textAlign = TextAlign.Center,
                 lineHeight = 16.sp
             )
@@ -94,7 +94,7 @@ private fun RowScope.StepConnector() {
         modifier = Modifier
             .weight(1f)
             .height(3.dp)  // 4 × 0.67
-            .background(SurfaceDark)
+            .background(OobeSurface)
     )
 }
 
@@ -102,7 +102,7 @@ private fun RowScope.StepConnector() {
 @Composable
 private fun OobeStepIndicatorPreview() {
     MaiDroidTheme {
-        Box(modifier = Modifier.background(BackgroundDark).padding(24.dp)) {
+        Box(modifier = Modifier.background(OobeBackground).padding(24.dp)) {
             OobeStepIndicator(currentStep = OobeStep.Permissions)
         }
     }

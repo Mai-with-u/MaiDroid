@@ -51,12 +51,12 @@ import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
-import org.maiwithu.maidroid.ui.theme.Orange400
-import org.maiwithu.maidroid.ui.theme.Orange500
-import org.maiwithu.maidroid.ui.theme.SurfaceDark
-import org.maiwithu.maidroid.ui.theme.TextOnOrange
-import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSecondary
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.OobeSurface
+import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
+import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 
 // OOBE 手机布局和平板布局共用的部件：步骤标题、底部按钮区、“遇到问题？”终端按钮、步骤切换动画。
 
@@ -98,7 +98,7 @@ internal fun OobeStepHeader(
             text = step.title,
             fontSize = if (narrow) 20.sp else 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Orange500,
+            color = BrandOrange,
             lineHeight = if (narrow) 24.sp else 27.sp,
             maxLines = if (limitLines) 2 else Int.MAX_VALUE,
             overflow = if (limitLines) TextOverflow.Ellipsis else TextOverflow.Clip
@@ -110,7 +110,7 @@ internal fun OobeStepHeader(
             text = step.description,
             fontSize = if (narrow) 12.sp else 14.sp,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = OobeTextPrimary,
             lineHeight = if (narrow) 15.sp else 17.sp,
             maxLines = when {
                 !limitLines -> Int.MAX_VALUE
@@ -203,9 +203,9 @@ internal fun CommandLogButton(
             .clip(RoundedCornerShape(22.dp))
             .background(
                 if (expanded) {
-                    Orange500.copy(alpha = 0.18f)
+                    BrandOrange.copy(alpha = 0.18f)
                 } else {
-                    SurfaceDark.copy(alpha = 0.82f)
+                    OobeSurface.copy(alpha = 0.82f)
                 }
             )
             .clickable(onClick = onClick)
@@ -216,7 +216,7 @@ internal fun CommandLogButton(
         Icon(
             imageVector = Icons.Outlined.Code,
             contentDescription = if (expanded) "收起终端输出" else "查看终端输出",
-            tint = Orange500,
+            tint = BrandOrange,
             modifier = Modifier.size(24.dp)
         )
 
@@ -224,7 +224,7 @@ internal fun CommandLogButton(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (expanded) "收起终端" else "遇到问题？",
-                color = TextPrimary,
+                color = OobeTextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -253,10 +253,10 @@ private fun NextButton(
             .height(64.dp),
         shape = RoundedCornerShape(22.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Orange400,
-            contentColor = TextOnOrange,
+            containerColor = BrandOrangeMuted,
+            contentColor = OnBrandOrange,
             disabledContainerColor = Color.White.copy(alpha = 0.12f),
-            disabledContentColor = TextSecondary
+            disabledContentColor = OobeTextSecondary
         )
     ) {
         Text(
@@ -290,7 +290,7 @@ private fun SetupFooter(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(19.dp))
-            .background(SurfaceDark)
+            .background(OobeSurface)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -307,7 +307,7 @@ private fun SetupFooter(
                 modifier = Modifier.weight(1f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
-                color = TextSecondary,
+                color = OobeTextSecondary,
                 lineHeight = 17.sp
             )
         }
@@ -320,10 +320,10 @@ private fun SetupFooter(
                 .height(44.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Orange400,
-                contentColor = TextOnOrange,
+                containerColor = BrandOrangeMuted,
+                contentColor = OnBrandOrange,
                 disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                disabledContentColor = TextSecondary
+                disabledContentColor = OobeTextSecondary
             )
         ) {
             Text(
@@ -360,7 +360,7 @@ private fun WaitingRing() {
         val arcTopLeft = Offset(stroke / 2, stroke / 2)
 
         drawArc(
-            color = Orange500,
+            color = BrandOrange,
             startAngle = -20f,
             sweepAngle = 72f,
             useCenter = false,
@@ -369,7 +369,7 @@ private fun WaitingRing() {
             style = Stroke(width = stroke, cap = StrokeCap.Round)
         )
         drawArc(
-            color = Orange500,
+            color = BrandOrange,
             startAngle = 160f,
             sweepAngle = 72f,
             useCenter = false,

@@ -43,6 +43,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
+import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
+
+// 唤醒页专用的冷色科技风配色（其余页面不用）。
+private val HomeBackground = Color(0xFF07090D)
+private val HomeOrange = Color(0xFFE8921E)
+private val HomeTextBlue = Color(0xFFA0B4C8)
+private val HomeMutedBlue = Color(0xFF788CA0)
+private val HomeOnline = Color(0xFF64C88C)
+private val HomeOffline = Color(0xFFE8A064)
 
 @Composable
 internal fun WakeMaiGatePage(
@@ -56,8 +66,8 @@ internal fun WakeMaiGatePage(
             .fillMaxSize()
             .background(HomeBackground)
     ) {
-        val sx = maxWidth.value / HomeDesignWidth
-        val sy = maxHeight.value / HomeDesignHeight
+        val sx = maxWidth.value / DesignFrameWidthDp
+        val sy = maxHeight.value / DesignFrameHeightDp
         val textScale = minOf(sx, sy)
         fun x(value: Float): Dp = (value * sx).dp
         fun y(value: Float): Dp = (value * sy).dp
@@ -376,8 +386,8 @@ private val WakeButtonShape = GenericShape { size, _ ->
 @Composable
 private fun HudOverlay(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
-        val sx = size.width / HomeDesignWidth
-        val sy = size.height / HomeDesignHeight
+        val sx = size.width / DesignFrameWidthDp
+        val sy = size.height / DesignFrameHeightDp
         val scale = minOf(sx, sy)
         fun x(value: Float) = value * sx
         fun y(value: Float) = value * sy

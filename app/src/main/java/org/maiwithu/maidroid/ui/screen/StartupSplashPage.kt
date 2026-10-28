@@ -52,6 +52,10 @@ import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.HarmonySans
+import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
+import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
+import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
+import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 
 private const val StartupSplashArtDesignWidth = 424f
 private const val StartupSplashArtDesignHeight = 917f
@@ -81,8 +85,8 @@ internal fun startupSplashCompactGeometry(
     widthDp: Float,
     heightDp: Float
 ): StartupSplashCompactGeometry {
-    val scaleX = widthDp.coerceAtLeast(0f) / HomeDesignWidth
-    val scaleY = heightDp.coerceAtLeast(0f) / HomeDesignHeight
+    val scaleX = widthDp.coerceAtLeast(0f) / DesignFrameWidthDp
+    val scaleY = heightDp.coerceAtLeast(0f) / DesignFrameHeightDp
 
     return StartupSplashCompactGeometry(
         scaleX = scaleX,
@@ -116,7 +120,7 @@ internal fun startupSplashAdaptiveGeometry(
     val safeWidth = widthDp.coerceAtLeast(0f)
     val safeHeight = heightDp.coerceAtLeast(0f)
     val scale = safeHeight / StartupSplashArtDesignHeight
-    val sceneWidth = HomeDesignWidth * scale
+    val sceneWidth = DesignFrameWidthDp * scale
     val sceneLeft = (safeWidth - sceneWidth) / 2f
     val infoScale = minOf(
         scale,
