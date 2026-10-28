@@ -90,7 +90,7 @@ import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.component.DownloadResourceCard
 import org.maiwithu.maidroid.ui.component.OobeStepIndicator
-import org.maiwithu.maidroid.ui.component.PermissionCard
+import org.maiwithu.maidroid.ui.oobe.OobePermissionCard
 import org.maiwithu.maidroid.ui.theme.BackgroundDark
 import org.maiwithu.maidroid.ui.theme.Orange400
 import org.maiwithu.maidroid.ui.theme.Orange500
@@ -761,7 +761,7 @@ private fun StoragePermissionCard(
     granted: Boolean,
     onAuthorize: () -> Unit
 ) {
-    PermissionCard(
+    OobePermissionCard(
         iconRes = R.drawable.ic_storage_hdd,
         title = "存储权限",
         description = "用于解包容器、保存 MaiBot 配置和访问外部文件。",
@@ -953,7 +953,7 @@ private fun PermissionCards(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
-        PermissionCard(
+        OobePermissionCard(
             iconRes = R.drawable.ic_storage_hdd,
             title = "存储权限",
             description = "用于解包容器、保存 MaiBot 配置和访问外部文件。",

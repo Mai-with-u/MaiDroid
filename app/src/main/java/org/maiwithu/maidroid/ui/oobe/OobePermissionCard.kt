@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.component
+package org.maiwithu.maidroid.ui.oobe
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
@@ -38,8 +38,9 @@ import org.maiwithu.maidroid.ui.theme.TextOnOrange
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSecondary
 
+/** OOBE 里的单项权限卡片：图标、名称、必须/可选标签、说明和“去授权”按钮，授予后整体变暗。 */
 @Composable
-fun PermissionCard(
+internal fun OobePermissionCard(
     @DrawableRes iconRes: Int,
     title: String,
     description: String,
@@ -149,10 +150,10 @@ fun PermissionCard(
 
 @Preview(showBackground = true, backgroundColor = 0xFF121212, widthDp = 360)
 @Composable
-private fun PermissionCardPreview() {
+private fun OobePermissionCardPreview() {
     MaiDroidTheme {
         Box(modifier = Modifier.background(Color(0xFF121212)).padding(24.dp)) {
-            PermissionCard(
+            OobePermissionCard(
                 iconRes = R.drawable.ic_storage_hdd,
                 title = "存储权限",
                 description = "MaiSaka 需要存储权限来安装、运行和保存配置文件",
