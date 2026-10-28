@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.container.ContainerCommandRunner
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
 import org.maiwithu.maidroid.process.ProcessManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.service.ChatbotService
@@ -154,7 +155,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
                 updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
                 TerminalLogRepository.append("[QQ 官方机器人] 开始安装适配器")
                 val result = commandRunner.run(
-                    command = config.qqOfficialAdapterInstallCommand(),
+                    script = QqOfficialAdapterScripts.install(),
                     onLine = TerminalLogRepository::append
                 )
                 val installed = withContext(Dispatchers.IO) { config.isQqOfficialAdapterInstalled() }

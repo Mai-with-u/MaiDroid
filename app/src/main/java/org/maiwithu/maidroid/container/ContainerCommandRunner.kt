@@ -28,9 +28,13 @@ internal data class ContainerCommandResult(
  */
 internal class ContainerCommandRunner(private val config: MaiBotContainerConfig) {
 
-    /** 启动长驻的容器脚本（sshd、NapCat），输出读取和生命周期由调用方负责。 */
+    /** 脚本在宿主机上实际执行的 proot 命令行，供安装页和终端日志展示。 */
+    fun commandLine(script: ContainerScript): List<String> =
+        config.shellCommand(script.body, script.workingDirectory)
+
+    /** 启动长驻的容器脚本（MaiBot、sshd、NapCat），输出读取和生命周期由调用方负责。 */
     fun start(script: ContainerScript, extraEnvironment: Map<String, String> = emptyMap()): Process {
-        val processBuilder = ProcessBuilder(config.shellCommand(script.body, script.workingDirectory))
+        val processBuilder = ProcessBuilder(commandLine(script))
             .directory(config.rootfsDir)
             .redirectErrorStream(true)
         processBuilder.environment().putAll(config.prootEnvironment())

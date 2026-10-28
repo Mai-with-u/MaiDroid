@@ -19,8 +19,12 @@ import org.maiwithu.maidroid.container.ContainerRequirement
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
 import org.maiwithu.maidroid.container.RuntimeAssetInstaller
 import org.maiwithu.maidroid.container.RuntimeInstallProgress
+import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
+import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.ContainerSetupScripts
+import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.service.ChatbotService
 import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 
@@ -112,7 +116,7 @@ data class OobeSetupState(
             OobeTaskState(
                 kind = OobeTaskKind.Source,
                 title = "MaiBot 源码",
-                description = MaiBotContainerConfig.GITHUB_MIRROR_DESCRIPTION,
+                description = GitHubMirrors.DESCRIPTION,
                 progress = 0f,
                 progressText = "等待",
                 statusText = "等待容器就绪",
@@ -252,7 +256,7 @@ class OobeSetupManager(
                         progress = 0.70f
                     )
                 )
-                val storageBridgeResult = runCommand(config.setupStorageBridgeCommand())
+                val storageBridgeResult = runCommand(ContainerSetupScripts.setupStorageBridge())
                 if (!storageBridgeResult.success) {
                     failContainer(storageBridgeResult.summary())
                     return@launch
@@ -265,7 +269,7 @@ class OobeSetupManager(
                         progress = 0.72f
                     )
                 )
-                val dnsResult = runCommand(config.configureDnsCommand())
+                val dnsResult = runCommand(ContainerSetupScripts.configureDns())
                 if (!dnsResult.success) {
                     failContainer(dnsResult.summary())
                     return@launch
@@ -278,7 +282,7 @@ class OobeSetupManager(
                         progress = 0.76f
                     )
                 )
-                val mirrorResult = runCommand(config.configureAptMirrorCommand())
+                val mirrorResult = runCommand(ContainerSetupScripts.configureAptMirror())
                 if (!mirrorResult.success) {
                     failContainer(mirrorResult.summary())
                     return@launch
@@ -291,7 +295,7 @@ class OobeSetupManager(
                         progress = 0.82f
                     )
                 )
-                val dependencyResult = runCommand(config.installSystemDependenciesCommand())
+                val dependencyResult = runCommand(ContainerSetupScripts.installSystemDependencies())
                 if (!dependencyResult.success) {
                     failContainer(dependencyResult.summary())
                     return@launch
@@ -320,7 +324,7 @@ class OobeSetupManager(
             updateInstallState(
                 buildInstallTasks().markRunning(dnsTaskKind, "正在配置容器 DNS...")
             )
-            val dnsResult = runCommand(config.configureDnsCommand())
+            val dnsResult = runCommand(ContainerSetupScripts.configureDns())
             if (!dnsResult.success) {
                 failInstall(dnsTaskKind, dnsResult.summary())
                 return@launch
@@ -330,7 +334,7 @@ class OobeSetupManager(
                 updateInstallState(
                     buildInstallTasks().markRunning(OobeTaskKind.Source, "正在克隆 MaiBot...")
                 )
-                val cloneResult = runCommand(config.cloneCommand())
+                val cloneResult = runCommand(MaiBotScripts.clone())
                 if (!cloneResult.success) {
                     failInstall(OobeTaskKind.Source, cloneResult.summary())
                     return@launch
@@ -342,7 +346,7 @@ class OobeSetupManager(
             )
 
             if (!config.userUvExecutable.isFile) {
-                val uvResult = runCommand(config.installUvCommand())
+                val uvResult = runCommand(MaiBotScripts.installUv())
                 if (!uvResult.success) {
                     failInstall(OobeTaskKind.Dependency, uvResult.summary())
                     return@launch
@@ -350,7 +354,7 @@ class OobeSetupManager(
             }
 
             if (!config.isDependencyReady()) {
-                val syncResult = runCommand(config.syncCommand())
+                val syncResult = runCommand(MaiBotScripts.syncDependencies())
                 if (!syncResult.success) {
                     failInstall(OobeTaskKind.Dependency, syncResult.summary())
                     return@launch
@@ -407,7 +411,7 @@ class OobeSetupManager(
             OobeTaskState(
                 kind = OobeTaskKind.Source,
                 title = "MaiBot 源码",
-                description = "git clone，GitHub 镜像每源重试 ${MaiBotContainerConfig.GITHUB_RETRY_PER_MIRROR} 次",
+                description = "git clone，GitHub 镜像每源重试 ${GitHubMirrors.RETRY_PER_MIRROR} 次",
                 progress = if (sourceReady) 1f else 0f,
                 progressText = if (sourceReady) "完成" else "等待",
                 statusText = if (sourceReady) config.maiBotDir.absolutePath else "等待 git clone",
@@ -584,14 +588,10 @@ class OobeSetupManager(
     }
 
     // OOBE 的命令输出同时进入安装页日志和终端日志，命令行本身和退出码也记一笔，方便排查哪一步失败。
-    private suspend fun runCommand(command: List<String>): ContainerCommandResult {
+    private suspend fun runCommand(script: ContainerScript): ContainerCommandResult {
         appendCommandLog("")
-        appendCommandLog("$ ${command.joinToString(" ")}")
-        val result = commandRunner.run(
-            command = command,
-            includeAgreement = true,
-            onLine = ::appendCommandLog
-        )
+        appendCommandLog("$ ${commandRunner.commandLine(script).joinToString(" ")}")
+        val result = commandRunner.run(script, onLine = ::appendCommandLog)
         appendCommandLog("exit code: ${result.exitCode}")
         return result
     }

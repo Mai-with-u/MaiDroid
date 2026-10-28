@@ -14,8 +14,10 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.container.ContainerCommandResult
 import org.maiwithu.maidroid.container.ContainerCommandRunner
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.process.ProcessManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
+import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.service.ChatbotService
 
 internal enum class MaiBotUpdatePhase {
@@ -71,7 +73,6 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val config = MaiBotContainerConfig.from(appContext)
     private val commandRunner = ContainerCommandRunner(config)
-    private val scripts = MaiBotUpdateScripts(config)
     private val processManager = ProcessManager.get(appContext)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var job: Job? = null
@@ -88,7 +89,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
         if (revisionJob?.isActive == true || _state.value.installed != null) return
         revisionJob = scope.launch {
             if (validationError() != null) return@launch
-            val result = runCommand(scripts.installedRevisionCommand(), logOutput = false)
+            val result = runCommand(MaiBotUpdateScripts.installedRevision(), logOutput = false)
             val report = parseMaiBotUpdateReport(result.output)
             if (!result.success || report.installed == null) return@launch
             _state.update {
@@ -117,7 +118,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
 
             TerminalLogRepository.append("")
             TerminalLogRepository.append("$LOG_TAG 检查上游版本")
-            val result = runCommand(scripts.fetchCommand())
+            val result = runCommand(MaiBotUpdateScripts.fetchLatest())
             val report = parseMaiBotUpdateReport(result.output)
             applyReport(report)
             if (!result.success || report.installed == null || report.latest == null) {
@@ -184,7 +185,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     /** 返回失败原因，成功返回 null。 */
     private suspend fun updateWhileStopped(): String? {
         showProgress(MaiBotUpdatePhase.Updating, "正在拉取上游源码并切换版本...")
-        val updateResult = runCommand(scripts.applyCommand())
+        val updateResult = runCommand(MaiBotUpdateScripts.fetchAndReset())
         val report = parseMaiBotUpdateReport(updateResult.output)
         applyReport(report)
         if (!updateResult.success || report.installed == null) {
@@ -194,12 +195,12 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
         // OOBE 装过 uv，这里兜底处理 uv 被误删的情况。
         if (!config.userUvExecutable.isFile) {
             showProgress(MaiBotUpdatePhase.Updating, "正在安装 uv...")
-            val uvResult = runCommand(config.installUvCommand())
+            val uvResult = runCommand(MaiBotScripts.installUv())
             if (!uvResult.success) return "安装 uv 失败：${uvResult.summary()}"
         }
 
         showProgress(MaiBotUpdatePhase.Updating, "正在同步 Python 依赖（uv sync），可能需要几分钟...")
-        val syncResult = runCommand(config.syncCommand())
+        val syncResult = runCommand(MaiBotScripts.syncDependencies())
         if (!syncResult.success) return "依赖同步失败：${syncResult.summary()}"
         return null
     }
@@ -224,10 +225,10 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     }
 
     private suspend fun runCommand(
-        command: List<String>,
+        script: ContainerScript,
         logOutput: Boolean = true
     ): ContainerCommandResult =
-        commandRunner.run(command) { line ->
+        commandRunner.run(script) { line ->
             if (logOutput && line.isNotBlank()) TerminalLogRepository.append(line)
         }
 

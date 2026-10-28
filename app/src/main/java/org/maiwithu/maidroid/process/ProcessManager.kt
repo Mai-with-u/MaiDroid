@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.container.ContainerCommandRunner
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.maibot.MaiBotScripts
 import java.util.concurrent.TimeUnit
 
 /**
@@ -177,10 +178,10 @@ class ProcessManager private constructor(context: Context) {
     private fun runProcessOnce(ownGeneration: Int) {
         var startedProcess: Process? = null
         try {
-            val command = containerConfig.launchCommand()
-            appendLog("[ProcessManager] Starting: ${command.joinToString(" ")}")
+            val script = MaiBotScripts.launch()
+            appendLog("[ProcessManager] Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
 
-            val currentProcess = commandRunner.start(command, includeAgreement = true)
+            val currentProcess = commandRunner.start(script, containerConfig.agreementEnvironment())
             startedProcess = currentProcess
             process = currentProcess
             // 进程刚起来时若恰好收到停止请求，stopLocked 可能还没看到这个进程，这里自行结束它。
@@ -233,7 +234,7 @@ class ProcessManager private constructor(context: Context) {
     }
 
     private suspend fun cleanupOrphanedMaiBotProcesses() {
-        val result = commandRunner.run(containerConfig.cleanupMaiBotCommand()) { line ->
+        val result = commandRunner.run(MaiBotScripts.cleanupStaleProcesses()) { line ->
             if (line.isNotBlank()) appendLog(line)
         }
         if (!result.success) {

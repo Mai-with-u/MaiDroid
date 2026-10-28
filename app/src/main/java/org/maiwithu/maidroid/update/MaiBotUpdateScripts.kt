@@ -1,6 +1,9 @@
 package org.maiwithu.maidroid.update
 
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.maibot.MaiBotScripts
+import org.maiwithu.maidroid.runtime.ContainerPaths
+import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /** 容器里 MaiBot 仓库的某个提交。 */
@@ -73,44 +76,42 @@ internal fun parseMaiBotRevision(value: String): MaiBotRevision? {
  * 再把工作区硬重置过去。被 Git 忽略的配置、数据、插件和 .venv 不受影响；
  * 被改过的受版本管理文件会先导出成补丁备份。
  */
-internal class MaiBotUpdateScripts(private val config: MaiBotContainerConfig) {
-    companion object {
-        /** 容器内路径：更新前被改动的受版本管理文件导出为补丁放在这里。 */
-        const val BACKUP_DIR = "/root/.maidroid/maibot-backups"
-    }
+internal object MaiBotUpdateScripts {
+    /** 容器内路径：更新前被改动的受版本管理文件导出为补丁放在这里。 */
+    const val BACKUP_DIR = "/root/.maidroid/maibot-backups"
 
     /** 只读当前安装的版本，不联网，MaiBot 运行中也能执行。 */
-    fun installedRevisionCommand(): List<String> = command(
+    fun installedRevision(): ContainerScript = script(
         repositoryPrelude(),
         reportScript(includeLatest = false)
     )
 
     /** 拉取上游最新提交但不动工作区，MaiBot 运行中也能执行。 */
-    fun fetchCommand(): List<String> = command(
-        config.githubMirrorScript(),
+    fun fetchLatest(): ContainerScript = script(
+        GitHubMirrors.shellFunctions(),
         repositoryPrelude(),
         fetchScript(),
         reportScript(includeLatest = true)
     )
 
     /** 拉取 -> 备份本地改动 -> 硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。 */
-    fun applyCommand(): List<String> = command(
-        config.githubMirrorScript(),
+    fun fetchAndReset(): ContainerScript = script(
+        GitHubMirrors.shellFunctions(),
         repositoryPrelude(),
         fetchScript(),
         backupAndResetScript(),
         reportScript(includeLatest = true)
     )
 
-    private fun command(vararg parts: String): List<String> =
-        config.shellCommand(
-            script = parts.joinToString("\n"),
-            workingDirectory = MaiBotContainerConfig.MAIBOT_CONTAINER_DIR
+    private fun script(vararg parts: String): ContainerScript =
+        ContainerScript(
+            body = parts.joinToString("\n"),
+            workingDirectory = ContainerPaths.MAIBOT_DIR
         )
 
     // 进入 MaiBot 仓库并确定要跟随的分支；分离 HEAD 时退回上游默认分支 main。
     private fun repositoryPrelude(): String {
-        val installDir = shellQuote(MaiBotContainerConfig.MAIBOT_CONTAINER_DIR)
+        val installDir = shellQuote(ContainerPaths.MAIBOT_DIR)
         return """
         set -e
         install_dir=$installDir
@@ -139,7 +140,7 @@ internal class MaiBotUpdateScripts(private val config: MaiBotContainerConfig) {
     private fun fetchScript(): String =
         """
         printf "[MaiBotUpdate] fetching %s from upstream\n" "${'$'}branch"
-        maidroid_github_fetch ${shellQuote(MaiBotContainerConfig.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
+        maidroid_github_fetch ${shellQuote(MaiBotScripts.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
         """.trimIndent()
 
     private fun backupAndResetScript(): String =
