@@ -4,7 +4,7 @@ import android.content.Context
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
-import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness

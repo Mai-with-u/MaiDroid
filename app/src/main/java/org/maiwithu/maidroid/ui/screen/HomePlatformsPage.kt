@@ -94,10 +94,10 @@ import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatLoginPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
-import org.maiwithu.maidroid.platform.QqOfficialInstallPhase
-import org.maiwithu.maidroid.platform.QqOfficialPlatformState
-import org.maiwithu.maidroid.platform.QqOfficialSaveResult
-import org.maiwithu.maidroid.platform.qqOfficialStatusText
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialInstallPhase
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
+import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import kotlin.math.ceil
 import kotlin.math.floor
 

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform
+package org.maiwithu.maidroid.platform.qqofficial
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 
-class QqOfficialAdapterConfigTest {
+class QqOfficialPlatformTest {
 
     @Test
     fun `missing config reads as not configured`() {
