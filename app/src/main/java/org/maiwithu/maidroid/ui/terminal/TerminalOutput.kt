@@ -1,9 +1,5 @@
 package org.maiwithu.maidroid.ui.terminal
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -26,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -51,13 +46,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,8 +64,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -193,57 +180,24 @@ private fun EmbeddedTerminalContent(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val verticalScrollState = rememberScrollState()
-    val horizontalScrollState = rememberScrollState()
-    val toolbarScrollState = rememberScrollState()
-    val coroutineScope = rememberCoroutineScope()
-    var query by rememberSaveable { mutableStateOf("") }
-    var autoFollow by rememberSaveable { mutableStateOf(true) }
-    var wrapLines by rememberSaveable { mutableStateOf(true) }
-    val displayedLogs = remember(logs, query) {
-        val keyword = query.trim()
-        if (keyword.isEmpty()) {
-            logs
-        } else {
-            logs.filter { line -> line.contains(keyword, ignoreCase = true) }
-        }
-    }
-    val terminalText = remember(displayedLogs) {
-        displayedLogs.joinToString(separator = "\n") { line -> line.ifBlank { " " } }
-    }
-
-    LaunchedEffect(terminalText, autoFollow, wrapLines) {
-        if (autoFollow && displayedLogs.isNotEmpty()) {
-            delay(40)
-            verticalScrollState.scrollTo(verticalScrollState.maxValue)
-        }
-    }
+    val viewer = rememberTerminalViewerState()
+    val displayedLogs = remember(logs, viewer.query) { filterTerminalLines(logs, viewer.query) }
+    val terminalText = remember(displayedLogs) { displayedLogs.toTerminalText() }
+    FollowLatestOutputEffect(viewer, terminalText)
 
     Column(modifier = Modifier.fillMaxSize()) {
         EmbeddedTerminalToolbar(
             totalLineCount = logs.size,
             displayedLineCount = displayedLogs.size,
-            query = query,
-            onQueryChange = { query = it },
-            autoFollow = autoFollow,
-            onAutoFollowChange = { enabled ->
-                autoFollow = enabled
-                if (enabled) {
-                    coroutineScope.launch {
-                        verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
-                    }
-                }
-            },
-            wrapLines = wrapLines,
-            onWrapLinesChange = { enabled ->
-                wrapLines = enabled
-                if (enabled) {
-                    coroutineScope.launch { horizontalScrollState.scrollTo(0) }
-                }
-            },
+            query = viewer.query,
+            onQueryChange = { viewer.query = it },
+            autoFollow = viewer.autoFollow,
+            onAutoFollowChange = viewer::changeAutoFollow,
+            wrapLines = viewer.wrapLines,
+            onWrapLinesChange = viewer::changeWrapLines,
             canCopy = displayedLogs.isNotEmpty(),
-            onCopy = { copyLogsToClipboard(context = context, logs = displayedLogs) },
-            toolbarScrollState = toolbarScrollState,
+            onCopy = { copyTerminalLines(context, displayedLogs) },
+            toolbarScrollState = viewer.toolbarScroll,
             onDismiss = onDismiss
         )
 
@@ -252,17 +206,12 @@ private fun EmbeddedTerminalContent(
         TerminalLogViewport(
             terminalText = terminalText,
             hasAnyLogs = logs.isNotEmpty(),
-            query = query,
-            wrapLines = wrapLines,
-            verticalScrollState = verticalScrollState,
-            horizontalScrollState = horizontalScrollState,
-            onJumpToBottom = {
-                autoFollow = true
-                coroutineScope.launch {
-                    verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
-                }
-            },
-            onUserScrollAwayFromBottom = { autoFollow = false },
+            query = viewer.query,
+            wrapLines = viewer.wrapLines,
+            verticalScrollState = viewer.verticalScroll,
+            horizontalScrollState = viewer.horizontalScroll,
+            onJumpToBottom = viewer::jumpToLatest,
+            onUserScrollAwayFromBottom = viewer::pauseFollow,
             compactEmptyState = true,
             modifier = Modifier
                 .weight(1f)
@@ -379,36 +328,16 @@ private fun TerminalDialogContent(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val verticalScrollState = rememberScrollState()
-    val horizontalScrollState = rememberScrollState()
-    val toolbarScrollState = rememberScrollState()
-    val coroutineScope = rememberCoroutineScope()
-    var query by rememberSaveable { mutableStateOf("") }
-    var autoFollow by rememberSaveable { mutableStateOf(true) }
-    var wrapLines by rememberSaveable { mutableStateOf(true) }
-    val displayedLogs = remember(logs, query) {
-        val keyword = query.trim()
-        if (keyword.isEmpty()) {
-            logs
-        } else {
-            logs.filter { line -> line.contains(keyword, ignoreCase = true) }
-        }
-    }
-    val terminalText = remember(displayedLogs) {
-        displayedLogs.joinToString(separator = "\n") { line -> line.ifBlank { " " } }
-    }
-    LaunchedEffect(terminalText, autoFollow, wrapLines) {
-        if (autoFollow && displayedLogs.isNotEmpty()) {
-            delay(40)
-            verticalScrollState.scrollTo(verticalScrollState.maxValue)
-        }
-    }
+    val viewer = rememberTerminalViewerState()
+    val displayedLogs = remember(logs, viewer.query) { filterTerminalLines(logs, viewer.query) }
+    val terminalText = remember(displayedLogs) { displayedLogs.toTerminalText() }
+    FollowLatestOutputEffect(viewer, terminalText)
 
     Column(modifier = Modifier.fillMaxSize()) {
         TerminalDialogHeader(
             totalLineCount = logs.size,
             displayedLineCount = displayedLogs.size,
-            query = query,
+            query = viewer.query,
             compact = isShort,
             onDismiss = onDismiss
         )
@@ -416,30 +345,16 @@ private fun TerminalDialogContent(
         HorizontalDivider(color = CardBorder)
 
         TerminalToolbar(
-            query = query,
-            onQueryChange = { query = it },
-            autoFollow = autoFollow,
-            onAutoFollowChange = { enabled ->
-                autoFollow = enabled
-                if (enabled) {
-                    coroutineScope.launch {
-                        verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
-                    }
-                }
-            },
-            wrapLines = wrapLines,
-            onWrapLinesChange = { enabled ->
-                wrapLines = enabled
-                if (enabled) {
-                    coroutineScope.launch { horizontalScrollState.scrollTo(0) }
-                }
-            },
+            query = viewer.query,
+            onQueryChange = { viewer.query = it },
+            autoFollow = viewer.autoFollow,
+            onAutoFollowChange = viewer::changeAutoFollow,
+            wrapLines = viewer.wrapLines,
+            onWrapLinesChange = viewer::changeWrapLines,
             canCopy = displayedLogs.isNotEmpty(),
-            onCopy = {
-                copyLogsToClipboard(context = context, logs = displayedLogs)
-            },
+            onCopy = { copyTerminalLines(context, displayedLogs) },
             inline = useInlineToolbar,
-            toolbarScrollState = toolbarScrollState,
+            toolbarScrollState = viewer.toolbarScroll,
             modifier = Modifier.padding(
                 horizontal = if (isWide) 24.dp else 16.dp,
                 vertical = if (isShort) 10.dp else 14.dp
@@ -449,17 +364,12 @@ private fun TerminalDialogContent(
         TerminalLogViewport(
             terminalText = terminalText,
             hasAnyLogs = logs.isNotEmpty(),
-            query = query,
-            wrapLines = wrapLines,
-            verticalScrollState = verticalScrollState,
-            horizontalScrollState = horizontalScrollState,
-            onJumpToBottom = {
-                autoFollow = true
-                coroutineScope.launch {
-                    verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
-                }
-            },
-            onUserScrollAwayFromBottom = { autoFollow = false },
+            query = viewer.query,
+            wrapLines = viewer.wrapLines,
+            verticalScrollState = viewer.verticalScroll,
+            horizontalScrollState = viewer.horizontalScroll,
+            onJumpToBottom = viewer::jumpToLatest,
+            onUserScrollAwayFromBottom = viewer::pauseFollow,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -468,7 +378,7 @@ private fun TerminalDialogContent(
 
         if (showFooter) {
             TerminalDialogFooter(
-                autoFollow = autoFollow,
+                autoFollow = viewer.autoFollow,
                 displayedLineCount = displayedLogs.size,
                 totalLineCount = logs.size,
                 onDismiss = onDismiss,
@@ -932,13 +842,4 @@ private fun TerminalDialogFooter(
             Text(text = "关闭", fontWeight = FontWeight.Bold)
         }
     }
-}
-
-private fun copyLogsToClipboard(context: Context, logs: List<String>) {
-    if (logs.isEmpty()) return
-    val clipboard = context.getSystemService(ClipboardManager::class.java)
-    clipboard?.setPrimaryClip(
-        ClipData.newPlainText("MaiDroid 终端输出", logs.joinToString(separator = "\n"))
-    )
-    Toast.makeText(context, "已复制 ${logs.size} 行输出", Toast.LENGTH_SHORT).show()
 }

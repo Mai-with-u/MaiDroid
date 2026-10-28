@@ -3,13 +3,6 @@ package org.maiwithu.maidroid.ui.home
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +23,7 @@ import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.platforms.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
+import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 
 internal const val WakeRetryIntervalMillis = 30_000L
 
@@ -70,7 +64,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .background(PageBackground),
-        transitionSpec = { entryTransition() },
+        transitionSpec = { horizontalSlideTransition(forward = targetState, dampingRatio = 0.86f) },
         label = "HomeEntryTransition"
     ) { showDashboard ->
         if (showDashboard) {
@@ -133,7 +127,7 @@ private fun DashboardShell(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PageBackground),
-                transitionSpec = { tabTransition() },
+                transitionSpec = { horizontalSlideTransition(forward = targetState >= initialState, dampingRatio = 0.82f) },
                 label = "HomeTabTransition"
             ) { tab ->
                 when (tab) {
@@ -173,39 +167,3 @@ private fun DashboardShell(
         }
     }
 }
-
-private fun AnimatedContentTransitionScope<Boolean>.entryTransition() =
-    slideInHorizontally(
-        animationSpec = spring(
-            dampingRatio = 0.86f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    ) { fullWidth ->
-        if (targetState) fullWidth else -fullWidth
-    } togetherWith slideOutHorizontally(
-        animationSpec = spring(
-            dampingRatio = 0.86f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    ) { fullWidth ->
-        if (targetState) -fullWidth else fullWidth
-    } using SizeTransform(clip = true)
-
-private fun AnimatedContentTransitionScope<MainTab>.tabTransition() =
-    slideInHorizontally(
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    ) { fullWidth ->
-        val direction = targetState.ordinal - initialState.ordinal
-        if (direction >= 0) fullWidth else -fullWidth
-    } togetherWith slideOutHorizontally(
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    ) { fullWidth ->
-        val direction = targetState.ordinal - initialState.ordinal
-        if (direction >= 0) -fullWidth else fullWidth
-    } using SizeTransform(clip = true)

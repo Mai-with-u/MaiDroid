@@ -7,13 +7,6 @@ import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -94,6 +87,7 @@ import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.platforms.installedPlatformCards
+import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 
 private const val PermissionSettingsDetail = "permissions"
 
@@ -225,7 +219,7 @@ internal fun SettingsPage(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PageBackground),
-                transitionSpec = { settingsDetailTransition() },
+                transitionSpec = { horizontalSlideTransition(forward = targetState, dampingRatio = 0.82f) },
                 label = "SettingsPermissionTransition"
             ) { showingPermissionPage ->
                 if (showingPermissionPage) {
@@ -650,23 +644,6 @@ private fun permissionSummary(state: PermissionState): String {
     val storageStatus = if (state.storageGranted) "存储已授权" else "存储未授权"
     return "$storageStatus · 可选项 $optionalGranted/2"
 }
-
-private fun AnimatedContentTransitionScope<Boolean>.settingsDetailTransition() =
-    slideInHorizontally(
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    ) { fullWidth ->
-        if (targetState) fullWidth else -fullWidth
-    } togetherWith slideOutHorizontally(
-        animationSpec = spring(
-            dampingRatio = 0.82f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    ) { fullWidth ->
-        if (targetState) -fullWidth else fullWidth
-    } using SizeTransform(clip = true)
 
 @Composable
 private fun ContainerSshConfigDialog(

@@ -5,16 +5,12 @@ import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -109,6 +105,7 @@ import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 
 private const val PlatformGridMinCardWidthDp = 272f
 private const val PlatformGridMaxCardWidthDp = 420f
@@ -215,22 +212,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     .weight(1f)
                     .background(PageBackground),
                 transitionSpec = {
-                    val direction = categories.indexOf(targetState) - categories.indexOf(initialState)
-                    slideInHorizontally(
-                        animationSpec = spring(
-                            dampingRatio = 0.82f,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    ) { fullWidth ->
-                        if (direction >= 0) fullWidth else -fullWidth
-                    } togetherWith slideOutHorizontally(
-                        animationSpec = spring(
-                            dampingRatio = 0.82f,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    ) { fullWidth ->
-                        if (direction >= 0) -fullWidth else fullWidth
-                    } using SizeTransform(clip = true)
+                    val forward = categories.indexOf(targetState) >= categories.indexOf(initialState)
+                    horizontalSlideTransition(forward = forward, dampingRatio = 0.82f)
                 },
                 label = "PlatformCategoryTransition"
             ) { category ->
