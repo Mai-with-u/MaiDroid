@@ -23,13 +23,13 @@ internal object RuntimeAssets {
     const val LIBTALLOC_DEB = "runtime/libtalloc_2.4.3_aarch64.deb"
 }
 
-data class RuntimeInstallProgress(
+internal data class RuntimeInstallProgress(
     val title: String,
     val statusText: String,
     val progress: Float
 )
 
-class RuntimeAssetInstaller(
+internal class RuntimeAssetInstaller(
     context: Context,
     private val config: RuntimePaths = RuntimePaths.from(context)
 ) {
@@ -48,7 +48,7 @@ class RuntimeAssetInstaller(
             if (
                 config.rootfsMarker.isFile &&
                 config.bootstrapMarker.isFile &&
-                config.areTermuxProotDependenciesReady()
+                RuntimeReadiness(config).areTermuxProotDependenciesReady()
             ) {
                 onProgress(
                     RuntimeInstallProgress(
@@ -122,7 +122,6 @@ class RuntimeAssetInstaller(
             check(config.stagingTermuxDir.renameTo(config.termuxDir)) {
                 "无法将 ${config.stagingTermuxDir.absolutePath} 切换为 ${config.termuxDir.absolutePath}"
             }
-            config.installedMarker.writeText("ok")
             RuntimeFileModes.makeRootfsWritable(config)
             RuntimeFileModes.ensureExecutableBits(config)
 

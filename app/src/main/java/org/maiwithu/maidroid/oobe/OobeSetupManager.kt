@@ -18,6 +18,9 @@ import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerRequirement
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.maibot.MaiBotAgreement
+import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
 import org.maiwithu.maidroid.runtime.RuntimeInstallProgress
 import org.maiwithu.maidroid.maibot.MaiBotScripts
@@ -69,7 +72,7 @@ data class OobeSetupState(
     val canInstall: Boolean,
     val isComplete: Boolean,
     val webUiReady: Boolean = false,
-    val webUiUrl: String = RuntimePaths.WEB_UI_URL,
+    val webUiUrl: String = MaiBotWebUi.URL,
     val commandLogs: List<String> = emptyList()
 ) {
     companion object {
@@ -144,7 +147,7 @@ data class OobeSetupState(
             OobeTaskState(
                 kind = OobeTaskKind.WebUi,
                 title = "MaiBot WebUI",
-                description = RuntimePaths.WEB_UI_URL,
+                description = MaiBotWebUi.URL,
                 progress = 0f,
                 progressText = "等待",
                 statusText = "等待 MaiBot 启动",
@@ -166,6 +169,7 @@ class OobeSetupManager(
 
     private val appContext = context.applicationContext
     private val config = RuntimePaths.from(appContext)
+    private val readiness = RuntimeReadiness(config)
     private val runtimeInstaller = RuntimeAssetInstaller(appContext, config)
     private val commandRunner = ContainerCommandRunner(config)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -205,12 +209,12 @@ class OobeSetupManager(
         if (containerJob?.isActive == true) return
         containerJob = scope.launch {
             RuntimeFileModes.ensureExecutableBits(config)
-            if (config.isContainerReady()) {
+            if (readiness.isContainerReady()) {
                 refreshContainer()
                 return@launch
             }
 
-            if (!config.isBaseRuntimeReady()) {
+            if (!readiness.isBaseRuntimeReady()) {
                 updateContainerProgress(
                     RuntimeInstallProgress(
                         title = "容器资源",
@@ -238,7 +242,7 @@ class OobeSetupManager(
                 return@launch
             }
 
-            if (!config.isSystemDependencyReady()) {
+            if (!readiness.isSystemDependencyReady()) {
                 updateContainerProgress(
                     RuntimeInstallProgress(
                         title = "系统依赖",
@@ -312,12 +316,12 @@ class OobeSetupManager(
         if (installJob?.isActive == true) return
         installJob = scope.launch {
             RuntimeFileModes.ensureExecutableBits(config)
-            if (!config.isContainerReady()) {
+            if (!readiness.isContainerReady()) {
                 refreshContainer()
                 return@launch
             }
 
-            val dnsTaskKind = if (config.isSourceReady()) {
+            val dnsTaskKind = if (readiness.isMaiBotSourceReady()) {
                 OobeTaskKind.Dependency
             } else {
                 OobeTaskKind.Source
@@ -331,7 +335,7 @@ class OobeSetupManager(
                 return@launch
             }
 
-            if (!config.isSourceReady()) {
+            if (!readiness.isMaiBotSourceReady()) {
                 updateInstallState(
                     buildInstallTasks().markRunning(OobeTaskKind.Source, "正在克隆 MaiBot...")
                 )
@@ -354,7 +358,7 @@ class OobeSetupManager(
                 }
             }
 
-            if (!config.isDependencyReady()) {
+            if (!readiness.isMaiBotDependencyReady()) {
                 val syncResult = runCommand(MaiBotScripts.syncDependencies())
                 if (!syncResult.success) {
                     failInstall(OobeTaskKind.Dependency, syncResult.summary())
@@ -366,7 +370,7 @@ class OobeSetupManager(
                 buildInstallTasks().markRunning(OobeTaskKind.Agreement, "正在读取协议 hash...")
             )
 
-            val agreementReady = config.agreementEnvironment().containsKey("EULA_AGREE")
+            val agreementReady = MaiBotAgreement.isReady(config)
             if (!agreementReady) {
                 failInstall(OobeTaskKind.Agreement, "未找到 EULA.md 或 PRIVACY.md")
                 return@launch
@@ -389,7 +393,7 @@ class OobeSetupManager(
             _state.value = _state.value.copy(
                 phase = OobeSetupPhase.Complete,
                 installTasks = buildInstallTasks(webUiReady = true),
-                footerText = "MaiBot WebUI 已启动，可以打开 ${RuntimePaths.WEB_UI_URL}",
+                footerText = "MaiBot WebUI 已启动，可以打开 ${MaiBotWebUi.URL}",
                 canInstall = true,
                 isComplete = true,
                 webUiReady = true
@@ -398,16 +402,16 @@ class OobeSetupManager(
     }
 
     private fun buildContainerTasks(): List<OobeTaskState> =
-        config.containerRequirements().map { requirement ->
+        readiness.containerRequirements().map { requirement ->
             requirement.toTaskState()
         }
 
     private fun buildInstallTasks(
         webUiReady: Boolean = _state.value.webUiReady
     ): List<OobeTaskState> {
-        val sourceReady = config.isSourceReady()
-        val dependencyReady = config.isDependencyReady()
-        val agreementReady = config.agreementEnvironment().containsKey("EULA_AGREE")
+        val sourceReady = readiness.isMaiBotSourceReady()
+        val dependencyReady = readiness.isMaiBotDependencyReady()
+        val agreementReady = MaiBotAgreement.isReady(config)
         return listOf(
             OobeTaskState(
                 kind = OobeTaskKind.Source,
@@ -439,7 +443,7 @@ class OobeSetupManager(
             OobeTaskState(
                 kind = OobeTaskKind.WebUi,
                 title = "MaiBot WebUI",
-                description = RuntimePaths.WEB_UI_URL,
+                description = MaiBotWebUi.URL,
                 progress = if (webUiReady) 1f else 0f,
                 progressText = if (webUiReady) "完成" else "等待",
                 statusText = when {

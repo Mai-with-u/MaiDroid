@@ -17,6 +17,8 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterFiles
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
 import org.maiwithu.maidroid.process.ProcessManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
@@ -88,6 +90,8 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val config = RuntimePaths.from(appContext)
+    private val readiness = RuntimeReadiness(config)
+    private val adapterFiles = QqOfficialAdapterFiles(config)
     private val commandRunner = ContainerCommandRunner(config)
     private val processManager = ProcessManager.get(appContext)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -97,7 +101,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
 
     private val _state = MutableStateFlow(
         QqOfficialPlatformState(
-            installed = config.isQqOfficialAdapterInstalled(),
+            installed = adapterFiles.isInstalled(),
             credentials = readCredentials()
         ).let { it.copy(phase = if (it.installed) QqOfficialInstallPhase.Installed else QqOfficialInstallPhase.Idle) }
     )
@@ -137,11 +141,8 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
         installJob = scope.launch {
             updateInstallProgress(0.05f, "准备安装 QQ 官方机器人适配器")
             val validationError = withContext(Dispatchers.IO) {
-                RuntimeFileModes.ensureExecutableBits(config)
-                config.containerRequirements()
-                    .firstOrNull { !it.ready }
-                    ?.let { "${it.name} 未就绪：${it.hint}" }
-                    ?: if (!config.isSourceReady()) "MaiBot 源码尚未安装，无法安装 QQ 官方机器人适配器" else null
+                readiness.containerProblem()
+                    ?: if (!readiness.isMaiBotSourceReady()) "MaiBot 源码尚未安装，无法安装 QQ 官方机器人适配器" else null
             }
             if (validationError != null) {
                 fail(validationError)
@@ -149,7 +150,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
             }
 
             TerminalLogRepository.append("")
-            val existingDir = withContext(Dispatchers.IO) { config.findQqOfficialAdapterDir() }
+            val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir() }
             if (existingDir != null) {
                 TerminalLogRepository.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
             } else {
@@ -159,7 +160,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
                     script = QqOfficialAdapterScripts.install(),
                     onLine = TerminalLogRepository::append
                 )
-                val installed = withContext(Dispatchers.IO) { config.isQqOfficialAdapterInstalled() }
+                val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
                 if (!result.success || !installed) {
                     fail(result.summary())
                     return@launch
@@ -209,7 +210,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     private suspend fun writeCredentials(appId: String, appSecret: String): String? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val target = config.qqOfficialAdapterConfigFile()
+                val target = adapterFiles.configFile()
                 val existing = target.takeIf { it.isFile }?.readText()
                 val content = QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim())
                 val staging = File(target.parentFile, "${target.name}.maidroid.tmp")
@@ -244,7 +245,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     }
 
     private suspend fun refreshFileState() {
-        val installed = withContext(Dispatchers.IO) { config.isQqOfficialAdapterInstalled() }
+        val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
         val credentials = withContext(Dispatchers.IO) { readCredentials() }
         val errorExpired = connectionErrorAt > 0L &&
             SystemClock.elapsedRealtime() - connectionErrorAt > QqOfficialErrorStaleMs
@@ -268,7 +269,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     private fun readCredentials(): QqOfficialCredentials =
         runCatching {
             QqOfficialAdapterConfig.read(
-                config.qqOfficialAdapterConfigFile().takeIf { it.isFile }?.readText()
+                adapterFiles.configFile().takeIf { it.isFile }?.readText()
             )
         }.getOrDefault(QqOfficialCredentials())
 
@@ -284,7 +285,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     }
 
     private suspend fun fail(message: String) {
-        val installed = withContext(Dispatchers.IO) { config.isQqOfficialAdapterInstalled() }
+        val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
         _state.update {
             it.copy(
                 phase = QqOfficialInstallPhase.Failed,

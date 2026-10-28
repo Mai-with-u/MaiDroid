@@ -13,8 +13,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
-import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.process.ProcessManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
@@ -73,6 +73,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val config = RuntimePaths.from(appContext)
+    private val readiness = RuntimeReadiness(config)
     private val commandRunner = ContainerCommandRunner(config)
     private val processManager = ProcessManager.get(appContext)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -215,11 +216,10 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     }
 
     private suspend fun validationError(): String? = withContext(Dispatchers.IO) {
-        RuntimeFileModes.ensureExecutableBits(config)
-        val notReady = config.containerRequirements().firstOrNull { !it.ready }
+        val containerProblem = readiness.containerProblem()
         when {
-            notReady != null -> "${notReady.name} 未就绪：${notReady.hint}"
-            !config.isSourceReady() -> "MaiBot 源码尚未安装"
+            containerProblem != null -> containerProblem
+            !readiness.isMaiBotSourceReady() -> "MaiBot 源码尚未安装"
             !config.maiBotGitDir.exists() -> "MaiBot 目录不是 Git 仓库，无法在线更新"
             else -> null
         }

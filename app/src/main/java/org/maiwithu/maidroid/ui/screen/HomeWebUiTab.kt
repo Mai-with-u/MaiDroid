@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.maiwithu.maidroid.BuildConfig
-import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 
@@ -131,7 +131,7 @@ internal fun WebUiTabPage(
     state: WebUiTabState,
     modifier: Modifier = Modifier,
     terminalLogs: List<String> = emptyList(),
-    url: String = RuntimePaths.WEB_UI_URL
+    url: String = MaiBotWebUi.URL
 ) {
     val statusBarTop = statusBarTopInset()
 

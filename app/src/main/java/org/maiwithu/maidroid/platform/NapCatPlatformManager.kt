@@ -26,10 +26,13 @@ import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatScripts
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.service.ChatbotService
+import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
@@ -145,8 +148,10 @@ internal class NapCatPlatformManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val config = RuntimePaths.from(appContext)
+    private val readiness = RuntimeReadiness(config)
+    private val napCatFiles = NapCatFiles(config)
     private val commandRunner = ContainerCommandRunner(config)
-    private val webUiClient = NapCatWebUiClient(config.napCatWebUiConfig)
+    private val webUiClient = NapCatWebUiClient(napCatFiles.webUiConfig)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val random = SecureRandom()
     private val json = Json { ignoreUnknownKeys = true }
@@ -193,7 +198,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             webUiClient.clearAutoLoginAccount().exceptionOrNull()?.let { e ->
                 TerminalLogRepository.append("[NapCat] 清除自动登录账号失败: ${e.message.orEmpty()}")
             }
-            withContext(Dispatchers.IO) { config.napCatQrCodeFile.delete() }
+            withContext(Dispatchers.IO) { napCatFiles.qrCodeFile.delete() }
             loginAccount = null
             if (NapCatRuntime.isRunning) {
                 NapCatRuntime.restart(appContext)
@@ -221,7 +226,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
                     _state.update { it.copy(loginPhase = status.phase) }
                     // 码龄直接看文件当前的修改时间：状态里的时间戳最多晚 2 秒，
                     // NapCat 刚自己换了码时会被误判成旧码过期而再换一次。
-                    val qrModifiedAt = withContext(Dispatchers.IO) { config.napCatQrCodeFile.lastModified() }
+                    val qrModifiedAt = withContext(Dispatchers.IO) { napCatFiles.qrCodeFile.lastModified() }
                     val now = System.currentTimeMillis()
                     val qrAgeMs = now - qrModifiedAt
                     if (shouldAutoRefreshQrCode(status, qrAgeMs, now - lastQrRefreshAttemptAt)) {
@@ -261,7 +266,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     fun installNapCat() {
         if (installJob?.isActive == true) return
 
-        if (config.isNapCatInstalled()) {
+        if (napCatFiles.isInstalled()) {
             refresh()
             restartRuntime()
             return
@@ -279,11 +284,8 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             }
 
             val validationError = withContext(Dispatchers.IO) {
-                RuntimeFileModes.ensureExecutableBits(config)
-                config.containerRequirements()
-                    .firstOrNull { !it.ready }
-                    ?.let { "${it.name} 未就绪：${it.hint}" }
-                    ?: if (!config.isSourceReady()) {
+                readiness.containerProblem()
+                    ?: if (!readiness.isMaiBotSourceReady()) {
                         "MaiBot 源码尚未安装，无法配置 NapCat 适配器"
                     } else {
                         null
@@ -304,7 +306,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             progressJob?.cancel()
             progressJob = null
 
-            if (result.success && config.isNapCatInstalled()) {
+            if (result.success && napCatFiles.isInstalled()) {
                 val qr = readQrCode()
                 _state.update {
                     it.copy(
@@ -440,7 +442,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         checkConnection: Boolean = true,
         preferredUin: String? = null
     ): RuntimeState {
-        val installed = config.isNapCatInstalled()
+        val installed = napCatFiles.isInstalled()
         val qr = readQrCode()
         val oneBotConfig = readOneBotConfig(preferredUin)
         val accountId = readAccountId(oneBotConfig)
@@ -459,7 +461,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     }
 
     private fun readQrCode(): QrCodeState {
-        val file = config.napCatQrCodeFile
+        val file = napCatFiles.qrCodeFile
         return if (file.isFile) {
             QrCodeState(path = file.absolutePath, lastModified = file.lastModified())
         } else {
@@ -502,15 +504,15 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     }
 
     // 知道当前登录账号时用它自己的配置；不知道（未登录或问不到 NapCat）时退回最近修改的账号配置。
-    private fun findOneBotConfigFile(preferredUin: String?): java.io.File? {
+    private fun findOneBotConfigFile(preferredUin: String?): File? {
         preferredUin
-            ?.let { config.napCatConfigDir.resolve("onebot11_$it.json") }
+            ?.let { napCatFiles.configDir.resolve("onebot11_$it.json") }
             ?.takeIf { it.isFile }
             ?.let { return it }
-        val accountConfig = config.napCatConfigDir.listFiles()
+        val accountConfig = napCatFiles.configDir.listFiles()
             ?.filter { it.isFile && Regex("""onebot11_\d+\.json""").matches(it.name) }
             ?.maxByOrNull { it.lastModified() }
-        return accountConfig ?: config.napCatOneBotConfig.takeIf { it.isFile }
+        return accountConfig ?: napCatFiles.defaultOneBotConfig.takeIf { it.isFile }
     }
 
     private fun readAccountId(oneBotConfig: NapCatOneBotConfig?): String? {
@@ -519,11 +521,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
             ?.let { Regex("""onebot11_(\d+)\.json""").find(it)?.groupValues?.getOrNull(1) }
         if (!fromConfig.isNullOrBlank()) return fromConfig
 
-        val loginDir = java.io.File(
-            config.rootfsDir,
-            "root/.config/QQ/nt_qq/global/nt_data/Login"
-        )
-        return loginDir.listFiles()
+        return napCatFiles.qqLoginDataDir.listFiles()
             ?.asSequence()
             ?.mapNotNull { Regex("""\.(\d+)""").matchEntire(it.name)?.groupValues?.getOrNull(1) }
             ?.firstOrNull()
@@ -544,7 +542,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         _state.update {
             it.copy(
                 phase = NapCatInstallPhase.Failed,
-                installed = config.isNapCatInstalled(),
+                installed = napCatFiles.isInstalled(),
                 progress = 0f,
                 progressDescription = "NapCat 安装失败",
                 errorMessage = message
@@ -587,15 +585,16 @@ internal object NapCatRuntime {
     fun start(context: Context) {
         val appContext = context.applicationContext
         val config = RuntimePaths.from(appContext)
+        val napCatFiles = NapCatFiles(config)
         if (process?.isAlive == true || job?.isActive == true) return
-        if (!config.isNapCatInstalled()) return
+        if (!napCatFiles.isInstalled()) return
 
         RuntimeFileModes.ensureExecutableBits(config)
         job = scope.launch {
             runMaintenanceCommand(config, NapCatScripts.cleanup())
             runMaintenanceCommand(config, NapCatScripts.prepareRuntime())
 
-            if (!config.napCatLauncher.isFile) {
+            if (!napCatFiles.launcher.isFile) {
                 TerminalLogRepository.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")
                 return@launch
             }

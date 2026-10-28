@@ -23,7 +23,6 @@ import org.maiwithu.maidroid.process.TerminalLogRepository
 
 object MaiBotWebUiSupport {
     private const val TAG = "MaiBotWebUiSupport"
-    private const val WEBUI_CONFIG_PATH = "data/webui.json"
     private const val THEME_MODE = "dark"
     private const val DASHBOARD_STYLE = "future-retro"
     private const val VIEWPORT_PATCH_STYLE_ID = "maidroid-webview-viewport-fix"
@@ -154,7 +153,7 @@ object MaiBotWebUiSupport {
 
     fun resolveLaunchUrl(
         context: Context,
-        baseUrl: String = RuntimePaths.WEB_UI_URL,
+        baseUrl: String = MaiBotWebUi.URL,
         terminalLogs: List<String> = TerminalLogRepository.logs.value
     ): String {
         val token = findAccessToken(context, terminalLogs) ?: return baseUrl
@@ -406,8 +405,7 @@ object MaiBotWebUiSupport {
     }
 
     private fun readAccessTokenFromConfig(context: Context): String? {
-        val config = RuntimePaths.from(context)
-        val tokenFile = File(config.maiBotDir, WEBUI_CONFIG_PATH)
+        val tokenFile = RuntimePaths.from(context).maiBotWebUiConfig
         if (!tokenFile.isFile) return null
 
         return runCatching {

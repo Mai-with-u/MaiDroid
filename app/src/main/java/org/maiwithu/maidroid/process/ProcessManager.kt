@@ -20,6 +20,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.maibot.MaiBotAgreement
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import java.util.concurrent.TimeUnit
 
@@ -57,6 +59,7 @@ class ProcessManager private constructor(context: Context) {
     }
 
     private val containerConfig = RuntimePaths.from(context)
+    private val readiness = RuntimeReadiness(containerConfig)
     private val commandRunner = ContainerCommandRunner(containerConfig)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleMutex = Mutex()
@@ -127,7 +130,7 @@ class ProcessManager private constructor(context: Context) {
         if (superviseJob?.isActive == true) return
 
         RuntimeFileModes.ensureExecutableBits(containerConfig)
-        val notReady = containerConfig.launchRequirements().firstOrNull { !it.ready }
+        val notReady = readiness.maiBotLaunchRequirements().firstOrNull { !it.ready }
         if (notReady != null) {
             appendLog(
                 "[ProcessManager] Runtime validation failed: " +
@@ -182,7 +185,7 @@ class ProcessManager private constructor(context: Context) {
             val script = MaiBotScripts.launch()
             appendLog("[ProcessManager] Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
 
-            val currentProcess = commandRunner.start(script, containerConfig.agreementEnvironment())
+            val currentProcess = commandRunner.start(script, MaiBotAgreement.environment(containerConfig))
             startedProcess = currentProcess
             process = currentProcess
             // 进程刚起来时若恰好收到停止请求，stopLocked 可能还没看到这个进程，这里自行结束它。
