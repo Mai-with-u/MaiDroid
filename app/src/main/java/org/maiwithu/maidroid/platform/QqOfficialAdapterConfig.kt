@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.platform
 
+import org.maiwithu.maidroid.maibot.MaiBotSupervisor
+
 /** QQ 官方机器人适配器 config.toml 里 MaiDroid 关心的三项：插件是否启用、AppID、AppSecret。 */
 internal data class QqOfficialCredentials(
     val enabled: Boolean = false,
@@ -204,6 +206,6 @@ private fun describeQqOfficialFailure(reason: String): String = when {
     else -> "连接 QQ 开放平台失败：$reason"
 }
 
-/** MaiBot 进程重新拉起时 ProcessManager 打的行；之前的连接报错都属于上一轮，不再作数。 */
+/** MaiBot 进程重新拉起时 MaiBotSupervisor 打的行；之前的连接报错都属于上一轮，不再作数。 */
 internal fun isMaiBotStartLine(line: String): Boolean =
-    line.startsWith("[ProcessManager] Python process started")
+    line.startsWith(MaiBotSupervisor.PROCESS_STARTED_LOG)

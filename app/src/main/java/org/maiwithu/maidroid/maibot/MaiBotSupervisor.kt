@@ -1,6 +1,5 @@
-package org.maiwithu.maidroid.process
+package org.maiwithu.maidroid.maibot
 
-import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,19 +16,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
-import org.maiwithu.maidroid.log.TerminalLog
-import org.maiwithu.maidroid.maibot.MaiBotAgreement
-import org.maiwithu.maidroid.maibot.MaiBotScripts
-import java.util.concurrent.TimeUnit
+import org.maiwithu.maidroid.runtime.terminateGracefully
 
 /**
- * 管理 proot 容器里 MaiBot 进程的生命周期，进程级单例：前台服务和在线更新共用同一份运行状态。
+ * 管理容器里 MaiBot 进程的生命周期。由 AppContainer 持有唯一实例，前台服务和在线更新共用同一份运行状态。
  *
- * - 用 installation.md 里的 uv 命令启动 MaiBot
+ * - 用 MaiBotScripts.launch（installation.md 里的 uv 命令）启动 MaiBot，输出逐行写进终端日志
  * - 进程意外退出时按指数退避自动重启
  * - 停止时先 SIGTERM 再强杀，并清理容器里的残留进程
  * - 维护期间（如在线更新）拦截所有启动请求
@@ -37,31 +34,28 @@ import java.util.concurrent.TimeUnit
  * 启动、停止、重启都在同一把生命周期锁里依次执行，
  * 避免服务启动和主页唤醒几乎同时到达时拉起两个 MaiBot 抢占 WebUI 端口。
  */
-class ProcessManager private constructor(context: Context) {
+internal class MaiBotSupervisor(
+    private val paths: RuntimePaths,
+    private val readiness: RuntimeReadiness,
+    private val commandRunner: ContainerCommandRunner
+) {
 
     companion object {
-        private const val TAG = "ProcessManager"
+        private const val TAG = "MaiBotSupervisor"
+        private const val LOG_TAG = "[MaiBot]"
 
-        // Restart backoff
+        /** 每次拉起 MaiBot 都会打这一行；QQ 官方机器人据此判断之前的连接报错已经属于上一轮。 */
+        const val PROCESS_STARTED_LOG = "$LOG_TAG Process started"
+
+        // 意外退出后的重启间隔：5 秒起步，每次翻倍，最长 1 分钟。
         private const val INITIAL_RESTART_DELAY_MS = 5_000L
         private const val MAX_RESTART_DELAY_MS = 60_000L
         private const val BACKOFF_MULTIPLIER = 2.0
 
         // 停止时等待监管协程退出的上限；读日志是阻塞调用，进程已被杀掉后通常会立即返回。
         private const val STOP_JOIN_TIMEOUT_MS = 10_000L
-
-        @Volatile
-        private var instance: ProcessManager? = null
-
-        fun get(context: Context): ProcessManager =
-            instance ?: synchronized(this) {
-                instance ?: ProcessManager(context.applicationContext).also { instance = it }
-            }
     }
 
-    private val containerConfig = RuntimePaths.from(context)
-    private val readiness = RuntimeReadiness(containerConfig)
-    private val commandRunner = ContainerCommandRunner(containerConfig)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleMutex = Mutex()
 
@@ -80,6 +74,8 @@ class ProcessManager private constructor(context: Context) {
     private var maintenanceInProgress = false
 
     private val _isRunning = MutableStateFlow(false)
+
+    /** MaiBot 进程是否活着（不代表 WebUI 已经能访问，那要看 MaiBotWebUi 的探测）。 */
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
     /** 启动 MaiBot；已在运行或正在维护时不做任何事。 */
@@ -96,7 +92,7 @@ class ProcessManager private constructor(context: Context) {
         }
     }
 
-    /** 先停再启，用于 NapCat 安装后重新加载适配器等场景。 */
+    /** 先停再启，用于装好平台适配器后让 MaiBot 重新加载插件等场景。 */
     fun restart() {
         scope.launch {
             lifecycleMutex.withLock {
@@ -110,7 +106,7 @@ class ProcessManager private constructor(context: Context) {
      * 停住 MaiBot 执行一段维护逻辑（如在线更新）。
      *
      * 先挂上维护标记 -> 停掉 MaiBot 并清理残留进程 -> 执行 block -> 摘掉维护标记。
-     * 维护期间唤醒按钮、开机广播、NapCat 安装后的重启等启动请求都会被拦下；
+     * 维护期间唤醒按钮、开机广播、平台安装后的重启等启动请求都会被拦下；
      * 维护结束只解除拦截，不自动拉起，由调用方决定何时重新启动。
      */
     suspend fun <T> runWhileStopped(block: suspend () -> T): T {
@@ -125,16 +121,16 @@ class ProcessManager private constructor(context: Context) {
 
     private fun startLocked() {
         if (maintenanceInProgress) {
-            appendLog("[ProcessManager] MaiBot is under maintenance, start request ignored")
+            appendLog("$LOG_TAG Under maintenance, start request ignored")
             return
         }
         if (superviseJob?.isActive == true) return
 
-        RuntimeFileModes.ensureExecutableBits(containerConfig)
+        RuntimeFileModes.ensureExecutableBits(paths)
         val notReady = readiness.maiBotLaunchRequirements().firstOrNull { !it.ready }
         if (notReady != null) {
             appendLog(
-                "[ProcessManager] Runtime validation failed: " +
+                "$LOG_TAG Runtime validation failed: " +
                     "${notReady.name} is not ready: ${notReady.path}. ${notReady.hint}"
             )
             return
@@ -154,7 +150,7 @@ class ProcessManager private constructor(context: Context) {
             runningJob.cancel()
             withTimeoutOrNull(STOP_JOIN_TIMEOUT_MS) { runningJob.join() }
         }
-        cleanupOrphanedMaiBotProcesses()
+        cleanupStaleProcesses()
         _isRunning.value = false
     }
 
@@ -164,12 +160,12 @@ class ProcessManager private constructor(context: Context) {
      */
     private suspend fun superviseProcess(ownGeneration: Int) {
         var restartDelayMs = INITIAL_RESTART_DELAY_MS
-        cleanupOrphanedMaiBotProcesses()
+        cleanupStaleProcesses()
         while (currentCoroutineContext().isActive && !shouldStayStopped(ownGeneration)) {
             runProcessOnce(ownGeneration)
             if (shouldStayStopped(ownGeneration)) break
 
-            appendLog("[ProcessManager] Restarting in ${restartDelayMs}ms...")
+            appendLog("$LOG_TAG Restarting in ${restartDelayMs}ms...")
             delay(restartDelayMs)
             restartDelayMs = (restartDelayMs * BACKOFF_MULTIPLIER)
                 .toLong()
@@ -180,33 +176,34 @@ class ProcessManager private constructor(context: Context) {
     private fun shouldStayStopped(ownGeneration: Int): Boolean =
         ownGeneration != generation || maintenanceInProgress
 
+    // 跑一轮 MaiBot：启动 -> 把输出逐行写进终端日志 -> 等它退出。阻塞调用，只在监管协程（IO 线程）里执行。
     private fun runProcessOnce(ownGeneration: Int) {
         var startedProcess: Process? = null
         try {
             val script = MaiBotScripts.launch()
-            appendLog("[ProcessManager] Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
+            appendLog("$LOG_TAG Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
 
-            val currentProcess = commandRunner.start(script, MaiBotAgreement.environment(containerConfig))
+            val currentProcess = commandRunner.start(script, MaiBotAgreement.environment(paths))
             startedProcess = currentProcess
             process = currentProcess
             // 进程刚起来时若恰好收到停止请求，stopLocked 可能还没看到这个进程，这里自行结束它。
             if (shouldStayStopped(ownGeneration)) {
-                destroyProcess(currentProcess)
+                terminate(currentProcess)
                 return
             }
 
             _isRunning.value = true
-            appendLog("[ProcessManager] Python process started (PID: ${currentProcess.pidOrUnknown()})")
+            appendLog("$PROCESS_STARTED_LOG (PID: ${currentProcess.pidOrUnknown()})")
 
             currentProcess.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { appendLog(it.trimEnd('\r')) }
             }
 
             val exitCode = currentProcess.waitFor()
-            appendLog("[ProcessManager] Python process exited with code: $exitCode")
+            appendLog("$LOG_TAG Process exited with code: $exitCode")
         } catch (e: Exception) {
-            appendLog("[ProcessManager] Failed to start process: ${e.message}")
-            Log.e(TAG, "Failed to start Python process", e)
+            appendLog("$LOG_TAG Failed to start process: ${e.message}")
+            Log.e(TAG, "Failed to start MaiBot process", e)
         } finally {
             // 只清理本轮自己的进程引用：停止超时后迟迟退出的旧一轮不能覆盖新一轮的运行状态。
             if (process === startedProcess) {
@@ -216,34 +213,25 @@ class ProcessManager private constructor(context: Context) {
         }
     }
 
-    /** 先 SIGTERM 给 MaiBot 3 秒收尾，仍未退出再强杀。 */
     private suspend fun killProcess() {
         val currentProcess = process ?: return
-        withContext(Dispatchers.IO) {
-            destroyProcess(currentProcess)
-        }
+        withContext(Dispatchers.IO) { terminate(currentProcess) }
         process = null
     }
 
-    private fun destroyProcess(target: Process) {
-        try {
-            target.destroy()
-            target.waitFor(3, TimeUnit.SECONDS)
-            if (target.isAlive) {
-                appendLog("[ProcessManager] Force-killing Python process...")
-                target.destroyForcibly()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error killing process", e)
+    // 先 SIGTERM 给 MaiBot 3 秒收尾，仍未退出再强杀，强杀时在终端里记一笔。
+    private fun terminate(target: Process) {
+        if (target.terminateGracefully()) {
+            appendLog("$LOG_TAG Force-killed process that ignored SIGTERM")
         }
     }
 
-    private suspend fun cleanupOrphanedMaiBotProcesses() {
+    private suspend fun cleanupStaleProcesses() {
         val result = commandRunner.run(MaiBotScripts.cleanupStaleProcesses()) { line ->
             if (line.isNotBlank()) appendLog(line)
         }
         if (!result.success) {
-            appendLog("[ProcessManager] cleanup command exited with code: ${result.exitCode}")
+            appendLog("$LOG_TAG Cleanup command exited with code: ${result.exitCode}")
         }
     }
 

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 
 class QqOfficialAdapterConfigTest {
 
@@ -141,8 +142,8 @@ class QqOfficialAdapterConfigTest {
     fun `self healing hints and unrelated lines are not errors`() {
         assertNull(qqOfficialConnectionError("QQ 网关心跳未确认，重新建立连接"))
         assertNull(qqOfficialConnectionError("[NapCat] 连接失败"))
-        assertTrue(isMaiBotStartLine("[ProcessManager] Python process started (PID: 123)"))
-        assertFalse(isMaiBotStartLine("[ProcessManager] Starting: proot"))
+        assertTrue(isMaiBotStartLine("${MaiBotSupervisor.PROCESS_STARTED_LOG} (PID: 123)"))
+        assertFalse(isMaiBotStartLine("[MaiBot] Starting: proot"))
     }
 
     @Test

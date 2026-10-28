@@ -20,8 +20,8 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterFiles
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
-import org.maiwithu.maidroid.process.ProcessManager
 import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import java.io.File
 
@@ -77,23 +77,14 @@ internal const val QqOfficialErrorStaleMs = 60_000L
  * 适配器是 MaiBot 的插件，跟着 MaiBot 进程跑，没有自己的进程；
  * 所以“装好、改凭据”之后都要重启 MaiBot 让插件按新配置加载。
  */
-internal class QqOfficialPlatformManager private constructor(context: Context) {
-    companion object {
-        @Volatile
-        private var instance: QqOfficialPlatformManager? = null
-
-        fun get(context: Context): QqOfficialPlatformManager =
-            instance ?: synchronized(this) {
-                instance ?: QqOfficialPlatformManager(context.applicationContext).also { instance = it }
-            }
-    }
-
-    private val appContext = context.applicationContext
-    private val config = RuntimePaths.from(appContext)
-    private val readiness = RuntimeReadiness(config)
+internal class QqOfficialPlatformManager(
+    private val appContext: Context,
+    config: RuntimePaths,
+    private val readiness: RuntimeReadiness,
+    private val commandRunner: ContainerCommandRunner,
+    private val maiBot: MaiBotSupervisor
+) {
     private val adapterFiles = QqOfficialAdapterFiles(config)
-    private val commandRunner = ContainerCommandRunner(config)
-    private val processManager = ProcessManager.get(appContext)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var installJob: Job? = null
     // 最近一次连接报错的时间（开机时钟），只在主线程读写。
@@ -114,7 +105,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
             TerminalLog.lines.collect(::onLogLine)
         }
         scope.launch {
-            processManager.isRunning.collect { running ->
+            maiBot.isRunning.collect { running ->
                 _state.update { it.copy(maiBotRunning = running) }
             }
         }

@@ -73,7 +73,7 @@ internal object MaiBotScripts {
             killMatchingProcessesScript(
                 pattern = "uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main",
                 processName = "stale MaiBot process",
-                logPrefix = "[ProcessManager] "
+                logPrefix = "[MaiBot] "
             ),
             "exit 0"
         ).joinToString("\n")

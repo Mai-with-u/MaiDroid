@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.ssh
 
-import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,7 +15,6 @@ import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
-import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import java.util.concurrent.TimeUnit
 
@@ -38,22 +36,15 @@ internal data class ContainerSshState(
     val isRunning: Boolean = phase == ContainerSshPhase.Running
 }
 
-internal class ContainerSshManager private constructor(context: Context) {
-    companion object {
-        @Volatile
-        private var instance: ContainerSshManager? = null
-
-        fun get(context: Context): ContainerSshManager =
-            instance ?: synchronized(this) {
-                instance ?: ContainerSshManager(context.applicationContext).also { instance = it }
-            }
-    }
-
-    private val appContext = context.applicationContext
-    private val settingsRepository = AppSettings()
-    private val config = RuntimePaths.from(appContext)
-    private val readiness = RuntimeReadiness(config)
-    private val commandRunner = ContainerCommandRunner(config)
+/**
+ * 容器里的 sshd：按设置启停、保存端口和 root 密码，并把运行阶段暴露给设置页。
+ * 启动顺序：检查容器 -> 配置 sshd（必要时 apt 安装）-> 清理残留 sshd -> 前台运行 sshd。
+ */
+internal class ContainerSshManager(
+    private val settings: AppSettings,
+    private val readiness: RuntimeReadiness,
+    private val commandRunner: ContainerCommandRunner
+) {
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
     private var process: Process? = null
@@ -64,8 +55,8 @@ internal class ContainerSshManager private constructor(context: Context) {
     val state: StateFlow<ContainerSshState> = _state.asStateFlow()
 
     fun saveConfig(port: Int, rootPassword: String?) {
-        val passwordToSave = rootPassword ?: settingsRepository.containerSshRootPassword
-        settingsRepository.saveContainerSsh(port, passwordToSave)
+        val passwordToSave = rootPassword ?: settings.containerSshRootPassword
+        settings.saveContainerSsh(port, passwordToSave)
         _state.update {
             readState(
                 phase = when {
@@ -76,13 +67,13 @@ internal class ContainerSshManager private constructor(context: Context) {
                 errorMessage = null
             )
         }
-        if (settingsRepository.containerSshEnabled) {
+        if (settings.containerSshEnabled) {
             restart()
         }
     }
 
     fun setEnabled(enabled: Boolean) {
-        settingsRepository.containerSshEnabled = enabled
+        settings.containerSshEnabled = enabled
         _state.update { readState(if (enabled) it.phase else ContainerSshPhase.Idle) }
         if (enabled) {
             syncWithSettings()
@@ -92,7 +83,7 @@ internal class ContainerSshManager private constructor(context: Context) {
     }
 
     fun syncWithSettings() {
-        if (settingsRepository.containerSshEnabled) {
+        if (settings.containerSshEnabled) {
             start()
         } else {
             stop()
@@ -102,9 +93,9 @@ internal class ContainerSshManager private constructor(context: Context) {
     fun start() {
         if (job?.isActive == true || process?.isAlive == true) return
 
-        val port = settingsRepository.containerSshPort
-        val password = settingsRepository.containerSshRootPassword
-        if (!settingsRepository.containerSshConfigured || password.isBlank()) {
+        val port = settings.containerSshPort
+        val password = settings.containerSshRootPassword
+        if (!settings.containerSshConfigured || password.isBlank()) {
             fail("Container SSH is not configured")
             return
         }
@@ -236,9 +227,9 @@ internal class ContainerSshManager private constructor(context: Context) {
         errorMessage: String? = null
     ): ContainerSshState =
         ContainerSshState(
-            enabled = settingsRepository.containerSshEnabled,
-            configured = settingsRepository.containerSshConfigured,
-            port = settingsRepository.containerSshPort,
+            enabled = settings.containerSshEnabled,
+            configured = settings.containerSshConfigured,
+            port = settings.containerSshPort,
             phase = phase,
             errorMessage = errorMessage
         )

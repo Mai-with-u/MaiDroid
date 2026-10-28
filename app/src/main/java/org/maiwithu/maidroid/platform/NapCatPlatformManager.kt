@@ -135,22 +135,13 @@ internal fun shouldAutoRefreshQrCode(
     }
 }
 
-internal class NapCatPlatformManager private constructor(context: Context) {
-    companion object {
-        @Volatile
-        private var instance: NapCatPlatformManager? = null
-
-        fun get(context: Context): NapCatPlatformManager =
-            instance ?: synchronized(this) {
-                instance ?: NapCatPlatformManager(context.applicationContext).also { instance = it }
-            }
-    }
-
-    private val appContext = context.applicationContext
-    private val config = RuntimePaths.from(appContext)
-    private val readiness = RuntimeReadiness(config)
+internal class NapCatPlatformManager(
+    private val appContext: Context,
+    private val config: RuntimePaths,
+    private val readiness: RuntimeReadiness,
+    private val commandRunner: ContainerCommandRunner
+) {
     private val napCatFiles = NapCatFiles(config)
-    private val commandRunner = ContainerCommandRunner(config)
     private val webUiClient = NapCatWebUiClient(napCatFiles.webUiConfig)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val random = SecureRandom()

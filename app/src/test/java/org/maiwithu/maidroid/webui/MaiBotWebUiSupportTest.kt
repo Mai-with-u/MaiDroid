@@ -11,7 +11,7 @@ class MaiBotWebUiSupportTest {
     fun extractAccessTokenFromLogsFindsStartupToken() {
         val token = MaiBotWebUiSupport.extractAccessTokenFromLogs(
             listOf(
-                "[ProcessManager] Python process started",
+                "[MaiBot] Process started (PID: 1234)",
                 "INFO startup: WebUI access token: abc123TOKEN",
                 "INFO startup: Use this token to sign in to WebUI"
             )

@@ -16,7 +16,7 @@ import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.maibot.MaiBotScripts
-import org.maiwithu.maidroid.process.ProcessManager
+import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
@@ -58,24 +58,17 @@ internal data class MaiBotUpdateState(
  * 进程级单例，切到后台或关掉设置页后更新照常进行，回到设置页能看到最新进度。
  * 所有命令输出都会写进终端日志，失败时可以在终端里看完整过程。
  */
-internal class MaiBotUpdateManager private constructor(context: Context) {
+internal class MaiBotUpdateManager(
+    private val appContext: Context,
+    private val config: RuntimePaths,
+    private val readiness: RuntimeReadiness,
+    private val commandRunner: ContainerCommandRunner,
+    private val maiBot: MaiBotSupervisor
+) {
     companion object {
         private const val LOG_TAG = "[MaiBot 更新]"
-
-        @Volatile
-        private var instance: MaiBotUpdateManager? = null
-
-        fun get(context: Context): MaiBotUpdateManager =
-            instance ?: synchronized(this) {
-                instance ?: MaiBotUpdateManager(context.applicationContext).also { instance = it }
-            }
     }
 
-    private val appContext = context.applicationContext
-    private val config = RuntimePaths.from(appContext)
-    private val readiness = RuntimeReadiness(config)
-    private val commandRunner = ContainerCommandRunner(config)
-    private val processManager = ProcessManager.get(appContext)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var job: Job? = null
     private var revisionJob: Job? = null
@@ -162,7 +155,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
 
             TerminalLog.append("")
             TerminalLog.append("$LOG_TAG 停止 MaiBot，准备切换到上游最新版本")
-            val failure = processManager.runWhileStopped { updateWhileStopped() }
+            val failure = maiBot.runWhileStopped { updateWhileStopped() }
 
             TerminalLog.append("$LOG_TAG 重新启动 MaiBot")
             restartMaiBot()
@@ -211,7 +204,7 @@ internal class MaiBotUpdateManager private constructor(context: Context) {
     private fun restartMaiBot() {
         val serviceStarted = runCatching { MaiBotRuntimeService.start(appContext) }.isSuccess
         if (!serviceStarted) {
-            processManager.start()
+            maiBot.start()
         }
     }
 

@@ -89,12 +89,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.appContainer
 import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.platform.NapCatInstallPhase
-import org.maiwithu.maidroid.platform.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.NapCatPlatformState
 import org.maiwithu.maidroid.platform.QqOfficialInstallPhase
-import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
 import org.maiwithu.maidroid.platform.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.QqOfficialSaveResult
 import org.maiwithu.maidroid.platform.qqOfficialStatusText
@@ -130,10 +129,10 @@ internal fun calculatePlatformGridColumnCount(availableWidthDp: Float): Int {
 @Composable
 internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val napCatManager = remember(context) { NapCatPlatformManager.get(context) }
+    val napCatManager = remember(context) { context.appContainer.napCat }
     val napCatState by napCatManager.state.collectAsState()
     val uiScope = rememberCoroutineScope()
-    val qqOfficialManager = remember(context) { QqOfficialPlatformManager.get(context) }
+    val qqOfficialManager = remember(context) { context.appContainer.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
     LaunchedEffect(napCatManager) {
         napCatManager.refresh()

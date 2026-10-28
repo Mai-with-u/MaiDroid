@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.ui.screen
 
+import org.maiwithu.maidroid.appContainer
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -77,13 +78,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.ssh.ContainerSshManager
 import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
-import org.maiwithu.maidroid.platform.NapCatPlatformManager
-import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
-import org.maiwithu.maidroid.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.update.MaiBotUpdateState
 
@@ -98,13 +95,13 @@ internal fun SettingsPage(
     permissionActions: PermissionManagementActions = PermissionManagementActions()
 ) {
     val context = LocalContext.current
-    val sshManager = remember(context) { ContainerSshManager.get(context) }
+    val sshManager = remember(context) { context.appContainer.containerSsh }
     val sshState by sshManager.state.collectAsState()
-    val napCatManager = remember(context) { NapCatPlatformManager.get(context) }
+    val napCatManager = remember(context) { context.appContainer.napCat }
     val napCatState by napCatManager.state.collectAsState()
-    val updateManager = remember(context) { MaiBotUpdateManager.get(context) }
+    val updateManager = remember(context) { context.appContainer.maiBotUpdater }
     val updateState by updateManager.state.collectAsState()
-    val qqOfficialManager = remember(context) { QqOfficialPlatformManager.get(context) }
+    val qqOfficialManager = remember(context) { context.appContainer.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 在线、官方机器人已启用且无连接报错都算。
     val runningPlatformCount = remember(napCatState, qqOfficialState) {

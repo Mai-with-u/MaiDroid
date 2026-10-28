@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import org.maiwithu.maidroid.settings.AppSettings
+import org.maiwithu.maidroid.appContainer
 
 /**
  * 开机广播：OOBE 已完成且开机自启没关时，拉起 MaiBotRuntimeService。
@@ -20,7 +20,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
-        val settings = AppSettings()
+        val settings = context.appContainer.settings
         if (!settings.autoStartOnBoot) {
             Log.d(TAG, "Boot completed, but service auto-start is disabled")
             return
