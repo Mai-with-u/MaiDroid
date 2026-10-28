@@ -5,9 +5,12 @@ import androidx.compose.ui.graphics.Color
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 
-// QQ 卡片适配器选择器里的选项名，同时作为 selectedAdapters 里记下的值。
-internal const val QqOfficialAdapterName = "官方机器人"
-internal const val NapCatAdapterName = "NapCat"
+/** 平台卡片下方选择器里的接入方式，label 是选择器上显示的文字。目前只有 QQ 有多种接入方式。 */
+internal enum class PlatformAdapter(val label: String) {
+    QqOfficial("官方机器人"),
+    NapCat("NapCat"),
+    SnowLuma("SnowLuma")
+}
 
 // 已安装卡片点齿轮时按来源打开对应的配置弹窗。
 internal enum class InstalledPlatformKind {
@@ -33,9 +36,9 @@ internal data class AvailablePlatform(
     val description: String,
     val tags: List<String>,
     val badge: String? = null,
-    val adapters: List<String> = emptyList(),
+    val adapters: List<PlatformAdapter> = emptyList(),
     // 选中某个适配器时卡片上的服务方说明换成这里的文字，没列出的适配器沿用 provider。
-    val adapterProviders: Map<String, String> = emptyMap()
+    val adapterProviders: Map<PlatformAdapter, String> = emptyMap()
 )
 
 // 已安装平台只由 installedPlatformCards 按 NapCat 和 QQ 官方机器人的真实状态生成，
@@ -51,10 +54,10 @@ internal val AvailablePlatforms = listOf(
         tags = listOf("国内", "常用"),
         badge = "最佳适配",
         // 官方机器人放最左并默认选中（见 MessagePlatformsPage 的 selectedAdapters 初值）。
-        adapters = listOf(QqOfficialAdapterName, NapCatAdapterName, "SnowLuma"),
+        adapters = listOf(PlatformAdapter.QqOfficial, PlatformAdapter.NapCat, PlatformAdapter.SnowLuma),
         adapterProviders = mapOf(
-            NapCatAdapterName to "将由 NapCat 提供服务",
-            "SnowLuma" to "SnowLuma 暂未适配"
+            PlatformAdapter.NapCat to "将由 NapCat 提供服务",
+            PlatformAdapter.SnowLuma to "SnowLuma 暂未适配"
         )
     ),
     AvailablePlatform(
