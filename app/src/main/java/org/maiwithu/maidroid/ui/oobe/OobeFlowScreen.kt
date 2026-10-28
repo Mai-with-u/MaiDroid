@@ -44,10 +44,10 @@ import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.terminal.EmbeddedTerminalOutputPanel
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
+import org.maiwithu.maidroid.ui.theme.OobeBackground
 
 // 配置容器或安装一直没完成时，过这么久把终端按钮展开成“遇到问题？”提醒用户看日志。
 private const val SETUP_ATTENTION_DELAY_MS = 5 * 60 * 1000L

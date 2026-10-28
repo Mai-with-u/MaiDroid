@@ -3,10 +3,10 @@ package org.maiwithu.maidroid.ui.platforms
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
+import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextMuted
 
 /** 平台卡片下方选择器里的接入方式，label 是选择器上显示的文字。目前只有 QQ 有多种接入方式。 */

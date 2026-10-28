@@ -1,7 +1,5 @@
 package org.maiwithu.maidroid.ui.home
 
-import org.maiwithu.maidroid.permission.PermissionActions
-import org.maiwithu.maidroid.permission.PermissionState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -17,13 +15,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import eightbitlab.com.blurview.BlurTarget
-import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import kotlinx.coroutines.delay
-import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.component.BlurTargetHost
+import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.platforms.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
-import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.theme.PageBackground
 
 // WebUI 离线时每隔这么久自动唤醒一次 MaiBot；唤醒页的进度条也按这个时长走满。
 internal const val WakeRetryIntervalMillis = 30_000L

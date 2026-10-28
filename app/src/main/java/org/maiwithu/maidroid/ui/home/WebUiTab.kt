@@ -42,9 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appContainer
-import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.createWebUiWebView
-import org.maiwithu.maidroid.webui.MaiBotWebViewClient
+import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -52,7 +50,9 @@ import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
-import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.webui.MaiBotWebUi
+import org.maiwithu.maidroid.webui.MaiBotWebViewClient
+import org.maiwithu.maidroid.webui.createWebUiWebView
 
 // 导航栏悬浮在 WebView 上，盖住的高度就是网页的底部安全区；WebView 里 1 CSS px 等于 1 dp。
 private val WebUiBottomOverlayInsetCssPx = MainBottomNavigationOverlayHeight.value.toInt()

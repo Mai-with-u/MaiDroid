@@ -1,8 +1,5 @@
 package org.maiwithu.maidroid.ui.settings
 
-import org.maiwithu.maidroid.permission.PermissionActions
-import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.appContainer
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -10,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -19,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,10 +62,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.ssh.ContainerSshPhase
-import org.maiwithu.maidroid.ssh.ContainerSshState
+import org.maiwithu.maidroid.appContainer
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
+import org.maiwithu.maidroid.permission.PermissionActions
+import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ssh.ContainerSshPhase
+import org.maiwithu.maidroid.ssh.ContainerSshState
+import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.platforms.installedPlatformCards
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -76,9 +79,6 @@ import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
-import org.maiwithu.maidroid.ui.component.statusBarTopInset
-import org.maiwithu.maidroid.ui.platforms.installedPlatformCards
-import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 
 private const val PermissionSettingsDetail = "permissions"
 

@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.ui.platforms
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,25 +30,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
-import org.maiwithu.maidroid.ui.theme.TextFaint
-import org.maiwithu.maidroid.ui.theme.TextMuted
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialInstallPhase
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.TextFaint
+import org.maiwithu.maidroid.ui.theme.TextMuted
 
 // 消息平台页的卡片：上方“已安装”横排的小卡片，下方“发现”网格里的平台卡片，以及它们共用的图标、徽标、标签。
 

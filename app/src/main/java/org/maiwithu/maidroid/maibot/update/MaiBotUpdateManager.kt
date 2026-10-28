@@ -11,14 +11,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.runtime.ContainerCommandResult
-import org.maiwithu.maidroid.runtime.ContainerCommandRunner
-import org.maiwithu.maidroid.runtime.RuntimePaths
-import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.log.TerminalLog
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
-import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 
 /** 在线更新弹窗所处的阶段：空闲 -> 检查中 -> 已是最新 / 有新版本 -> 更新中 -> 已更新，任一步出错进入失败。 */

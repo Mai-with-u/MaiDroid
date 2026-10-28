@@ -39,8 +39,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -50,10 +50,10 @@ import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
-import org.maiwithu.maidroid.ui.theme.DouyinSans
-import org.maiwithu.maidroid.ui.theme.HarmonySans
 import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
+import org.maiwithu.maidroid.ui.theme.DouyinSans
+import org.maiwithu.maidroid.ui.theme.HarmonySans
 import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
 import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 

@@ -2,6 +2,7 @@ package org.maiwithu.maidroid
 
 import android.content.Context
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
@@ -10,7 +11,6 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.ssh.ContainerSshManager
-import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 
 /**
  * 进程内所有长生命周期组件的唯一创建处（手动依赖注入）。
