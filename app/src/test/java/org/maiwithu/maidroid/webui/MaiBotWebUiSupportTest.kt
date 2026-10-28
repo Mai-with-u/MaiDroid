@@ -123,7 +123,7 @@ class MaiBotWebUiSupportTest {
 
     @Test
     fun viewportPatchSkipsHeuristicPaddingWhenUpstreamDockIsPresent() {
-        val script = MaiBotWebUiSupport.buildViewportPatchScript(80)
+        val script = WebUiInjectedScripts.viewportPatch(80)
 
         // 上游底栏在场时不再叠加启发式留白，避免和上游按底栏位置算好的留白重复
         assertTrue(script.contains("""document.querySelector('[data-mobile-tabbar="true"]')"""))
@@ -134,7 +134,7 @@ class MaiBotWebUiSupportTest {
 
     @Test
     fun viewportPatchDialogMaxHeightDoesNotSubtractNavigationInset() {
-        val script = MaiBotWebUiSupport.buildViewportPatchScript(80)
+        val script = WebUiInjectedScripts.viewportPatch(80)
 
         // 对话框的贴底内边距已由安全区改写让出导航栏高度，最大高度规则不能再减一次，否则底部多出空白
         val dialogRule = script.lines().single { it.contains("""'[role="dialog"]""") }
