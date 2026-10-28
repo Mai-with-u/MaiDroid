@@ -57,10 +57,12 @@ import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
+import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // OOBE 手机布局和平板布局共用的部件：步骤标题、底部按钮区、“遇到问题？”终端按钮、步骤切换动画。
 
@@ -203,7 +205,7 @@ internal fun CommandLogButton(
         modifier = modifier
             .width(buttonWidth)
             .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(
                 if (expanded) {
                     BrandOrange.copy(alpha = 0.18f)
@@ -228,7 +230,7 @@ internal fun CommandLogButton(
             Text(
                 text = if (expanded) "收起终端" else "遇到问题？",
                 color = OobeTextPrimary,
-                fontSize = 14.sp,
+                fontSize = TextSizes.Body,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -254,7 +256,7 @@ private fun NextButton(
         modifier = modifier
             .fillMaxWidth()
             .height(64.dp),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(Corners.Chip),
         colors = ButtonDefaults.buttonColors(
             containerColor = BrandOrangeMuted,
             contentColor = OnBrandOrange,
@@ -264,7 +266,7 @@ private fun NextButton(
     ) {
         Text(
             text = text,
-            fontSize = 24.sp,
+            fontSize = TextSizes.Headline,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.width(8.dp))
@@ -292,7 +294,7 @@ private fun SetupFooter(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(19.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(OobeSurface)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -313,7 +315,7 @@ private fun SetupFooter(
             Text(
                 text = footerText,
                 modifier = Modifier.weight(1f),
-                fontSize = 14.sp,
+                fontSize = TextSizes.Body,
                 fontWeight = FontWeight.Normal,
                 color = OobeTextSecondary,
                 lineHeight = 17.sp
@@ -326,7 +328,7 @@ private fun SetupFooter(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(44.dp),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(Corners.Control),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BrandOrangeMuted,
                 contentColor = OnBrandOrange,
@@ -336,7 +338,7 @@ private fun SetupFooter(
         ) {
             Text(
                 text = if (canProceed) proceedText else waitingText,
-                fontSize = 16.sp,
+                fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold
             )
         }
