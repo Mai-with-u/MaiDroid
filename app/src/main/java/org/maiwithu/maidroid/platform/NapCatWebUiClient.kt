@@ -15,6 +15,7 @@ import java.io.File
 import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.security.MessageDigest
 
 /** NapCat 后端汇报的 QQ 登录进度，取自 WebUI 的 CheckLoginStatus 接口。 */
@@ -23,6 +24,12 @@ internal data class NapCatLoginStatus(
     val phase: String,
     val qrCodeUrl: String,
     val loginError: String
+)
+
+/** NapCat 当前登录的 QQ 账号，取自 WebUI 的 GetQQLoginInfo 接口。 */
+internal data class NapCatLoginAccount(
+    val uin: String,
+    val nick: String
 )
 
 /**
@@ -60,6 +67,18 @@ internal class NapCatWebUiClient(private val webUiConfigFile: File) {
         }.getOrNull()
     }
 
+    /** 当前在线的 QQ 账号；未登录、已掉线或 NapCat 不通时为 null。 */
+    suspend fun loginAccount(): NapCatLoginAccount? = withContext(Dispatchers.IO) {
+        runCatching {
+            val data = callAuthorized("/api/QQLogin/GetQQLoginInfo").data ?: return@runCatching null
+            if (data["online"]?.jsonPrimitive?.booleanOrNull != true) return@runCatching null
+            val uin = data["uin"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() && it != "0" }
+                ?: return@runCatching null
+            NapCatLoginAccount(uin = uin, nick = data["nick"]?.jsonPrimitive?.contentOrNull.orEmpty())
+        }.getOrNull()
+    }
+
     /** 成功时 NapCat 已把新码写进 qrcode.png；失败时返回可直接展示给用户的原因。 */
     suspend fun refreshQrCode(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
@@ -77,12 +96,33 @@ internal class NapCatWebUiClient(private val webUiConfigFile: File) {
         }
     }
 
+    /** 清空 NapCat 的自动登录账号：退出 QQ 后重启 NapCat 时不再自动快速登录回原账号。 */
+    suspend fun clearAutoLoginAccount(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val response = callAuthorized(
+                path = "/api/QQLogin/SetQuickLoginQQ",
+                body = buildJsonObject { put("uin", "") }.toString()
+            )
+            if (!response.success) error(response.message.ifBlank { "NapCat 拒绝修改自动登录账号" })
+        }
+    }
+
+    /**
+     * NapCat 自带管理页的地址。前端路由的 basename 是 /webui/，少了结尾斜杠整页不渲染（白屏）；
+     * 带上 ?token= 时前端未登录会自动用它登录，用户不用手输 token。读不到 token 时退回登录页。
+     */
+    fun pageUrl(): String {
+        val base = "http://127.0.0.1:${readPort()}/webui/"
+        val token = runCatching { readWebUiConfig()["token"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+        return if (token.isNullOrBlank()) base else "$base?token=${URLEncoder.encode(token, "UTF-8")}"
+    }
+
     // 带凭证调接口；凭证过期或被 NapCat 重启作废时，重新换一次凭证再试。
-    private fun callAuthorized(path: String): ApiResponse {
-        val first = post(path, authorization = ensureCredential())
+    private fun callAuthorized(path: String, body: String = "{}"): ApiResponse {
+        val first = post(path, body = body, authorization = ensureCredential())
         if (first.success || first.message != "Unauthorized") return first
         credential = null
-        return post(path, authorization = ensureCredential())
+        return post(path, body = body, authorization = ensureCredential())
     }
 
     // 用 webui.json 里的 token 换取凭证：NapCat 要求提交 sha256(token + ".napcat")。

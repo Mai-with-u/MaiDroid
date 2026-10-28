@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -53,12 +54,16 @@ internal data class NapCatPlatformState(
     // 以下三项只在二维码弹窗打开期间由 keepQrCodeFresh / refreshQrCode 维护。
     val loginPhase: String? = null,
     val qrRefreshing: Boolean = false,
-    val qrRefreshError: String? = null
+    val qrRefreshError: String? = null,
+    // 用户点了“退出 QQ 登录”，正在清自动登录并重启 NapCat。
+    val qqLoggingOut: Boolean = false
 ) {
     val isInstalling: Boolean = phase == NapCatInstallPhase.Installing
     val hasQrCode: Boolean = qrCodePath != null && qrCodeLastModified > 0L
     val canOpenSettings: Boolean = installed || hasQrCode
     val accountDisplayName: String? = accountName?.ifBlank { null } ?: accountId
+    // 扫码登录已完成：弹窗轮询到 NapCat 汇报 ready，或 OneBot 端口已经能连上（登录后才会监听）。
+    val qrLoginCompleted: Boolean = loginPhase == "ready" || oneBotReachable
 
     companion object {
         fun initial(installed: Boolean, qrCodePath: String?, qrCodeLastModified: Long) =
@@ -145,6 +150,8 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     private var installJob: Job? = null
     private var progressJob: Job? = null
     private var lastQrRefreshAttemptAt = 0L
+    // 当前登录的 QQ 账号，OneBot 端口连通后向 NapCat 查一次，端口断开即清空；只在主线程读写。
+    private var loginAccount: NapCatLoginAccount? = null
 
     private val _state = MutableStateFlow(readInitialState())
     val state: StateFlow<NapCatPlatformState> = _state.asStateFlow()
@@ -161,6 +168,35 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     fun refresh() {
         scope.launch {
             refreshRuntimeState()
+        }
+    }
+
+    /** 已登录时点 NapCat 设置要打开的管理页地址，带 token 让页面自动登录。 */
+    fun webUiPageUrl(): String = webUiClient.pageUrl()
+
+    /** 直接问 NapCat QQ 是否已登录；NapCat 没起来或 WebUI 不通时按未登录处理。 */
+    suspend fun isQqLoggedIn(): Boolean = webUiClient.loginStatus()?.isLogin == true
+
+    /**
+     * 退出 QQ 登录。NapCat 没有注销 QQ 的接口，QQ 登录态只随 QQ 进程结束而断开，所以：
+     * 清掉 NapCat 的自动登录账号（否则重启后又自动快速登录回去）-> 删掉旧二维码图 ->
+     * NapCat 在跑就重启它，QQ 随之下线；之后打开二维码弹窗会自动要一张新码，可以换号扫码。
+     */
+    fun logoutQq() {
+        if (_state.value.qqLoggingOut) return
+        scope.launch {
+            _state.update { it.copy(qqLoggingOut = true) }
+            TerminalLogRepository.append("[NapCat] 退出 QQ 登录：清除自动登录账号并重启 NapCat")
+            webUiClient.clearAutoLoginAccount().exceptionOrNull()?.let { e ->
+                TerminalLogRepository.append("[NapCat] 清除自动登录账号失败: ${e.message.orEmpty()}")
+            }
+            withContext(Dispatchers.IO) { config.napCatQrCodeFile.delete() }
+            loginAccount = null
+            if (NapCatRuntime.isRunning) {
+                NapCatRuntime.restart(appContext)
+            }
+            refreshRuntimeState()
+            _state.update { it.copy(qqLoggingOut = false) }
         }
     }
 
@@ -354,7 +390,18 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     }
 
     private suspend fun refreshRuntimeState() {
-        val runtimeState = withContext(Dispatchers.IO) { readRuntimeState() }
+        var runtimeState = withContext(Dispatchers.IO) { readRuntimeState(preferredUin = loginAccount?.uin) }
+        // OneBot 端口通了说明 QQ 已登录：第一次连通时问 NapCat 登的是哪个号，按它挑 onebot11_<QQ号>.json
+        // 并显示昵称（换过号后最新修改的配置文件不一定是当前账号）；端口断了就忘掉，下次登录可能换号。
+        if (!runtimeState.oneBotReachable) {
+            loginAccount = null
+        } else if (loginAccount == null) {
+            webUiClient.loginAccount()?.let { account ->
+                loginAccount = account
+                runtimeState = withContext(Dispatchers.IO) { readRuntimeState(preferredUin = account.uin) }
+            }
+        }
+        val account = loginAccount
         _state.update { current ->
             current.copy(
                 phase = when {
@@ -374,8 +421,8 @@ internal class NapCatPlatformManager private constructor(context: Context) {
                 installed = runtimeState.installed,
                 oneBotReachable = runtimeState.oneBotReachable,
                 oneBotConfig = runtimeState.oneBotConfig,
-                accountId = runtimeState.accountId,
-                accountName = runtimeState.accountName
+                accountId = account?.uin ?: runtimeState.accountId,
+                accountName = account?.nick ?: runtimeState.accountName
             )
         }
     }
@@ -394,10 +441,13 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         )
     }
 
-    private fun readRuntimeState(checkConnection: Boolean = true): RuntimeState {
+    private fun readRuntimeState(
+        checkConnection: Boolean = true,
+        preferredUin: String? = null
+    ): RuntimeState {
         val installed = config.isNapCatInstalled()
         val qr = readQrCode()
-        val oneBotConfig = readOneBotConfig()
+        val oneBotConfig = readOneBotConfig(preferredUin)
         val accountId = readAccountId(oneBotConfig)
         return RuntimeState(
             installed = installed,
@@ -422,8 +472,8 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         }
     }
 
-    private fun readOneBotConfig(): NapCatOneBotConfig? {
-        val file = findOneBotConfigFile() ?: return null
+    private fun readOneBotConfig(preferredUin: String?): NapCatOneBotConfig? {
+        val file = findOneBotConfigFile(preferredUin) ?: return null
 
         return runCatching {
             val root = json.parseToJsonElement(file.readText()).jsonObject
@@ -456,7 +506,12 @@ internal class NapCatPlatformManager private constructor(context: Context) {
         }.getOrNull()
     }
 
-    private fun findOneBotConfigFile(): java.io.File? {
+    // 知道当前登录账号时用它自己的配置；不知道（未登录或问不到 NapCat）时退回最近修改的账号配置。
+    private fun findOneBotConfigFile(preferredUin: String?): java.io.File? {
+        preferredUin
+            ?.let { config.napCatConfigDir.resolve("onebot11_$it.json") }
+            ?.takeIf { it.isFile }
+            ?.let { return it }
         val accountConfig = config.napCatConfigDir.listFiles()
             ?.filter { it.isFile && Regex("""onebot11_\d+\.json""").matches(it.name) }
             ?.maxByOrNull { it.lastModified() }
@@ -584,6 +639,21 @@ internal object NapCatRuntime {
             }
         }
         process = null
+    }
+
+    val isRunning: Boolean
+        get() = process?.isAlive == true || job?.isActive == true
+
+    /**
+     * 只重启 NapCat（QQ 随之下线重登），不动 MaiBot。
+     * 停旧进程 -> 等旧的读日志协程收尾（避免它的 finally 把新进程引用清掉）-> 重新启动；
+     * 新一轮启动前会先跑清理命令，杀掉残留的 qq / Xvfb。
+     */
+    suspend fun restart(context: Context) = withContext(Dispatchers.IO) {
+        val previousJob = job
+        stop()
+        withTimeoutOrNull(5_000L) { previousJob?.join() }
+        start(context)
     }
 
     fun stop(context: Context) {

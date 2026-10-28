@@ -43,8 +43,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -60,6 +62,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +82,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.WebUiActivity
@@ -87,7 +92,6 @@ import org.maiwithu.maidroid.platform.NapCatPlatformState
 import kotlin.math.ceil
 import kotlin.math.floor
 
-private const val NapCatWebUiUrl = "http://127.0.0.1:6099/webui"
 private const val PlatformGridMinCardWidthDp = 272f
 private const val PlatformGridMaxCardWidthDp = 420f
 private const val PlatformGridSpacingDp = 12f
@@ -119,13 +123,16 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val napCatManager = remember(context) { NapCatPlatformManager.get(context) }
     val napCatState by napCatManager.state.collectAsState()
+    val uiScope = rememberCoroutineScope()
     LaunchedEffect(napCatManager) {
         napCatManager.refresh()
     }
     var selectedCategory by remember { mutableStateOf("全部") }
     var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to "NapCat")) }
-    var showNapCatQrCode by remember { mutableStateOf(false) }
-    var showNapCatConfig by remember { mutableStateOf(false) }
+    // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
+    var showNapCatQrCode by rememberSaveable { mutableStateOf(false) }
+    var showNapCatConfig by rememberSaveable { mutableStateOf(false) }
+    var showQqLogoutConfirm by rememberSaveable { mutableStateOf(false) }
     val categories = listOf("全部", "国内", "海外", "其他")
     val installedPlatforms = installedPlatformCards(napCatState)
 
@@ -212,14 +219,19 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     onNapCatInstall = { napCatManager.installNapCat() },
                     onNapCatSettings = {
                         napCatManager.refresh()
-                        if (napCatState.oneBotReachable) {
-                            context.startActivity(
-                                Intent(context, WebUiActivity::class.java).apply {
-                                    putExtra(WebUiActivity.EXTRA_URL, NapCatWebUiUrl)
-                                }
-                            )
-                        } else {
-                            showNapCatQrCode = true
+                        // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
+                        // 不能只看 OneBot 端口：登录后端口还没起来或 WsServer 被关掉时，
+                        // 会弹出二维码又因“已登录”立刻关掉，永远进不了管理页去修。
+                        uiScope.launch {
+                            if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
+                                context.startActivity(
+                                    Intent(context, WebUiActivity::class.java).apply {
+                                        putExtra(WebUiActivity.EXTRA_URL, napCatManager.webUiPageUrl())
+                                    }
+                                )
+                            } else {
+                                showNapCatQrCode = true
+                            }
                         }
                     },
                     onUnsupportedInstall = {
@@ -234,6 +246,13 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             LaunchedEffect(napCatManager) {
                 napCatManager.keepQrCodeFresh()
             }
+            // 手机上确认登录 -> NapCat 进入 ready / OneBot 端口开始监听 -> 自动关弹窗并提示，不用再手动点关闭。
+            LaunchedEffect(napCatState.qrLoginCompleted) {
+                if (napCatState.qrLoginCompleted) {
+                    showNapCatQrCode = false
+                    Toast.makeText(context, "QQ 登录成功", Toast.LENGTH_SHORT).show()
+                }
+            }
             NapCatQrCodeDialog(
                 state = napCatState,
                 onRefresh = { napCatManager.refreshQrCode() },
@@ -245,10 +264,76 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             NapCatConfigDialog(
                 state = napCatState,
                 onRefresh = { napCatManager.refresh() },
+                onLogoutQq = { showQqLogoutConfirm = true },
                 onDismiss = { showNapCatConfig = false }
             )
         }
+
+        // 退出 QQ 会让 MaiBot 断开 QQ，必须二次确认；确认后关掉配置弹窗，后台清自动登录并重启 NapCat。
+        if (showQqLogoutConfirm) {
+            QqLogoutConfirmDialog(
+                onConfirm = {
+                    showQqLogoutConfirm = false
+                    showNapCatConfig = false
+                    napCatManager.logoutQq()
+                    Toast.makeText(context, "正在退出 QQ 登录，稍后可重新扫码", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showQqLogoutConfirm = false }
+            )
+        }
     }
+}
+
+@Composable
+private fun QqLogoutConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "退出 QQ 登录？",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 22.sp
+            )
+        },
+        text = {
+            Text(
+                text = "将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。",
+                color = PlatformTextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 18.sp
+            )
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PlatformBorder,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(text = "取消", fontWeight = FontWeight.Bold)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PlatformDanger,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(text = "退出登录", fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = PlatformCardSurface,
+        titleContentColor = Color.White,
+        textContentColor = PlatformTextSecondary
+    )
 }
 
 @Composable
@@ -1144,6 +1229,7 @@ internal fun napCatQrLoginHint(state: NapCatPlatformState): String? = when {
 private fun NapCatConfigDialog(
     state: NapCatPlatformState,
     onRefresh: () -> Unit,
+    onLogoutQq: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val config = state.oneBotConfig
@@ -1160,7 +1246,12 @@ private fun NapCatConfigDialog(
             )
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            // 配置项加上退出按钮后小屏放不下，内容区允许滚动。
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
                 ConfigValueRow(
                     label = "连接状态",
                     value = when {
@@ -1183,6 +1274,25 @@ private fun NapCatConfigDialog(
                 ConfigValueRow("心跳间隔", config?.heartInterval?.let { "${it}ms" } ?: "-")
                 ConfigValueRow("调试模式", config?.debug.toEnabledText())
                 ConfigValueRow("配置文件", config?.configPath ?: "/root/napcat/config/onebot11.json")
+
+                // 退出 QQ：先弹二次确认，确认后清自动登录并重启 NapCat；进行中禁用，避免重复重启。
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onLogoutQq,
+                    enabled = state.installed && !state.qqLoggingOut,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PlatformDanger,
+                        contentColor = Color.White,
+                        disabledContainerColor = PlatformBorder,
+                        disabledContentColor = PlatformTextDim
+                    )
+                ) {
+                    Text(
+                        text = if (state.qqLoggingOut) "正在退出…" else "退出 QQ 登录",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         },
         dismissButton = {
