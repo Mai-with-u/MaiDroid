@@ -88,11 +88,11 @@ flowchart TB
 | `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionLog`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
 | `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本 | `MaiBotWebUi`、`createWebUiWebView`、`MaiBotWebViewClient`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
 | `ui` | 根界面 | `MaiDroidApp` |
-| `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionCards`、`OobeTaskList`、`OobeAuthorizationDialog` |
-| `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiGatePage`、`MainBottomNavigation`、`WebUiTab` |
+| `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionList`、`OobeTaskList`、`OobeAuthorizationDialog` |
+| `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`WebUiTab` |
 | `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
 | `ui.settings` | 设置页、权限管理、在线更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`ContainerSshSettings` |
-| `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalViewerState` |
+| `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalOutputState` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |
 | `ui.component` | 跨页面的小组件 | `BackdropBlurView`、`BlurTargetHost`、`horizontalSlideTransition`、`statusBarTopInset` |
 | `ui.theme` | 配色、字体、Material 主题 | `Color.kt`、`Type.kt`、`MaiDroidTheme` |

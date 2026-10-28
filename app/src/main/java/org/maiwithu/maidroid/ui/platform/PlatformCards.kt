@@ -224,7 +224,7 @@ private fun PlatformLogo(
 }
 
 @Composable
-private fun Badge(text: String) {
+private fun PlatformBadge(text: String) {
     Box(
         modifier = Modifier
             .height(16.dp)
@@ -336,7 +336,7 @@ internal fun PlatformInstallCard(
 
                     platform.badge?.let { badge ->
                         Spacer(modifier = Modifier.width(8.dp))
-                        Badge(text = badge)
+                        PlatformBadge(text = badge)
                     }
                 }
 

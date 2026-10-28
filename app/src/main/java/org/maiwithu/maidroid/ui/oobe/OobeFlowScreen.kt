@@ -312,7 +312,7 @@ private fun BoxScope.CompactOobeLayout(
             label = "OobeStepCards"
         ) { targetStep ->
             when (targetStep) {
-                OobeStep.Permissions -> CompactOobePermissionCards(content.permissionState, content.permissionActions)
+                OobeStep.Permissions -> CompactOobePermissionList(content.permissionState, content.permissionActions)
                 OobeStep.Container -> CompactOobeTaskList(content.setupState.containerTasks)
                 OobeStep.Install -> CompactOobeTaskList(content.setupState.installTasks)
             }
@@ -467,7 +467,7 @@ private fun AdaptiveOobeLayout(
                         label = "AdaptiveOobeStepCards"
                     ) { targetStep ->
                         when (targetStep) {
-                            OobeStep.Permissions -> AdaptiveOobePermissionCards(content.permissionState, content.permissionActions)
+                            OobeStep.Permissions -> AdaptiveOobePermissionList(content.permissionState, content.permissionActions)
                             OobeStep.Container -> AdaptiveOobeTaskList(content.setupState.containerTasks)
                             OobeStep.Install -> AdaptiveOobeTaskList(content.setupState.installTasks)
                         }

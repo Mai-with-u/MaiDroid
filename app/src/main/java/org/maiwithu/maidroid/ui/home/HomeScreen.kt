@@ -42,20 +42,20 @@ fun HomeScreen(
     permissionState: PermissionState = PermissionState(),
     permissionActions: PermissionActions = PermissionActions()
 ) {
-    var dashboardVisible by rememberSaveable { mutableStateOf(false) }
+    var tabsVisible by rememberSaveable { mutableStateOf(false) }
     var wakeCycle by rememberSaveable { mutableIntStateOf(0) }
-    var selectedTab by rememberSaveable { mutableStateOf(MainTab.WebUi) }
+    var selectedTab by rememberSaveable { mutableStateOf(HomeTab.WebUi) }
     var showTerminalOutput by remember { mutableStateOf(false) }
 
     LaunchedEffect(webUiOnline) {
-        if (webUiOnline && !dashboardVisible) {
-            dashboardVisible = true
-            selectedTab = MainTab.WebUi
+        if (webUiOnline && !tabsVisible) {
+            tabsVisible = true
+            selectedTab = HomeTab.WebUi
         }
     }
 
-    LaunchedEffect(dashboardVisible, webUiOnline) {
-        if (dashboardVisible || webUiOnline) return@LaunchedEffect
+    LaunchedEffect(tabsVisible, webUiOnline) {
+        if (tabsVisible || webUiOnline) return@LaunchedEffect
 
         while (true) {
             wakeCycle += 1
@@ -65,15 +65,15 @@ fun HomeScreen(
     }
 
     AnimatedContent(
-        targetState = dashboardVisible,
+        targetState = tabsVisible,
         modifier = modifier
             .fillMaxSize()
             .background(PageBackground),
         transitionSpec = { horizontalSlideTransition(forward = targetState, dampingRatio = 0.86f) },
         label = "HomeEntryTransition"
-    ) { showDashboard ->
-        if (showDashboard) {
-            DashboardShell(
+    ) { showTabs ->
+        if (showTabs) {
+            HomeTabsShell(
                 selectedTab = selectedTab,
                 webUiOnline = webUiOnline,
                 versionName = versionName,
@@ -88,7 +88,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            WakeMaiGatePage(
+            WakeMaiPage(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
                 wakeCycle = wakeCycle,
@@ -100,15 +100,15 @@ fun HomeScreen(
 
 // 三栏外壳：页面内容包在 BlurTargetHost 里，底部悬浮导航栏据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
 @Composable
-private fun DashboardShell(
-    selectedTab: MainTab,
+private fun HomeTabsShell(
+    selectedTab: HomeTab,
     webUiOnline: Boolean,
     versionName: String,
     terminalLogs: List<String>,
     permissionState: PermissionState,
     permissionActions: PermissionActions,
     showTerminalOutput: Boolean,
-    onTabSelected: (MainTab) -> Unit,
+    onTabSelected: (HomeTab) -> Unit,
     onWakeMai: (showToast: Boolean) -> Unit,
     onTerminalClick: () -> Unit,
     onTerminalDismiss: () -> Unit,
@@ -137,7 +137,7 @@ private fun DashboardShell(
                 label = "HomeTabTransition"
             ) { tab ->
                 when (tab) {
-                    MainTab.WebUi -> WebUiTabPage(
+                    HomeTab.WebUi -> WebUiTabPage(
                         webUiOnline = webUiOnline,
                         onWakeMai = { onWakeMai(true) },
                         state = webUiTabState,
@@ -145,8 +145,8 @@ private fun DashboardShell(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    MainTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
-                    MainTab.Settings -> SettingsPage(
+                    HomeTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
+                    HomeTab.Settings -> SettingsPage(
                         webUiOnline = webUiOnline,
                         versionName = versionName,
                         permissionState = permissionState,
@@ -157,7 +157,7 @@ private fun DashboardShell(
             }
         }
 
-        MainBottomNavigation(
+        HomeBottomNavigation(
             selectedTab = selectedTab,
             blurTarget = blurTarget,
             onTabSelected = onTabSelected,

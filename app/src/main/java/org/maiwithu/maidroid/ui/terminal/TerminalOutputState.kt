@@ -35,7 +35,7 @@ import org.maiwithu.maidroid.terminal.AnsiText
  * 全屏弹窗（TerminalOutputDialog）和 OOBE 平板布局里的嵌入面板共用同一套行为。
  */
 @Stable
-internal class TerminalViewerState(
+internal class TerminalOutputState(
     private val coroutineScope: CoroutineScope,
     val verticalScroll: ScrollState,
     val horizontalScroll: ScrollState,
@@ -80,7 +80,7 @@ internal class TerminalViewerState(
 
 /** 筛选关键字、跟随、换行三个开关在屏幕旋转后保留。 */
 @Composable
-internal fun rememberTerminalViewerState(): TerminalViewerState {
+internal fun rememberTerminalOutputState(): TerminalOutputState {
     val coroutineScope = rememberCoroutineScope()
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
@@ -89,7 +89,7 @@ internal fun rememberTerminalViewerState(): TerminalViewerState {
     val autoFollow = rememberSaveable { mutableStateOf(true) }
     val wrapLines = rememberSaveable { mutableStateOf(true) }
     return remember {
-        TerminalViewerState(coroutineScope, verticalScroll, horizontalScroll, toolbarScroll, query, autoFollow, wrapLines)
+        TerminalOutputState(coroutineScope, verticalScroll, horizontalScroll, toolbarScroll, query, autoFollow, wrapLines)
     }
 }
 
@@ -137,7 +137,7 @@ private fun AnsiStyle.toSpanStyle(): SpanStyle = SpanStyle(
 
 /** 自动跟随开启时，内容一变化（新日志、切换换行）就滚到最底部；稍等 40 毫秒让新内容先完成排版。 */
 @Composable
-internal fun FollowLatestOutputEffect(viewer: TerminalViewerState, terminalText: AnnotatedString) {
+internal fun FollowLatestOutputEffect(viewer: TerminalOutputState, terminalText: AnnotatedString) {
     LaunchedEffect(terminalText, viewer.autoFollow, viewer.wrapLines) {
         if (viewer.autoFollow && terminalText.isNotEmpty()) {
             delay(40)

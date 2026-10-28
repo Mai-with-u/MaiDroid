@@ -47,7 +47,7 @@ import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 
 /** 手机竖屏：两张卡片上下排列，整列可滚动。 */
 @Composable
-internal fun CompactOobePermissionCards(
+internal fun CompactOobePermissionList(
     state: PermissionState,
     actions: PermissionActions
 ) {
@@ -65,7 +65,7 @@ internal fun CompactOobePermissionCards(
 
 /** 平板和横屏：右侧工作区宽于 760dp 时左右两栏（存储 4 : 保活 6，各自滚动），否则上下排列。 */
 @Composable
-internal fun AdaptiveOobePermissionCards(
+internal fun AdaptiveOobePermissionList(
     state: PermissionState,
     actions: PermissionActions
 ) {

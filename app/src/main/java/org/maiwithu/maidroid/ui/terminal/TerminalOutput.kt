@@ -186,7 +186,7 @@ private fun EmbeddedTerminalContent(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val viewer = rememberTerminalViewerState()
+    val viewer = rememberTerminalOutputState()
     val displayedLogs = rememberDisplayedLines(logs, viewer.query)
     val terminalText = remember(displayedLogs) { displayedLogs.toTerminalText() }
     FollowLatestOutputEffect(viewer, terminalText)
@@ -334,7 +334,7 @@ private fun TerminalDialogContent(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val viewer = rememberTerminalViewerState()
+    val viewer = rememberTerminalOutputState()
     val displayedLogs = rememberDisplayedLines(logs, viewer.query)
     val terminalText = remember(displayedLogs) { displayedLogs.toTerminalText() }
     FollowLatestOutputEffect(viewer, terminalText)

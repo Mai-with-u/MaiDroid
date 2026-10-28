@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.maiwithu.maidroid.terminal.AnsiText
 
-class TerminalViewerStateTest {
+class TerminalOutputStateTest {
     private val lines = listOf(
         "[MaiBot] Process started (PID: 1234)",
         "",

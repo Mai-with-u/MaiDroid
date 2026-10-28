@@ -49,12 +49,12 @@ import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
 
 // 唤醒页专用的冷色科技风配色（其余页面不用）。
-private val HomeBackground = Color(0xFF07090D)
-private val HomeOrange = Color(0xFFE8921E)
-private val HomeTextBlue = Color(0xFFA0B4C8)
-private val HomeMutedBlue = Color(0xFF788CA0)
-private val HomeOnline = Color(0xFF64C88C)
-private val HomeOffline = Color(0xFFE8A064)
+private val WakeBackground = Color(0xFF07090D)
+private val WakeOrange = Color(0xFFE8921E)
+private val WakeTextBlue = Color(0xFFA0B4C8)
+private val WakeMutedBlue = Color(0xFF788CA0)
+private val WakeOnline = Color(0xFF64C88C)
+private val WakeOffline = Color(0xFFE8A064)
 
 /**
  * 设计稿坐标到实际尺寸的换算：横向按宽度比例、纵向按高度比例，文字和描边按两者中较小的比例，
@@ -72,7 +72,7 @@ private class DesignScale(val scaleX: Float, val scaleY: Float) {
  * 每 30 秒（WakeRetryIntervalMillis）自动唤醒一次 MaiBot，进度条在这段时间内从左走到右；WebUI 一上线就切到主页。
  */
 @Composable
-internal fun WakeMaiGatePage(
+internal fun WakeMaiPage(
     webUiOnline: Boolean,
     versionName: String,
     wakeCycle: Int,
@@ -81,7 +81,7 @@ internal fun WakeMaiGatePage(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(HomeBackground)
+            .background(WakeBackground)
     ) {
         val scale = DesignScale(
             scaleX = maxWidth.value / DesignFrameWidthDp,
@@ -123,8 +123,8 @@ internal fun WakeMaiGatePage(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            HomeBackground.copy(alpha = 0.85f),
-                            HomeBackground.copy(alpha = 0f)
+                            WakeBackground.copy(alpha = 0.85f),
+                            WakeBackground.copy(alpha = 0f)
                         )
                     )
                 )
@@ -138,10 +138,10 @@ internal fun WakeMaiGatePage(
                 .background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
-                            0f to HomeBackground.copy(alpha = 0f),
-                            0.3f to HomeBackground.copy(alpha = 0.8f),
-                            0.6f to HomeBackground.copy(alpha = 0.97f),
-                            1f to HomeBackground
+                            0f to WakeBackground.copy(alpha = 0f),
+                            0.3f to WakeBackground.copy(alpha = 0.8f),
+                            0.6f to WakeBackground.copy(alpha = 0.97f),
+                            1f to WakeBackground
                         )
                     )
                 )
@@ -173,7 +173,7 @@ internal fun WakeMaiGatePage(
 
         Text(
             text = "MaiSaka × MaiDroid",
-            color = HomeOrange.copy(alpha = 0.85f),
+            color = WakeOrange.copy(alpha = 0.85f),
             fontSize = scale.sp(16f),
             fontWeight = FontWeight.Bold,
             letterSpacing = scale.sp(6f),
@@ -188,7 +188,7 @@ internal fun WakeMaiGatePage(
                 .offset(x = scale.x(39f), y = scale.y(667f))
                 .width(scale.x(303f))
                 .height(scale.y(3f))
-                .background(HomeOrange.copy(alpha = 0.25f))
+                .background(WakeOrange.copy(alpha = 0.25f))
         )
 
         Text(
@@ -239,7 +239,7 @@ private fun HeaderLabels(
 
     Text(
         text = "MAISAKA",
-        color = HomeOrange.copy(alpha = 0.9f),
+        color = WakeOrange.copy(alpha = 0.9f),
         fontSize = scale.sp(8.62f),
         letterSpacing = scale.sp(4f),
         modifier = Modifier
@@ -249,7 +249,7 @@ private fun HeaderLabels(
 
     Text(
         text = "牢麦待机中",
-        color = HomeTextBlue.copy(alpha = 0.7f),
+        color = WakeTextBlue.copy(alpha = 0.7f),
         fontSize = scale.sp(7.05f),
         letterSpacing = scale.sp(1.5f),
         modifier = Modifier
@@ -259,7 +259,7 @@ private fun HeaderLabels(
 
     Text(
         text = "v$versionName",
-        color = HomeMutedBlue.copy(alpha = 0.6f),
+        color = WakeMutedBlue.copy(alpha = 0.6f),
         fontSize = scale.sp(7.84f),
         textAlign = TextAlign.End,
         modifier = Modifier
@@ -278,12 +278,12 @@ private fun HeaderLabels(
             modifier = Modifier
                 .size(scale.x(3.9f))
                 .clip(CircleShape)
-                .background(if (webUiOnline) HomeOnline else HomeOffline)
+                .background(if (webUiOnline) WakeOnline else WakeOffline)
         )
         Spacer(modifier = Modifier.width(scale.x(4f)))
         Text(
             text = if (webUiOnline) "ONLINE" else "OFFLINE",
-            color = if (webUiOnline) HomeOnline.copy(alpha = 0.8f) else HomeOffline.copy(alpha = 0.82f),
+            color = if (webUiOnline) WakeOnline.copy(alpha = 0.8f) else WakeOffline.copy(alpha = 0.82f),
             fontSize = scale.sp(7.05f),
             letterSpacing = scale.sp(2f)
         )
@@ -330,8 +330,8 @@ private fun WakeProgressBar(
             .shadow(
                 elevation = (7f * textScale).dp,
                 shape = WakeButtonShape,
-                ambientColor = HomeOrange.copy(alpha = 0.2f),
-                spotColor = HomeOrange.copy(alpha = 0.34f)
+                ambientColor = WakeOrange.copy(alpha = 0.2f),
+                spotColor = WakeOrange.copy(alpha = 0.34f)
             )
             .clip(WakeButtonShape)
             .background(Color(0xFF151A22))
@@ -357,7 +357,7 @@ private fun WakeProgressBar(
                 .align(Alignment.CenterStart)
                 .fillMaxHeight()
                 .fillMaxWidth(clampedProgress)
-                .background(HomeOrange)
+                .background(WakeOrange)
         )
 
         Text(
@@ -401,7 +401,7 @@ private fun HudOverlay(modifier: Modifier = Modifier) {
             endX: Float,
             endY: Float,
             alpha: Float,
-            color: Color = HomeOrange,
+            color: Color = WakeOrange,
             width: Float = 0.78f
         ) {
             drawLine(
@@ -431,11 +431,11 @@ private fun HudOverlay(modifier: Modifier = Modifier) {
                 close()
             }
             if (fillAlpha > 0f) {
-                drawPath(path = path, color = HomeOrange.copy(alpha = fillAlpha))
+                drawPath(path = path, color = WakeOrange.copy(alpha = fillAlpha))
             }
             drawPath(
                 path = path,
-                color = HomeOrange.copy(alpha = alpha),
+                color = WakeOrange.copy(alpha = alpha),
                 style = Stroke(width = stroke(width))
             )
         }

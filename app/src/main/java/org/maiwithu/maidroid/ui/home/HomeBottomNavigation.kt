@@ -51,7 +51,7 @@ import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 
 /** 主页底部导航栏的三个标签，顺序即从左到右的顺序（也决定切换动画的方向）。 */
-internal enum class MainTab {
+internal enum class HomeTab {
     WebUi,
     Platforms,
     Settings
@@ -61,36 +61,36 @@ internal enum class MainTab {
 private const val NavigationBlurRadius = 22f
 
 /** 悬浮导航栏本体高度（标签栏与终端按钮同高）。 */
-private val MainBottomNavigationBarHeight = 64.dp
+private val HomeBottomNavigationBarHeight = 64.dp
 
 /** 悬浮导航栏离容器底边的留白。 */
-private val MainBottomNavigationBottomPadding = 16.dp
+private val HomeBottomNavigationBottomPadding = 16.dp
 
 /**
  * 悬浮导航栏从容器底边往上盖住的总高度。
  * WebUI 页签里导航栏浮在 WebView 上方，WebView 据此把这段高度当作网页的底部安全区，
  * 让网页自己的贴底元素整体上移到导航栏之上。
  */
-internal val MainBottomNavigationOverlayHeight =
-    MainBottomNavigationBarHeight + MainBottomNavigationBottomPadding
+internal val HomeBottomNavigationOverlayHeight =
+    HomeBottomNavigationBarHeight + HomeBottomNavigationBottomPadding
 
 /** 悬浮在页面底部的毛玻璃导航：左边三个标签（选中块带弹性滑动），右边圆形终端按钮。 */
 @Composable
-internal fun MainBottomNavigation(
-    selectedTab: MainTab,
+internal fun HomeBottomNavigation(
+    selectedTab: HomeTab,
     blurTarget: BlurTarget?,
-    onTabSelected: (MainTab) -> Unit,
+    onTabSelected: (HomeTab) -> Unit,
     onTerminalClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = MainBottomNavigationBottomPadding)
+            .padding(bottom = HomeBottomNavigationBottomPadding)
     ) {
         val horizontalPadding = 28.dp
         val availableWidth = maxWidth - horizontalPadding * 2
-        val fabSize = MainBottomNavigationBarHeight
+        val fabSize = HomeBottomNavigationBarHeight
         val tabBarWidth = minOf(249.dp, availableWidth - fabSize - 16.dp).coerceAtLeast(216.dp)
 
         Row(
@@ -100,13 +100,13 @@ internal fun MainBottomNavigation(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AnimatedMainTabBar(
+            AnimatedHomeTabBar(
                 selectedTab = selectedTab,
                 blurTarget = blurTarget,
                 onTabSelected = onTabSelected,
                 modifier = Modifier
                     .width(tabBarWidth)
-                    .height(MainBottomNavigationBarHeight)
+                    .height(HomeBottomNavigationBarHeight)
             )
 
             Box(
@@ -147,10 +147,10 @@ internal fun MainBottomNavigation(
 }
 
 @Composable
-private fun AnimatedMainTabBar(
-    selectedTab: MainTab,
+private fun AnimatedHomeTabBar(
+    selectedTab: HomeTab,
     blurTarget: BlurTarget?,
-    onTabSelected: (MainTab) -> Unit,
+    onTabSelected: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(32.dp)
@@ -167,7 +167,7 @@ private fun AnimatedMainTabBar(
             .clip(shape)
             .border(1.dp, GlassStroke, shape)
     ) {
-        val tabCount = MainTab.values().size
+        val tabCount = HomeTab.values().size
         val tabWidth = (maxWidth - 8.dp) / tabCount
         val indicatorOffset by animateDpAsState(
             targetValue = 4.dp + tabWidth * selectedTab.ordinal.toFloat(),
@@ -175,7 +175,7 @@ private fun AnimatedMainTabBar(
                 dampingRatio = 0.78f,
                 stiffness = Spring.StiffnessMediumLow
             ),
-            label = "MainTabIndicatorOffset"
+            label = "HomeTabIndicatorOffset"
         )
 
         BackdropBlurView(
@@ -200,10 +200,10 @@ private fun AnimatedMainTabBar(
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            MainTabButton(
+            HomeTabButton(
                 label = "WebUI",
-                selected = selectedTab == MainTab.WebUi,
-                onClick = { onTabSelected(MainTab.WebUi) }
+                selected = selectedTab == HomeTab.WebUi,
+                onClick = { onTabSelected(HomeTab.WebUi) }
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_maibot),
@@ -212,10 +212,10 @@ private fun AnimatedMainTabBar(
                 )
             }
 
-            MainTabButton(
+            HomeTabButton(
                 label = "消息平台",
-                selected = selectedTab == MainTab.Platforms,
-                onClick = { onTabSelected(MainTab.Platforms) }
+                selected = selectedTab == HomeTab.Platforms,
+                onClick = { onTabSelected(HomeTab.Platforms) }
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_platform_plug),
@@ -225,10 +225,10 @@ private fun AnimatedMainTabBar(
                 )
             }
 
-            MainTabButton(
+            HomeTabButton(
                 label = "设置",
-                selected = selectedTab == MainTab.Settings,
-                onClick = { onTabSelected(MainTab.Settings) }
+                selected = selectedTab == HomeTab.Settings,
+                onClick = { onTabSelected(HomeTab.Settings) }
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Settings,
@@ -242,7 +242,7 @@ private fun AnimatedMainTabBar(
 }
 
 @Composable
-private fun RowScope.MainTabButton(
+private fun RowScope.HomeTabButton(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -254,7 +254,7 @@ private fun RowScope.MainTabButton(
             dampingRatio = 1f,
             stiffness = Spring.StiffnessMediumLow
         ),
-        label = "MainTabContentAlpha"
+        label = "HomeTabContentAlpha"
     )
 
     Box(
