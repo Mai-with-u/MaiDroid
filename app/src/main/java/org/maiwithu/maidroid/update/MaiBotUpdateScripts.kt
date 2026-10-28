@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.update
 
 import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.shellQuote
 
 /** 容器里 MaiBot 仓库的某个提交。 */
 internal data class MaiBotRevision(
@@ -109,7 +110,7 @@ internal class MaiBotUpdateScripts(private val config: MaiBotContainerConfig) {
 
     // 进入 MaiBot 仓库并确定要跟随的分支；分离 HEAD 时退回上游默认分支 main。
     private fun repositoryPrelude(): String {
-        val installDir = config.shellQuote(MaiBotContainerConfig.MAIBOT_CONTAINER_DIR)
+        val installDir = shellQuote(MaiBotContainerConfig.MAIBOT_CONTAINER_DIR)
         return """
         set -e
         install_dir=$installDir
@@ -138,13 +139,13 @@ internal class MaiBotUpdateScripts(private val config: MaiBotContainerConfig) {
     private fun fetchScript(): String =
         """
         printf "[MaiBotUpdate] fetching %s from upstream\n" "${'$'}branch"
-        maidroid_github_fetch ${config.shellQuote(MaiBotContainerConfig.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
+        maidroid_github_fetch ${shellQuote(MaiBotContainerConfig.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
         """.trimIndent()
 
     private fun backupAndResetScript(): String =
         """
         if [ -n "${'$'}(git status --porcelain --untracked-files=no)" ]; then
-            backup_dir=${config.shellQuote(BACKUP_DIR)}
+            backup_dir=${shellQuote(BACKUP_DIR)}
             mkdir -p "${'$'}backup_dir"
             backup_file="${'$'}backup_dir/local-changes-${'$'}(date +%Y%m%d%H%M%S).patch"
             git diff --binary HEAD > "${'$'}backup_file"

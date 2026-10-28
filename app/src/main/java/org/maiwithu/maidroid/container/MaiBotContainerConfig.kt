@@ -9,6 +9,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
+import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
+import org.maiwithu.maidroid.runtime.shellQuote
 
 // MaiBot 扫插件时跳过的目录：数据目录、字节码缓存，以及点开头的目录（含安装用的临时目录）。
 private val ReservedPluginDirNames = setOf("data", "__pycache__")
@@ -319,24 +321,6 @@ class MaiBotContainerConfig private constructor(
         workingDirectory = "/"
     )
 
-    fun configureContainerSshCommand(port: Int, rootPassword: String): List<String> = shellCommand(
-        script = containerSshSetupScript(
-            port = port.coerceIn(1024, 65535),
-            rootPassword = rootPassword
-        ),
-        workingDirectory = "/"
-    )
-
-    fun launchContainerSshCommand(port: Int): List<String> = shellCommand(
-        script = containerSshLaunchScript(port.coerceIn(1024, 65535)),
-        workingDirectory = "/"
-    )
-
-    fun cleanupContainerSshCommand(): List<String> = shellCommand(
-        script = containerSshCleanupScript(),
-        workingDirectory = "/"
-    )
-
     fun syncCommand(): List<String> = shellCommand(
         script = "${uvPrelude()}; cd ${shellQuote(MAIBOT_CONTAINER_DIR)} && uv sync",
         workingDirectory = MAIBOT_CONTAINER_DIR
@@ -353,7 +337,7 @@ class MaiBotContainerConfig private constructor(
     fun cleanupMaiBotCommand(): List<String> = shellCommand(
         script = listOf(
             "set +e",
-            killProcessesScript(
+            killMatchingProcessesScript(
                 pattern = "uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main",
                 processName = "stale MaiBot process",
                 logPrefix = "[ProcessManager] "
@@ -377,7 +361,7 @@ class MaiBotContainerConfig private constructor(
     fun cleanupNapCatCommand(): List<String> = shellCommand(
         script = listOf(
             "set +e",
-            killProcessesScript(
+            killMatchingProcessesScript(
                 pattern = "Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so",
                 processName = "stale process",
                 logPrefix = "[NapCat] "
@@ -585,144 +569,6 @@ class MaiBotContainerConfig private constructor(
         ln -sfn /sdcard/Pictures /root/storage/pictures
         ln -sfn /sdcard/Movies /root/storage/movies
         ln -sfn /sdcard/Music /root/storage/music
-        """.trimIndent()
-
-    private fun containerSshSetupScript(port: Int, rootPassword: String): String =
-        """
-        set -e
-        export DEBIAN_FRONTEND=noninteractive
-        root_password=${shellQuote(rootPassword)}
-
-        maidroid_dpkg_preflight() {
-            mkdir -p /var/lib/dpkg /var/lib/dpkg/updates
-            if [ -f /var/lib/dpkg/status ] && [ ! -f /var/lib/dpkg/status-old ]; then
-                cp /var/lib/dpkg/status /var/lib/dpkg/status-old 2>/dev/null || true
-            fi
-            if [ -f /var/lib/dpkg/status-new ]; then
-                mv /var/lib/dpkg/status-new /var/lib/dpkg/status
-            fi
-        }
-
-        maidroid_dpkg_repair() {
-            rm -f /var/lib/dpkg/status-old
-            if [ -f /var/lib/dpkg/status ]; then
-                cp /var/lib/dpkg/status /var/lib/dpkg/status-old 2>/dev/null || true
-            fi
-            if [ -f /var/lib/dpkg/status-new ]; then
-                mv /var/lib/dpkg/status-new /var/lib/dpkg/status
-            fi
-            if [ -f /var/lib/dpkg/status ]; then
-                sed -i '/^Package: openssh-server$/,/^$/s/^Status:.*/Status: install ok installed/' /var/lib/dpkg/status 2>/dev/null || true
-            fi
-            dpkg --configure -a 2>/dev/null || true
-            apt-get -f install -y 2>/dev/null || true
-        }
-
-        maidroid_dpkg_preflight
-        if [ ! -x /usr/sbin/sshd ]; then
-            apt-get -o Acquire::http::Pipeline-Depth=0 update
-            apt-get install -y --no-install-recommends openssh-server || {
-                echo "apt install openssh-server failed, repairing dpkg state"
-                maidroid_dpkg_repair
-                if [ ! -x /usr/sbin/sshd ]; then
-                    apt-get install -y --fix-broken || apt-get install -y --no-install-recommends openssh-server --fix-missing
-                fi
-            }
-        fi
-
-        if [ ! -x /usr/sbin/sshd ]; then
-            echo "openssh-server is not installed"
-            exit 127
-        fi
-
-        if [ -f /etc/ssh/moduli.dpkg-new ] && [ ! -f /etc/ssh/moduli ]; then
-            mv /etc/ssh/moduli.dpkg-new /etc/ssh/moduli
-        fi
-
-        if ! grep -q '^sshd:' /etc/passwd 2>/dev/null; then
-            echo 'sshd:x:1000:1000:sshd:/var/empty:/usr/sbin/nologin' >> /etc/passwd
-        fi
-        if ! grep -q '^sshd:' /etc/shadow 2>/dev/null; then
-            echo 'sshd:*:19688:0:99999:7:::' >> /etc/shadow
-        fi
-        if ! grep -q '^sshd:' /etc/group 2>/dev/null; then
-            echo 'sshd:x:1000:' >> /etc/group
-        fi
-
-        mkdir -p /etc/ssh /run/sshd /var/empty
-        chmod 0755 /run /run/sshd /var/empty 2>/dev/null || true
-        touch /etc/ssh/sshd_config
-        sed -i '/^[#[:space:]]*UsePrivilegeSeparation[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        sed -i '/^[#[:space:]]*Port[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        sed -i '/^[#[:space:]]*PermitRootLogin[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        sed -i '/^[#[:space:]]*PasswordAuthentication[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        sed -i '/^[#[:space:]]*KbdInteractiveAuthentication[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        sed -i '/^[#[:space:]]*ChallengeResponseAuthentication[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        sed -i '/^[#[:space:]]*UsePAM[[:space:]]/d' /etc/ssh/sshd_config 2>/dev/null || true
-        cat >> /etc/ssh/sshd_config <<EOF
-        Port $port
-        PermitRootLogin yes
-        PasswordAuthentication yes
-        KbdInteractiveAuthentication no
-        ChallengeResponseAuthentication no
-        UsePAM no
-        EOF
-
-        printf 'root:%s\n' "${'$'}root_password" | chpasswd
-        ssh-keygen -A 2>/dev/null || true
-        /usr/sbin/sshd -t
-        echo "sshd configured on port $port"
-        """.trimIndent()
-
-    private fun containerSshLaunchScript(port: Int): String =
-        """
-        set -e
-        mkdir -p /run/sshd /var/empty
-        chmod 0755 /run /run/sshd /var/empty 2>/dev/null || true
-        if [ ! -x /usr/sbin/sshd ]; then
-            echo "openssh-server is not installed"
-            exit 127
-        fi
-        /usr/sbin/sshd -t
-        echo "sshd listening on port $port"
-        exec /usr/sbin/sshd -D -e -p $port
-        """.trimIndent()
-
-    private fun containerSshCleanupScript(): String =
-        listOf(
-            "set +e",
-            "if command -v ps >/dev/null 2>&1; then",
-            killProcessesScript(
-                pattern = "\\/usr\\/sbin\\/sshd|sshd: ",
-                processName = "sshd process"
-            ),
-            "fi",
-            "rm -f /run/sshd.pid /run/sshd/sshd.pid 2>/dev/null || true",
-            "exit 0"
-        ).joinToString("\n")
-
-    /**
-     * 按命令行匹配 awk 正则结束容器内进程：先 SIGTERM，等 1 秒后对仍存活的再 SIGKILL。
-     * 用于启动前清理上次异常退出留下的 MaiBot / NapCat / sshd，避免端口和锁文件被占。
-     */
-    private fun killProcessesScript(
-        pattern: String,
-        processName: String,
-        logPrefix: String = ""
-    ): String =
-        """
-        maidroid_kill_matching() {
-            signal="${'$'}1"
-            verb="${'$'}2"
-            ps -eo pid=,args= | awk '/$pattern/ && !/awk/ { print ${'$'}1 }' | while read pid; do
-                [ -n "${'$'}pid" ] || continue
-                printf "%s%s %s %s\n" ${shellQuote(logPrefix)} "${'$'}verb" ${shellQuote(processName)} "${'$'}pid"
-                kill "${'$'}signal" "${'$'}pid" 2>/dev/null || true
-            done
-        }
-        maidroid_kill_matching -TERM stopping
-        sleep 1
-        maidroid_kill_matching -KILL "force stopping"
         """.trimIndent()
 
     @Suppress("UNUSED_PARAMETER")
@@ -1054,9 +900,6 @@ class MaiBotContainerConfig private constructor(
             "export UV_LINK_MODE=copy; " +
             "export PATH=\"\$HOME/.local/bin:\$PATH\"; " +
             "if [ -f \"\$HOME/.local/bin/env\" ]; then . \"\$HOME/.local/bin/env\"; fi"
-
-    internal fun shellQuote(value: String): String =
-        "'" + value.replace("'", "'\"'\"'") + "'"
 
     private fun md5(file: File): String? {
         if (!file.isFile) return null

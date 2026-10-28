@@ -13,6 +13,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
+import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.ssh.ContainerSshScripts
 import java.util.concurrent.TimeUnit
 
 internal enum class ContainerSshPhase {
@@ -122,19 +124,18 @@ internal class ContainerSshManager private constructor(context: Context) {
 
             TerminalLogRepository.append("")
             TerminalLogRepository.append("[ContainerSSH] configuring sshd on port $port")
-            val setupResult = runCommand(config.configureContainerSshCommand(port, password))
+            val setupResult = runCommand(ContainerSshScripts.configure(port, password))
             if (!setupResult.success) {
                 fail(setupResult.summary())
                 return@launch
             }
 
-            runCommand(config.cleanupContainerSshCommand())
+            runCommand(ContainerSshScripts.cleanup())
 
-            val command = config.launchContainerSshCommand(port)
             TerminalLogRepository.append("[ContainerSSH] starting sshd on port $port")
             withContext(Dispatchers.IO) {
                 try {
-                    val currentProcess = commandRunner.start(command)
+                    val currentProcess = commandRunner.start(ContainerSshScripts.launch(port))
                     process = currentProcess
                     _state.update {
                         readState(phase = ContainerSshPhase.Running, errorMessage = null)
@@ -209,13 +210,13 @@ internal class ContainerSshManager private constructor(context: Context) {
                 }
             }
             process = null
-            runCommand(config.cleanupContainerSshCommand())
+            runCommand(ContainerSshScripts.cleanup())
         }
     }
 
     // sshd 配置与清理命令的输出统一加 [ContainerSSH] 前缀写进终端日志。
-    private suspend fun runCommand(command: List<String>): ContainerCommandResult =
-        commandRunner.run(command) { line ->
+    private suspend fun runCommand(script: ContainerScript): ContainerCommandResult =
+        commandRunner.run(script) { line ->
             if (line.isNotBlank()) {
                 TerminalLogRepository.append("[ContainerSSH] $line")
             }

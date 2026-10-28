@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.container
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.runtime.ContainerScript
 
 /** proot 容器内一次性命令的执行结果。 */
 internal data class ContainerCommandResult(
@@ -27,7 +28,24 @@ internal data class ContainerCommandResult(
  */
 internal class ContainerCommandRunner(private val config: MaiBotContainerConfig) {
 
-    /** 启动长驻进程（MaiBot、sshd、NapCat），输出读取和生命周期由调用方负责。 */
+    /** 启动长驻的容器脚本（sshd、NapCat），输出读取和生命周期由调用方负责。 */
+    fun start(script: ContainerScript, extraEnvironment: Map<String, String> = emptyMap()): Process {
+        val processBuilder = ProcessBuilder(config.shellCommand(script.body, script.workingDirectory))
+            .directory(config.rootfsDir)
+            .redirectErrorStream(true)
+        processBuilder.environment().putAll(config.prootEnvironment())
+        processBuilder.environment().putAll(extraEnvironment)
+        return processBuilder.start()
+    }
+
+    /** 执行一次性的容器脚本，行为与按命令行执行的 run 相同。 */
+    suspend fun run(
+        script: ContainerScript,
+        extraEnvironment: Map<String, String> = emptyMap(),
+        onLine: (String) -> Unit = {}
+    ): ContainerCommandResult = runProcess(onLine) { start(script, extraEnvironment) }
+
+    /** 启动长驻进程（MaiBot），输出读取和生命周期由调用方负责。 */
     fun start(command: List<String>, includeAgreement: Boolean = false): Process {
         val processBuilder = ProcessBuilder(command)
             .directory(config.rootfsDir)
@@ -48,9 +66,14 @@ internal class ContainerCommandRunner(private val config: MaiBotContainerConfig)
         command: List<String>,
         includeAgreement: Boolean = false,
         onLine: (String) -> Unit = {}
+    ): ContainerCommandResult = runProcess(onLine) { start(command, includeAgreement) }
+
+    private suspend fun runProcess(
+        onLine: (String) -> Unit,
+        launch: () -> Process
     ): ContainerCommandResult = withContext(Dispatchers.IO) {
         val process = try {
-            start(command, includeAgreement)
+            launch()
         } catch (e: Exception) {
             val message = e.message.orEmpty().ifBlank { e.javaClass.simpleName }
             onLine(message)
