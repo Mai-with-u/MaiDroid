@@ -13,186 +13,70 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.maibot.MaiBotAgreement
+import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerRequirement
-import org.maiwithu.maidroid.runtime.RuntimeFileModes
-import org.maiwithu.maidroid.runtime.RuntimePaths
-import org.maiwithu.maidroid.runtime.RuntimeReadiness
-import org.maiwithu.maidroid.maibot.MaiBotAgreement
-import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
-import org.maiwithu.maidroid.runtime.RuntimeInstallProgress
-import org.maiwithu.maidroid.maibot.MaiBotScripts
-import org.maiwithu.maidroid.log.TerminalLog
-import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ContainerSetupScripts
-import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
+import org.maiwithu.maidroid.runtime.RuntimeFileModes
+import org.maiwithu.maidroid.runtime.RuntimeInstallStage
+import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
+import org.maiwithu.maidroid.settings.AppSettings
+import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 
-enum class OobeSetupPhase {
-    Container,
-    Install,
-    Complete
-}
-
-enum class OobeTaskKind {
-    Container,
-    Source,
-    Dependency,
-    Agreement,
-    WebUi
-}
-
-enum class OobeTaskStatus {
-    Waiting,
-    Running,
-    Done,
-    Blocked,
-    Failed
-}
-
-data class OobeTaskState(
-    val kind: OobeTaskKind,
-    val title: String,
-    val description: String,
-    val progress: Float,
-    val progressText: String,
-    val statusText: String,
-    val status: OobeTaskStatus
-)
-
-data class OobeSetupState(
-    val phase: OobeSetupPhase,
-    val containerTasks: List<OobeTaskState>,
-    val installTasks: List<OobeTaskState>,
-    val footerText: String,
-    val canInstall: Boolean,
-    val isComplete: Boolean,
-    val webUiReady: Boolean = false,
-    val webUiUrl: String = MaiBotWebUi.URL,
-    val commandLogs: List<String> = emptyList()
-) {
-    companion object {
-        fun preview(): OobeSetupState {
-            val containerTasks = listOf(
-                OobeTaskState(
-                    kind = OobeTaskKind.Container,
-                    title = "Debian rootfs",
-                    description = "检查 rootfs 目录",
-                    progress = 0f,
-                    progressText = "等待",
-                    statusText = "等待容器资源",
-                    status = OobeTaskStatus.Waiting
-                ),
-                OobeTaskState(
-                    kind = OobeTaskKind.Container,
-                    title = "Termux bootstrap",
-                    description = "检查 bootstrap 资源",
-                    progress = 0f,
-                    progressText = "等待",
-                    statusText = "等待 bootstrap 解包",
-                    status = OobeTaskStatus.Waiting
-                ),
-                OobeTaskState(
-                    kind = OobeTaskKind.Container,
-                    title = "proot",
-                    description = "检查容器启动器和 loader",
-                    progress = 0f,
-                    progressText = "等待",
-                    statusText = "等待可执行文件",
-                    status = OobeTaskStatus.Waiting
-                )
-            )
-            return OobeSetupState(
-                phase = OobeSetupPhase.Container,
-                containerTasks = containerTasks,
-                installTasks = defaultInstallTasks(),
-                footerText = "正在检查容器配置...",
-                canInstall = false,
-                isComplete = false
-            )
-        }
-
-        fun defaultInstallTasks(): List<OobeTaskState> = listOf(
-            OobeTaskState(
-                kind = OobeTaskKind.Source,
-                title = "MaiBot 源码",
-                description = GitHubMirrors.DESCRIPTION,
-                progress = 0f,
-                progressText = "等待",
-                statusText = "等待容器就绪",
-                status = OobeTaskStatus.Waiting
-            ),
-            OobeTaskState(
-                kind = OobeTaskKind.Dependency,
-                title = "Python 依赖",
-                description = "uv sync",
-                progress = 0f,
-                progressText = "等待",
-                statusText = "等待源码",
-                status = OobeTaskStatus.Waiting
-            ),
-            OobeTaskState(
-                kind = OobeTaskKind.Agreement,
-                title = "协议确认",
-                description = "EULA_AGREE / PRIVACY_AGREE",
-                progress = 0f,
-                progressText = "等待",
-                statusText = "等待 EULA 文件",
-                status = OobeTaskStatus.Waiting
-            ),
-            OobeTaskState(
-                kind = OobeTaskKind.WebUi,
-                title = "MaiBot WebUI",
-                description = MaiBotWebUi.URL,
-                progress = 0f,
-                progressText = "等待",
-                statusText = "等待 MaiBot 启动",
-                status = OobeTaskStatus.Waiting
-            )
-        )
-    }
-}
-
+/**
+ * OOBE“配置容器”和“安装 MaiBot”两步的执行者，界面只读它的 state。
+ *
+ * 由 MainViewModel 持有，屏幕旋转等配置变化不会打断正在进行的安装；
+ * 每一步都先按文件判断是否已经做过，做过就跳过，所以中途退出后重进可以接着装。
+ */
 internal class OobeSetupManager(
     context: Context,
-    private val settingsRepository: AppSettings = AppSettings()
+    private val settings: AppSettings,
+    private val paths: RuntimePaths,
+    private val readiness: RuntimeReadiness,
+    private val commandRunner: ContainerCommandRunner
 ) {
-    companion object {
-        private const val MAX_COMMAND_LOG_LINES = 500
-        private const val WEB_UI_START_TIMEOUT_MS = 180_000L
-        private const val WEB_UI_POLL_INTERVAL_MS = 1_000L
+    private companion object {
+        const val MAX_COMMAND_LOG_LINES = 500
+        const val WEB_UI_START_TIMEOUT_MS = 180_000L
+        const val WEB_UI_POLL_INTERVAL_MS = 1_000L
     }
 
     private val appContext = context.applicationContext
-    private val config = RuntimePaths.from(appContext)
-    private val readiness = RuntimeReadiness(config)
-    private val runtimeInstaller = RuntimeAssetInstaller(appContext, config)
-    private val commandRunner = ContainerCommandRunner(config)
+    private val runtimeInstaller = RuntimeAssetInstaller(appContext, paths)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var containerJob: Job? = null
     private var installJob: Job? = null
 
-    private val _state = MutableStateFlow(OobeSetupState.preview())
+    // WebUI 是否已经探测成功；只在安装完成时置为 true，用来把 WebUI 卡片显示为完成。
+    private var webUiReady = false
+
+    private val _state = MutableStateFlow(OobeSetupState.beforeFirstCheck())
     val state: StateFlow<OobeSetupState> = _state.asStateFlow()
 
+    /** ViewModel 销毁时调用，取消还在跑的检查和安装。 */
     fun close() {
         scope.cancel()
     }
 
+    /** 按文件重新检查容器五件套，刷新两步的卡片和页脚。 */
     fun refreshContainer() {
         scope.launch {
-            RuntimeFileModes.ensureExecutableBits(config)
+            RuntimeFileModes.ensureExecutableBits(paths)
+            webUiReady = false
             val containerTasks = buildContainerTasks()
-            val installTasks = buildInstallTasks()
             val ready = containerTasks.all { it.status == OobeTaskStatus.Done }
             _state.value = OobeSetupState(
-                phase = OobeSetupPhase.Container,
                 containerTasks = containerTasks,
-                installTasks = installTasks,
+                installTasks = buildInstallTasks(),
                 footerText = if (ready) {
                     "容器已就绪，可以开始安装 MaiBot。"
                 } else {
@@ -205,26 +89,25 @@ internal class OobeSetupManager(
         }
     }
 
+    /**
+     * “配置容器”一步：进入该步或点“重新配置”时调用。
+     * 解包 APK 里的 rootfs、bootstrap 和 proot 依赖（已解包就跳过）-> 确认 proot 可执行 ->
+     * 缺系统依赖时：修复 rootfs 权限 -> 建共享存储入口 -> 配 DNS -> 换清华源 -> apt 装 git、curl、证书。
+     */
     fun prepareContainer() {
         if (containerJob?.isActive == true) return
         containerJob = scope.launch {
-            RuntimeFileModes.ensureExecutableBits(config)
+            RuntimeFileModes.ensureExecutableBits(paths)
             if (readiness.isContainerReady()) {
                 refreshContainer()
                 return@launch
             }
 
             if (!readiness.isBaseRuntimeReady()) {
-                updateContainerProgress(
-                    RuntimeInstallProgress(
-                        title = "容器资源",
-                        statusText = "正在准备本地运行环境...",
-                        progress = 0.05f
-                    )
-                )
+                showContainerProgress(CONTAINER_ASSET_TASKS, "正在准备本地运行环境...")
 
                 val result = runtimeInstaller.installFromAssets { progress ->
-                    updateContainerProgress(progress)
+                    showContainerProgress(progress.stage.affectedTasks(), progress.statusText)
                 }
 
                 result.onFailure { error ->
@@ -232,78 +115,35 @@ internal class OobeSetupManager(
                     return@launch
                 }
 
-                RuntimeFileModes.ensureExecutableBits(config)
+                RuntimeFileModes.ensureExecutableBits(paths)
             }
 
-            if (!config.prootExecutable.isFile || !config.prootLoader.isFile ||
-                !config.prootExecutable.canExecute() || !config.prootLoader.canExecute()
+            if (!paths.prootExecutable.isFile || !paths.prootLoader.isFile ||
+                !paths.prootExecutable.canExecute() || !paths.prootLoader.canExecute()
             ) {
                 failContainer("proot 启动器不可执行，请确认 APK 已包含 arm64 native runtime 后重新安装")
                 return@launch
             }
 
             if (!readiness.isSystemDependencyReady()) {
-                updateContainerProgress(
-                    RuntimeInstallProgress(
-                        title = "系统依赖",
-                        statusText = "正在修复容器文件权限...",
-                        progress = 0.68f
-                    )
-                )
+                showContainerProgress(SYSTEM_DEPENDENCY_TASKS, "正在修复容器文件权限...")
                 withContext(Dispatchers.IO) {
-                    RuntimeFileModes.makeRootfsWritable(config)
+                    RuntimeFileModes.makeRootfsWritable(paths)
                 }
 
-                updateContainerProgress(
-                    RuntimeInstallProgress(
-                        title = "系统依赖",
-                        statusText = "正在配置共享存储入口...",
-                        progress = 0.70f
-                    )
+                val setupSteps = listOf(
+                    "正在配置共享存储入口..." to ContainerSetupScripts.setupStorageBridge(),
+                    "正在配置容器 DNS..." to ContainerSetupScripts.configureDns(),
+                    "正在配置清华 Debian 镜像源..." to ContainerSetupScripts.configureAptMirror(),
+                    "正在容器内安装 Git、curl 和证书..." to ContainerSetupScripts.installSystemDependencies()
                 )
-                val storageBridgeResult = runCommand(ContainerSetupScripts.setupStorageBridge())
-                if (!storageBridgeResult.success) {
-                    failContainer(storageBridgeResult.summary())
-                    return@launch
-                }
-
-                updateContainerProgress(
-                    RuntimeInstallProgress(
-                        title = "系统依赖",
-                        statusText = "正在配置容器 DNS...",
-                        progress = 0.72f
-                    )
-                )
-                val dnsResult = runCommand(ContainerSetupScripts.configureDns())
-                if (!dnsResult.success) {
-                    failContainer(dnsResult.summary())
-                    return@launch
-                }
-
-                updateContainerProgress(
-                    RuntimeInstallProgress(
-                        title = "系统依赖",
-                        statusText = "正在配置清华 Debian 镜像源...",
-                        progress = 0.76f
-                    )
-                )
-                val mirrorResult = runCommand(ContainerSetupScripts.configureAptMirror())
-                if (!mirrorResult.success) {
-                    failContainer(mirrorResult.summary())
-                    return@launch
-                }
-
-                updateContainerProgress(
-                    RuntimeInstallProgress(
-                        title = "系统依赖",
-                        statusText = "正在容器内安装 Git、curl 和证书...",
-                        progress = 0.82f
-                    )
-                )
-                val dependencyResult = runCommand(ContainerSetupScripts.installSystemDependencies())
-                if (!dependencyResult.success) {
-                    failContainer(dependencyResult.summary())
-                    return@launch
+                for ((statusText, script) in setupSteps) {
+                    showContainerProgress(SYSTEM_DEPENDENCY_TASKS, statusText)
+                    val result = runCommand(script)
+                    if (!result.success) {
+                        failContainer(result.summary())
+                        return@launch
+                    }
                 }
             }
 
@@ -311,24 +151,28 @@ internal class OobeSetupManager(
         }
     }
 
+    /**
+     * “安装 MaiBot”一步：进入该步或点“重试安装”时调用。
+     * 配 DNS -> 克隆 MaiBot（已有源码就跳过）-> 装 uv 并 uv sync（已装好就跳过）-> 确认协议文件 ->
+     * 拉起前台服务启动 MaiBot -> 最多等 3 分钟直到 WebUI 能访问 -> 记下 OOBE 已完成。
+     */
     fun startInstall() {
-        if (_state.value.isComplete || settingsRepository.setupComplete) return
+        if (_state.value.isComplete || settings.setupComplete) return
         if (installJob?.isActive == true) return
         installJob = scope.launch {
-            RuntimeFileModes.ensureExecutableBits(config)
+            RuntimeFileModes.ensureExecutableBits(paths)
             if (!readiness.isContainerReady()) {
                 refreshContainer()
                 return@launch
             }
 
+            // DNS 算在接下来真正要做的那一步上：源码已有就算依赖安装，否则算克隆源码。
             val dnsTaskKind = if (readiness.isMaiBotSourceReady()) {
-                OobeTaskKind.Dependency
+                OobeTaskKind.PythonDependencies
             } else {
-                OobeTaskKind.Source
+                OobeTaskKind.MaiBotSource
             }
-            updateInstallState(
-                buildInstallTasks().markRunning(dnsTaskKind, "正在配置容器 DNS...")
-            )
+            showInstallRunning(dnsTaskKind, "正在配置容器 DNS...")
             val dnsResult = runCommand(ContainerSetupScripts.configureDns())
             if (!dnsResult.success) {
                 failInstall(dnsTaskKind, dnsResult.summary())
@@ -336,24 +180,20 @@ internal class OobeSetupManager(
             }
 
             if (!readiness.isMaiBotSourceReady()) {
-                updateInstallState(
-                    buildInstallTasks().markRunning(OobeTaskKind.Source, "正在克隆 MaiBot...")
-                )
+                showInstallRunning(OobeTaskKind.MaiBotSource, "正在克隆 MaiBot...")
                 val cloneResult = runCommand(MaiBotScripts.clone())
                 if (!cloneResult.success) {
-                    failInstall(OobeTaskKind.Source, cloneResult.summary())
+                    failInstall(OobeTaskKind.MaiBotSource, cloneResult.summary())
                     return@launch
                 }
             }
 
-            updateInstallState(
-                buildInstallTasks().markRunning(OobeTaskKind.Dependency, "正在安装 uv 和依赖...")
-            )
+            showInstallRunning(OobeTaskKind.PythonDependencies, "正在安装 uv 和依赖...")
 
-            if (!config.userUvExecutable.isFile) {
+            if (!paths.userUvExecutable.isFile) {
                 val uvResult = runCommand(MaiBotScripts.installUv())
                 if (!uvResult.success) {
-                    failInstall(OobeTaskKind.Dependency, uvResult.summary())
+                    failInstall(OobeTaskKind.PythonDependencies, uvResult.summary())
                     return@launch
                 }
             }
@@ -361,219 +201,125 @@ internal class OobeSetupManager(
             if (!readiness.isMaiBotDependencyReady()) {
                 val syncResult = runCommand(MaiBotScripts.syncDependencies())
                 if (!syncResult.success) {
-                    failInstall(OobeTaskKind.Dependency, syncResult.summary())
+                    failInstall(OobeTaskKind.PythonDependencies, syncResult.summary())
                     return@launch
                 }
             }
 
-            updateInstallState(
-                buildInstallTasks().markRunning(OobeTaskKind.Agreement, "正在读取协议 hash...")
-            )
+            showInstallRunning(OobeTaskKind.Agreement, "正在读取协议 hash...")
 
-            val agreementReady = MaiBotAgreement.isReady(config)
-            if (!agreementReady) {
+            if (!MaiBotAgreement.isReady(paths)) {
                 failInstall(OobeTaskKind.Agreement, "未找到 EULA.md 或 PRIVACY.md")
                 return@launch
             }
 
-            updateInstallState(
-                buildInstallTasks().markRunning(OobeTaskKind.WebUi, "正在启动 MaiBot WebUI...")
-            )
+            showInstallRunning(OobeTaskKind.WebUi, "正在启动 MaiBot WebUI...")
 
             MaiBotRuntimeService.start(appContext)
 
-            val webUiReady = waitForWebUi()
-            if (!webUiReady) {
+            if (!waitForWebUi()) {
                 failInstall(OobeTaskKind.WebUi, "MaiBot WebUI 启动超时，请查看调试日志")
                 return@launch
             }
 
-            settingsRepository.setupComplete = true
+            settings.setupComplete = true
+            webUiReady = true
 
             _state.value = _state.value.copy(
-                phase = OobeSetupPhase.Complete,
-                installTasks = buildInstallTasks(webUiReady = true),
+                installTasks = buildInstallTasks(),
                 footerText = "MaiBot WebUI 已启动，可以打开 ${MaiBotWebUi.URL}",
                 canInstall = true,
-                isComplete = true,
-                webUiReady = true
+                isComplete = true
             )
         }
     }
 
-    private fun buildContainerTasks(): List<OobeTaskState> =
-        readiness.containerRequirements().map { requirement ->
-            requirement.toTaskState()
-        }
+    private fun buildContainerTasks(): List<OobeTask> =
+        readiness.containerRequirements().map { it.toTask() }
 
-    private fun buildInstallTasks(
-        webUiReady: Boolean = _state.value.webUiReady
-    ): List<OobeTaskState> {
-        val sourceReady = readiness.isMaiBotSourceReady()
-        val dependencyReady = readiness.isMaiBotDependencyReady()
-        val agreementReady = MaiBotAgreement.isReady(config)
+    private fun ContainerRequirement.toTask(): OobeTask =
+        OobeTask(
+            kind = component.toOobeTaskKind(),
+            title = name,
+            status = if (ready) OobeTaskStatus.Done else OobeTaskStatus.Blocked,
+            statusText = if (ready) "" else hint
+        )
+
+    // 安装四步按文件判断是否已完成，没完成的都显示为等待；正在做的那一步由 showInstallRunning 单独标出。
+    private fun buildInstallTasks(): List<OobeTask> {
+        fun task(kind: OobeTaskKind, title: String, done: Boolean) =
+            OobeTask(kind, title, if (done) OobeTaskStatus.Done else OobeTaskStatus.Waiting)
         return listOf(
-            OobeTaskState(
-                kind = OobeTaskKind.Source,
-                title = "MaiBot 源码",
-                description = "git clone，GitHub 镜像每源重试 ${GitHubMirrors.RETRY_PER_MIRROR} 次",
-                progress = if (sourceReady) 1f else 0f,
-                progressText = if (sourceReady) "完成" else "等待",
-                statusText = if (sourceReady) config.maiBotDir.absolutePath else "等待 git clone",
-                status = if (sourceReady) OobeTaskStatus.Done else OobeTaskStatus.Waiting
-            ),
-            OobeTaskState(
-                kind = OobeTaskKind.Dependency,
-                title = "Python 依赖",
-                description = "uv sync",
-                progress = if (dependencyReady) 1f else 0f,
-                progressText = if (dependencyReady) "完成" else "等待",
-                statusText = if (dependencyReady) ".venv 已存在" else "等待 uv sync",
-                status = if (dependencyReady) OobeTaskStatus.Done else OobeTaskStatus.Waiting
-            ),
-            OobeTaskState(
-                kind = OobeTaskKind.Agreement,
-                title = "协议确认",
-                description = "自动注入 EULA_AGREE / PRIVACY_AGREE",
-                progress = if (agreementReady) 1f else 0f,
-                progressText = if (agreementReady) "完成" else "等待",
-                statusText = if (agreementReady) "hash 已就绪" else "等待协议文件",
-                status = if (agreementReady) OobeTaskStatus.Done else OobeTaskStatus.Waiting
-            ),
-            OobeTaskState(
-                kind = OobeTaskKind.WebUi,
-                title = "MaiBot WebUI",
-                description = MaiBotWebUi.URL,
-                progress = if (webUiReady) 1f else 0f,
-                progressText = if (webUiReady) "完成" else "等待",
-                statusText = when {
-                    webUiReady -> "WebUI 已启动"
-                    agreementReady -> "等待 MaiBot 启动"
-                    else -> "等待协议确认"
-                },
-                status = if (webUiReady) OobeTaskStatus.Done else OobeTaskStatus.Waiting
-            )
+            task(OobeTaskKind.MaiBotSource, "MaiBot 源码", readiness.isMaiBotSourceReady()),
+            task(OobeTaskKind.PythonDependencies, "Python 依赖", readiness.isMaiBotDependencyReady()),
+            task(OobeTaskKind.Agreement, "协议确认", MaiBotAgreement.isReady(paths)),
+            task(OobeTaskKind.WebUi, "MaiBot WebUI", webUiReady)
         )
     }
 
-    private fun updateInstallState(installTasks: List<OobeTaskState>, footer: String? = null) {
-        _state.value = _state.value.copy(
-            phase = OobeSetupPhase.Install,
-            containerTasks = buildContainerTasks(),
-            installTasks = installTasks,
-            footerText = footer ?: installTasks.firstOrNull { it.status == OobeTaskStatus.Running }?.statusText
-                ?: "正在安装 MaiBot...",
-            canInstall = false,
-            isComplete = false
-        )
-    }
-
-    private fun updateContainerProgress(progress: RuntimeInstallProgress) {
-        val runningTaskNames = when (progress.title) {
-            "Debian rootfs" -> setOf("Debian rootfs")
-            "Termux bootstrap" -> setOf("Termux bootstrap", "proot")
-            "proot" -> setOf("proot")
-            "系统依赖" -> setOf("Git", "curl / CA")
-            else -> setOf("Debian rootfs", "Termux bootstrap", "proot")
-        }
-        val tasks = buildContainerTasks().map { task ->
-            when {
-                task.status == OobeTaskStatus.Done -> task
-                task.title in runningTaskNames -> task.copy(
-                    progress = progress.progress,
-                    progressText = "进行中",
-                    statusText = progress.statusText,
-                    status = OobeTaskStatus.Running
-                )
-                task.status == OobeTaskStatus.Blocked -> task.copy(
-                    progressText = "等待",
-                    statusText = "等待前置步骤",
-                    status = OobeTaskStatus.Waiting
-                )
-                else -> task
-            }
-        }
-        _state.value = _state.value.copy(
-            phase = OobeSetupPhase.Container,
-            containerTasks = tasks,
-            footerText = progress.statusText,
-            canInstall = false,
-            isComplete = false
-        )
-    }
-
-    private fun failContainer(message: String) {
-        val tasks = buildContainerTasks()
-        val failedIndex = tasks.indexOfFirst { it.status != OobeTaskStatus.Done }
-        val failedTasks = tasks.mapIndexed { index, task ->
-            if (index == failedIndex) {
-                task.copy(
-                    progressText = "失败",
-                    statusText = message,
-                    status = OobeTaskStatus.Failed
-                )
+    // 把 kind 那张卡片标为进行中，页脚显示当前在做什么。
+    private fun showInstallRunning(kind: OobeTaskKind, statusText: String) {
+        val tasks = buildInstallTasks().map { task ->
+            if (task.kind == kind) {
+                task.copy(status = OobeTaskStatus.Running, statusText = statusText)
             } else {
                 task
             }
         }
         _state.value = _state.value.copy(
-            phase = OobeSetupPhase.Container,
-            containerTasks = failedTasks,
+            containerTasks = buildContainerTasks(),
+            installTasks = tasks,
+            footerText = statusText,
+            canInstall = false,
+            isComplete = false
+        )
+    }
+
+    // 解包或装系统依赖时，把还没完成的相关卡片标为进行中；其余没就绪的卡片显示为等待前置步骤。
+    private fun showContainerProgress(runningTasks: Set<OobeTaskKind>, statusText: String) {
+        val tasks = buildContainerTasks().map { task ->
+            when {
+                task.status == OobeTaskStatus.Done -> task
+                task.kind in runningTasks -> task.copy(status = OobeTaskStatus.Running, statusText = statusText)
+                task.status == OobeTaskStatus.Blocked -> task.copy(status = OobeTaskStatus.Waiting, statusText = "等待前置步骤")
+                else -> task
+            }
+        }
+        _state.value = _state.value.copy(
+            containerTasks = tasks,
+            footerText = statusText,
+            canInstall = false,
+            isComplete = false
+        )
+    }
+
+    // 第一张没完成的容器卡片标为失败，页脚显示失败原因。
+    private fun failContainer(message: String) {
+        val tasks = buildContainerTasks()
+        val failedIndex = tasks.indexOfFirst { it.status != OobeTaskStatus.Done }
+        _state.value = _state.value.copy(
+            containerTasks = tasks.mapIndexed { index, task ->
+                if (index == failedIndex) task.copy(status = OobeTaskStatus.Failed, statusText = message) else task
+            },
             footerText = message,
             canInstall = false,
             isComplete = false
         )
     }
 
+    // 出错的那张安装卡片标为失败；canInstall 置为 true，页脚按钮变成“重试安装”。
     private fun failInstall(kind: OobeTaskKind, message: String) {
-        val failedTasks = buildInstallTasks().map { task ->
-            if (task.kind == kind) {
-                task.copy(
-                    progress = 0f,
-                    progressText = "失败",
-                    statusText = message,
-                    status = OobeTaskStatus.Failed
-                )
-            } else {
-                task
-            }
-        }
         _state.value = _state.value.copy(
-            phase = OobeSetupPhase.Install,
-            installTasks = failedTasks,
+            installTasks = buildInstallTasks().map { task ->
+                if (task.kind == kind) task.copy(status = OobeTaskStatus.Failed, statusText = message) else task
+            },
             footerText = message,
             canInstall = true,
             isComplete = false
         )
     }
 
-    private fun ContainerRequirement.toTaskState(): OobeTaskState =
-        OobeTaskState(
-            kind = OobeTaskKind.Container,
-            title = name,
-            description = path,
-            progress = if (ready) 1f else 0f,
-            progressText = if (ready) "完成" else "缺失",
-            statusText = if (ready) "已就绪" else hint,
-            status = if (ready) OobeTaskStatus.Done else OobeTaskStatus.Blocked
-        )
-
-    private fun List<OobeTaskState>.markRunning(
-        kind: OobeTaskKind,
-        statusText: String
-    ): List<OobeTaskState> = map { task ->
-        if (task.kind == kind) {
-            task.copy(
-                progress = 0.5f,
-                progressText = "进行中",
-                statusText = statusText,
-                status = OobeTaskStatus.Running
-            )
-        } else {
-            task
-        }
-    }
-
+    // 每秒探测一次 WebUI，同时把已等待的秒数显示在页脚；超时返回 false。
     private suspend fun waitForWebUi(): Boolean {
         val deadline = SystemClock.elapsedRealtime() + WEB_UI_START_TIMEOUT_MS
         var attempt = 0
@@ -581,12 +327,7 @@ internal class OobeSetupManager(
             attempt += 1
             if (MaiBotWebUiProbe.isReachable()) return true
 
-            updateInstallState(
-                buildInstallTasks().markRunning(
-                    OobeTaskKind.WebUi,
-                    "正在等待 MaiBot WebUI 启动... ${attempt}s"
-                )
-            )
+            showInstallRunning(OobeTaskKind.WebUi, "正在等待 MaiBot WebUI 启动... ${attempt}s")
             delay(WEB_UI_POLL_INTERVAL_MS)
         }
         return false
@@ -606,4 +347,14 @@ internal class OobeSetupManager(
         _state.value = _state.value.copy(commandLogs = nextLogs)
         TerminalLog.append(line)
     }
+}
+
+// 解包 APK 资源时受影响的三张卡片，以及安装系统依赖时受影响的两张。
+private val CONTAINER_ASSET_TASKS = setOf(OobeTaskKind.DebianRootfs, OobeTaskKind.TermuxBootstrap, OobeTaskKind.Proot)
+private val SYSTEM_DEPENDENCY_TASKS = setOf(OobeTaskKind.Git, OobeTaskKind.CurlCa)
+
+private fun RuntimeInstallStage.affectedTasks(): Set<OobeTaskKind> = when (this) {
+    RuntimeInstallStage.DebianRootfs -> setOf(OobeTaskKind.DebianRootfs)
+    RuntimeInstallStage.TermuxBootstrap -> setOf(OobeTaskKind.TermuxBootstrap, OobeTaskKind.Proot)
+    RuntimeInstallStage.WholeRuntime -> CONTAINER_ASSET_TASKS
 }

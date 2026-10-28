@@ -23,15 +23,31 @@ internal object RuntimeAssets {
     const val LIBTALLOC_DEB = "runtime/libtalloc_2.4.3_aarch64.deb"
 }
 
+/** 解包进行到哪一部分：OOBE 据此决定哪几张容器卡片显示为进行中。 */
+internal enum class RuntimeInstallStage {
+    DebianRootfs,
+    TermuxBootstrap,
+
+    /** 整体状态（开始、切换目录、完成），三张卡片一起显示。 */
+    WholeRuntime
+}
+
+/** 解包过程中的一次进度汇报：进行到哪一部分，以及显示在 OOBE 页脚的说明。 */
 internal data class RuntimeInstallProgress(
-    val title: String,
-    val statusText: String,
-    val progress: Float
+    val stage: RuntimeInstallStage,
+    val statusText: String
 )
 
+/**
+ * 把 APK 里 assets/runtime 下的容器资源解包到应用私有目录：
+ * Debian rootfs（tar.xz）-> Termux bootstrap（zip，含 SYMLINKS.txt 描述的符号链接）-> proot 及其依赖（deb）。
+ *
+ * 先解到 *.tmp 临时目录，全部成功才删旧目录、改名为正式目录，中途被杀不会留下半成品；
+ * rootfs 和 bootstrap 都已解好、只缺 proot 依赖库时（旧版本升级上来）只补依赖库。
+ */
 internal class RuntimeAssetInstaller(
     context: Context,
-    private val config: RuntimePaths = RuntimePaths.from(context)
+    private val config: RuntimePaths
 ) {
     private val appContext = context.applicationContext
 
@@ -52,9 +68,8 @@ internal class RuntimeAssetInstaller(
             ) {
                 onProgress(
                     RuntimeInstallProgress(
-                        title = "容器资源",
-                        statusText = "本地容器资源已解包",
-                        progress = 1f
+                        stage = RuntimeInstallStage.WholeRuntime,
+                        statusText = "本地容器资源已解包"
                     )
                 )
                 return@runCatching
@@ -63,18 +78,16 @@ internal class RuntimeAssetInstaller(
             if (config.rootfsMarker.isFile && config.bootstrapMarker.isFile) {
                 onProgress(
                     RuntimeInstallProgress(
-                        title = "Termux bootstrap",
-                        statusText = "正在补齐 proot 运行库依赖",
-                        progress = 0.7f
+                        stage = RuntimeInstallStage.TermuxBootstrap,
+                        statusText = "正在补齐 proot 运行库依赖"
                     )
                 )
                 extractProotDependencyPackages(config.termuxDir)
                 RuntimeFileModes.ensureExecutableBits(config)
                 onProgress(
                     RuntimeInstallProgress(
-                        title = "容器资源",
-                        statusText = "proot 运行库依赖已补齐",
-                        progress = 1f
+                        stage = RuntimeInstallStage.WholeRuntime,
+                        statusText = "proot 运行库依赖已补齐"
                     )
                 )
                 return@runCatching
@@ -87,9 +100,8 @@ internal class RuntimeAssetInstaller(
 
             onProgress(
                 RuntimeInstallProgress(
-                    title = "Debian rootfs",
-                    statusText = "正在解包 debian-rootfs.tar.xz",
-                    progress = 0.15f
+                    stage = RuntimeInstallStage.DebianRootfs,
+                    statusText = "正在解包 debian-rootfs.tar.xz"
                 )
             )
             extractRootfs(config.stagingRootfsDir)
@@ -97,9 +109,8 @@ internal class RuntimeAssetInstaller(
 
             onProgress(
                 RuntimeInstallProgress(
-                    title = "Termux bootstrap",
-                    statusText = "正在合并 bootstrap-aarch64.zip 和 proot 包",
-                    progress = 0.65f
+                    stage = RuntimeInstallStage.TermuxBootstrap,
+                    statusText = "正在合并 bootstrap-aarch64.zip 和 proot 包"
                 )
             )
             extractBootstrap(config.stagingTermuxDir)
@@ -109,9 +120,8 @@ internal class RuntimeAssetInstaller(
 
             onProgress(
                 RuntimeInstallProgress(
-                    title = "容器资源",
-                    statusText = "正在切换到正式目录",
-                    progress = 0.95f
+                    stage = RuntimeInstallStage.WholeRuntime,
+                    statusText = "正在切换到正式目录"
                 )
             )
             deleteRecursively(config.rootfsDir)
@@ -127,9 +137,8 @@ internal class RuntimeAssetInstaller(
 
             onProgress(
                 RuntimeInstallProgress(
-                    title = "容器资源",
-                    statusText = "解包完成，proot runtime 已就绪",
-                    progress = 1f
+                    stage = RuntimeInstallStage.WholeRuntime,
+                    statusText = "解包完成，proot runtime 已就绪"
                 )
             )
         }

@@ -86,7 +86,7 @@ import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeTaskKind
-import org.maiwithu.maidroid.oobe.OobeTaskState
+import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.component.DownloadResourceCard
 import org.maiwithu.maidroid.ui.component.OobeStepIndicator
@@ -148,9 +148,9 @@ internal fun oobeTerminalStateForEnvironment(
 }
 
 @Composable
-fun OobeFlowScreen(
+internal fun OobeFlowScreen(
     currentStep: Int,
-    setupState: OobeSetupState = OobeSetupState.preview(),
+    setupState: OobeSetupState = OobeSetupState.beforeFirstCheck(),
     storagePermissionGranted: Boolean = false,
     notificationPermissionGranted: Boolean = false,
     batteryOptimizationGranted: Boolean = false,
@@ -772,7 +772,7 @@ private fun StoragePermissionCard(
 }
 
 @Composable
-private fun AdaptiveSetupCards(tasks: List<OobeTaskState>) {
+private fun AdaptiveSetupCards(tasks: List<OobeTask>) {
     val gridState = rememberLazyGridState()
     val focusIndex = remember(tasks) {
         tasks.indexOfFirst { it.status == OobeTaskStatus.Running }.takeIf { it >= 0 }
@@ -1205,7 +1205,7 @@ private fun KeepAliveTag(
 }
 
 @Composable
-private fun SetupCards(tasks: List<OobeTaskState>) {
+private fun SetupCards(tasks: List<OobeTask>) {
     val listState = rememberLazyListState()
     val focusIndex = remember(tasks) {
         tasks.indexOfFirst { it.status == OobeTaskStatus.Running }.takeIf { it >= 0 }
@@ -1269,38 +1269,32 @@ private fun androidx.compose.animation.AnimatedContentTransitionScope<Int>.oobeS
         ) using SizeTransform(clip = true)
     }
 
-private fun List<OobeTaskState>.hasFailedTask(): Boolean =
+private fun List<OobeTask>.hasFailedTask(): Boolean =
     any { it.status == OobeTaskStatus.Failed }
 
 @DrawableRes
-private fun OobeTaskState.iconRes(): Int = when (title) {
-    "Debian rootfs" -> R.drawable.oobe_icon_debian_rootfs
-    "Termux bootstrap" -> R.drawable.oobe_icon_termux_bootstrap
-    "proot" -> R.drawable.oobe_icon_proot
-    "Git" -> R.drawable.oobe_icon_git
-    "curl / CA" -> R.drawable.oobe_icon_curl_ca
-    else -> when (kind) {
-        OobeTaskKind.Container -> R.drawable.oobe_icon_debian_rootfs
-        OobeTaskKind.Source -> R.drawable.oobe_icon_git
-        OobeTaskKind.Dependency -> R.drawable.oobe_icon_python
-        OobeTaskKind.Agreement -> R.drawable.oobe_icon_curl_ca
-        OobeTaskKind.WebUi -> R.drawable.oobe_icon_webui
-    }
+private fun OobeTask.iconRes(): Int = when (kind) {
+    OobeTaskKind.DebianRootfs -> R.drawable.oobe_icon_debian_rootfs
+    OobeTaskKind.TermuxBootstrap -> R.drawable.oobe_icon_termux_bootstrap
+    OobeTaskKind.Proot -> R.drawable.oobe_icon_proot
+    OobeTaskKind.Git -> R.drawable.oobe_icon_git
+    OobeTaskKind.CurlCa -> R.drawable.oobe_icon_curl_ca
+    OobeTaskKind.MaiBotSource -> R.drawable.oobe_icon_git
+    OobeTaskKind.PythonDependencies -> R.drawable.oobe_icon_python
+    OobeTaskKind.Agreement -> R.drawable.oobe_icon_curl_ca
+    OobeTaskKind.WebUi -> R.drawable.oobe_icon_webui
 }
 
-private fun OobeTaskState.cardDescription(): String = when (title) {
-    "Debian rootfs" -> "准备 Debian 根文件系统"
-    "Termux bootstrap" -> "准备基础运行环境"
-    "proot" -> "准备容器启动器"
-    "Git" -> "安装源码下载工具"
-    "curl / CA" -> "配置 HTTPS 下载能力"
-    else -> when (kind) {
-        OobeTaskKind.Container -> description
-        OobeTaskKind.Source -> "下载 MaiBot 源码"
-        OobeTaskKind.Dependency -> "安装 Python 运行依赖"
-        OobeTaskKind.Agreement -> "自动确认运行协议"
-        OobeTaskKind.WebUi -> "启动 MaiBot WebUI"
-    }
+private fun OobeTask.cardDescription(): String = when (kind) {
+    OobeTaskKind.DebianRootfs -> "准备 Debian 根文件系统"
+    OobeTaskKind.TermuxBootstrap -> "准备基础运行环境"
+    OobeTaskKind.Proot -> "准备容器启动器"
+    OobeTaskKind.Git -> "安装源码下载工具"
+    OobeTaskKind.CurlCa -> "配置 HTTPS 下载能力"
+    OobeTaskKind.MaiBotSource -> "下载 MaiBot 源码"
+    OobeTaskKind.PythonDependencies -> "安装 Python 运行依赖"
+    OobeTaskKind.Agreement -> "自动确认运行协议"
+    OobeTaskKind.WebUi -> "启动 MaiBot WebUI"
 }
 
 @Composable

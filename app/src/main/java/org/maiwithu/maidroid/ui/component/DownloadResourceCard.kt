@@ -44,7 +44,7 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSecondary
 
 @Composable
-fun DownloadResourceCard(
+internal fun DownloadResourceCard(
     @DrawableRes iconRes: Int,
     title: String,
     description: String,
