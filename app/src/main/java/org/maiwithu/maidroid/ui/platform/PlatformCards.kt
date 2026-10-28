@@ -46,6 +46,7 @@ import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -62,7 +63,7 @@ internal fun InstalledPlatformCard(
         modifier = Modifier
             .width(170.dp)
             .height(135.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(CardSurface)
     ) {
         PlatformLogo(
@@ -72,7 +73,7 @@ internal fun InstalledPlatformCard(
             modifier = Modifier
                 .offset(x = 12.dp, y = 12.dp)
                 .size(52.dp),
-            cornerRadius = 12.dp,
+            cornerRadius = Corners.Control,
             iconSize = 32.dp
         )
 
@@ -142,7 +143,7 @@ internal fun EmptyInstalledPlatformCard() {
         modifier = Modifier
             .width(170.dp)
             .height(135.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(CardSurface)
             .padding(16.dp),
         verticalArrangement = Arrangement.Center
@@ -174,8 +175,8 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .height(120.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(Corners.Card))
+            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
             .background(CardSurface)
             .padding(18.dp),
         verticalArrangement = Arrangement.Center
@@ -229,7 +230,7 @@ private fun PlatformBadge(text: String) {
     Box(
         modifier = Modifier
             .height(16.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(Corners.Tag))
             .background(BrandOrange.copy(alpha = 0.5f))
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
@@ -249,7 +250,7 @@ private fun SmallTag(text: String) {
     Box(
         modifier = Modifier
             .height(20.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Corners.Control))
             .background(CardBorder)
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
@@ -304,8 +305,8 @@ internal fun PlatformInstallCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (hasAdapters) 172.dp else 120.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(Corners.Card))
+            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
             .background(CardSurface)
             .padding(16.dp)
     ) {
@@ -315,7 +316,7 @@ internal fun PlatformInstallCard(
                 contentDescription = platform.name,
                 color = platform.iconColor,
                 modifier = Modifier.size(64.dp),
-                cornerRadius = 16.dp,
+                cornerRadius = Corners.Panel,
                 iconSize = 32.dp
             )
 

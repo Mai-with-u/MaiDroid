@@ -40,6 +40,7 @@ import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskKind
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
@@ -98,7 +99,7 @@ private fun OobeTaskCard(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(OobeSurface)
             .padding(start = 12.dp, end = 26.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -106,7 +107,7 @@ private fun OobeTaskCard(
         Box(
             modifier = Modifier
                 .size(52.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(Corners.Control))
                 .background(BrandOrangeMuted),
             contentAlignment = Alignment.Center
         ) {

@@ -47,6 +47,7 @@ import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
@@ -192,8 +193,8 @@ internal fun WebUiTabPage(
                     .align(Alignment.TopCenter)
                     .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .border(1.dp, CardBorder, RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(Corners.Chip))
+                    .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
                     .background(CardSurface.copy(alpha = 0.92f))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -285,8 +286,8 @@ private fun WebUiStatusBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .border(1.dp, CardBorder, RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
+            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
             .background(CardSurface.copy(alpha = 0.94f))
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically

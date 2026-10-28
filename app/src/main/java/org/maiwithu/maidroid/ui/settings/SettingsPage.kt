@@ -75,6 +75,7 @@ import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -482,8 +483,8 @@ private fun SettingsSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(Corners.Card))
+                .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
                 .background(CardSurface),
             content = content
         )
@@ -523,7 +524,7 @@ private fun SettingsNavigationRow(
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .clip(RoundedCornerShape(13.dp))
+                .clip(RoundedCornerShape(Corners.Control))
                 .background(accent.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center
         ) {

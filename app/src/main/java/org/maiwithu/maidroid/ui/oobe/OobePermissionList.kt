@@ -39,6 +39,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
@@ -138,7 +139,7 @@ private fun BackgroundKeepAliveCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(OobeSurface)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -152,7 +153,7 @@ private fun BackgroundKeepAliveCard(
             Box(
                 modifier = Modifier
                     .size(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(Corners.Panel))
                     .background(BrandOrangeMuted),
                 contentAlignment = Alignment.Center
             ) {
@@ -204,7 +205,7 @@ private fun BackgroundKeepAliveCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(272.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(Corners.Panel))
                 .background(Color(0xFF1C1C1E))
                 .padding(8.dp)
         ) {
@@ -271,7 +272,7 @@ private fun KeepAlivePermissionRow(
         modifier = modifier
             .fillMaxWidth()
             .height(36.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Corners.Control))
             .clickable(enabled = !granted, onClick = onAuthorize)
             .padding(horizontal = 5.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -335,7 +336,7 @@ private fun KeepAliveTag(
     Box(
         modifier = Modifier
             .size(width = width, height = 18.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(Corners.Tag))
             .background(backgroundColor),
         contentAlignment = Alignment.Center
     ) {

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.OobeSurface
@@ -60,7 +61,7 @@ internal fun OobePermissionCard(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(cardColor)
             .padding(horizontal = 17.dp, vertical = 14.dp)
     ) {
@@ -71,7 +72,7 @@ internal fun OobePermissionCard(
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(11.dp))
+                    .clip(RoundedCornerShape(Corners.Control))
                     .background(iconBackground),
                 contentAlignment = Alignment.Center
             ) {
@@ -105,7 +106,7 @@ internal fun OobePermissionCard(
                         fontWeight = FontWeight.Bold,
                         color = if (granted) OobeTextSecondary else OnBrandOrange,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(5.dp))
+                            .clip(RoundedCornerShape(Corners.Tag))
                             .background(badgeBackground)
                             .padding(horizontal = 6.dp, vertical = 0.dp)
                     )
@@ -130,7 +131,7 @@ internal fun OobePermissionCard(
                 onClick = onAuthorize,
                 enabled = !granted,
                 modifier = Modifier.size(width = 64.dp, height = 28.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(Corners.Control),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrangeMuted,
                     contentColor = OnBrandOrange,

@@ -49,6 +49,7 @@ import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -195,7 +196,7 @@ private fun AnimatedHomeTabBar(
     onTabSelected: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(32.dp)
+    val shape = RoundedCornerShape(Corners.Pill)
 
     BoxWithConstraints(
         modifier = modifier
@@ -232,7 +233,7 @@ private fun AnimatedHomeTabBar(
                 .offset { IntOffset(indicatorOffset.roundToPx(), 4.dp.roundToPx()) }
                 .width(tabWidth)
                 .height(56.dp)
-                .clip(RoundedCornerShape(32.dp))
+                .clip(RoundedCornerShape(Corners.Pill))
                 .background(Color(0x54717171))
         )
 
@@ -303,7 +304,7 @@ private fun RowScope.HomeTabButton(
         modifier = Modifier
             .weight(1f)
             .height(56.dp)
-            .clip(RoundedCornerShape(32.dp))
+            .clip(RoundedCornerShape(Corners.Pill))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

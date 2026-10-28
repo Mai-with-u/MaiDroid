@@ -66,6 +66,7 @@ import androidx.compose.ui.window.DialogProperties
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
@@ -135,7 +136,7 @@ internal fun TerminalOutputDialog(
                                 }
                             }
                         },
-                    shape = RoundedCornerShape(if (isWide) 28.dp else 24.dp),
+                    shape = RoundedCornerShape(Corners.Card),
                     color = CardSurface,
                     contentColor = Color.White,
                     tonalElevation = 8.dp,
@@ -165,7 +166,7 @@ internal fun EmbeddedTerminalOutputPanel(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(Corners.Panel),
         color = CardSurface,
         contentColor = Color.White,
         tonalElevation = 0.dp,
@@ -250,7 +251,7 @@ private fun EmbeddedTerminalToolbar(
         Box(
             modifier = Modifier
                 .size(32.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(Corners.Control))
                 .background(BrandOrange.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
@@ -420,7 +421,7 @@ private fun TerminalDialogHeader(
         Box(
             modifier = Modifier
                 .size(if (compact) 38.dp else 44.dp)
-                .clip(RoundedCornerShape(13.dp))
+                .clip(RoundedCornerShape(Corners.Control))
                 .background(BrandOrange.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
@@ -572,7 +573,7 @@ private fun TerminalSearchField(
         } else {
             null
         },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(Corners.Control),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
@@ -638,7 +639,7 @@ private fun TerminalToolbarButton(
     enabled: Boolean = true,
     icon: ImageVector? = null
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(Corners.Control)
     val contentColor = when {
         !enabled -> TextFaint
         selected == false -> TextMuted
@@ -708,9 +709,9 @@ private fun TerminalLogViewport(
     Box(
         modifier = modifier
             .nestedScroll(userScrollConnection)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(Corners.Panel))
             .background(Color(0xFF0B0B0C))
-            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(16.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(Corners.Panel))
     ) {
         if (terminalText.isEmpty()) {
             TerminalEmptyState(
@@ -876,7 +877,7 @@ private fun TerminalDialogFooter(
 
         Button(
             onClick = onDismiss,
-            shape = RoundedCornerShape(13.dp),
+            shape = RoundedCornerShape(Corners.Control),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BrandOrange,
                 contentColor = Color.White

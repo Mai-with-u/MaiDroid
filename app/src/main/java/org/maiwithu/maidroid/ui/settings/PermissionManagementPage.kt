@@ -52,6 +52,7 @@ import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -257,7 +258,7 @@ private fun PermissionActionCard(
             onClick = onAction,
             enabled = !granted,
             modifier = Modifier.height(34.dp),
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(Corners.Control),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BrandOrange,
                 contentColor = Color.White,
@@ -346,8 +347,8 @@ private fun PermissionBaseCard(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 92.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(Corners.Card))
+            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
             .background(CardSurface)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -355,7 +356,7 @@ private fun PermissionBaseCard(
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(Corners.Control))
                 .background(BrandOrange.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center
         ) {
@@ -392,7 +393,7 @@ private fun PermissionBaseCard(
                     fontWeight = FontWeight.Bold,
                     lineHeight = 12.sp,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(Corners.Tag))
                         .background(badgeColor)
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )

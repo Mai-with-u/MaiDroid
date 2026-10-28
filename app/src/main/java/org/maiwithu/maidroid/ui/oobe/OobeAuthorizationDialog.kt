@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.HarmonySans
@@ -178,7 +179,7 @@ private fun PhonePortraitAuthorizationCard(
     onAgree: () -> Unit,
     onExit: () -> Unit
 ) {
-    val cardShape = RoundedCornerShape(32.dp)
+    val cardShape = RoundedCornerShape(Corners.Pill)
 
     Box(
         modifier = Modifier
@@ -252,7 +253,7 @@ private fun AdaptiveAuthorizationCard(
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cardShape = RoundedCornerShape(32.dp)
+    val cardShape = RoundedCornerShape(Corners.Pill)
     val scrollState = rememberScrollState()
 
     Box(
@@ -397,7 +398,7 @@ private fun AdaptiveDialogActionButton(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(background)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp),
@@ -425,7 +426,7 @@ private fun DialogActionButton(
         modifier = modifier
             .width(140.dp)
             .height(50.dp)
-            .clip(RoundedCornerShape(25.dp))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(background)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center

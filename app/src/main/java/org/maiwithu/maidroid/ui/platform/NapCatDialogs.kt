@@ -39,6 +39,7 @@ import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -143,7 +144,7 @@ internal fun NapCatQrCodeDialog(
                     Box(
                         modifier = Modifier
                             .size(260.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(Corners.Control))
                             .background(Color.White)
                             .padding(10.dp),
                         contentAlignment = Alignment.Center

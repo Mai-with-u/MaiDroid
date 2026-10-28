@@ -73,6 +73,7 @@ import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -486,7 +487,7 @@ private fun PlatformSearchField(query: String, onQueryChange: (String) -> Unit) 
                 modifier = Modifier.size(19.dp)
             )
         },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(Corners.Control),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
@@ -611,11 +612,11 @@ private fun CategoryChip(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(21.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .border(
                 width = 1.dp,
                 color = borderColor,
-                shape = RoundedCornerShape(21.dp)
+                shape = RoundedCornerShape(Corners.Chip)
             )
             .background(backgroundColor)
             .animateContentSize(

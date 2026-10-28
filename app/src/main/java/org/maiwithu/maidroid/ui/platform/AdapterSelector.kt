@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
@@ -68,9 +69,9 @@ internal fun AdapterSelector(
 
     BoxWithConstraints(
         modifier = modifier
-            .clip(RoundedCornerShape(21.dp))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(CardBorder)
-            .border(1.dp, CardBorder, RoundedCornerShape(21.dp))
+            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
     ) {
         val itemWidth = if (adapters.isNotEmpty()) {
             (maxWidth - horizontalPadding * 2f - itemSpacing * (adapters.size - 1).toFloat()) /
@@ -93,7 +94,7 @@ internal fun AdapterSelector(
                 .offset { IntOffset(selectedOffset.roundToPx(), 0) }
                 .width(itemWidth)
                 .height(38.dp)
-                .clip(RoundedCornerShape(19.dp))
+                .clip(RoundedCornerShape(Corners.Chip))
                 .background(Color(0xFF3C3C3E))
         )
 
@@ -117,7 +118,7 @@ internal fun AdapterSelector(
                     modifier = Modifier
                         .weight(1f)
                         .height(38.dp)
-                        .clip(RoundedCornerShape(19.dp))
+                        .clip(RoundedCornerShape(Corners.Chip))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
