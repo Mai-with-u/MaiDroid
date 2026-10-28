@@ -29,7 +29,6 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
 
 /**
  * OOBE“配置容器”和“安装 MaiBot”两步的执行者，界面只读它的 state。
@@ -325,7 +324,7 @@ internal class OobeSetupManager(
         var attempt = 0
         while (SystemClock.elapsedRealtime() < deadline) {
             attempt += 1
-            if (MaiBotWebUiProbe.isReachable()) return true
+            if (MaiBotWebUi.isReachable()) return true
 
             showInstallRunning(OobeTaskKind.WebUi, "正在等待 MaiBot WebUI 启动... ${attempt}s")
             delay(WEB_UI_POLL_INTERVAL_MS)

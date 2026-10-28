@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
-import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
+import org.maiwithu.maidroid.webui.MaiBotWebUi
 
 /**
  * 主界面的流程状态：启动页 ->（首次）授权弹窗 + OOBE 三步 -> 主页。
@@ -71,7 +71,7 @@ internal class MainViewModel(
                 if (!complete) return@collectLatest
                 wakeMaiBot()
                 while (true) {
-                    _webUiOnline.value = MaiBotWebUiProbe.isReachable()
+                    _webUiOnline.value = MaiBotWebUi.isReachable()
                     delay(if (_webUiOnline.value) WEB_UI_ONLINE_POLL_MS else WEB_UI_OFFLINE_POLL_MS)
                 }
             }

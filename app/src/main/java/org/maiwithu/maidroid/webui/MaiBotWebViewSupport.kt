@@ -1,7 +1,5 @@
 package org.maiwithu.maidroid.webui
 
-import android.content.Context
-import android.net.Uri
 import android.os.Build
 import android.util.Log
 import android.webkit.CookieManager
@@ -11,24 +9,12 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.maiwithu.maidroid.runtime.RuntimePaths
-import org.maiwithu.maidroid.log.TerminalLog
 
 object MaiBotWebUiSupport {
     private const val TAG = "MaiBotWebUiSupport"
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-    }
-    private val tokenLogRegex = Regex("""(?i)WebUI[^\r\n]*Token:\s*([^\s]+)""")
     private val firstScriptTagRegex = Regex("""<script(?:\s|>)""", RegexOption.IGNORE_CASE)
     private val closingHeadTagRegex = Regex("""</head>""", RegexOption.IGNORE_CASE)
 
@@ -38,52 +24,6 @@ object MaiBotWebUiSupport {
 
     // WebUI 只跑在本机回环地址上，样式表改写只针对这些主机。
     private val loopbackHosts = setOf("127.0.0.1", "localhost", "[::1]")
-
-    fun enableCookies(webView: WebView) {
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                setAcceptThirdPartyCookies(webView, true)
-            }
-        }
-    }
-
-    fun resolveLaunchUrl(
-        context: Context,
-        baseUrl: String = MaiBotWebUi.URL,
-        terminalLogs: List<String> = TerminalLog.logs.value
-    ): String {
-        val token = findAccessToken(context, terminalLogs) ?: return baseUrl
-        return buildAuthUrl(baseUrl, token)
-    }
-
-    fun findAccessToken(context: Context, terminalLogs: List<String>): String? =
-        readAccessTokenFromConfig(context) ?: extractAccessTokenFromLogs(terminalLogs)
-
-    fun extractAccessTokenFromLogs(terminalLogs: List<String>): String? =
-        terminalLogs.asReversed().firstNotNullOfOrNull { line ->
-            tokenLogRegex.find(line)
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-        }
-
-    fun redactUrlForLogs(url: String): String =
-        runCatching {
-            val uri = Uri.parse(url)
-            if (uri.getQueryParameter("token") == null) {
-                url
-            } else {
-                uri.buildUpon()
-                    .clearQuery()
-                    .appendQueryParameter("token", "<redacted>")
-                    .build()
-                    .toString()
-            }
-        }.getOrElse {
-            url.replace(Regex("""token=[^&#]+"""), "token=<redacted>")
-        }
 
     /**
      * 拦截 WebUI 的请求并改写内容。
@@ -161,33 +101,6 @@ object MaiBotWebUiSupport {
             Log.d(logTag, "viewport patch $result")
         }
     }
-
-    private fun readAccessTokenFromConfig(context: Context): String? {
-        val tokenFile = RuntimePaths.from(context).maiBotWebUiConfig
-        if (!tokenFile.isFile) return null
-
-        return runCatching {
-            val root = json.parseToJsonElement(tokenFile.readText(Charsets.UTF_8)).jsonObject
-            root["access_token"]
-                ?.jsonPrimitive
-                ?.contentOrNull
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-        }.getOrElse { error ->
-            Log.w(TAG, "Failed to read WebUI access token from ${tokenFile.absolutePath}: ${error.message}")
-            null
-        }
-    }
-
-    private fun buildAuthUrl(baseUrl: String, token: String): String =
-        Uri.parse(baseUrl)
-            .buildUpon()
-            .encodedPath("/auth")
-            .clearQuery()
-            .fragment(null)
-            .appendQueryParameter("token", token)
-            .build()
-            .toString()
 
     private fun shouldInterceptHtmlRequest(request: WebResourceRequest): Boolean {
         if (!request.isForMainFrame || !request.method.equals("GET", ignoreCase = true)) {

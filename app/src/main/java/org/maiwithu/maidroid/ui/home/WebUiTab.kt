@@ -1,7 +1,5 @@
 package org.maiwithu.maidroid.ui.home
 
-import android.annotation.SuppressLint
-import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
@@ -43,8 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.maiwithu.maidroid.BuildConfig
+import org.maiwithu.maidroid.appContainer
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
+import org.maiwithu.maidroid.webui.createWebUiWebView
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -66,7 +65,6 @@ internal class WebUiTabState internal constructor(
     var webViewHasSize by mutableStateOf(false)
 }
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun rememberWebUiTabState(): WebUiTabState {
     val context = LocalContext.current
@@ -75,7 +73,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             WebView.setWebContentsDebuggingEnabled(true)
         }
 
-        val webView = WebView(context).apply {
+        val webView = createWebUiWebView(context).apply {
             // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
             // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
             // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
@@ -84,19 +82,10 @@ internal fun rememberWebUiTabState(): WebUiTabState {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(android.graphics.Color.BLACK)
             overScrollMode = WebView.OVER_SCROLL_NEVER
             isFocusable = true
             isFocusableInTouchMode = true
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.setSupportZoom(true)
-            settings.builtInZoomControls = false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                settings.mixedContentMode =
-                    android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            }
-            MaiBotWebUiSupport.enableCookies(this)
+            // 网页 console 输出转到 logcat，排查 WebUI 显示问题时用。
             webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                     Log.d(
@@ -154,10 +143,10 @@ internal fun WebUiTabPage(
                 state.webView
             },
             update = { webView ->
-                val launchUrl = MaiBotWebUiSupport.resolveLaunchUrl(
-                    context = webView.context,
-                    baseUrl = url,
-                    terminalLogs = terminalLogs
+                val launchUrl = MaiBotWebUi.launchUrl(
+                    paths = webView.context.appContainer.runtimePaths,
+                    terminalLogs = terminalLogs,
+                    baseUrl = url
                 )
                 val loadRequest = "$launchUrl#${state.reloadToken}"
                 if (state.webViewHasSize && webView.tag != loadRequest) {
@@ -165,7 +154,7 @@ internal fun WebUiTabPage(
                     state.webViewError = null
                     Log.d(
                         MaiBotWebUi.LOG_TAG,
-                        "load ${MaiBotWebUiSupport.redactUrlForLogs(launchUrl)} at " +
+                        "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
                             "${webView.width}x${webView.height}"
                     )
                     webView.loadUrl(launchUrl)

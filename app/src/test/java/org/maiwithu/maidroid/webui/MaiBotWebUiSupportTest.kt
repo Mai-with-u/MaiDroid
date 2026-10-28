@@ -9,7 +9,7 @@ import org.junit.Test
 class MaiBotWebUiSupportTest {
     @Test
     fun extractAccessTokenFromLogsFindsStartupToken() {
-        val token = MaiBotWebUiSupport.extractAccessTokenFromLogs(
+        val token = MaiBotWebUi.extractAccessTokenFromLogs(
             listOf(
                 "[MaiBot] Process started (PID: 1234)",
                 "INFO startup: WebUI access token: abc123TOKEN",
@@ -22,7 +22,7 @@ class MaiBotWebUiSupportTest {
 
     @Test
     fun extractAccessTokenFromLogsPrefersNewestToken() {
-        val token = MaiBotWebUiSupport.extractAccessTokenFromLogs(
+        val token = MaiBotWebUi.extractAccessTokenFromLogs(
             listOf(
                 "INFO startup: WebUI access token: oldToken",
                 "other log line",
@@ -35,7 +35,7 @@ class MaiBotWebUiSupportTest {
 
     @Test
     fun extractAccessTokenFromLogsReturnsNullWhenMissing() {
-        val token = MaiBotWebUiSupport.extractAccessTokenFromLogs(
+        val token = MaiBotWebUi.extractAccessTokenFromLogs(
             listOf("INFO startup: WebUI started")
         )
 
