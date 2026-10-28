@@ -13,6 +13,8 @@ local.properties
 
 # ── APK outputs ──────────────────────────────────────────────────
 /app/build/outputs/
+# Android Studio “Generate Signed APK” 默认把产物和基线配置文件写到这里
+/app/release/
 
 # ── AI tools (Claude Code, etc.) ─────────────────────────────────
 CLAUDE.md
@@ -43,3 +45,6 @@ MaiDroid.md
 *.pk8
 keystore.properties
 key.properties
+
+# ── 临时笔记（计划、审计、实验记录），不进 Git 历史 ─────────────
+/docs/tmp/

@@ -93,6 +93,3 @@ val MaiDroidTypography = Typography(
         letterSpacing = 0.5.sp
     )
 )
-
-// Backward-compatible alias
-val Typography = MaiDroidTypography

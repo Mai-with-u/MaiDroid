@@ -35,8 +35,6 @@ android {
         targetSdk = 36
         versionCode = 2
         versionName = "0.1.1"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -116,12 +114,7 @@ dependencies {
     // Blur
     implementation(libs.blurview)
 
-    // Testing
+    // Testing：只有 JVM 单元测试，没有设备上的仪器测试
     testImplementation(libs.junit)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

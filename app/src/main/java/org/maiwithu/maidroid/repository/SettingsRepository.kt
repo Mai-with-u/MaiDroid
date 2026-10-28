@@ -3,51 +3,23 @@ package org.maiwithu.maidroid.repository
 import com.tencent.mmkv.MMKV
 
 /**
- * Repository for managing app configuration via MMKV.
- *
- * Persists settings like API keys, model selection, and system prompt.
- * These are synced to the Python backend's config file when the service starts.
- *
- * MMKV provides efficient, instant-commit key-value storage backed by mmap,
- * suitable for high-frequency writes like chat history caching.
+ * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置。
  */
 class SettingsRepository(
     private val kv: MMKV = MMKV.defaultMMKV()
 ) {
 
     companion object {
-        private const val KEY_API_KEY = "api_key"
-        private const val KEY_MODEL = "model"
-        private const val KEY_SYSTEM_PROMPT = "system_prompt"
         private const val KEY_SETUP_COMPLETE = "setup_complete"
         private const val KEY_AUTHORIZATION_ACCEPTED = "authorization_accepted"
         private const val KEY_SERVICE_AUTO_START = "service_auto_start"
-        private const val KEY_DEBIAN_PATH = "debian_path"
-        private const val KEY_CHATBOT_PATH = "chatbot_path"
         private const val KEY_CONTAINER_SSH_ENABLED = "container_ssh_enabled"
         private const val KEY_CONTAINER_SSH_CONFIGURED = "container_ssh_configured"
         private const val KEY_CONTAINER_SSH_PORT = "container_ssh_port"
         private const val KEY_CONTAINER_SSH_ROOT_PASSWORD = "container_ssh_root_password"
 
-        private const val DEFAULT_MODEL = "default"
         private const val DEFAULT_CONTAINER_SSH_PORT = 2222
-        private const val DEFAULT_SYSTEM_PROMPT = "你是一个有帮助的AI助手。"
     }
-
-    // ── API Key ──────────────────────────────────────────────────────
-
-    fun getApiKey(): String = kv.decodeString(KEY_API_KEY, "") ?: ""
-    fun setApiKey(key: String) = kv.encode(KEY_API_KEY, key)
-
-    // ── Model ────────────────────────────────────────────────────────
-
-    fun getModel(): String = kv.decodeString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
-    fun setModel(model: String) = kv.encode(KEY_MODEL, model)
-
-    // ── System Prompt ────────────────────────────────────────────────
-
-    fun getSystemPrompt(): String = kv.decodeString(KEY_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT) ?: DEFAULT_SYSTEM_PROMPT
-    fun setSystemPrompt(prompt: String) = kv.encode(KEY_SYSTEM_PROMPT, prompt)
 
     // ── Setup State ──────────────────────────────────────────────────
 
@@ -61,14 +33,6 @@ class SettingsRepository(
 
     fun isServiceAutoStart(): Boolean = kv.decodeBool(KEY_SERVICE_AUTO_START, true)
     fun setServiceAutoStart(autoStart: Boolean) = kv.encode(KEY_SERVICE_AUTO_START, autoStart)
-
-    // ── Paths ────────────────────────────────────────────────────────
-
-    fun getDebianPath(): String = kv.decodeString(KEY_DEBIAN_PATH, "") ?: ""
-    fun setDebianPath(path: String) = kv.encode(KEY_DEBIAN_PATH, path)
-
-    fun getChatbotPath(): String = kv.decodeString(KEY_CHATBOT_PATH, "") ?: ""
-    fun setChatbotPath(path: String) = kv.encode(KEY_CHATBOT_PATH, path)
 
     // Container SSH
 
@@ -89,12 +53,4 @@ class SettingsRepository(
         kv.encode(KEY_CONTAINER_SSH_ROOT_PASSWORD, rootPassword)
         kv.encode(KEY_CONTAINER_SSH_CONFIGURED, true)
     }
-
-    // ── Build config map for Python backend ──────────────────────────
-
-    fun buildConfigMap(): Map<String, String> = mapOf(
-        "api_key" to getApiKey(),
-        "model" to getModel(),
-        "system_prompt" to getSystemPrompt()
-    )
 }

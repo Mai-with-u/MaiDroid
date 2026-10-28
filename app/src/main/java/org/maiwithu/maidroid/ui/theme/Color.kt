@@ -17,12 +17,3 @@ val TextPrimary = Color(0xFFFAFAFA)
 val TextSecondary = Color(0x80FFFFFF)  // 50% white
 val TextDimmed = Color(0x66FFFFFF)     // 40% white
 val TextOnOrange = Color.White
-
-// ── Legacy (keeping for compatibility) ──────────────────────────
-val Purple80 = Orange500
-val PurpleGrey80 = SurfaceDark
-val Pink80 = Orange400
-
-val Purple40 = Orange500
-val PurpleGrey40 = SurfaceDark
-val Pink40 = Orange300

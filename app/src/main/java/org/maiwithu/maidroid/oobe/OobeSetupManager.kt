@@ -367,9 +367,6 @@ class OobeSetupManager(
                 return@launch
             }
 
-            settingsRepository.setDebianPath(config.rootfsDir.absolutePath)
-            settingsRepository.setChatbotPath(config.maiBotDir.absolutePath)
-
             updateInstallState(
                 buildInstallTasks().markRunning(OobeTaskKind.WebUi, "正在启动 MaiBot WebUI...")
             )

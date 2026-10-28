@@ -84,7 +84,6 @@ class MaiBotContainerConfig private constructor(
         const val PROOT_TALLOC_LIB = "libtalloc.so"
         const val TERMUX_PROOT_LOADER = "libexec/proot/loader"
         const val TERMUX_PROOT_LOADER_32 = "libexec/proot/loader32"
-        const val SOCKET_NAME = "maidroid_ipc_socket"
         const val WEB_UI_URL = "http://127.0.0.1:8001/"
         const val QQ_OFFICIAL_ADAPTER_REPOSITORY_URL = "https://github.com/Mai-with-u/MaiBot-QQ-Adapter.git"
         const val QQ_OFFICIAL_ADAPTER_DIR_NAME = "MaiBot-QQ-Adapter"
@@ -451,8 +450,7 @@ class MaiBotContainerConfig private constructor(
         val privacyHash = md5(privacyFile) ?: return emptyMap()
         return mapOf(
             "EULA_AGREE" to eulaHash,
-            "PRIVACY_AGREE" to privacyHash,
-            "MAIDROID_IPC_SOCKET" to SOCKET_NAME
+            "PRIVACY_AGREE" to privacyHash
         )
     }
 
