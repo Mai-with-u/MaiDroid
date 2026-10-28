@@ -1,54 +1,30 @@
 package org.maiwithu.maidroid
 
 import android.content.Intent
-import android.os.Build
+import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.log.TerminalLog
-import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
-import org.maiwithu.maidroid.settings.AppSettings
-import org.maiwithu.maidroid.service.MaiBotRuntimeService
-import org.maiwithu.maidroid.ui.component.BlurTargetHost
-import org.maiwithu.maidroid.ui.screen.HomeScreen
-import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
-import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
-import org.maiwithu.maidroid.ui.screen.StartupSplashPage
+import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
-import org.maiwithu.maidroid.webui.MaiBotWebUiProbe
-import eightbitlab.com.blurview.BlurTarget
+import org.maiwithu.maidroid.webui.MaiBotWebUi
 
+/**
+ * 唯一的主界面。界面内容见 MaiDroidApp，流程状态见 MainViewModel；
+ * 这里只处理 Activity 层面的事：常亮屏幕、沉浸式系统栏、权限回调注册、打开全屏 WebUI。
+ */
 class MainActivity : ComponentActivity() {
+    private val viewModel: MainViewModel by viewModels()
     private val permissions = SystemPermissionController(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,203 +35,33 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaiDroidTheme {
-                val activityViewModel: MainActivityViewModel = viewModel()
-                val settingsRepository = remember { AppSettings() }
-                var setupComplete by remember {
-                    mutableStateOf(settingsRepository.setupComplete)
-                }
-                var authorizationAccepted by remember {
-                    mutableStateOf(settingsRepository.authorizationAccepted)
-                }
-                var webUiOnline by remember { mutableStateOf(false) }
-                var showStartupSplash by rememberSaveable {
-                    mutableStateOf(savedInstanceState == null)
-                }
-                var showAuthorizationDialog by rememberSaveable { mutableStateOf(false) }
-                var oobeBlurTarget by remember { mutableStateOf<BlurTarget?>(null) }
-                val uiScope = rememberCoroutineScope()
-                val versionName = remember { getVersionName() }
-                val terminalLogs by TerminalLog.logs.collectAsState()
-
-                LaunchedEffect(showStartupSplash) {
-                    if (showStartupSplash) {
-                        delay(1_200L)
-                        showStartupSplash = false
-                    }
-                }
-
-                LaunchedEffect(showStartupSplash, setupComplete, authorizationAccepted) {
-                    when {
-                        showStartupSplash || setupComplete || authorizationAccepted -> {
-                            showAuthorizationDialog = false
-                        }
-
-                        !showAuthorizationDialog -> {
-                            delay(420L)
-                            showAuthorizationDialog = true
-                        }
-                    }
-                }
-
+                val setupComplete by viewModel.setupComplete.collectAsState()
                 LaunchedEffect(setupComplete) {
                     configureSystemBars(setupComplete)
                 }
 
-                LaunchedEffect(setupComplete) {
-                    if (!setupComplete) return@LaunchedEffect
-
-                    startMaiBotService()
-                    while (true) {
-                        webUiOnline = MaiBotWebUiProbe.isReachable()
-                        delay(if (webUiOnline) 5_000L else 1_500L)
-                    }
-                }
-
-                var oobeStep by rememberSaveable { mutableStateOf(OobeStep.Permissions) }
-                val setupManager = activityViewModel.setupManager
-                val setupState by setupManager.state.collectAsState()
-
-                BackHandler(enabled = !showStartupSplash && !setupComplete && oobeStep != OobeStep.Permissions) {
-                    oobeStep = OobeStep.entries[oobeStep.ordinal - 1]
-                }
-
-                LaunchedEffect(oobeStep, setupComplete) {
-                    if (setupComplete) return@LaunchedEffect
-                    when (oobeStep) {
-                        OobeStep.Permissions -> Unit
-                        OobeStep.Container -> setupManager.prepareContainer()
-                        OobeStep.Install -> setupManager.startInstall()
-                    }
-                }
-
-                AnimatedContent(
-                    targetState = showStartupSplash,
-                    modifier = Modifier.fillMaxSize(),
-                    transitionSpec = {
-                        slideInHorizontally(
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        ) { fullWidth ->
-                            if (targetState) -fullWidth else fullWidth
-                        } togetherWith slideOutHorizontally(
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        ) { fullWidth ->
-                            if (targetState) fullWidth else -fullWidth
-                        } using SizeTransform(clip = true)
-                    },
-                    label = "StartupSplashTransition"
-                ) { showingSplash ->
-                    when {
-                        showingSplash -> StartupSplashPage(modifier = Modifier.fillMaxSize())
-
-                        setupComplete -> HomeScreen(
-                            webUiOnline = webUiOnline,
-                            versionName = versionName,
-                            terminalLogs = terminalLogs,
-                            permissionState = permissions.state,
-                            permissionActions = permissions.settingsActions,
-                            onWakeMai = { showToast ->
-                                if (webUiOnline) {
-                                    openWebUi()
-                                } else {
-                                    startMaiBotService()
-                                    if (showToast) {
-                                        Toast.makeText(this@MainActivity, "正在唤醒麦麦...", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        )
-
-                        else -> Box(modifier = Modifier.fillMaxSize()) {
-                            BlurTargetHost(
-                                onTargetChanged = { oobeBlurTarget = it },
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                OobeFlowScreen(
-                                    currentStep = oobeStep,
-                                    setupState = setupState,
-                                    permissionState = permissions.state,
-                                    permissionActions = permissions.oobeActions,
-                                    onNext = {
-                                        when (oobeStep) {
-                                            OobeStep.Permissions -> {
-                                                permissions.refresh()
-                                                if (permissions.isStorageGranted()) {
-                                                    oobeStep = OobeStep.Container
-                                                } else {
-                                                    Toast.makeText(
-                                                        this@MainActivity,
-                                                        "请先授予必选存储权限",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                    permissions.oobeActions.requestStorage()
-                                                }
-                                            }
-                                            OobeStep.Container -> {
-                                                if (setupState.canInstall) {
-                                                    oobeStep = OobeStep.Install
-                                                } else {
-                                                    setupManager.prepareContainer()
-                                                }
-                                            }
-                                            OobeStep.Install -> {
-                                                if (setupState.isComplete) {
-                                                    setupComplete = true
-                                                } else {
-                                                    setupManager.startInstall()
-                                                }
-                                            }
-                                        }
-                                    },
-                                    onRetry = {
-                                        if (oobeStep == OobeStep.Container) {
-                                            setupManager.prepareContainer()
-                                        } else {
-                                            setupManager.startInstall()
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-
-                            OobeAuthorizationDialog(
-                                visible = showAuthorizationDialog,
-                                blurTarget = oobeBlurTarget,
-                                onAgree = {
-                                    settingsRepository.authorizationAccepted = true
-                                    authorizationAccepted = true
-                                    showAuthorizationDialog = false
-                                },
-                                onExit = {
-                                    showAuthorizationDialog = false
-                                    uiScope.launch {
-                                        delay(260L)
-                                        finish()
-                                    }
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-                }
+                MaiDroidApp(
+                    viewModel = viewModel,
+                    permissions = permissions,
+                    versionName = BuildConfig.VERSION_NAME,
+                    onOpenWebUi = ::openWebUi,
+                    onExit = ::finish
+                )
             }
         }
     }
 
+    // 从系统设置页回来时权限可能变了，重新读一遍。
     override fun onResume() {
         super.onResume()
         permissions.refresh()
     }
 
+    // OOBE 期间显示完整系统栏；进入主页后隐藏导航栏（上滑临时呼出），状态栏保持透明。
     private fun configureSystemBars(setupComplete: Boolean) {
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
 
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.isAppearanceLightStatusBars = false
@@ -278,15 +84,4 @@ class MainActivity : ComponentActivity() {
             }
         )
     }
-
-    // 唤醒麦麦：拉起前台服务，服务内部对已在运行的 MaiBot 不会重复启动。
-    private fun startMaiBotService() {
-        MaiBotRuntimeService.start(this)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun getVersionName(): String =
-        runCatching {
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
-        }.getOrDefault("1.0")
 }
