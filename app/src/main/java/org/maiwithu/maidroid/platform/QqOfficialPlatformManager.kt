@@ -14,8 +14,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.container.ContainerCommandRunner
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
 import org.maiwithu.maidroid.process.ProcessManager
 import org.maiwithu.maidroid.process.TerminalLogRepository
@@ -86,7 +86,7 @@ internal class QqOfficialPlatformManager private constructor(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val config = MaiBotContainerConfig.from(appContext)
+    private val config = RuntimePaths.from(appContext)
     private val commandRunner = ContainerCommandRunner(config)
     private val processManager = ProcessManager.get(appContext)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())

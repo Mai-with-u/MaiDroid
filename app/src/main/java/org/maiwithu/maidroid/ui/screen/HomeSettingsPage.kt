@@ -77,9 +77,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.container.ContainerSshManager
-import org.maiwithu.maidroid.container.ContainerSshPhase
-import org.maiwithu.maidroid.container.ContainerSshState
+import org.maiwithu.maidroid.ssh.ContainerSshManager
+import org.maiwithu.maidroid.ssh.ContainerSshPhase
+import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
 import org.maiwithu.maidroid.service.ChatbotService

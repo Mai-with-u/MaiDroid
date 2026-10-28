@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.container
+package org.maiwithu.maidroid.runtime
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

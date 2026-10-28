@@ -22,9 +22,9 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.maiwithu.maidroid.container.ContainerCommandResult
-import org.maiwithu.maidroid.container.ContainerCommandRunner
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.platform.napcat.NapCatScripts
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -143,7 +143,7 @@ internal class NapCatPlatformManager private constructor(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val config = MaiBotContainerConfig.from(appContext)
+    private val config = RuntimePaths.from(appContext)
     private val commandRunner = ContainerCommandRunner(config)
     private val webUiClient = NapCatWebUiClient(config.napCatWebUiConfig)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -585,7 +585,7 @@ internal object NapCatRuntime {
 
     fun start(context: Context) {
         val appContext = context.applicationContext
-        val config = MaiBotContainerConfig.from(appContext)
+        val config = RuntimePaths.from(appContext)
         if (process?.isAlive == true || job?.isActive == true) return
         if (!config.isNapCatInstalled()) return
 
@@ -651,7 +651,7 @@ internal object NapCatRuntime {
 
     fun stop(context: Context) {
         stop()
-        val config = MaiBotContainerConfig.from(context.applicationContext)
+        val config = RuntimePaths.from(context.applicationContext)
         scope.launch {
             runMaintenanceCommand(config, NapCatScripts.cleanup())
         }
@@ -659,7 +659,7 @@ internal object NapCatRuntime {
 
     // 清理残留进程、生成 launcher.sh 这类维护命令：只记非空输出，失败不中断后续启动。
     private suspend fun runMaintenanceCommand(
-        config: MaiBotContainerConfig,
+        config: RuntimePaths,
         script: ContainerScript
     ) {
         val result = ContainerCommandRunner(config).run(script) { line ->

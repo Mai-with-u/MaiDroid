@@ -7,7 +7,7 @@ import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.ui.screen.WebUiLogTag
 import org.maiwithu.maidroid.webui.MaiBotWebUiSupport
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
@@ -52,7 +52,7 @@ class WebUiActivity : ComponentActivity() {
             }
         )
 
-        val url = intent.getStringExtra(EXTRA_URL) ?: MaiBotContainerConfig.WEB_UI_URL
+        val url = intent.getStringExtra(EXTRA_URL) ?: RuntimePaths.WEB_UI_URL
         val launchUrl = if (url.isMaiBotWebUiUrl()) {
             MaiBotWebUiSupport.resolveLaunchUrl(this, url)
         } else {
@@ -68,7 +68,7 @@ class WebUiActivity : ComponentActivity() {
 
     private fun String.isMaiBotWebUiUrl(): Boolean {
         val normalizedUrl = trimEnd('/')
-        val normalizedMaiBotUrl = MaiBotContainerConfig.WEB_UI_URL.trimEnd('/')
+        val normalizedMaiBotUrl = RuntimePaths.WEB_UI_URL.trimEnd('/')
         return normalizedUrl == normalizedMaiBotUrl || normalizedUrl.startsWith("$normalizedMaiBotUrl/")
     }
 }

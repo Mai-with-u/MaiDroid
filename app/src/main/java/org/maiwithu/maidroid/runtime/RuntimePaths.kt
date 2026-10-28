@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.container
+package org.maiwithu.maidroid.runtime
 
 import android.content.Context
 import android.system.Os
@@ -10,8 +10,6 @@ import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterScripts
-import org.maiwithu.maidroid.runtime.ContainerPaths
-import org.maiwithu.maidroid.runtime.shellQuote
 
 // MaiBot 扫插件时跳过的目录：数据目录、字节码缓存，以及点开头的目录（含安装用的临时目录）。
 private val ReservedPluginDirNames = setOf("data", "__pycache__")
@@ -50,7 +48,7 @@ data class ContainerRequirement(
  * Commands mirror installation.md, but are executed inside the configured
  * proot container instead of asking the user to run them manually.
  */
-class MaiBotContainerConfig private constructor(
+class RuntimePaths private constructor(
     private val appFilesDir: File,
     private val nativeLibraryDir: File
 ) {
@@ -76,9 +74,9 @@ class MaiBotContainerConfig private constructor(
         const val TERMUX_PROOT_LOADER_32 = "libexec/proot/loader32"
         const val WEB_UI_URL = "http://127.0.0.1:8001/"
 
-        fun from(context: Context): MaiBotContainerConfig {
+        fun from(context: Context): RuntimePaths {
             val appContext = context.applicationContext
-            return MaiBotContainerConfig(
+            return RuntimePaths(
                 appFilesDir = appContext.filesDir,
                 nativeLibraryDir = File(appContext.applicationInfo.nativeLibraryDir)
             )

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.container
+package org.maiwithu.maidroid.ssh
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
@@ -13,8 +13,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
-import org.maiwithu.maidroid.ssh.ContainerSshScripts
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import java.util.concurrent.TimeUnit
 
 internal enum class ContainerSshPhase {
@@ -48,7 +50,7 @@ internal class ContainerSshManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val settingsRepository = SettingsRepository()
-    private val config = MaiBotContainerConfig.from(appContext)
+    private val config = RuntimePaths.from(appContext)
     private val commandRunner = ContainerCommandRunner(config)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 

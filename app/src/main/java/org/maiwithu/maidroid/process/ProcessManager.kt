@@ -17,8 +17,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import org.maiwithu.maidroid.container.ContainerCommandRunner
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import java.util.concurrent.TimeUnit
 
@@ -55,7 +55,7 @@ class ProcessManager private constructor(context: Context) {
             }
     }
 
-    private val containerConfig = MaiBotContainerConfig.from(context)
+    private val containerConfig = RuntimePaths.from(context)
     private val commandRunner = ContainerCommandRunner(containerConfig)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleMutex = Mutex()

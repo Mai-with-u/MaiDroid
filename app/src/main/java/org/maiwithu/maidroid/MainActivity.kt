@@ -43,7 +43,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
 import org.maiwithu.maidroid.service.ChatbotService
@@ -519,7 +519,7 @@ class MainActivity : ComponentActivity() {
     private fun openWebUi() {
         startActivity(
             Intent(this, WebUiActivity::class.java).apply {
-                putExtra(WebUiActivity.EXTRA_URL, MaiBotContainerConfig.WEB_UI_URL)
+                putExtra(WebUiActivity.EXTRA_URL, RuntimePaths.WEB_UI_URL)
             }
         )
     }

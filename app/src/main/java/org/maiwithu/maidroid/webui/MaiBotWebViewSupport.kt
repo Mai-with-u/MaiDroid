@@ -18,7 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
+import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.process.TerminalLogRepository
 
 object MaiBotWebUiSupport {
@@ -154,7 +154,7 @@ object MaiBotWebUiSupport {
 
     fun resolveLaunchUrl(
         context: Context,
-        baseUrl: String = MaiBotContainerConfig.WEB_UI_URL,
+        baseUrl: String = RuntimePaths.WEB_UI_URL,
         terminalLogs: List<String> = TerminalLogRepository.logs.value
     ): String {
         val token = findAccessToken(context, terminalLogs) ?: return baseUrl
@@ -406,7 +406,7 @@ object MaiBotWebUiSupport {
     }
 
     private fun readAccessTokenFromConfig(context: Context): String? {
-        val config = MaiBotContainerConfig.from(context)
+        val config = RuntimePaths.from(context)
         val tokenFile = File(config.maiBotDir, WEBUI_CONFIG_PATH)
         if (!tokenFile.isFile) return null
 

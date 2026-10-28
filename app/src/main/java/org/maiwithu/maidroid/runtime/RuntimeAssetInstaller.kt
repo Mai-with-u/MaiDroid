@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.container
+package org.maiwithu.maidroid.runtime
 
 import android.content.Context
 import android.system.ErrnoException
@@ -22,7 +22,7 @@ data class RuntimeInstallProgress(
 
 class RuntimeAssetInstaller(
     context: Context,
-    private val config: MaiBotContainerConfig = MaiBotContainerConfig.from(context)
+    private val config: RuntimePaths = RuntimePaths.from(context)
 ) {
     private val appContext = context.applicationContext
 
@@ -30,11 +30,11 @@ class RuntimeAssetInstaller(
         onProgress: suspend (RuntimeInstallProgress) -> Unit
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            requireAsset(MaiBotContainerConfig.ROOTFS_ASSET)
-            requireAsset(MaiBotContainerConfig.BOOTSTRAP_ASSET)
-            requireAsset(MaiBotContainerConfig.LIBANDROID_SHMEM_ASSET)
-            requireAsset(MaiBotContainerConfig.LIBTALLOC_ASSET)
-            requireAsset(MaiBotContainerConfig.PROOT_ASSET)
+            requireAsset(RuntimePaths.ROOTFS_ASSET)
+            requireAsset(RuntimePaths.BOOTSTRAP_ASSET)
+            requireAsset(RuntimePaths.LIBANDROID_SHMEM_ASSET)
+            requireAsset(RuntimePaths.LIBTALLOC_ASSET)
+            requireAsset(RuntimePaths.PROOT_ASSET)
 
             if (
                 config.rootfsMarker.isFile &&
@@ -95,7 +95,7 @@ class RuntimeAssetInstaller(
             )
             extractBootstrap(config.stagingTermuxDir)
             extractProotDependencyPackages(config.stagingTermuxDir)
-            extractTermuxDebPackage(config.stagingTermuxDir, MaiBotContainerConfig.PROOT_ASSET)
+            extractTermuxDebPackage(config.stagingTermuxDir, RuntimePaths.PROOT_ASSET)
             File(config.stagingTermuxDir, config.bootstrapMarker.name).writeText("ok")
 
             onProgress(
@@ -133,7 +133,7 @@ class RuntimeAssetInstaller(
 
     @Suppress("DEPRECATION")
     private fun extractRootfs(targetRoot: File) {
-        appContext.assets.open(MaiBotContainerConfig.ROOTFS_ASSET).buffered().use { raw ->
+        appContext.assets.open(RuntimePaths.ROOTFS_ASSET).buffered().use { raw ->
             XZCompressorInputStream(raw).use { xz ->
                 TarArchiveInputStream(xz).use { tar ->
                     while (true) {
@@ -185,8 +185,8 @@ class RuntimeAssetInstaller(
 
     @Suppress("DEPRECATION")
     private fun extractProotDependencyPackages(targetRoot: File) {
-        extractTermuxDebPackage(targetRoot, MaiBotContainerConfig.LIBANDROID_SHMEM_ASSET)
-        extractTermuxDebPackage(targetRoot, MaiBotContainerConfig.LIBTALLOC_ASSET)
+        extractTermuxDebPackage(targetRoot, RuntimePaths.LIBANDROID_SHMEM_ASSET)
+        extractTermuxDebPackage(targetRoot, RuntimePaths.LIBTALLOC_ASSET)
     }
 
     @Suppress("DEPRECATION")
@@ -223,7 +223,7 @@ class RuntimeAssetInstaller(
     }
 
     private fun extractBootstrap(targetRoot: File) {
-        appContext.assets.open(MaiBotContainerConfig.BOOTSTRAP_ASSET).buffered().use { raw ->
+        appContext.assets.open(RuntimePaths.BOOTSTRAP_ASSET).buffered().use { raw ->
             ZipInputStream(raw).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break

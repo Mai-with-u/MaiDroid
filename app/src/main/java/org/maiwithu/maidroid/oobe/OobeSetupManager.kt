@@ -13,12 +13,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.container.ContainerCommandResult
-import org.maiwithu.maidroid.container.ContainerCommandRunner
-import org.maiwithu.maidroid.container.ContainerRequirement
-import org.maiwithu.maidroid.container.MaiBotContainerConfig
-import org.maiwithu.maidroid.container.RuntimeAssetInstaller
-import org.maiwithu.maidroid.container.RuntimeInstallProgress
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.ContainerRequirement
+import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
+import org.maiwithu.maidroid.runtime.RuntimeInstallProgress
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.process.TerminalLogRepository
 import org.maiwithu.maidroid.repository.SettingsRepository
@@ -68,7 +68,7 @@ data class OobeSetupState(
     val canInstall: Boolean,
     val isComplete: Boolean,
     val webUiReady: Boolean = false,
-    val webUiUrl: String = MaiBotContainerConfig.WEB_UI_URL,
+    val webUiUrl: String = RuntimePaths.WEB_UI_URL,
     val commandLogs: List<String> = emptyList()
 ) {
     companion object {
@@ -143,7 +143,7 @@ data class OobeSetupState(
             OobeTaskState(
                 kind = OobeTaskKind.WebUi,
                 title = "MaiBot WebUI",
-                description = MaiBotContainerConfig.WEB_UI_URL,
+                description = RuntimePaths.WEB_UI_URL,
                 progress = 0f,
                 progressText = "等待",
                 statusText = "等待 MaiBot 启动",
@@ -164,7 +164,7 @@ class OobeSetupManager(
     }
 
     private val appContext = context.applicationContext
-    private val config = MaiBotContainerConfig.from(appContext)
+    private val config = RuntimePaths.from(appContext)
     private val runtimeInstaller = RuntimeAssetInstaller(appContext, config)
     private val commandRunner = ContainerCommandRunner(config)
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -388,7 +388,7 @@ class OobeSetupManager(
             _state.value = _state.value.copy(
                 phase = OobeSetupPhase.Complete,
                 installTasks = buildInstallTasks(webUiReady = true),
-                footerText = "MaiBot WebUI 已启动，可以打开 ${MaiBotContainerConfig.WEB_UI_URL}",
+                footerText = "MaiBot WebUI 已启动，可以打开 ${RuntimePaths.WEB_UI_URL}",
                 canInstall = true,
                 isComplete = true,
                 webUiReady = true
@@ -438,7 +438,7 @@ class OobeSetupManager(
             OobeTaskState(
                 kind = OobeTaskKind.WebUi,
                 title = "MaiBot WebUI",
-                description = MaiBotContainerConfig.WEB_UI_URL,
+                description = RuntimePaths.WEB_UI_URL,
                 progress = if (webUiReady) 1f else 0f,
                 progressText = if (webUiReady) "完成" else "等待",
                 statusText = when {

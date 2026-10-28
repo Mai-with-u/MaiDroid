@@ -11,7 +11,7 @@ import androidx.core.app.NotificationCompat
 import org.maiwithu.maidroid.ChatbotApplication
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.container.ContainerSshManager
+import org.maiwithu.maidroid.ssh.ContainerSshManager
 import org.maiwithu.maidroid.platform.NapCatRuntime
 import org.maiwithu.maidroid.process.ProcessManager
 

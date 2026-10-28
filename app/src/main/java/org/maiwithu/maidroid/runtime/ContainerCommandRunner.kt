@@ -1,8 +1,7 @@
-package org.maiwithu.maidroid.container
+package org.maiwithu.maidroid.runtime
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.runtime.ContainerScript
 
 /** proot 容器内一次性命令的执行结果。 */
 internal data class ContainerCommandResult(
@@ -26,7 +25,7 @@ internal data class ContainerCommandResult(
  * 会拉起 MaiBot 的命令（OOBE、NapCat 安装、MaiBot 本体）额外注入协议 hash，
  * 避免 MaiBot 启动时卡在 EULA 确认。
  */
-internal class ContainerCommandRunner(private val config: MaiBotContainerConfig) {
+internal class ContainerCommandRunner(private val config: RuntimePaths) {
 
     /** 脚本在宿主机上实际执行的 proot 命令行，供安装页和终端日志展示。 */
     fun commandLine(script: ContainerScript): List<String> =
