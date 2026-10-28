@@ -3,7 +3,6 @@ package org.maiwithu.maidroid.ui.settings
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.appContainer
-import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -33,7 +32,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Info
@@ -42,11 +40,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,14 +62,11 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
-import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -643,119 +634,4 @@ private fun permissionSummary(state: PermissionState): String {
     ).count { it }
     val storageStatus = if (state.storageGranted) "存储已授权" else "存储未授权"
     return "$storageStatus · 可选项 $optionalGranted/2"
-}
-
-@Composable
-private fun ContainerSshConfigDialog(
-    portText: String,
-    passwordText: String,
-    configured: Boolean,
-    onPortTextChange: (String) -> Unit,
-    onPasswordTextChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onConfirm: (port: Int, password: String?) -> Unit
-) {
-    val parsedPort = portText.toIntOrNull()
-    val errorText = when {
-        parsedPort == null -> "端口需要是数字"
-        parsedPort !in 1024..65535 -> "端口范围为 1024-65535"
-        !configured && passwordText.isBlank() -> "root 密码不能为空"
-        else -> null
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "容器 SSH 设置",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = onPortTextChange,
-                    singleLine = true,
-                    label = { Text("端口") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = passwordText,
-                    onValueChange = onPasswordTextChange,
-                    singleLine = true,
-                    label = { Text("root 密码") },
-                    placeholder = {
-                        Text(if (configured) "留空则保持当前密码" else "输入 root 密码")
-                    },
-                    visualTransformation = PasswordVisualTransformation()
-                )
-
-                if (errorText != null) {
-                    Text(
-                        text = errorText,
-                        color = StatusWarning,
-                        fontSize = 12.sp,
-                        lineHeight = 14.sp
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = Color.White
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val port = parsedPort ?: return@Button
-                    onConfirm(port, passwordText.takeIf { it.isNotBlank() })
-                },
-                enabled = errorText == null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = Color.White
-                )
-            ) {
-                Text(text = "确定", fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = Color.White,
-        textContentColor = TextMuted
-    )
-}
-
-private fun containerSshStatusText(state: ContainerSshState): String =
-    when {
-        !state.configured -> "未配置"
-        state.isRunning -> "运行中 · 端口 ${state.port}"
-        state.isStarting -> "启动中 · 端口 ${state.port}"
-        state.phase == ContainerSshPhase.Failed -> "启动失败 · 端口 ${state.port}"
-        state.enabled -> "已开启 · 端口 ${state.port}"
-        else -> "已关闭 · 端口 ${state.port}"
-    }
-
-private fun containerSshSummaryText(state: ContainerSshState): String {
-    val status = containerSshStatusText(state)
-    val error = state.errorMessage?.takeIf {
-        state.phase == ContainerSshPhase.Failed && it.isNotBlank()
-    }
-    return if (error == null) status else "$status\n$error"
-}
-
-// 经前台服务按设置同步 sshd，保证切到后台后 SSH 仍由常驻服务托管。
-private fun requestContainerSshSync(context: Context) {
-    MaiBotRuntimeService.start(context, MaiBotRuntimeService.ACTION_SYNC_CONTAINER_SSH)
 }

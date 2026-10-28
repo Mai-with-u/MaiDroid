@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
@@ -54,6 +56,21 @@ private val HomeMutedBlue = Color(0xFF788CA0)
 private val HomeOnline = Color(0xFF64C88C)
 private val HomeOffline = Color(0xFFE8A064)
 
+/**
+ * 设计稿坐标到实际尺寸的换算：横向按宽度比例、纵向按高度比例，文字和描边按两者中较小的比例，
+ * 这样不同长宽比的屏幕上插画不变形、文字不溢出。
+ */
+private class DesignScale(val scaleX: Float, val scaleY: Float) {
+    val textScale: Float = minOf(scaleX, scaleY)
+    fun x(value: Float): Dp = (value * scaleX).dp
+    fun y(value: Float): Dp = (value * scaleY).dp
+    fun sp(value: Float): TextUnit = (value * textScale).sp
+}
+
+/**
+ * 主页的“唤醒麦麦”页：OOBE 完成后、WebUI 还没起来时显示。
+ * 每 30 秒（WakeRetryIntervalMillis）自动唤醒一次 MaiBot，进度条在这段时间内从左走到右；WebUI 一上线就切到主页。
+ */
 @Composable
 internal fun WakeMaiGatePage(
     webUiOnline: Boolean,
@@ -66,12 +83,11 @@ internal fun WakeMaiGatePage(
             .fillMaxSize()
             .background(HomeBackground)
     ) {
-        val sx = maxWidth.value / DesignFrameWidthDp
-        val sy = maxHeight.value / DesignFrameHeightDp
-        val textScale = minOf(sx, sy)
-        fun x(value: Float): Dp = (value * sx).dp
-        fun y(value: Float): Dp = (value * sy).dp
-        fun sp(value: Float) = (value * textScale).sp
+        val scale = DesignScale(
+            scaleX = maxWidth.value / DesignFrameWidthDp,
+            scaleY = maxHeight.value / DesignFrameHeightDp
+        )
+        val textScale = scale.textScale
         val wakeProgress = remember { Animatable(if (webUiOnline) 1f else 0f) }
 
         LaunchedEffect(wakeCycle, webUiOnline) {
@@ -94,16 +110,16 @@ internal fun WakeMaiGatePage(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .offset(x = x(0f), y = y(-4f))
-                .width(x(600f))
-                .height(y(789f))
+                .offset(x = scale.x(0f), y = scale.y(-4f))
+                .width(scale.x(600f))
+                .height(scale.y(789f))
                 .graphicsLayer { alpha = 0.5f }
         )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(y(156.75f))
+                .height(scale.y(156.75f))
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -118,7 +134,7 @@ internal fun WakeMaiGatePage(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(y(384.04f))
+                .height(scale.y(384.04f))
                 .background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
@@ -136,68 +152,64 @@ internal fun WakeMaiGatePage(
         HeaderLabels(
             webUiOnline = webUiOnline,
             versionName = versionName,
-            sx = sx,
-            sy = sy,
-            textScale = textScale
+            scale = scale
         )
 
         BootTelemetry(
-            sx = sx,
-            sy = sy,
-            textScale = textScale
+            scale = scale
         )
 
         Text(
             text = "麦麦Bot",
             color = Color.White,
-            fontSize = sp(48f),
+            fontSize = scale.sp(48f),
             fontWeight = FontWeight.ExtraBold,
-            letterSpacing = sp(4f),
-            lineHeight = sp(52f),
+            letterSpacing = scale.sp(4f),
+            lineHeight = scale.sp(52f),
             modifier = Modifier
-                .offset(x = x(40f), y = y(588f))
-                .width(x(220f))
+                .offset(x = scale.x(40f), y = scale.y(588f))
+                .width(scale.x(220f))
         )
 
         Text(
             text = "MaiSaka × MaiDroid",
             color = HomeOrange.copy(alpha = 0.85f),
-            fontSize = sp(16f),
+            fontSize = scale.sp(16f),
             fontWeight = FontWeight.Bold,
-            letterSpacing = sp(6f),
-            lineHeight = sp(20f),
+            letterSpacing = scale.sp(6f),
+            lineHeight = scale.sp(20f),
             modifier = Modifier
-                .offset(x = x(39f), y = y(643f))
-                .width(x(315f))
+                .offset(x = scale.x(39f), y = scale.y(643f))
+                .width(scale.x(315f))
         )
 
         Box(
             modifier = Modifier
-                .offset(x = x(39f), y = y(667f))
-                .width(x(303f))
-                .height(y(3f))
+                .offset(x = scale.x(39f), y = scale.y(667f))
+                .width(scale.x(303f))
+                .height(scale.y(3f))
                 .background(HomeOrange.copy(alpha = 0.25f))
         )
 
         Text(
             text = "一个正在努力成为人类的BOT。",
             color = Color(0xFFB4C3D7).copy(alpha = 0.7f),
-            fontSize = sp(12f),
+            fontSize = scale.sp(12f),
             fontWeight = FontWeight.Bold,
-            letterSpacing = sp(1f),
-            lineHeight = sp(16f),
+            letterSpacing = scale.sp(1f),
+            lineHeight = scale.sp(16f),
             modifier = Modifier
-                .offset(x = x(40f), y = y(679f))
-                .width(x(240f))
+                .offset(x = scale.x(40f), y = scale.y(679f))
+                .width(scale.x(240f))
         )
 
         WakeProgressBar(
             progress = wakeProgress.value,
             webUiOnline = webUiOnline,
             modifier = Modifier
-                .offset(x = x(38f), y = y(706f))
-                .width(x(335.7f))
-                .height(y(59.6f)),
+                .offset(x = scale.x(38f), y = scale.y(706f))
+                .width(scale.x(335.7f))
+                .height(scale.y(59.6f)),
             textScale = textScale
         )
 
@@ -208,13 +220,13 @@ internal fun WakeMaiGatePage(
                 "WEBUI OFFLINE  //  AUTO WAKE"
             },
             color = Color(0xFF96A5B9).copy(alpha = 0.4f),
-            fontSize = sp(7.05f),
-            letterSpacing = sp(2f),
+            fontSize = scale.sp(7.05f),
+            letterSpacing = scale.sp(2f),
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = y(118f))
-                .width(x(335.7f))
+                .padding(bottom = scale.y(118f))
+                .width(scale.x(335.7f))
         )
     }
 }
@@ -222,95 +234,85 @@ internal fun WakeMaiGatePage(
 private fun HeaderLabels(
     webUiOnline: Boolean,
     versionName: String,
-    sx: Float,
-    sy: Float,
-    textScale: Float
+    scale: DesignScale
 ) {
-    fun x(value: Float): Dp = (value * sx).dp
-    fun y(value: Float): Dp = (value * sy).dp
-    fun sp(value: Float) = (value * textScale).sp
 
     Text(
         text = "MAISAKA",
         color = HomeOrange.copy(alpha = 0.9f),
-        fontSize = sp(8.62f),
-        letterSpacing = sp(4f),
+        fontSize = scale.sp(8.62f),
+        letterSpacing = scale.sp(4f),
         modifier = Modifier
-            .offset(x = x(31f), y = y(44f))
-            .width(x(90f))
+            .offset(x = scale.x(31f), y = scale.y(44f))
+            .width(scale.x(90f))
     )
 
     Text(
         text = "牢麦待机中",
         color = HomeTextBlue.copy(alpha = 0.7f),
-        fontSize = sp(7.05f),
-        letterSpacing = sp(1.5f),
+        fontSize = scale.sp(7.05f),
+        letterSpacing = scale.sp(1.5f),
         modifier = Modifier
-            .offset(x = x(31f), y = y(58f))
-            .width(x(96f))
+            .offset(x = scale.x(31f), y = scale.y(58f))
+            .width(scale.x(96f))
     )
 
     Text(
         text = "v$versionName",
         color = HomeMutedBlue.copy(alpha = 0.6f),
-        fontSize = sp(7.84f),
+        fontSize = scale.sp(7.84f),
         textAlign = TextAlign.End,
         modifier = Modifier
-            .offset(x = x(320f), y = y(45f))
-            .width(x(58f))
+            .offset(x = scale.x(320f), y = scale.y(45f))
+            .width(scale.x(58f))
     )
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End,
         modifier = Modifier
-            .offset(x = x(300f), y = y(56f))
-            .width(x(78f))
+            .offset(x = scale.x(300f), y = scale.y(56f))
+            .width(scale.x(78f))
     ) {
         Box(
             modifier = Modifier
-                .size(x(3.9f))
-                .clip(androidx.compose.foundation.shape.CircleShape)
+                .size(scale.x(3.9f))
+                .clip(CircleShape)
                 .background(if (webUiOnline) HomeOnline else HomeOffline)
         )
-        Spacer(modifier = Modifier.width(x(4f)))
+        Spacer(modifier = Modifier.width(scale.x(4f)))
         Text(
             text = if (webUiOnline) "ONLINE" else "OFFLINE",
             color = if (webUiOnline) HomeOnline.copy(alpha = 0.8f) else HomeOffline.copy(alpha = 0.82f),
-            fontSize = sp(7.05f),
-            letterSpacing = sp(2f)
+            fontSize = scale.sp(7.05f),
+            letterSpacing = scale.sp(2f)
         )
     }
 }
 
 @Composable
 private fun BootTelemetry(
-    sx: Float,
-    sy: Float,
-    textScale: Float
+    scale: DesignScale
 ) {
-    fun x(value: Float): Dp = (value * sx).dp
-    fun y(value: Float): Dp = (value * sy).dp
-    fun sp(value: Float) = (value * textScale).sp
 
     Text(
         text = "114°51'N  41°91'E",
         color = Color(0xFF788CAA).copy(alpha = 0.4f),
-        fontSize = sp(6.27f),
-        letterSpacing = sp(1f),
+        fontSize = scale.sp(6.27f),
+        letterSpacing = scale.sp(1f),
         modifier = Modifier
-            .offset(x = x(16.8f), y = y(352.7f))
-            .width(x(124f))
+            .offset(x = scale.x(16.8f), y = scale.y(352.7f))
+            .width(scale.x(124f))
     )
 
     Text(
         text = "MAI.BOOT  //  AUTO WAKE",
         color = Color(0xFFC8A064).copy(alpha = 0.35f),
-        fontSize = sp(6.27f),
-        letterSpacing = sp(1.5f),
+        fontSize = scale.sp(6.27f),
+        letterSpacing = scale.sp(1.5f),
         modifier = Modifier
-            .offset(x = x(16.8f), y = y(362.1f))
-            .width(x(180f))
+            .offset(x = scale.x(16.8f), y = scale.y(362.1f))
+            .width(scale.x(180f))
     )
 }
 
