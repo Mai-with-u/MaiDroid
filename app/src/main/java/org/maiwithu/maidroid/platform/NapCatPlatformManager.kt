@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -24,7 +23,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
-import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.platform.napcat.NapCatFiles
@@ -32,6 +30,7 @@ import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatLoginAccount
 import org.maiwithu.maidroid.platform.napcat.NapCatOneBotConfig
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
+import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.napcat.NapCatWebUiClient
 import org.maiwithu.maidroid.platform.napcat.shouldAutoRefreshQrCode
 import org.maiwithu.maidroid.platform.napcat.NapCatScripts
@@ -42,13 +41,13 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
-import java.util.concurrent.TimeUnit
 
 internal class NapCatPlatformManager(
     private val appContext: Context,
     private val config: RuntimePaths,
     private val readiness: RuntimeReadiness,
-    private val commandRunner: ContainerCommandRunner
+    private val commandRunner: ContainerCommandRunner,
+    private val napCatProcess: NapCatProcessSupervisor
 ) {
     private val napCatFiles = NapCatFiles(config)
     private val webUiClient = NapCatWebUiClient(napCatFiles.webUiConfig)
@@ -100,8 +99,8 @@ internal class NapCatPlatformManager(
             }
             withContext(Dispatchers.IO) { napCatFiles.qrCodeFile.delete() }
             loginAccount = null
-            if (NapCatRuntime.isRunning) {
-                NapCatRuntime.restart(appContext)
+            if (napCatProcess.isRunning) {
+                napCatProcess.restart()
             }
             refreshRuntimeState()
             _state.update { it.copy(qqLoggingOut = false) }
@@ -475,98 +474,4 @@ internal class NapCatPlatformManager(
         val accountId: String?,
         val accountName: String?
     )
-}
-
-internal object NapCatRuntime {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var process: Process? = null
-    private var job: Job? = null
-
-    fun start(context: Context) {
-        val appContext = context.applicationContext
-        val config = RuntimePaths.from(appContext)
-        val napCatFiles = NapCatFiles(config)
-        if (process?.isAlive == true || job?.isActive == true) return
-        if (!napCatFiles.isInstalled()) return
-
-        RuntimeFileModes.ensureExecutableBits(config)
-        job = scope.launch {
-            runMaintenanceCommand(config, NapCatScripts.cleanup())
-            runMaintenanceCommand(config, NapCatScripts.prepareRuntime())
-
-            if (!napCatFiles.launcher.isFile) {
-                TerminalLog.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")
-                return@launch
-            }
-
-            TerminalLog.append("")
-            TerminalLog.append("[NapCat] 启动: bash /root/launcher.sh")
-            try {
-                val currentProcess = ContainerCommandRunner(config).start(NapCatScripts.launch())
-                process = currentProcess
-                currentProcess.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { rawLine ->
-                        TerminalLog.append("[NapCat] ${rawLine.trimEnd('\r')}")
-                    }
-                }
-                val exitCode = currentProcess.waitFor()
-                TerminalLog.append("[NapCat] 进程退出码: $exitCode")
-            } catch (e: Exception) {
-                TerminalLog.append("[NapCat] 启动异常: ${e.message.orEmpty()}")
-            } finally {
-                process = null
-            }
-        }
-    }
-
-    fun stop() {
-        job?.cancel()
-        job = null
-        process?.let { currentProcess ->
-            runCatching {
-                currentProcess.destroy()
-                currentProcess.waitFor(3, TimeUnit.SECONDS)
-                if (currentProcess.isAlive) {
-                    currentProcess.destroyForcibly()
-                }
-            }
-        }
-        process = null
-    }
-
-    val isRunning: Boolean
-        get() = process?.isAlive == true || job?.isActive == true
-
-    /**
-     * 只重启 NapCat（QQ 随之下线重登），不动 MaiBot。
-     * 停旧进程 -> 等旧的读日志协程收尾（避免它的 finally 把新进程引用清掉）-> 重新启动；
-     * 新一轮启动前会先跑清理命令，杀掉残留的 qq / Xvfb。
-     */
-    suspend fun restart(context: Context) = withContext(Dispatchers.IO) {
-        val previousJob = job
-        stop()
-        withTimeoutOrNull(5_000L) { previousJob?.join() }
-        start(context)
-    }
-
-    fun stop(context: Context) {
-        stop()
-        val config = RuntimePaths.from(context.applicationContext)
-        scope.launch {
-            runMaintenanceCommand(config, NapCatScripts.cleanup())
-        }
-    }
-
-    // 清理残留进程、生成 launcher.sh 这类维护命令：只记非空输出，失败不中断后续启动。
-    private suspend fun runMaintenanceCommand(
-        config: RuntimePaths,
-        script: ContainerScript
-    ) {
-        val result = ContainerCommandRunner(config).run(script) { line ->
-            if (line.isNotBlank()) TerminalLog.append(line)
-        }
-        if (!result.success) {
-            TerminalLog.append("[NapCat] maintenance command exited with code: ${result.exitCode}")
-        }
-    }
 }

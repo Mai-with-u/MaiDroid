@@ -3,6 +3,7 @@ package org.maiwithu.maidroid
 import android.content.Context
 import org.maiwithu.maidroid.maibot.MaiBotSupervisor
 import org.maiwithu.maidroid.platform.NapCatPlatformManager
+import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.QqOfficialPlatformManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -35,8 +36,11 @@ internal class AppContainer(context: Context) {
     val containerSsh: ContainerSshManager by lazy {
         ContainerSshManager(settings, runtimeReadiness, commandRunner)
     }
+    val napCatProcess: NapCatProcessSupervisor by lazy {
+        NapCatProcessSupervisor(runtimePaths, commandRunner)
+    }
     val napCat: NapCatPlatformManager by lazy {
-        NapCatPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner)
+        NapCatPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess)
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {
         QqOfficialPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBot)

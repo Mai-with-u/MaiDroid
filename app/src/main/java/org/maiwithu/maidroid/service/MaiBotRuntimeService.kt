@@ -12,7 +12,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.platform.NapCatRuntime
 import org.maiwithu.maidroid.appContainer
 
 /**
@@ -60,6 +59,7 @@ class MaiBotRuntimeService : Service() {
 
     private val maiBot get() = appContainer.maiBot
     private val containerSsh get() = appContainer.containerSsh
+    private val napCatProcess get() = appContainer.napCatProcess
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -79,7 +79,7 @@ class MaiBotRuntimeService : Service() {
             return START_STICKY
         }
 
-        NapCatRuntime.start(this)
+        napCatProcess.start()
         if (intent?.action == ACTION_RESTART_RUNTIME) {
             maiBot.restart()
         } else {
@@ -94,7 +94,7 @@ class MaiBotRuntimeService : Service() {
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy")
         containerSsh.stop()
-        NapCatRuntime.stop(this)
+        napCatProcess.stop()
         maiBot.stop()
         releaseWakeLock()
         super.onDestroy()
