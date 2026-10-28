@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.platforms
+package org.maiwithu.maidroid.ui.platform
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

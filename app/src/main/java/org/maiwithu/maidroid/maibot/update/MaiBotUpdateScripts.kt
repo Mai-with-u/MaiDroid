@@ -1,9 +1,9 @@
 package org.maiwithu.maidroid.maibot.update
 
 import org.maiwithu.maidroid.maibot.MaiBotScripts
-import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /**

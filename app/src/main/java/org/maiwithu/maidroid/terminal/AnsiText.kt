@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.log
+package org.maiwithu.maidroid.terminal
 
 /** 终端里一段文字的样式，由 SGR 序列（ESC[…m）决定。颜色是 0xAARRGGBB，null 表示用终端面板的默认色。 */
 data class AnsiStyle(

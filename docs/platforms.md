@@ -4,8 +4,8 @@ MaiBot 通过插件（适配器）连接聊天平台。MaiDroid 的“消息平�
 
 | 接入方式 | 原理 | 代码 |
 | --- | --- | --- |
-| QQ 官方机器人 | MaiBot-QQ-Adapter 插件直连 QQ 开放平台，需要在 q.qq.com 申请 AppID、AppSecret | `platform/qqofficial/`、`ui/platforms/QqOfficialConfigDialog.kt` |
-| NapCat | 容器里跑 LinuxQQ + NapCat，扫码登录个人 QQ，NapCat 提供 OneBot11 WebSocket，MaiBot-Napcat-Adapter 插件去连 | `platform/napcat/`、`ui/platforms/NapCatDialogs.kt` |
+| QQ 官方机器人 | MaiBot-QQ-Adapter 插件直连 QQ 开放平台，需要在 q.qq.com 申请 AppID、AppSecret | `platform/qqofficial/`、`ui/platform/QqOfficialConfigDialog.kt` |
+| NapCat | 容器里跑 LinuxQQ + NapCat，扫码登录个人 QQ，NapCat 提供 OneBot11 WebSocket，MaiBot-Napcat-Adapter 插件去连 | `platform/napcat/`、`ui/platform/NapCatDialogs.kt` |
 
 两者都是 MaiBot 的插件，装好或改了配置后都要重启 MaiBot 才生效，统一经 `MaiBotRuntimeService.start(context, ACTION_RESTART_RUNTIME)`。
 
@@ -104,6 +104,6 @@ NapCat 没有注销 QQ 的接口，QQ 只随进程结束下线。所以“退出
    - `XxxPlatformManager`：安装、配置、状态汇总，构造函数注入 `RuntimeReadiness`、`ContainerCommandRunner` 等。
 2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停。
 3. 在 `AppDependencies` 里加一个 `lazy` 属性。
-4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `PlatformAdapter` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platforms/` 的独立文件里。
+4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `PlatformAdapter` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platform/` 的独立文件里。
 5. 装好或改了配置后经 `ACTION_RESTART_RUNTIME` 重启 MaiBot。
 6. 给状态推断、配置读写这类纯逻辑写 JVM 单元测试（参考 `NapCatQrCodeRefreshTest`、`QqOfficialPlatformTest`）。

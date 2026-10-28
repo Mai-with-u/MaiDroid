@@ -3,7 +3,7 @@ package org.maiwithu.maidroid.ui.terminal
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.maiwithu.maidroid.log.AnsiText
+import org.maiwithu.maidroid.terminal.AnsiText
 
 class TerminalViewerStateTest {
     private val lines = listOf(

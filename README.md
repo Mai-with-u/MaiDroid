@@ -88,8 +88,8 @@ flowchart TB
 | `platform/napcat/`、`platform/qqofficial/` | QQ 的两种接入方式 |
 | `ssh/` | 容器 SSH |
 | `webui/` | 嵌入 MaiBot WebUI：令牌、WebView、请求改写、注入脚本 |
-| `permission/`、`settings/`、`log/` | 系统权限、持久化设置、终端输出 |
-| `ui/` | 界面，按页面分为 `oobe`、`home`、`platforms`、`settings`、`terminal`、`splash`，公共组件在 `component`，配色字体在 `theme` |
+| `permission/`、`settings/`、`terminal/` | 系统权限、持久化设置、终端输出 |
+| `ui/` | 界面，按页面分为 `oobe`、`home`、`platform`、`settings`、`terminal`、`splash`，公共组件在 `component`，配色字体在 `theme` |
 
 开发文档：
 

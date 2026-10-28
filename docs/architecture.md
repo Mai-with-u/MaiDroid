@@ -12,7 +12,7 @@ flowchart TB
         App["MaiDroidApp\n启动页 / OOBE / 主页切换"]
         Oobe["ui/oobe\n首次引导三步"]
         Home["ui/home\nWebUI 页签、唤醒页、底部导航"]
-        Platforms["ui/platforms\n消息平台页"]
+        Platforms["ui/platform\n消息平台页"]
         Settings["ui/settings\n设置、权限、更新、SSH"]
     end
 
@@ -76,7 +76,7 @@ flowchart TB
 | --- | --- | --- |
 | （根） | 进程入口、依赖创建处、两个 Activity | `MaiDroidApplication`、`AppDependencies`、`MainActivity`、`MainViewModel`、`WebUiActivity` |
 | `settings` | MMKV 持久化的应用设置 | `AppSettings` |
-| `log` | 全应用共享的终端输出 | `TerminalLog` |
+| `terminal` | 全应用共享的终端输出 | `TerminalLog` |
 | `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
 | `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包 | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts` |
 | `maibot` | MaiBot 本体：安装与启动脚本、进程监管、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotProcessSupervisor`、`MaiBotAgreement`、`MaiBotPlugins` |
@@ -90,7 +90,7 @@ flowchart TB
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionCards`、`OobeTaskList`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiGatePage`、`MainBottomNavigation`、`WebUiTab` |
-| `ui.platforms` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
+| `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
 | `ui.settings` | 设置页、权限管理、在线更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`ContainerSshSettings` |
 | `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalViewerState` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.log
+package org.maiwithu.maidroid.terminal
 
 import android.util.Log
 import kotlinx.coroutines.channels.BufferOverflow

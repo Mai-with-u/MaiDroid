@@ -5,7 +5,7 @@ import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import org.maiwithu.maidroid.log.TerminalLog
+import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.MaiBotWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView

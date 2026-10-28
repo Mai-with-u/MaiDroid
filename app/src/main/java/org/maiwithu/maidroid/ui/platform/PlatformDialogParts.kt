@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.platforms
+package org.maiwithu.maidroid.ui.platform
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth

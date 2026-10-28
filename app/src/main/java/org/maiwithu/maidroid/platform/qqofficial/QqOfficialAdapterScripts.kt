@@ -1,8 +1,8 @@
 package org.maiwithu.maidroid.platform.qqofficial
 
-import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /** QQ 官方机器人适配器（MaiBot-QQ-Adapter 插件）的来源与安装脚本。 */

@@ -45,7 +45,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
-| `ui/platforms/MessagePlatformsPageTest` | 平台网格列数、选择器宽度、平台目录 |
+| `ui/platform/MessagePlatformsPageTest` | 平台网格列数、选择器宽度、平台目录 |
 | `ui/settings/*Test` | 设置页分栏规则、更新弹窗按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入、样式表安全区改写、视口修补脚本 |

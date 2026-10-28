@@ -26,9 +26,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.maiwithu.maidroid.log.AnsiLine
-import org.maiwithu.maidroid.log.AnsiStyle
-import org.maiwithu.maidroid.log.AnsiText
+import org.maiwithu.maidroid.terminal.AnsiLine
+import org.maiwithu.maidroid.terminal.AnsiStyle
+import org.maiwithu.maidroid.terminal.AnsiText
 
 /**
  * 终端输出查看器的交互状态：筛选关键字、是否自动跟随最新输出、是否自动换行，以及日志区和工具栏的滚动位置。

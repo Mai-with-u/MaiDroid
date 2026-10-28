@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.platforms
+package org.maiwithu.maidroid.ui.platform
 
 import android.content.Intent
 import android.widget.Toast

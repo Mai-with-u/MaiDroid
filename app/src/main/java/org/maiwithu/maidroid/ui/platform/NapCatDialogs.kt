@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.ui.platforms
+package org.maiwithu.maidroid.ui.platform
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image

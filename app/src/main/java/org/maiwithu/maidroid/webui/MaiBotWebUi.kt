@@ -8,8 +8,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.maiwithu.maidroid.log.AnsiText
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.terminal.AnsiText
 import java.net.HttpURLConnection
 import java.net.URL
 

@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.log
+package org.maiwithu.maidroid.terminal
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
