@@ -4,14 +4,8 @@
 # 也可以在 Actions 页面手动运行：这时只构建、签名并把 APK 存为本次运行的产物，不创建 Release，
 # 适合第一次配好密钥后先试跑一遍（手动运行要求本文件已经在默认分支 main 上）。
 #
-# 需要在仓库 Settings -> Secrets and variables -> Actions 里配置：
-#   Secrets
-#     MAIDROID_KEYSTORE_BASE64    发布密钥库文件的 base64 内容
-#     MAIDROID_KEYSTORE_PASSWORD  密钥库密码
-#     MAIDROID_KEY_ALIAS          密钥别名
-#     MAIDROID_KEY_PASSWORD       密钥密码（与库密码相同也要填）
-#   Variables（可选，建议配置）
-#     MAIDROID_CERT_SHA256        期望的签名证书 SHA-256；配置后证书不一致会直接失败，防止误用了别的密钥
+# 发布签名所需的密钥材料从仓库的 Actions Secrets / Variables 读取，具体项目见下面各步骤的 env，
+# 配置方法由维护者自行保管，不写在仓库里。
 #
 # 发布步骤：在 dev 分支改好 app/build.gradle.kts 里的 versionName、versionCode，
 # 在 CHANGELOG.md 最上面新增一节 "## [版本号] - 日期" 并写好说明，再合入 main 并推送。
