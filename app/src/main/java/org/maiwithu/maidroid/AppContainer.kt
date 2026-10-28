@@ -10,7 +10,7 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.ssh.ContainerSshManager
-import org.maiwithu.maidroid.update.MaiBotUpdateManager
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 
 /**
  * 进程内所有长生命周期组件的唯一创建处（手动依赖注入）。

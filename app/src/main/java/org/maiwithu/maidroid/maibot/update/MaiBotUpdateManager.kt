@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.update
+package org.maiwithu.maidroid.maibot.update
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope

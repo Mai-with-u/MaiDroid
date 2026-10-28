@@ -81,8 +81,8 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
-import org.maiwithu.maidroid.update.MaiBotUpdatePhase
-import org.maiwithu.maidroid.update.MaiBotUpdateState
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 
 private const val PermissionSettingsDetail = "permissions"
 

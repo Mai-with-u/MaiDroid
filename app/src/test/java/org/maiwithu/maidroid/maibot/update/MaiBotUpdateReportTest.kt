@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.update
+package org.maiwithu.maidroid.maibot.update
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

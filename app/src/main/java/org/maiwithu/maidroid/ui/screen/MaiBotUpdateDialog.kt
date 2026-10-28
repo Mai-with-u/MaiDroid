@@ -17,11 +17,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.update.MaiBotRevision
-import org.maiwithu.maidroid.update.MaiBotUpdateAction
-import org.maiwithu.maidroid.update.MaiBotUpdatePhase
-import org.maiwithu.maidroid.update.MaiBotUpdateScripts
-import org.maiwithu.maidroid.update.MaiBotUpdateState
+import org.maiwithu.maidroid.maibot.update.MaiBotRevision
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateScripts
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
