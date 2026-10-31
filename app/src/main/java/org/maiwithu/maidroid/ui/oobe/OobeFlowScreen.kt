@@ -45,8 +45,8 @@ import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.MaiDroidApp
-import org.maiwithu.maidroid.ui.terminal.EmbeddedTerminalOutputPanel
-import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
+import org.maiwithu.maidroid.ui.terminal.TerminalOutputPanel
+import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
 import org.maiwithu.maidroid.ui.theme.OobeBackground
 
 // 配置容器或安装一直没完成时，过这么久把终端按钮展开成“遇到问题？”提醒用户看日志。
@@ -198,15 +198,15 @@ internal fun OobeFlowScreen(
             )
         }
 
-        if (terminalVisible && currentStep != OobeStep.Permissions && !useEmbeddedTerminal) {
-            TerminalOutputDialog(
-                logs = setupState.commandLogs,
-                onDismiss = {
-                    terminalVisible = false
-                    embeddedTerminalDefaultApplied = true
-                }
-            )
-        }
+        // 手机上终端输出是盖在整个 OOBE 最上层的全屏页；平板上嵌在右下方（见 AdaptiveOobeLayout）。
+        TerminalOutputScreen(
+            visible = terminalVisible && currentStep != OobeStep.Permissions && !useEmbeddedTerminal,
+            logs = setupState.commandLogs,
+            onDismiss = {
+                terminalVisible = false
+                embeddedTerminalDefaultApplied = true
+            }
+        )
     }
 }
 
@@ -500,7 +500,7 @@ private fun AdaptiveOobeLayout(
                 }
 
                 if (terminal.showEmbedded) {
-                    EmbeddedTerminalOutputPanel(
+                    TerminalOutputPanel(
                         logs = content.setupState.commandLogs,
                         onDismiss = terminal.onToggle,
                         modifier = Modifier

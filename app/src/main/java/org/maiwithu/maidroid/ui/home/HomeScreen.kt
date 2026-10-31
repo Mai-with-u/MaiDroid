@@ -45,7 +45,7 @@ import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.platform.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
-import org.maiwithu.maidroid.ui.terminal.TerminalOutputDialog
+import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
 import org.maiwithu.maidroid.ui.theme.PageBackground
 
 // WebUI 离线时每隔这么久自动唤醒一次 MaiBot；唤醒页的进度条也按这个时长走满。
@@ -290,12 +290,12 @@ private fun HomeTabsShell(
             }
         }
 
-        if (showTerminalOutput) {
-            TerminalOutputDialog(
-                logs = terminalLogs,
-                onDismiss = onTerminalDismiss
-            )
-        }
+        // 终端输出页盖在整个外壳最上层（含导航），自己让开系统栏和挖孔。
+        TerminalOutputScreen(
+            visible = showTerminalOutput,
+            logs = terminalLogs,
+            onDismiss = onTerminalDismiss
+        )
     }
 }
 
