@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -27,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -177,13 +181,17 @@ private const val INSTALL_NOTE =
 /**
  * 接上应用更新管理器的更新弹窗：设置页点“应用版本”、启动时查到新版本的提醒共用这一个。
  * 状态都在进程级的更新管理器里，弹窗关掉再打开、Activity 重建后都能接上检查和下载进度。
+ * showMaiBotAutoUpdateSwitch 为 true 时（只有设置页点开时）底部多一个“关闭 MaiBot 自动更新”开关：
+ * 我们鼓励 MaiBot 保持最新，这个开关不放在设置列表里，也不在启动提醒里出现。
  */
 @Composable
-internal fun AppUpdateDialogHost(onDismiss: () -> Unit) {
+internal fun AppUpdateDialogHost(onDismiss: () -> Unit, showMaiBotAutoUpdateSwitch: Boolean = false) {
     val context = LocalContext.current
     val appUpdater = remember(context) { context.appDependencies.appUpdater }
+    val settings = remember(context) { context.appDependencies.settings }
     val state by appUpdater.state.collectAsState()
     var installPermissionGranted by remember { mutableStateOf(appUpdater.canRequestPackageInstalls()) }
+    var maiBotAutoUpdateDisabled by remember { mutableStateOf(settings.maiBotAutoUpdateDisabled) }
 
     // 每次回到前台重新读“安装未知应用”：用户从系统设置页开完权限回来，按钮直接变成“安装”。
     LifecycleResumeEffect(appUpdater) {
@@ -212,9 +220,24 @@ internal fun AppUpdateDialogHost(onDismiss: () -> Unit) {
                 Toast.makeText(context, "没有找到可以打开下载页的浏览器", Toast.LENGTH_SHORT).show()
             }
         },
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        maiBotAutoUpdateSwitch = if (showMaiBotAutoUpdateSwitch) {
+            MaiBotAutoUpdateSwitch(disabled = maiBotAutoUpdateDisabled) { disabled ->
+                // 写进设置即生效：下次 MaiDroid 更新后的第一次启动按它决定要不要自动升级 MaiBot
+                settings.maiBotAutoUpdateDisabled = disabled
+                maiBotAutoUpdateDisabled = disabled
+            }
+        } else {
+            null
+        }
     )
 }
+
+/** 更新弹窗底部“关闭 MaiBot 自动更新”开关的当前值和切换回调。 */
+internal class MaiBotAutoUpdateSwitch(
+    val disabled: Boolean,
+    val onChange: (Boolean) -> Unit
+)
 
 @Composable
 internal fun AppUpdateDialog(
@@ -226,7 +249,8 @@ internal fun AppUpdateDialog(
     onGrantInstallPermission: () -> Unit,
     onInstall: () -> Unit,
     onOpenReleasePage: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    maiBotAutoUpdateSwitch: MaiBotAutoUpdateSwitch? = null
 ) {
     val primaryButton = appUpdatePrimaryButton(state, installPermissionGranted)
     val release = state.release
@@ -274,6 +298,8 @@ internal fun AppUpdateDialog(
                 if (showInstallNote) {
                     Text(text = INSTALL_NOTE, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)
                 }
+
+                maiBotAutoUpdateSwitch?.let { MaiBotAutoUpdateRow(it) }
             }
         },
         dismissButton = {
@@ -368,6 +394,44 @@ private fun ReleaseNotes(notes: String) {
                 )
             }
         }
+    }
+}
+
+// 弹窗底部的开关行：左边标题和说明，右边开关，整行可点。默认关闭，即 MaiDroid 更新后第一次启动自动升级 MaiBot。
+@Composable
+private fun MaiBotAutoUpdateRow(switch: MaiBotAutoUpdateSwitch) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = switch.disabled, role = Role.Switch, onValueChange = switch.onChange)
+            .padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = "关闭 MaiBot 自动更新",
+                color = TextPrimary,
+                fontSize = TextSizes.Body,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 18.sp
+            )
+            Text(
+                text = if (switch.disabled) {
+                    "已关闭，MaiDroid 更新后需要在“MaiBot 更新”里手动更新。"
+                } else {
+                    "MaiDroid 更新后第一次启动时，自动把 MaiBot 升级到最新。"
+                },
+                color = TextMuted,
+                fontSize = TextSizes.Caption,
+                lineHeight = 16.sp
+            )
+        }
+        Switch(
+            checked = switch.disabled,
+            onCheckedChange = null,
+            modifier = Modifier.clearAndSetSemantics {}
+        )
     }
 }
 

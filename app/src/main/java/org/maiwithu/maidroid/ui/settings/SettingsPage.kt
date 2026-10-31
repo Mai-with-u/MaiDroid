@@ -34,7 +34,6 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.SyncDisabled
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -109,13 +108,6 @@ internal fun SettingsPage(
     val updateState by updateManager.state.collectAsState()
     val appUpdater = remember(context) { context.appDependencies.appUpdater }
     val appUpdateState by appUpdater.state.collectAsState()
-    val appSettings = remember(context) { context.appDependencies.settings }
-    // “关闭 MaiBot 自动更新”开关：打开后 MaiDroid 更新完的第一次启动不再自动升级 MaiBot
-    var maiBotAutoUpdateDisabled by remember { mutableStateOf(appSettings.maiBotAutoUpdateDisabled) }
-    val onMaiBotAutoUpdateDisabledChange: (Boolean) -> Unit = { disabled ->
-        appSettings.maiBotAutoUpdateDisabled = disabled
-        maiBotAutoUpdateDisabled = disabled
-    }
     val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 在线、官方机器人已启用且无连接报错都算。
@@ -220,8 +212,6 @@ internal fun SettingsPage(
                     onOpenFilesClick = onOpenFilesClick,
                     appUpdateState = appUpdateState,
                     onAppUpdateClick = { openAppUpdateDialog() },
-                    maiBotAutoUpdateDisabled = maiBotAutoUpdateDisabled,
-                    onMaiBotAutoUpdateDisabledChange = onMaiBotAutoUpdateDisabledChange,
                     modifier = Modifier
                         .width(navigationWidth)
                         .fillMaxHeight()
@@ -282,8 +272,6 @@ internal fun SettingsPage(
                         onOpenFilesClick = onOpenFilesClick,
                         appUpdateState = appUpdateState,
                         onAppUpdateClick = { openAppUpdateDialog() },
-                        maiBotAutoUpdateDisabled = maiBotAutoUpdateDisabled,
-                        onMaiBotAutoUpdateDisabledChange = onMaiBotAutoUpdateDisabledChange,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -295,7 +283,8 @@ internal fun SettingsPage(
         }
 
         if (showAppUpdateDialog) {
-            AppUpdateDialogHost(onDismiss = { showAppUpdateDialog = false })
+            // 设置页点开的更新弹窗底部带“关闭 MaiBot 自动更新”开关；启动时自动弹的提醒不带
+            AppUpdateDialogHost(onDismiss = { showAppUpdateDialog = false }, showMaiBotAutoUpdateSwitch = true)
         }
 
         if (showSshDialog) {
@@ -344,8 +333,6 @@ private fun SettingsNavigationPane(
     onOpenFilesClick: () -> Unit,
     appUpdateState: AppUpdateState,
     onAppUpdateClick: () -> Unit,
-    maiBotAutoUpdateDisabled: Boolean,
-    onMaiBotAutoUpdateDisabledChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
@@ -446,8 +433,7 @@ private fun SettingsNavigationPane(
                 )
 
                 if (compact) {
-                    CompactSwitchRow(
-                        label = "启用 SSH",
+                    CompactSshSwitchRow(
                         checked = sshState.enabled,
                         enabled = !sshState.isStarting,
                         onCheckedChange = onSshEnabledChange
@@ -545,39 +531,6 @@ private fun SettingsNavigationPane(
                         }
                     }
                 )
-
-                SettingsDivider()
-
-                // 默认 MaiDroid 更新完的第一次启动会在唤醒页上自动升级 MaiBot；打开这个开关就不自动升级，
-                // 想更新时去“MaiBot 更新”手动点。整行可点，点哪儿都切换开关。
-                SettingsNavigationRow(
-                    icon = Icons.Outlined.SyncDisabled,
-                    title = "关闭 MaiBot 自动更新",
-                    supportingText = if (maiBotAutoUpdateDisabled) {
-                        "已关闭：MaiDroid 更新后不自动升级 MaiBot，可在“MaiBot 更新”里手动更新"
-                    } else {
-                        "MaiDroid 更新后第一次启动时会自动把 MaiBot 升级到最新"
-                    },
-                    accent = if (maiBotAutoUpdateDisabled) StatusWarning else StatusOnline,
-                    onClick = { onMaiBotAutoUpdateDisabledChange(!maiBotAutoUpdateDisabled) },
-                    trailing = if (compact) null else {
-                        {
-                            Switch(
-                                checked = maiBotAutoUpdateDisabled,
-                                onCheckedChange = onMaiBotAutoUpdateDisabledChange
-                            )
-                        }
-                    }
-                )
-
-                if (compact) {
-                    CompactSwitchRow(
-                        label = "关闭自动更新",
-                        checked = maiBotAutoUpdateDisabled,
-                        enabled = true,
-                        onCheckedChange = onMaiBotAutoUpdateDisabledChange
-                    )
-                }
             }
         }
     }
@@ -707,10 +660,8 @@ private fun SettingsStatusDot(color: Color) {
     )
 }
 
-// 紧凑排版（左右分栏的左栏）放不下行尾开关时，在行下面单独补一行“文字 + 开关”。
 @Composable
-private fun CompactSwitchRow(
-    label: String,
+private fun CompactSshSwitchRow(
     checked: Boolean,
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit
@@ -729,7 +680,7 @@ private fun CompactSwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = label,
+            text = "启用 SSH",
             color = TextMuted,
             fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Bold,
