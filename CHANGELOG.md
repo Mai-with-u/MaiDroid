@@ -2,7 +2,7 @@
 
 每个版本的变化都记在这里，最上面带版本号的一节就是最新版本，发布流程会把它的版本号和正文作为 GitHub Release 的说明。
 
-开发中的改动先写在最上面的 `## [Unreleased]` 下面，发布前执行 `bumpVersion` 把它改成新版本一节，用法见 README 的“发布与签名”。
+开发中的改动先写在最上面的 `## [Unreleased]` 下面，发布前执行 `bumpVersion` 把它改成新版本一节，用法见 [贡献指南](docs/contributing.md) 的“发布与签名”。
 
 ## [Unreleased]
 

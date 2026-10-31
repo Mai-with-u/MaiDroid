@@ -26,7 +26,7 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
 
 ## 快速开始
 
-需要一台 arm64 的手机，系统 Android 8.0 以上，并且能联网：安装时要从 GitHub 和镜像下载 MaiBot 和它的依赖。APK 约 160 MB，解包和装依赖还会再占一些存储，请留够空间。
+需要一台 arm64 的手机，系统 Android 8.0 以上，并且能联网：安装时要从 GitHub 和镜像下载 MaiBot 和它的依赖。容器和依赖要占不少存储，请留够空间。
 
 1. 到 [Releases](https://github.com/Mai-with-u/MaiDroid/releases) 下载最新的 APK，安装。
 2. 打开应用，阅读并同意用户协议和隐私协议（内容来自 MaiBot）。
@@ -36,7 +36,7 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
    - 安装 MaiBot：下载源码，装 Python 依赖，启动并等 WebUI 能打开。这一步最久，取决于网速和手机性能。
 4. 进入主页后，WebUI 页签里就是 MaiBot 的管理界面，模型、人设这些配置在这里完成，具体含义见 [MaiBot](https://github.com/Mai-with-u/MaiBot) 的文档。
 5. 想让麦麦上 QQ，切到“消息平台”页签，选一种方式安装。
-   - NapCat：下载安装后会弹出二维码，用 QQ 扫码登录。QQ 掉线后需要重新扫码。它要求 MaiBot 在 1.3.18 以上，版本低时先去“设置 > MaiBot 更新”升级。
+   - NapCat：下载安装后会弹出二维码，用 QQ 扫码登录。QQ 掉线后需要重新扫码。它对 MaiBot 的版本有最低要求，版本低时先去“设置 > MaiBot 更新”升级。
    - QQ 官方机器人：先到 [q.qq.com](https://q.qq.com) 申请机器人，把 AppID 和 AppSecret 填进弹窗。群聊里要 @机器人 才会收到消息，这是 QQ 开放平台的规则。连接失败时，卡片上会写具体原因，比如 IP 不在白名单、凭据错误。
 6. 国产系统常在后台杀应用。到“设置 > 权限管理”把通知、关闭电池优化、自启动和后台活动、多任务加锁都设上，麦麦才能一直在线。
 
@@ -179,7 +179,7 @@ MaiBot 的源码、配置、日志和数据都在容器里，容器在应用的�
 
 ### 怎么更新？
 
-MaiBot 在设置页的“MaiBot 更新”里更新。MaiDroid 自己从 0.1.3 开始可以在设置页的“应用版本”里检查、下载和安装。Release 包用同一把密钥签名，可以直接覆盖安装。自己用 debug 构建的包签名不同，换成 Release 包之前要先卸载。
+MaiBot 在设置页的“MaiBot 更新”里更新。MaiDroid 自己可以在设置页的“应用版本”里检查、下载和安装更新。Release 包用同一把密钥签名，可以直接覆盖安装。自己用 debug 构建的包签名不同，换成 Release 包之前要先卸载。
 
 ### 国内网络装不上怎么办？
 
@@ -216,7 +216,7 @@ MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和
 
 构建产物通常位于 `app/build/outputs/`。
 
-日常开发在 `dev` 分支，提交 PR 请以 `dev` 为目标。发布新版本和签名的流程见 [贡献指南](docs/contributing.md)。
+日常开发在 `dev` 分支，提交 PR 请以 `dev` 为目标。提交改动前请先读 [贡献指南](docs/contributing.md)：MaiBot 会持续更新，所以非必要不做只对特定版本生效的修改，也不建议改动 MaiBot 本身。发布新版本和签名的流程也写在那里。
 
 文档索引：
 
@@ -224,7 +224,7 @@ MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和
 - [容器运行时](docs/container-runtime.md)：文件布局、proot 命令、首次引导每一步、MaiBot 启动与在线更新、容器 SSH
 - [消息平台接入](docs/platforms.md)：QQ 官方机器人、NapCat，以及新增平台的步骤
 - [开发指南](docs/development.md)：构建、测试、真机调试、代码约定
-- [贡献指南](docs/contributing.md)：发布与签名
+- [贡献指南](docs/contributing.md)：对 MaiBot 的改动原则、发布与签名
 
 ## 开源许可
 

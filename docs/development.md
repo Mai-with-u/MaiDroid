@@ -31,7 +31,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 "$JAVA_HOME/bin/java" -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain assembleDebug
 ```
 
-产物在 `app/build/outputs/apk/debug/`。debug 包用每台机器自动生成的调试密钥签名，不同机器构建的包互相覆盖安装前要先卸载（卸载会清掉容器数据）。发布流程见 README 的“发布与签名”。
+产物在 `app/build/outputs/apk/debug/`。debug 包用每台机器自动生成的调试密钥签名，不同机器构建的包互相覆盖安装前要先卸载（卸载会清掉容器数据）。发布流程见 [contributing.md](contributing.md) 的“发布与签名”。
 
 ### 单元测试覆盖了什么
 
