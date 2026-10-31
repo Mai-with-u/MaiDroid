@@ -26,7 +26,6 @@ import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.maibot.update.MaiBotRevision
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
-import org.maiwithu.maidroid.maibot.update.MaiBotUpdateScripts
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -133,7 +132,7 @@ internal fun MaiBotUpdateDialog(
 ) {
     val primaryButton = maiBotUpdatePrimaryButton(state)
     val showLatest = state.latest != null && state.phase != MaiBotUpdatePhase.Idle
-    // 有新版本或上次更新失败时提醒：被改过的受版本管理文件会先导出补丁，再还原为上游版本。
+    // 有新版本或上次更新失败时提醒：用户改过的源码文件更新时会直接还原为上游版本，不做备份。
     val showLocalChangeNote = state.localChangeCount > 0 && (
         state.phase == MaiBotUpdatePhase.Available ||
             state.failedAction == MaiBotUpdateAction.Apply
@@ -174,13 +173,9 @@ internal fun MaiBotUpdateDialog(
 
                 if (showLocalChangeNote) {
                     UpdateNote(
-                        "检测到 ${state.localChangeCount} 个源码文件被修改。更新前会导出补丁到 " +
-                            "${MaiBotUpdateScripts.BACKUP_DIR}，再还原为上游版本；配置、数据和插件不受影响。"
+                        "检测到 ${state.localChangeCount} 个 MaiBot 源码文件被改动过，更新时会直接还原为上游版本；" +
+                            "配置、数据和插件不受影响。"
                     )
-                }
-
-                if (state.phase == MaiBotUpdatePhase.Updated && state.backupFile != null) {
-                    UpdateNote("本地改动已备份到 ${state.backupFile}")
                 }
             }
         },

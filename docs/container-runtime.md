@@ -183,7 +183,7 @@ hash 要按 MaiBot 的算法算（`agreementHash`）：它用 Python 文本模�
 OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新不用 `git pull`：
 
 1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。
-2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 有被改过的受版本管理文件就先 `git diff` 导出补丁到 `/root/.maidroid/maibot-backups/` -> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
+2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 在终端日志里列出被改过的受版本管理文件（不备份，MaiDroid 不支持在手机上改源码；`uv.lock` 由 MaiDroid 改写成镜像源，不算用户改动）-> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
 
 被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。
 

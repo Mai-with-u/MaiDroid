@@ -38,14 +38,13 @@ internal enum class MaiBotUpdateAction {
     Apply
 }
 
-/** 在线更新的界面状态：当前与上游版本、本地改动数、补丁备份位置、进行中的步骤说明和失败原因。 */
+/** 在线更新的界面状态：当前与上游版本、用户改过的源码文件数、进行中的步骤说明和失败原因。 */
 internal data class MaiBotUpdateState(
     val phase: MaiBotUpdatePhase = MaiBotUpdatePhase.Idle,
     val branch: String? = null,
     val installed: MaiBotRevision? = null,
     val latest: MaiBotRevision? = null,
     val localChangeCount: Int = 0,
-    val backupFile: String? = null,
     val progressText: String? = null,
     val errorMessage: String? = null,
     val failedAction: MaiBotUpdateAction? = null
@@ -273,8 +272,7 @@ internal class MaiBotUpdateManager(
                 branch = report.branch ?: it.branch,
                 installed = report.installed ?: it.installed,
                 latest = report.latest ?: it.latest,
-                localChangeCount = report.localChangeCount ?: it.localChangeCount,
-                backupFile = report.backupFile ?: it.backupFile
+                localChangeCount = report.localChangeCount ?: it.localChangeCount
             )
         }
     }

@@ -12,11 +12,13 @@ import org.maiwithu.maidroid.runtime.shellQuote
  * OOBE 以 `--depth=1` 经镜像克隆 MaiBot，origin 指向的可能是早已失效的镜像地址，
  * 所以这里不直接 `git pull`，而是每次都按镜像列表重新拉取上游分支到 origin/<分支>，
  * 再把工作区硬重置过去。被 Git 忽略的配置、数据、插件和 .venv 不受影响；
- * 被改过的受版本管理文件会先导出成补丁备份。
+ * 被改过的受版本管理文件直接还原为上游版本，不做备份：MaiDroid 不支持在手机上改 MaiBot 源码，
+ * 用户在“文件”应用里误改的源码随更新自动恢复。
  */
 internal object MaiBotUpdateScripts {
-    /** 容器内路径：更新前被改动的受版本管理文件导出为补丁放在这里。 */
-    const val BACKUP_DIR = "/root/.maidroid/maibot-backups"
+    // 统计“用户改过的源码”时排除 uv.lock：容器里 uv sync 会把它的源地址改写成国内镜像，
+    // 这是 MaiDroid 自己改的，不算用户改动；重置时它照样还原，随后重装依赖时再次改写。
+    private const val USER_CHANGES_PATHSPEC = "-- . ':(exclude)uv.lock'"
 
     /** 只读当前安装的版本，不联网，MaiBot 运行中也能执行。 */
     fun installedRevision(): ContainerScript = script(
@@ -32,12 +34,12 @@ internal object MaiBotUpdateScripts {
         reportScript(includeLatest = true)
     )
 
-    /** 拉取 -> 备份本地改动 -> 硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。 */
+    /** 拉取 -> 丢弃本地改动并硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。 */
     fun fetchAndReset(): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
         repositoryPrelude(),
         fetchScript(),
-        backupAndResetScript(),
+        resetScript(),
         reportScript(includeLatest = true)
     )
 
@@ -81,15 +83,12 @@ internal object MaiBotUpdateScripts {
         maidroid_github_fetch ${shellQuote(MaiBotScripts.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
         """.trimIndent()
 
-    private fun backupAndResetScript(): String =
+    // 用户改过的源码文件先在终端日志里列一遍（知道还原了什么），再硬重置到上游；被忽略的文件不受影响。
+    private fun resetScript(): String =
         """
-        if [ -n "${'$'}(git status --porcelain --untracked-files=no)" ]; then
-            backup_dir=${shellQuote(BACKUP_DIR)}
-            mkdir -p "${'$'}backup_dir"
-            backup_file="${'$'}backup_dir/local-changes-${'$'}(date +%Y%m%d%H%M%S).patch"
-            git diff --binary HEAD > "${'$'}backup_file"
-            printf "[MaiBotUpdate] local changes saved to %s\n" "${'$'}backup_file"
-            printf "%s=%s\n" ${MaiBotUpdateReportKeys.BACKUP} "${'$'}backup_file"
+        changed="${'$'}(git status --porcelain --untracked-files=no $USER_CHANGES_PATHSPEC)"
+        if [ -n "${'$'}changed" ]; then
+            printf "[MaiBotUpdate] discarding local changes to tracked files:\n%s\n" "${'$'}changed"
         fi
         printf "[MaiBotUpdate] resetting to %s\n" "${'$'}(git rev-parse --short "${'$'}remote_ref")"
         git reset --hard "${'$'}remote_ref"
@@ -105,7 +104,7 @@ internal object MaiBotUpdateScripts {
         printf "%s=%s\n" ${MaiBotUpdateReportKeys.BRANCH} "${'$'}branch"
         maidroid_report_revision ${MaiBotUpdateReportKeys.INSTALLED} HEAD
         $latestLine
-        printf "%s=%s\n" ${MaiBotUpdateReportKeys.LOCAL_CHANGES} "${'$'}(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+        printf "%s=%s\n" ${MaiBotUpdateReportKeys.LOCAL_CHANGES} "${'$'}(git status --porcelain --untracked-files=no $USER_CHANGES_PATHSPEC | wc -l | tr -d ' ')"
         """.trimIndent()
     }
 }

@@ -17,8 +17,7 @@ internal data class MaiBotUpdateReport(
     val branch: String?,
     val installed: MaiBotRevision?,
     val latest: MaiBotRevision?,
-    val localChangeCount: Int?,
-    val backupFile: String?
+    val localChangeCount: Int?
 ) {
     val hasUpdate: Boolean
         get() = installed != null && latest != null && installed.commit != latest.commit
@@ -31,7 +30,6 @@ internal object MaiBotUpdateReportKeys {
     const val INSTALLED = "${PREFIX}INSTALLED"
     const val LATEST = "${PREFIX}LATEST"
     const val LOCAL_CHANGES = "${PREFIX}LOCAL_CHANGES"
-    const val BACKUP = "${PREFIX}BACKUP"
 }
 
 /** 同一个 key 出现多次时以最后一次为准：应用更新时脚本会在重置后再打印一次当前版本。 */
@@ -46,8 +44,7 @@ internal fun parseMaiBotUpdateReport(output: String): MaiBotUpdateReport {
         branch = values[MaiBotUpdateReportKeys.BRANCH]?.trim()?.ifBlank { null },
         installed = values[MaiBotUpdateReportKeys.INSTALLED]?.let(::parseMaiBotRevision),
         latest = values[MaiBotUpdateReportKeys.LATEST]?.let(::parseMaiBotRevision),
-        localChangeCount = values[MaiBotUpdateReportKeys.LOCAL_CHANGES]?.trim()?.toIntOrNull(),
-        backupFile = values[MaiBotUpdateReportKeys.BACKUP]?.trim()?.ifBlank { null }
+        localChangeCount = values[MaiBotUpdateReportKeys.LOCAL_CHANGES]?.trim()?.toIntOrNull()
     )
 }
 
