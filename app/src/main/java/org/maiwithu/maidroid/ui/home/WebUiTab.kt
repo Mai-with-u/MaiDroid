@@ -9,13 +9,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -162,6 +168,15 @@ internal fun WebUiTabPage(
     // 横幅右侧给刷新按钮让出位置；刷新按钮挪进导航栏时左右对称留白。
     val bannerEndPadding = if (showRefreshButton) 56.dp else 16.dp
 
+    // 弹出键盘时 WebView 底部让出键盘的高度。主界面是全面屏（edge-to-edge），清单里的 adjustResize 不再缩小窗口，
+    // 不让的话 WebView 一直是全高，键盘直接盖住网页下半截（聊天页的输入栏首当其冲）。
+    // 点输入框 -> 键盘开始弹出 -> WebView 一次缩到键盘上沿 -> 网页可视高度变矮，内核把正在输入的框滚到可见处，
+    // 贴底的输入栏落在键盘正上方。按键盘的最终高度（imeAnimationTarget）只缩一次，不跟着键盘动画逐帧缩放：
+    // WebUI 页面重，每帧重新排版会卡；收起键盘时 WebView 先恢复全高，露出的部分还被正在收起的键盘盖着，看不出跳动。
+    // 横屏时有些输入法会切成悬浮键盘，悬浮键盘不占底部、报上来的高度是 0，这时 WebView 保持原样不缩。
+    @OptIn(ExperimentalLayoutApi::class)
+    val imeClearance = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
+
     // 麦麦重启（改时区、换装 QQ 适配器等）的那十几秒里页签刚好重新加载（比如切回应用时界面被重建），
     // 会停在“网页无法打开”：WebUI 重新上线时，上次加载失败就自动重载一次，不用再手动点刷新或“唤醒”。
     // 在别的标签时上线，切回 WebUI 页签的第一帧也会检查一次。只在上线的那一刻重载，WebUI 自身出错不会反复刷新。
@@ -205,6 +220,7 @@ internal fun WebUiTabPage(
             },
             modifier = Modifier
                 .padding(top = statusBarTop)
+                .windowInsetsPadding(imeClearance)
                 .fillMaxSize()
                 .onSizeChanged { size ->
                     state.webViewHasSize = size.width > 0 && size.height > 0

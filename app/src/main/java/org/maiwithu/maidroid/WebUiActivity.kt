@@ -57,14 +57,19 @@ class WebUiActivity : ComponentActivity() {
             this.webViewClient = webViewClient
             webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
         }
-        // 网页放进一层容器，容器按系统栏和挖孔留内边距：Android 15 起强制沉浸式，
-        // 不留的话网页会画到状态栏和横屏侧边的摄像头挖孔下面；旧系统由窗口自己避让，这里拿到的是 0。
+        // 网页放进一层容器，容器按系统栏、挖孔和键盘留内边距：Android 15 起强制沉浸式，
+        // 不留的话网页会画到状态栏和横屏侧边的摄像头挖孔下面，弹出的键盘也会直接盖住网页（adjustResize 不再缩小窗口）；
+        // 旧系统由窗口自己避让，这里拿到的是 0。悬浮键盘不占底部，报上来的键盘高度是 0，网页不用让。
         val container = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         }
         ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
-            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val safe = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime()
+            )
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             WindowInsetsCompat.CONSUMED
         }

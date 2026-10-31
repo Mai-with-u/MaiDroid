@@ -216,4 +216,6 @@ WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开�
 
 WebUI 页签顶部按情况显示“WebView 加载失败，重试”或“WebUI 离线，唤醒”。主框架加载失败后 WebView 还会为报错页回调一次 `onPageFinished`，`WebUiWebViewClient` 记着这一轮出过错，不把那次当成加载成功，否则重试条刚出来就被清掉，只剩一片黑。麦麦重启（改时区、换装 QQ 适配器）的十几秒里页签刚好重新加载（切回应用时界面被重建、用户点了刷新）会停在报错页；`WebUiTabPage` 在 WebUI 重新上线时发现上次加载失败，就自动重载一次。只在上线那一刻重载，WebUI 自身出错不会反复刷新。
 
+弹出键盘时 WebView 底部让出键盘高度：主界面是全面屏（`enableEdgeToEdge`），清单里的 `adjustResize` 不再缩小窗口，WebUI 页签按 `WindowInsets.imeAnimationTarget` 给 WebView 加底部内边距，网页可视高度跟着变矮，内核把正在输入的框滚到可见处。按键盘最终高度只缩一次，不随键盘动画逐帧缩放（WebUI 页面重，逐帧重排会卡）；悬浮键盘报上来的高度是 0，不缩。全屏 `WebUiActivity` 的容器内边距也加上了键盘（旧系统由窗口自己缩小，拿到的是 0；Android 15 起强制全面屏后才起作用）。
+
 Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数（见 `WebUiTab.rememberWebUiTabState`），否则 WebView 把页面高度当成 0，vh 恒为 0 整页空白。
