@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid
 
 import android.content.Context
+import org.maiwithu.maidroid.appupdate.AppUpdateManager
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
@@ -47,6 +48,11 @@ internal class AppDependencies(context: Context) {
     }
     val maiBotUpdater: MaiBotUpdateManager by lazy {
         MaiBotUpdateManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess)
+    }
+
+    // ── MaiDroid 应用本体的在线更新（与容器无关） ─────────────────────────
+    val appUpdater: AppUpdateManager by lazy {
+        AppUpdateManager(appContext, BuildConfig.VERSION_NAME, BuildConfig.APP_UPDATE_API_URL)
     }
 }
 

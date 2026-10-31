@@ -21,6 +21,11 @@ val hasReleaseSigning = releaseKeystorePath != null &&
     releaseKeystorePassword != null &&
     releaseKeyAlias != null
 
+// 应用自更新查询的 Release 接口。只有本地真机调试时才用 -PappUpdateApiUrl=... 指到电脑上的假 Release 源
+// （经 adb reverse 访问），CI 和日常构建都用默认的 GitHub 地址。
+val appUpdateApiUrl = providers.gradleProperty("appUpdateApiUrl").orNull?.takeIf { it.isNotBlank() }
+    ?: "https://api.github.com/repos/Mai-with-u/MaiDroid/releases/latest"
+
 android {
     namespace = "org.maiwithu.maidroid"
     compileSdk {
@@ -35,6 +40,7 @@ android {
         targetSdk = 36
         versionCode = 3
         versionName = "0.1.2"
+        buildConfigField("String", "APP_UPDATE_API_URL", "\"$appUpdateApiUrl\"")
     }
 
     signingConfigs {

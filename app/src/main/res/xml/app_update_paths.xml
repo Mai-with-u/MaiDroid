@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用自更新的 FileProvider 只共享这一个目录：AppUpdateFiles 把下载好的安装包放在 cacheDir/app-update/ -->
+<paths>
+    <cache-path
+        name="app_update"
+        path="app-update/" />
+</paths>
