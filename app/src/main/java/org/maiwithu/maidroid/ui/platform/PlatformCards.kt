@@ -199,7 +199,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PlatformLogo(
+internal fun PlatformLogo(
     @DrawableRes iconRes: Int,
     contentDescription: String?,
     color: Color,
@@ -223,7 +223,7 @@ private fun PlatformLogo(
 }
 
 @Composable
-private fun PlatformBadge(text: String) {
+internal fun PlatformBadge(text: String) {
     Box(
         modifier = Modifier
             .height(16.dp)
@@ -279,24 +279,15 @@ internal fun PlatformInstallCard(
     onUnsupportedInstall: () -> Unit
 ) {
     val hasAdapters = platform.adapters.isNotEmpty()
-    val isNapCatTarget = selectedAdapter == PlatformAdapter.NapCat
-    val isQqOfficialTarget = selectedAdapter == PlatformAdapter.QqOfficial
-    // 右上角按钮跟着选中的适配器显示各自的安装进度；没适配的选项一律显示下载图标。
-    val buttonState = when {
-        isNapCatTarget -> InstallButtonState(
-            installing = napCatState.isInstalling,
-            progress = napCatState.progress,
-            installed = napCatState.canOpenSettings,
-            failed = napCatState.phase == NapCatInstallPhase.Failed
-        )
-        isQqOfficialTarget -> InstallButtonState(
-            installing = qqOfficialState.isInstalling,
-            progress = qqOfficialState.progress,
-            installed = qqOfficialState.installed,
-            failed = qqOfficialState.phase == QqOfficialInstallPhase.Failed
-        )
-        else -> InstallButtonState()
-    }
+    val installAction = platformInstallAction(
+        selectedAdapter = selectedAdapter,
+        napCatState = napCatState,
+        qqOfficialState = qqOfficialState,
+        onNapCatInstall = onNapCatInstall,
+        onNapCatSettings = onNapCatSettings,
+        onQqOfficialSettings = onQqOfficialSettings,
+        onUnsupportedInstall = onUnsupportedInstall
+    )
 
     Box(
         modifier = Modifier
@@ -364,16 +355,8 @@ internal fun PlatformInstallCard(
         }
 
         DownloadIconButton(
-            state = buttonState,
-            onClick = {
-                when {
-                    isQqOfficialTarget -> if (!qqOfficialState.isInstalling) onQqOfficialSettings()
-                    !isNapCatTarget -> onUnsupportedInstall()
-                    napCatState.isInstalling -> Unit
-                    napCatState.canOpenSettings -> onNapCatSettings()
-                    else -> onNapCatInstall()
-                }
-            },
+            state = installAction.state,
+            onClick = installAction.onClick,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 3.dp, end = 8.dp)
@@ -394,15 +377,63 @@ internal fun PlatformInstallCard(
 }
 
 // 卡片右上角按钮的样子：安装中显示进度环，已安装显示齿轮，否则显示下载图标（上次失败时标红）。
-private data class InstallButtonState(
+internal data class InstallButtonState(
     val installing: Boolean = false,
     val progress: Float = 0f,
     val installed: Boolean = false,
     val failed: Boolean = false
 )
 
+/** 平台右侧按钮现在的样子，以及点下去要做的事。平板的卡片和手机的列表行共用。 */
+internal class PlatformInstallAction(
+    val state: InstallButtonState,
+    val onClick: () -> Unit
+)
+
+/**
+ * 按选中的接入方式决定右侧按钮：按钮跟着选中的适配器显示各自的安装进度，没适配的选项一律显示下载图标。
+ * 点下去：官方机器人 -> 打开凭据弹窗（安装中不响应）；NapCat -> 安装中不响应、装好进设置、没装就开始安装；
+ * 其他没适配的选项 -> 提示暂未适配。
+ */
+internal fun platformInstallAction(
+    selectedAdapter: PlatformAdapter?,
+    napCatState: NapCatPlatformState,
+    qqOfficialState: QqOfficialPlatformState,
+    onNapCatInstall: () -> Unit,
+    onNapCatSettings: () -> Unit,
+    onQqOfficialSettings: () -> Unit,
+    onUnsupportedInstall: () -> Unit
+): PlatformInstallAction {
+    val isNapCatTarget = selectedAdapter == PlatformAdapter.NapCat
+    val isQqOfficialTarget = selectedAdapter == PlatformAdapter.QqOfficial
+    val state = when {
+        isNapCatTarget -> InstallButtonState(
+            installing = napCatState.isInstalling,
+            progress = napCatState.progress,
+            installed = napCatState.canOpenSettings,
+            failed = napCatState.phase == NapCatInstallPhase.Failed
+        )
+        isQqOfficialTarget -> InstallButtonState(
+            installing = qqOfficialState.isInstalling,
+            progress = qqOfficialState.progress,
+            installed = qqOfficialState.installed,
+            failed = qqOfficialState.phase == QqOfficialInstallPhase.Failed
+        )
+        else -> InstallButtonState()
+    }
+    return PlatformInstallAction(state) {
+        when {
+            isQqOfficialTarget -> if (!qqOfficialState.isInstalling) onQqOfficialSettings()
+            !isNapCatTarget -> onUnsupportedInstall()
+            napCatState.isInstalling -> Unit
+            napCatState.canOpenSettings -> onNapCatSettings()
+            else -> onNapCatInstall()
+        }
+    }
+}
+
 @Composable
-private fun DownloadIconButton(
+internal fun DownloadIconButton(
     state: InstallButtonState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier

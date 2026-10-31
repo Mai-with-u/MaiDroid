@@ -665,11 +665,16 @@ private fun DiscoverHeader(
     }
 }
 
+/**
+ * 分类按钮。平板上是 72×42 的大按钮；手机列表里用紧凑版：32dp 高、宽度随文字，
+ * 字号降到正文大小，不再比平台名还抢眼。
+ */
 @Composable
-private fun CategoryChip(
+internal fun CategoryChip(
     text: String,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    compact: Boolean = false
 ) {
     val backgroundColor by animateColorAsState(
         targetValue = if (selected) BrandOrange else CardSurface,
@@ -698,8 +703,17 @@ private fun CategoryChip(
 
     Box(
         modifier = Modifier
-            .width(72.dp)
-            .height(42.dp)
+            .then(
+                if (compact) {
+                    Modifier
+                        .height(32.dp)
+                        .widthIn(min = 56.dp)
+                } else {
+                    Modifier
+                        .width(72.dp)
+                        .height(42.dp)
+                }
+            )
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -717,15 +731,16 @@ private fun CategoryChip(
                     stiffness = Spring.StiffnessMediumLow
                 )
             )
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .then(if (compact) Modifier.padding(horizontal = 12.dp) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             color = TextPrimary,
-            fontSize = TextSizes.Title,
+            fontSize = if (compact) TextSizes.Body else TextSizes.Title,
             fontWeight = FontWeight.Bold,
-            lineHeight = 20.sp
+            lineHeight = if (compact) 18.sp else 20.sp
         )
     }
 }
