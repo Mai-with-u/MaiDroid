@@ -10,13 +10,23 @@ import android.webkit.WebView
 /**
  * 加载 WebUI 用的 WebChromeClient，主页 WebUI 页签和全屏 WebUiActivity 共用：
  * 网页 console 输出转到 logcat（排查 WebUI 显示问题时用），网页要选文件时交给 WebUiFileChooser 打开系统选文件页。
+ * 给了 onPageBackgroundColor 时，console 里的网页底色上报（见 WebUiPageBackground）解析后交给它，不写进 logcat。
  */
 internal class WebUiChromeClient(
     private val logTag: String,
-    private val fileChooser: WebUiFileChooser
+    private val fileChooser: WebUiFileChooser,
+    private val onPageBackgroundColor: ((argb: Int) -> Unit)? = null
 ) : WebChromeClient() {
 
     override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+        // 底色上报每换一次主题就来一行，只交给宿主，不刷 logcat。
+        if (onPageBackgroundColor != null) {
+            val argb = WebUiPageBackground.parseReport(consoleMessage.message())
+            if (argb != null) {
+                onPageBackgroundColor.invoke(argb)
+                return true
+            }
+        }
         Log.d(
             logTag,
             "console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} " +
