@@ -63,11 +63,18 @@ import org.maiwithu.maidroid.webui.createWebUiWebView
 /** WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。 */
 internal class WebUiTabState internal constructor(
     val webView: WebView,
-    val fileChooser: WebUiFileChooser
+    val fileChooser: WebUiFileChooser,
+    val webViewClient: WebUiWebViewClient
 ) {
     var webViewError by mutableStateOf<String?>(null)
     var reloadToken by mutableIntStateOf(0)
     var webViewHasSize by mutableStateOf(false)
+
+    /** 清掉错误提示并重新加载：换一个加载令牌，页签的 update 看到令牌变了就按当前尺寸重新 loadUrl。 */
+    fun reload() {
+        webViewError = null
+        reloadToken += 1
+    }
 }
 
 /** 创建 WebUI 页签的 WebView（debug 包允许 Chrome 远程调试），离开主页时销毁。 */
@@ -96,19 +103,21 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
         }
 
-        WebUiTabState(webView, fileChooser).also { tabState ->
-            webView.webViewClient = WebUiWebViewClient(
-                logTag = MaiBotWebUi.LOG_TAG,
-                // APP 底栏在 WebUI 页签默认收成右下角的小按钮，网页底部不用再给它留白；
-                // 展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
-                onPageFinishedCallback = { _, _ ->
-                    tabState.webViewError = null
-                },
-                onMainFrameError = { _, error ->
-                    tabState.webViewError = "${error.errorCode}: ${error.description}"
-                }
-            )
-        }
+        // 回调里要改页签状态，状态里又要持有 client：先建 client，回调经 holder 找到稍后建好的状态。
+        var tabState: WebUiTabState? = null
+        val webViewClient = WebUiWebViewClient(
+            logTag = MaiBotWebUi.LOG_TAG,
+            // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时在左侧另占一列），网页底部不用再给它留白；
+            // 展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
+            onPageFinishedCallback = { _, _ ->
+                tabState?.webViewError = null
+            },
+            onMainFrameError = { _, error ->
+                tabState?.webViewError = "${error.errorCode}: ${error.description}"
+            }
+        )
+        webView.webViewClient = webViewClient
+        WebUiTabState(webView, fileChooser, webViewClient).also { tabState = it }
     }
 
     // 网页点上传按钮 -> fileChooser 用这个 launcher 打开系统选文件页 -> 选完回到这里，把结果交回网页。
@@ -135,7 +144,8 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
 /**
  * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），WebView 拿到非零尺寸后才开始加载。
- * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”，右上角是刷新按钮。
+ * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局视口至少 1600×900），竖屏按手机版。
+ * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”；竖屏时右上角是刷新按钮，横屏时刷新按钮在左侧导航栏里。
  */
 @Composable
 internal fun WebUiTabPage(
@@ -144,9 +154,12 @@ internal fun WebUiTabPage(
     state: WebUiTabState,
     modifier: Modifier = Modifier,
     terminalLogs: List<String> = emptyList(),
-    url: String = MaiBotWebUi.URL
+    url: String = MaiBotWebUi.URL,
+    showRefreshButton: Boolean = true
 ) {
     val statusBarTop = statusBarTopInset()
+    // 横幅右侧给刷新按钮让出位置；刷新按钮挪进导航栏时左右对称留白。
+    val bannerEndPadding = if (showRefreshButton) 56.dp else 16.dp
 
     Box(
         modifier = modifier
@@ -168,10 +181,14 @@ internal fun WebUiTabPage(
                 if (state.webViewHasSize && webView.tag != loadRequest) {
                     webView.tag = loadRequest
                     state.webViewError = null
+                    // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                    // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
+                    state.webViewClient.applyDesktopViewport(webView)
                     Log.d(
                         MaiBotWebUi.LOG_TAG,
                         "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                            "${webView.width}x${webView.height}"
+                            "${webView.width}x${webView.height}, " +
+                            "desktop width=${state.webViewClient.desktopLayoutWidthCss}"
                     )
                     webView.loadUrl(launchUrl)
                 }
@@ -188,19 +205,16 @@ internal fun WebUiTabPage(
             WebUiStatusBanner(
                 message = "WebView 加载失败：${state.webViewError}",
                 action = "重试",
-                onAction = {
-                    state.webViewError = null
-                    state.reloadToken += 1
-                },
+                onAction = state::reload,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
             )
         } else if (!webUiOnline) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Corners.Chip))
                     .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
@@ -239,15 +253,14 @@ internal fun WebUiTabPage(
             }
         }
 
-        WebUiRefreshButton(
-            onClick = {
-                state.webViewError = null
-                state.reloadToken += 1
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = statusBarTop + 8.dp, end = 16.dp)
-        )
+        if (showRefreshButton) {
+            WebUiRefreshButton(
+                onClick = state::reload,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = statusBarTop + 8.dp, end = 16.dp)
+            )
+        }
     }
 }
 

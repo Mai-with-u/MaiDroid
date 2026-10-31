@@ -1,11 +1,17 @@
 package org.maiwithu.maidroid
 
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
 import android.webkit.WebView
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiChromeClient
@@ -38,13 +44,31 @@ class WebUiActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // 横屏时和主界面一样隐藏状态栏和导航栏（从边缘滑动临时呼出），竖屏保持系统栏常显。
+        applySystemBars(
+            window = window,
+            landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+            hideNavigationBar = false
+        )
 
         fileChooser.launcher = fileChooserLauncher
+        val webViewClient = WebUiWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
         webView = createWebUiWebView(this).apply {
-            webViewClient = WebUiWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
+            this.webViewClient = webViewClient
             webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
         }
-        setContentView(webView)
+        // 网页放进一层容器，容器按系统栏和挖孔留内边距：Android 15 起强制沉浸式，
+        // 不留的话网页会画到状态栏和横屏侧边的摄像头挖孔下面；旧系统由窗口自己避让，这里拿到的是 0。
+        val container = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+        setContentView(container)
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -60,12 +84,18 @@ class WebUiActivity : ComponentActivity() {
         )
 
         val url = intent.getStringExtra(EXTRA_URL) ?: MaiBotWebUi.URL
-        val launchUrl = if (MaiBotWebUi.isMaiBotWebUiUrl(url)) {
+        val isMaiBotWebUi = MaiBotWebUi.isMaiBotWebUiUrl(url)
+        val launchUrl = if (isMaiBotWebUi) {
             MaiBotWebUi.launchUrl(appDependencies.runtimePaths, TerminalLog.logs.value, baseUrl = url)
         } else {
             url
         }
-        webView.loadUrl(launchUrl)
+        // 等 WebView 排好版、量出尺寸再加载：横屏时 MaiBot WebUI 要按尺寸算桌面版布局宽度；
+        // NapCat 管理页不在这次的桌面版范围内，始终按手机版。
+        webView.doOnLayout {
+            webViewClient.applyDesktopViewport(webView, enabled = isMaiBotWebUi)
+            webView.loadUrl(launchUrl)
+        }
     }
 
     override fun onDestroy() {

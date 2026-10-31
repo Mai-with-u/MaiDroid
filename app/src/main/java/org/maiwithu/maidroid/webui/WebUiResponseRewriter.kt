@@ -11,6 +11,7 @@ import java.net.URL
 /**
  * 拦截 MaiBot WebUI 的请求，在 APP 侧改写返回内容后再交给 WebView：
  * - 页面 HTML：在第一个脚本之前注入 WebUiInjectedScripts.pageBootstrap（主题 + vh 兜底）；
+ *   横屏桌面版时再把 viewport meta 换成 WebUiDesktopViewport 算出的布局宽度；
  * - 本机 .css 样式表：把 env(safe-area-inset-bottom) 加上 APP 底部导航栏的占高。
  * 其余请求（脚本、图片、接口、第三方资源）原样放行。由 WebUiWebViewClient 调用。
  */
@@ -20,6 +21,8 @@ internal object WebUiResponseRewriter {
 
     private val firstScriptTagRegex = Regex("""<script(?:\s|>)""", RegexOption.IGNORE_CASE)
     private val closingHeadTagRegex = Regex("""</head>""", RegexOption.IGNORE_CASE)
+    private val viewportMetaRegex =
+        Regex("""<meta\b[^>]*\bname\s*=\s*["']?viewport["']?[^>]*>""", RegexOption.IGNORE_CASE)
 
     // 只匹配样式声明里的 env(safe-area-inset-bottom)；Tailwind 类名选择器里的括号带反斜杠转义，不会被误匹配。
     private val bottomSafeAreaRegex =
@@ -31,14 +34,16 @@ internal object WebUiResponseRewriter {
     /**
      * 拦截 WebUI 的请求并改写内容。
      * 触发条件：主框架 HTML 导航，或底部安全区高度大于 0 时 WebUI 自己的 .css 样式表请求。
-     * 执行顺序：HTML 注入主题和视口修补脚本；样式表把 env(safe-area-inset-bottom) 加上 APP 导航栏占高。
+     * 执行顺序：HTML 注入主题和视口修补脚本（desktopLayoutWidthCss 不为空时同时改写 viewport 宽度）；
+     * 样式表把 env(safe-area-inset-bottom) 加上 APP 导航栏占高。
      * 原因：导航栏浮在 WebView 上，网页的 viewport 又没有 viewport-fit=cover，env 恒为 0，
      * 上游贴底的悬浮底栏会被导航栏盖住；把导航栏占高并进安全区后，上游所有贴底元素会一起上移。
      */
     fun intercept(
         request: WebResourceRequest,
         logTag: String = TAG,
-        bottomInsetCssPx: Int = 0
+        bottomInsetCssPx: Int = 0,
+        desktopLayoutWidthCss: Int? = null
     ): WebResourceResponse? {
         val isHtml = shouldInterceptHtmlRequest(request)
         val isStylesheet = !isHtml && bottomInsetCssPx > 0 && shouldInterceptStylesheetRequest(request)
@@ -72,7 +77,7 @@ internal object WebUiResponseRewriter {
 
             val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             val modifiedBody = if (isHtml) {
-                injectPageBootstrap(body)
+                injectPageBootstrap(body, desktopLayoutWidthCss)
             } else {
                 rewriteBottomSafeArea(body, bottomInsetCssPx)
             }
@@ -152,10 +157,27 @@ internal object WebUiResponseRewriter {
         cookieManager.flush()
     }
 
-    /** 在页面第一个脚本之前注入主题和视口单位修补脚本，保证它们先于页面自己的脚本和首次渲染执行。 */
-    internal fun injectPageBootstrap(html: String): String {
-        val bootstrap = WebUiInjectedScripts.pageBootstrap()
+    /**
+     * 在页面第一个脚本之前注入主题和视口单位修补脚本，保证它们先于页面自己的脚本和首次渲染执行。
+     * desktopLayoutWidthCss 不为空（横屏桌面版）时，先把页面的 viewport meta 整个换成指定宽度；
+     * 页面没写 viewport meta 就跟着注入的脚本补一个。直接改 HTML 文本而不是等脚本改 DOM，
+     * 是为了让网页第一次排版就按桌面宽度来，不会先闪一下手机版。
+     */
+    internal fun injectPageBootstrap(html: String, desktopLayoutWidthCss: Int? = null): String {
+        var page = html
+        var bootstrap = WebUiInjectedScripts.pageBootstrap()
+        if (desktopLayoutWidthCss != null) {
+            val desktopViewport = WebUiDesktopViewport.viewportMetaTag(desktopLayoutWidthCss)
+            if (viewportMetaRegex.containsMatchIn(page)) {
+                page = viewportMetaRegex.replace(page) { desktopViewport }
+            } else {
+                bootstrap = desktopViewport + bootstrap
+            }
+        }
+        return insertBootstrap(page, bootstrap)
+    }
 
+    private fun insertBootstrap(html: String, bootstrap: String): String {
         firstScriptTagRegex.find(html)?.let { match ->
             return html.substring(0, match.range.first) +
                 bootstrap +
