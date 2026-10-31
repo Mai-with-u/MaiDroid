@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -64,6 +65,7 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiChromeClient
 import org.maiwithu.maidroid.webui.WebUiFileChooser
+import org.maiwithu.maidroid.webui.WebUiPageBackground
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
@@ -76,6 +78,9 @@ internal class WebUiTabState internal constructor(
     var webViewError by mutableStateOf<String?>(null)
     var reloadToken by mutableIntStateOf(0)
     var webViewHasSize by mutableStateOf(false)
+
+    /** 网页自己的底色（见 WebUiPageBackground）；还没报上来或加载失败时为 null。横屏时涂在侧栏底下让出的那一条。 */
+    var pageBackground by mutableStateOf<Color?>(null)
 
     /** 清掉错误提示并重新加载：换一个加载令牌，页签的 update 看到令牌变了就按当前尺寸重新 loadUrl。 */
     fun reload() {
@@ -95,6 +100,9 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
         val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
 
+        // 回调里要改页签状态，状态里又要持有 WebView 和 client：先建它们，回调经 holder 找到稍后建好的状态。
+        var tabState: WebUiTabState? = null
+
         val webView = createWebUiWebView(context).apply {
             // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
             // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
@@ -107,20 +115,25 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             overScrollMode = WebView.OVER_SCROLL_NEVER
             isFocusable = true
             isFocusableInTouchMode = true
-            webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
+            webChromeClient = WebUiChromeClient(
+                logTag = MaiBotWebUi.LOG_TAG,
+                fileChooser = fileChooser,
+                onPageBackgroundColor = { argb -> tabState?.pageBackground = Color(argb) }
+            )
         }
 
-        // 回调里要改页签状态，状态里又要持有 client：先建 client，回调经 holder 找到稍后建好的状态。
-        var tabState: WebUiTabState? = null
         val webViewClient = WebUiWebViewClient(
             logTag = MaiBotWebUi.LOG_TAG,
-            // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时在左侧另占一列），网页底部不用再给它留白；
-            // 展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
-            onPageFinishedCallback = { _, _ ->
+            // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时是左侧悬浮的侧栏，网页已让出它的宽度），
+            // 网页底部不用再给它留白；展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
+            // 加载成功 -> 清掉错误提示，注入底色脚本，网页随即报上底色（之后换主题再报）；加载失败 -> 底色作废。
+            onPageFinishedCallback = { view, _ ->
                 tabState?.webViewError = null
+                view.evaluateJavascript(WebUiPageBackground.watchScript, null)
             },
             onMainFrameError = { _, error ->
                 tabState?.webViewError = "${error.errorCode}: ${error.description}"
+                tabState?.pageBackground = null
             }
         )
         webView.webViewClient = webViewClient
@@ -151,8 +164,9 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
 /**
  * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），WebView 拿到非零尺寸后才开始加载。
- * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局视口至少 1600×900），竖屏按手机版。
+ * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局宽度至少 1040），竖屏按手机版。
  * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”；竖屏时右上角是刷新按钮，横屏时刷新按钮在左侧导航栏里。
+ * startClearance：横屏时左侧悬浮侧栏的宽度，网页和横幅都让开它，让出的那一条涂网页自己的底色。
  */
 @Composable
 internal fun WebUiTabPage(
@@ -162,7 +176,8 @@ internal fun WebUiTabPage(
     modifier: Modifier = Modifier,
     terminalLogs: List<String> = emptyList(),
     url: String = MaiBotWebUi.URL,
-    showRefreshButton: Boolean = true
+    showRefreshButton: Boolean = true,
+    startClearance: Dp = 0.dp
 ) {
     val statusBarTop = statusBarTopInset()
     // 横幅右侧给刷新按钮让出位置；刷新按钮挪进导航栏时左右对称留白。
@@ -189,6 +204,10 @@ internal fun WebUiTabPage(
     Box(
         modifier = modifier
             .fillMaxSize()
+            // 横屏：整页先涂网页底色 -> 左边让出侧栏宽度 -> 余下部分照旧铺页面底色、放网页和横幅。
+            // 侧栏的毛玻璃底下透出的就是网页的颜色，切换标签时这一条跟着网页一起滑走；网页还没报上底色时用页面底色。
+            .background(state.pageBackground ?: PageBackground)
+            .padding(start = startClearance)
             .background(PageBackground)
     ) {
         AndroidView(

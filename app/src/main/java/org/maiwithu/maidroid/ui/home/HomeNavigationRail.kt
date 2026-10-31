@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import eightbitlab.com.blurview.BlurTarget
+import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
@@ -49,6 +51,9 @@ private val HomeNavigationRailBarWidth = 72.dp
 /** 侧栏左右、上下的留白。 */
 private val HomeNavigationRailPadding = 12.dp
 
+/** 侧栏连同两侧留白的总宽度：页面内容左边让出这么多，静止时不被侧栏盖住。 */
+internal val HomeNavigationRailWidth = HomeNavigationRailBarWidth + HomeNavigationRailPadding * 2
+
 /**
  * 主页导航放在哪：窗口宽大于高（手机横屏、平板横屏、横向分屏）时竖着放在左侧，否则悬浮在底部。
  * 手机是细长的，横过来高度只剩 360dp 左右，底栏和页面抢高度；放到左侧只占一窄列，页面能用满整块高度。
@@ -58,11 +63,13 @@ internal fun homeUsesNavigationRail(widthDp: Float, heightDp: Float): Boolean = 
 /**
  * 横屏时主页左侧的竖向导航：上面是三个标签的毛玻璃竖条（选中块上下弹性滑动），
  * 下面是刷新 WebUI（只在 WebUI 页签显示）和终端按钮。
- * 侧栏独占一列、不盖在页面上，所以不做实时模糊，只铺毛玻璃的底色。
+ * 侧栏和竖屏底栏一样悬浮在页面上，实时模糊 blurTarget 里的页面：页面铺满整宽、内容让出侧栏宽度，
+ * 静止时玻璃底下是页面的底色，切换标签时页面整页滑动，从玻璃底下滑过。
  */
 @Composable
 internal fun HomeNavigationRail(
     selectedTab: HomeTab,
+    blurTarget: BlurTarget?,
     onTabSelected: (HomeTab) -> Unit,
     onTerminalClick: () -> Unit,
     onRefreshWebUi: (() -> Unit)?,
@@ -77,6 +84,7 @@ internal fun HomeNavigationRail(
     ) {
         AnimatedHomeTabRail(
             selectedTab = selectedTab,
+            blurTarget = blurTarget,
             onTabSelected = onTabSelected,
             modifier = Modifier
                 .fillMaxWidth()
@@ -92,13 +100,14 @@ internal fun HomeNavigationRail(
             exit = fadeOut() + scaleOut()
         ) {
             RailRefreshButton(
+                blurTarget = blurTarget,
                 onClick = { onRefreshWebUi?.invoke() },
                 modifier = Modifier.padding(bottom = 12.dp)
             )
         }
 
         HomeTerminalButton(
-            blurTarget = null,
+            blurTarget = blurTarget,
             onClick = onTerminalClick,
             modifier = Modifier.size(HomeTabButtonHeight)
         )
@@ -108,6 +117,7 @@ internal fun HomeNavigationRail(
 @Composable
 private fun AnimatedHomeTabRail(
     selectedTab: HomeTab,
+    blurTarget: BlurTarget?,
     onTabSelected: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -124,7 +134,6 @@ private fun AnimatedHomeTabRail(
             )
             .clip(shape)
             .border(1.dp, GlassStroke, shape)
-            .background(GlassSurface)
     ) {
         val tabHeight = (maxHeight - 8.dp) / HomeTab.entries.size
         val indicatorOffset by animateDpAsState(
@@ -134,6 +143,14 @@ private fun AnimatedHomeTabRail(
                 stiffness = Spring.StiffnessMediumLow
             ),
             label = "HomeRailIndicatorOffset"
+        )
+
+        // 最底层是毛玻璃，上面依次叠选中滑块和三个标签按钮。
+        BackdropBlurView(
+            blurTarget = blurTarget,
+            blurRadius = NavigationBlurRadius,
+            overlayColor = GlassSurface,
+            modifier = Modifier.matchParentSize()
         )
 
         Box(
@@ -166,6 +183,7 @@ private fun AnimatedHomeTabRail(
 
 @Composable
 private fun RailRefreshButton(
+    blurTarget: BlurTarget?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -174,10 +192,16 @@ private fun RailRefreshButton(
             .size(44.dp)
             .clip(CircleShape)
             .border(1.dp, GlassStroke, CircleShape)
-            .background(GlassSurface)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
+        BackdropBlurView(
+            blurTarget = blurTarget,
+            blurRadius = NavigationBlurRadius,
+            overlayColor = GlassSurface,
+            modifier = Modifier.matchParentSize()
+        )
+
         Icon(
             imageVector = Icons.Outlined.Refresh,
             contentDescription = "刷新 WebUI",

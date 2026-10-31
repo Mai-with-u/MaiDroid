@@ -14,10 +14,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.absolutePadding
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -133,8 +131,9 @@ internal fun HomeScreen(
 }
 
 /**
- * 三栏外壳：页面内容包在 BlurTargetHost 里，竖屏底部悬浮导航栏据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
- * 窗口宽大于高时导航改为左侧竖栏（见 homeUsesNavigationRail），页面让出这一列，不再被导航盖住。
+ * 三栏外壳：页面内容包在 BlurTargetHost 里，悬浮在上面的导航据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
+ * 窗口宽大于高时导航改为左侧悬浮竖栏（见 homeUsesNavigationRail）：页面仍铺满整宽，内容让出侧栏宽度，
+ * 静止时不被侧栏盖住，切换标签时整页滑过侧栏的毛玻璃底下。
  * 横屏摄像头挖孔转到屏幕左右两侧，整个外壳左右让开安全区：导航栏和页面都不会画进挖孔。
  */
 @Composable
@@ -184,73 +183,74 @@ private fun HomeTabsShell(
             onTerminalClick()
         }
 
-        // 三个页面；横竖屏共用，只是摆放的位置和列表末尾留白不同。
-        val tabPages: @Composable (Modifier) -> Unit = { pagesModifier ->
-            BlurTargetHost(
-                modifier = pagesModifier.background(PageBackground),
-                onTargetChanged = { blurTarget = it }
-            ) {
-                AnimatedContent(
-                    targetState = selectedTab,
+        // 横屏时页面内容左边让出侧栏的宽度；让出的那一条留在页面里，跟着页面一起滑动。
+        val pageStartClearance = if (useRail) HomeNavigationRailWidth else 0.dp
+        // 横屏侧栏不盖住页面底部，列表末尾只留一点呼吸空间；竖屏按悬浮底栏的高度留白。
+        val bottomClearance = if (useRail) RailBottomClearance else LocalBottomNavigationClearance.current
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .absolutePadding(left = safeLeft, right = safeRight)
+        ) {
+            // 三个页面铺满整块，横竖屏共用同一处组合（转向不重建 WebView）；导航悬浮在它上面，毛玻璃实时模糊它。
+            CompositionLocalProvider(LocalBottomNavigationClearance provides bottomClearance) {
+                BlurTargetHost(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PageBackground),
-                    transitionSpec = { horizontalSlideTransition(forward = targetState >= initialState, dampingRatio = 0.82f) },
-                    label = "HomeTabTransition"
-                ) { tab ->
-                    when (tab) {
-                        HomeTab.WebUi -> WebUiTabPage(
-                            webUiOnline = webUiOnline,
-                            onWakeMai = { onWakeMai(true) },
-                            state = webUiTabState,
-                            terminalLogs = terminalLogs,
-                            showRefreshButton = !useRail,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    onTargetChanged = { blurTarget = it }
+                ) {
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(PageBackground),
+                        transitionSpec = { horizontalSlideTransition(forward = targetState >= initialState, dampingRatio = 0.82f) },
+                        label = "HomeTabTransition"
+                    ) { tab ->
+                        when (tab) {
+                            HomeTab.WebUi -> WebUiTabPage(
+                                webUiOnline = webUiOnline,
+                                onWakeMai = { onWakeMai(true) },
+                                state = webUiTabState,
+                                terminalLogs = terminalLogs,
+                                showRefreshButton = !useRail,
+                                startClearance = pageStartClearance,
+                                modifier = Modifier.fillMaxSize()
+                            )
 
-                        HomeTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
-                        HomeTab.Settings -> SettingsPage(
-                            webUiOnline = webUiOnline,
-                            versionName = versionName,
-                            permissionState = permissionState,
-                            permissionActions = permissionActions,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                            HomeTab.Platforms -> MessagePlatformsPage(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = pageStartClearance)
+                            )
+
+                            HomeTab.Settings -> SettingsPage(
+                                webUiOnline = webUiOnline,
+                                versionName = versionName,
+                                permissionState = permissionState,
+                                permissionActions = permissionActions,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = pageStartClearance)
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        if (useRail) {
-            // 横屏：左侧竖栏 -> 右边页面；页面不被导航盖住，列表末尾只留一点呼吸空间。
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .absolutePadding(left = safeLeft, right = safeRight)
-            ) {
+            if (useRail) {
+                // 横屏：侧栏悬浮在页面左侧 -> 切换标签时页面整页滑动，从侧栏的毛玻璃底下滑过。
                 HomeNavigationRail(
                     selectedTab = selectedTab,
+                    blurTarget = blurTarget,
                     onTabSelected = selectTab,
                     onTerminalClick = openTerminal,
-                    onRefreshWebUi = if (selectedTab == HomeTab.WebUi) webUiTabState::reload else null
+                    onRefreshWebUi = if (selectedTab == HomeTab.WebUi) webUiTabState::reload else null,
+                    modifier = Modifier.align(Alignment.CenterStart)
                 )
-
-                CompositionLocalProvider(LocalBottomNavigationClearance provides RailBottomClearance) {
-                    tabPages(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .absolutePadding(left = safeLeft, right = safeRight)
-            ) {
-                tabPages(Modifier.fillMaxSize())
-
+            } else {
                 // 展开时的遮罩：挡住网页的点击，点一下就收起底栏。
                 AnimatedVisibility(
                     visible = navCollapsible && navExpanded,
