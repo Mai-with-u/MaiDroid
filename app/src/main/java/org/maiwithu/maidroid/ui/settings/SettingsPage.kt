@@ -365,13 +365,16 @@ private fun SettingsNavigationPane(
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
+    // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
+    // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
+    val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
 
     LazyColumn(
         modifier = modifier
             .background(PageBackground)
             .padding(top = statusBarTop),
         contentPadding = PaddingValues(
-            top = if (compact) 4.dp else 44.dp,
+            top = if (compact) compactTop else 44.dp,
             start = if (compact) 12.dp else 18.dp,
             end = if (compact) 12.dp else 18.dp,
             bottom = LocalBottomNavigationClearance.current
