@@ -11,13 +11,22 @@ internal object WebUiInjectedScripts {
     private const val DASHBOARD_STYLE = "future-retro"
     private const val VIEWPORT_PATCH_STYLE_ID = "maidroid-webview-viewport-fix"
 
-    // 把 WebUI 固定为深色、“未来复古”仪表盘风格，与 APP 的深色界面一致。
+    /**
+     * 第一次打开 WebUI 时默认用深色、“未来复古”仪表盘风格，与 APP 的深色界面一致。
+     * 触发条件：页面头部脚本执行时，WebUI 自己存外观设置的两个键还没有值。
+     * 原因：以前每次加载都直接覆盖这两个键，用户在 WebUI“外观设置”里换的主题，下次启动 APP 又被改回“未来复古”；
+     * 现在只补空缺，用户选过的主题原样保留。键名与 WebUI 前端一致（maibot-theme-mode、maibot-theme-dashboard-style）。
+     */
     private val themeBootstrapScript = """
         <script>
         (function() {
           try {
-            localStorage.setItem('maibot-theme-mode', '$THEME_MODE');
-            localStorage.setItem('maibot-theme-dashboard-style', '$DASHBOARD_STYLE');
+            if (localStorage.getItem('maibot-theme-mode') === null) {
+              localStorage.setItem('maibot-theme-mode', '$THEME_MODE');
+            }
+            if (localStorage.getItem('maibot-theme-dashboard-style') === null) {
+              localStorage.setItem('maibot-theme-dashboard-style', '$DASHBOARD_STYLE');
+            }
           } catch (error) {}
         })();
         </script>

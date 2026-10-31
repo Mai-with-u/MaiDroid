@@ -65,6 +65,15 @@ class MaiBotWebUiTest {
     }
 
     @Test
+    fun themeBootstrapOnlyFillsMissingThemeSettings() {
+        // 用户在 WebUI 外观设置里换过主题后，每次启动不能再被改回“未来复古”：只在键为空时写默认值
+        val injected = WebUiResponseRewriter.injectPageBootstrap("<head></head>")
+
+        assertTrue(injected.contains("localStorage.getItem('maibot-theme-mode') === null"))
+        assertTrue(injected.contains("localStorage.getItem('maibot-theme-dashboard-style') === null"))
+    }
+
+    @Test
     fun injectThemeBootstrapFallsBackToHeadAndPrefix() {
         val withHead = WebUiResponseRewriter.injectPageBootstrap("<head></head><body></body>")
         assertTrue(withHead.indexOf("__maidroidVhFixInstalled") < withHead.indexOf("</head>"))
