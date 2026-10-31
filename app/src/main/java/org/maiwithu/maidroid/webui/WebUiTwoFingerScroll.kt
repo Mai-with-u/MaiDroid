@@ -106,13 +106,28 @@ internal class WebUiTwoFingerScroll(private val webView: WebView) : View.OnTouch
     }
 
     /**
-     * 第二根手指按下时给网页补一个 CANCEL，和父视图拦截触摸时系统发给子视图的一样：
-     * 子滚动块已经开始的单指滚动、长按菜单、按下态和即将触发的点击全部作废。
+     * 第二根手指按下时给网页补一个 CANCEL：子滚动块已经开始的单指滚动、长按菜单、按下态和即将触发的点击全部作废。
+     * CANCEL 里只放网页已经见过的手指，刚落下的这根（actionIndex）网页从没收到过，不能带上。
+     * 原因：照抄当前事件的话 CANCEL 里会混进这根陌生手指，真机上第一根手指先在图表这类 touch-action: none 的区域
+     * 拖动（网页内核没开始滚，触摸一直交给网页）再落第二根时，网页内核没把第一根手指取消掉，
+     * 之后每次单指都被当成它的延续：只能点击、滑不动，直到刷新页面。在可滚动区域上不明显，
+     * 是因为开始滚动时内核已经自己取消过第一根手指。
      * 直接调 onTouchEvent，不经 dispatchTouchEvent，免得又绕回本监听器。
      */
     private fun cancelPageTouch(event: MotionEvent) {
-        val cancel = MotionEvent.obtain(event)
-        cancel.action = MotionEvent.ACTION_CANCEL
+        val knownIndexes = (0 until event.pointerCount).filter { it != event.actionIndex }
+        val properties = Array(knownIndexes.size) { i ->
+            MotionEvent.PointerProperties().also { event.getPointerProperties(knownIndexes[i], it) }
+        }
+        val coords = Array(knownIndexes.size) { i ->
+            MotionEvent.PointerCoords().also { event.getPointerCoords(knownIndexes[i], it) }
+        }
+        val cancel = MotionEvent.obtain(
+            event.downTime, event.eventTime, MotionEvent.ACTION_CANCEL,
+            knownIndexes.size, properties, coords,
+            event.metaState, event.buttonState, event.xPrecision, event.yPrecision,
+            event.deviceId, event.edgeFlags, event.source, event.flags
+        )
         webView.onTouchEvent(cancel)
         cancel.recycle()
     }
