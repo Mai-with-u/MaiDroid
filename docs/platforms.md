@@ -7,18 +7,32 @@ MaiBot 通过插件（适配器）连接聊天平台。MaiDroid 的“消息平�
 | QQ 官方机器人 | MaiBot-QQ-Adapter 插件直连 QQ 开放平台，需要在 q.qq.com 申请 AppID、AppSecret | `platform/qqofficial/`、`ui/platform/QqOfficialConfigDialog.kt` |
 | NapCat | 容器里跑 LinuxQQ + NapCat，扫码登录个人 QQ，NapCat 提供 OneBot11 WebSocket，MaiBot-SnowLuma-Adapter 插件去连 | `platform/napcat/`、`ui/platform/NapCatDialogs.kt` |
 
-两者都是 MaiBot 的插件，装好或改了配置后都要重启 MaiBot 才生效，统一经 `MaiBotRuntimeService.start(context, ACTION_RESTART_RUNTIME)`。
+两种方式在 MaiBot 侧都是装一个适配器插件，装好或改了配置后都要重启 MaiBot 才生效，统一经 `MaiBotRuntimeService.start(context, ACTION_RESTART_RUNTIME)`。
+
+## 术语
+
+这几个名字长得像，代码、注释和文档里按下表用，不要混：
+
+| 说法 | 指的是 | 代码里 |
+| --- | --- | --- |
+| 适配器 | MaiBot 的插件，把某个聊天平台的消息转成 MaiBot 能处理的格式。装在容器里 MaiBot 的 `plugins/` 下 | 各平台包里的 `*Adapter*` |
+| SnowLuma 适配器 | MaiBot-SnowLuma-Adapter，NapCat 接入方式用的适配器。名字里的 SnowLuma 是适配器自己的名字：它同时支持 NapCat 和 SnowLuma 客户端两种 QQ 协议端，MaiDroid 让它连 NapCat。界面和终端日志里对用户说的“QQ 适配器”就是它 | `platform/napcat/SnowLumaAdapter*` |
+| 旧 NapCat 适配器 | MaiBot-Napcat-Adapter，已停更。早期版本的 MaiDroid 装的是它，启动 NapCat 前会自动换成 SnowLuma 适配器 | `SnowLumaAdapterScripts.LEGACY_*` |
+| QQ 官方机器人适配器 | MaiBot-QQ-Adapter，官方机器人接入方式用的适配器，直连 QQ 开放平台。注意它的仓库名里也有“QQ-Adapter”，但界面上的“QQ 适配器”不是它 | `platform/qqofficial/QqOfficialAdapter*` |
+| NapCat | QQ 协议端：容器里跑的 LinuxQQ + NapCat，扫码登录个人 QQ，对外提供 OneBot 服务 | `platform/napcat/NapCat*` |
+| SnowLuma 客户端 | 另一种 QQ 协议端，在手机上跑来代替 NapCat。还没适配，消息平台页上只是展示 | `AccessMethod.SnowLumaClient` |
+| 接入方式 | 消息平台页选择器上的选项（官方机器人 / NapCat / SnowLuma），说的是消息从哪条路进出 QQ，不是适配器 | `ui/platform` 的 `AccessMethod`、`AccessMethodSelector` |
 
 ## 消息平台页的结构
 
-- `PlatformCatalog.kt`：“发现”区展示哪些平台（`AvailablePlatforms`），每个平台可选的接入方式（`PlatformAdapter`），以及“已安装”行按真实状态生成卡片的规则（`installedPlatformCards`）。设置页的“运行中平台数”也按这里统计。
+- `PlatformCatalog.kt`：“发现”区展示哪些平台（`AvailablePlatforms`），每个平台可选的接入方式（`AccessMethod`），以及“已安装”行按真实状态生成卡片的规则（`installedPlatformCards`）。设置页的“运行中平台数”也按这里统计。
 - `MessagePlatformsPage.kt`：页面本身，按窗口大小选排版（`messagePlatformsLayout`）：手机竖屏是单列分组列表，手机横屏分左右两栏，平板是卡片网格；还持有各弹窗的开关（`rememberSaveable`，用户切去 QQ 扫码导致 Activity 重建后弹窗还在）。
 - `PlatformRows.kt`：手机用的分组列表，已连接行、发现行和分类小胶囊，样子和设置页一致。
 - `PlatformCards.kt`：平板用的已安装小卡片、平台安装卡片。右侧按钮按选中的接入方式显示下载 / 进度环 / 设置，这个状态和点击逻辑（`platformInstallAction`）卡片和列表行共用。
-- `AdapterSelector.kt`：接入方式选择器。
+- `AccessMethodSelector.kt`：接入方式选择器。
 - `NapCatDialogs.kt`、`QqOfficialConfigDialog.kt`：两种接入方式各自的弹窗。
 
-Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平板卡片上点下载会提示“暂未适配”，手机列表里没适配的平台直接标“暂未适配”，不放下载按钮；QQ 选 SnowLuma 时点下载同样提示。注意区分：“SnowLuma”选项指在手机上跑 SnowLuma 客户端（代替 NapCat），没有做；NapCat 选项装的 MaiBot 侧插件是 MaiBot-SnowLuma-Adapter，它同时支持 NapCat 和 SnowLuma 两种客户端。
+Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平板卡片上点下载会提示“暂未适配”，手机列表里没适配的平台直接标“暂未适配”，不放下载按钮；QQ 选 SnowLuma 时点下载同样提示。这个“SnowLuma”选项是 SnowLuma 客户端，和 NapCat 选项装的 SnowLuma 适配器不是一回事，见上面的术语表。
 
 ## QQ 官方机器人
 
@@ -51,19 +65,19 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平�
 
 ## NapCat
 
-### 安装（`NapCatPlatformManager.installNapCat`、`NapCatScripts.install`、`NapCatAdapterInstaller`）
+### 安装（`NapCatPlatformManager.installNapCat`、`NapCatScripts.install`、`SnowLumaAdapterInstaller`）
 
-1. 检查容器、MaiBot 源码和 MaiBot 版本：QQ 适配器对 MaiBot 有最低版本要求（`NapCatAdapterScripts.MIN_MAIBOT_VERSION`），MaiBot 会直接拒绝加载版本范围外的插件，所以版本不够时提示先去设置页更新 MaiBot。版本号读自 `pyproject.toml` 的 `[project].version`。
+1. 检查容器、MaiBot 源码和 MaiBot 版本：SnowLuma 适配器对 MaiBot 有最低版本要求（`SnowLumaAdapterScripts.MIN_MAIBOT_VERSION`），MaiBot 会直接拒绝加载版本范围外的插件，所以版本不够时提示先去设置页更新 MaiBot。版本号读自 `pyproject.toml` 的 `[project].version`。
 2. NapCat 本体还没装（`napcat_ready` 标记或 `onebot11.json` 缺一个）才运行安装脚本，进度通过容器 `$TMPDIR/progress`、`progress_des` 两个文件汇报，每 500 毫秒读一次显示在卡片的进度环上：
    - 生成 OneBot 访问 token（只在第一次安装时生成，存在 `/root/.maidroid/napcat_token`，重装沿用）；
    - 下载并运行 NapCat 官方的 Linux 安装器；
    - 写 `/root/napcat/config/onebot11.json`：在 `127.0.0.1:8095` 开 WebSocket 服务端，带上 token；
    - 写 `/root/.maidroid/napcat_ready` 标记，生成 `/root/launcher.sh`。
-3. 装 MaiBot 侧的 QQ 适配器（`NapCatAdapterScripts.install`）：没装过（按清单 ID `maibot-team.snowluma-adapter` 找，插件市场装的副本也算）就经 GitHub 镜像把 MaiBot-SnowLuma-Adapter 克隆到 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-SnowLuma-Adapter`；然后删掉清单 ID 为 `maibot-team.napcat-adapter` 的旧适配器（两个适配器同时连 NapCat 会把每条消息收两遍）。删之前先把旧适配器的 `config.toml` 读进内存，留给第 5 步搬设置。
+3. 装 MaiBot 侧的 SnowLuma 适配器（`SnowLumaAdapterScripts.install`）：没装过（按清单 ID `maibot-team.snowluma-adapter` 找，插件市场装的副本也算）就经 GitHub 镜像把 MaiBot-SnowLuma-Adapter 克隆到 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-SnowLuma-Adapter`；然后删掉清单 ID 为 `maibot-team.napcat-adapter` 的旧适配器（两个适配器同时连 NapCat 会把每条消息收两遍）。删之前先把旧适配器的 `config.toml` 读进内存，留给第 5 步搬设置。
 4. 经前台服务拉起 NapCat 并重启 MaiBot。整个目录移进 `plugins/` 时 MaiBot 不一定能热加载，所以要重启；重启时 MaiBot 发现插件没有 `config.toml`，会按适配器自己的默认值生成一份（带 MaiBot 强制要求的 `plugin.config_version`，默认 `enabled = false`，适配器先空闲着）。新适配器依赖 `silk-python`（语音转码），MaiBot 加载插件时自己用 uv 补装，有 aarch64 预编译包。
-5. 等配置生成后迁移（`NapCatAdapterInstaller.migrateConfigWhenReady` -> `NapCatAdapterConfig.migrate`）：每 2 秒看一次，最多等 5 分钟；看到带 `config_version` 的配置后再等 5 秒（MaiBot 写完配置才订阅它的变化，改早了会错过热重载），然后在生成的配置上改：`[plugin].enabled = true`，`[client]` 的 `server`、`port`、`token` 写成 `127.0.0.1`、8095 和上面的 token，再把旧适配器里有对应项的设置搬过来（见下）。其余内容原样保留。MaiBot 监听插件配置文件，发现启用了会补装依赖并热启用适配器，不用再重启。
+5. 等配置生成后迁移（`SnowLumaAdapterInstaller.migrateConfigWhenReady` -> `SnowLumaAdapterConfig.migrate`）：每 2 秒看一次，最多等 5 分钟；看到带 `config_version` 的配置后再等 5 秒（MaiBot 写完配置才订阅它的变化，改早了会错过热重载），然后在生成的配置上改：`[plugin].enabled = true`，`[client]` 的 `server`、`port`、`token` 写成 `127.0.0.1`、8095 和上面的 token，再把旧适配器里有对应项的设置搬过来（见下）。其余内容原样保留。MaiBot 监听插件配置文件，发现启用了会补装依赖并热启用适配器，不用再重启。
 
-MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `plugin.config_version`，版本号和各段默认值都以适配器当前版本为准，由 MaiBot 生成最稳。“迁移过没有”只看 `[client]` 是否指向本机 NapCat（`NapCatAdapterConfig.isMigrated`），不看 `enabled`：用户之后在 WebUI 里关掉适配器，MaiDroid 不会每次启动都给打开。
+MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `plugin.config_version`，版本号和各段默认值都以适配器当前版本为准，由 MaiBot 生成最稳。“迁移过没有”只看 `[client]` 是否指向本机 NapCat（`SnowLumaAdapterConfig.isMigrated`），不看 `enabled`：用户之后在 WebUI 里关掉适配器，MaiDroid 不会每次启动都给打开。
 
 注意：NapCat 安装器本身仍直连 GitHub 下载，没有走镜像。
 
@@ -78,7 +92,7 @@ MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `pl
 
 ### 运行（`NapCatProcessSupervisor`）
 
-每次启动：需要时换装 QQ 适配器（见上）-> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。只要 NapCat 本体装好就启动，不看适配器装没装。
+每次启动：需要时换装 SnowLuma 适配器（见上）-> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。只要 NapCat 本体装好就启动，不看适配器装没装。
 
 ### 状态怎么来的（`NapCatStatusReader`、`NapCatWebUiClient`）
 
@@ -117,6 +131,6 @@ NapCat 没有注销 QQ 的接口，QQ 只随进程结束下线。所以“退出
    - `XxxPlatformManager`：安装、配置、状态汇总，构造函数注入 `RuntimeReadiness`、`ContainerCommandRunner` 等。
 2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停。
 3. 在 `AppDependencies` 里加一个 `lazy` 属性。
-4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `PlatformAdapter` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platform/` 的独立文件里。
+4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `AccessMethod` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platform/` 的独立文件里。
 5. 装好或改了配置后经 `ACTION_RESTART_RUNTIME` 重启 MaiBot。
 6. 给状态推断、配置读写这类纯逻辑写 JVM 单元测试（参考 `NapCatQrCodeRefreshTest`、`QqOfficialPlatformTest`）。

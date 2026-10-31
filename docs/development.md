@@ -47,17 +47,21 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `maibot/MaiBotProjectVersionTest` | 从 pyproject.toml 读 MaiBot 版本 |
 | `maibot/PluginConfigTomlTest` | 判断配置值是否在一行内写完 |
 | `maibot/update/MaiBotUpdateReportTest` | 在线更新脚本输出的解析 |
+| `maibot/update/MaiBotAutoUpdateTest` | MaiDroid 更新后要不要自动升级 MaiBot：刚更新过才升级，同版本、降级、还在 OOBE、设置里关掉时不升级 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
-| `platform/napcat/NapCatAdapterConfigTest` | QQ 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 NapCat、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器 |
+| `platform/napcat/SnowLumaAdapterConfigTest` | SnowLuma 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 NapCat、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
 | `runtime/GitHubMirrorsTest` | 宿主侧可用的下载线路、容器脚本里的镜像列表 |
-| `appupdate/AppReleaseTest` | 应用自更新：版本号比较、Release 解析与挑选 APK、校验行、更新说明排版、断点续传响应判断 |
-| `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、测速 |
+| `terminal/AnsiTextTest` | 终端输出的 ANSI 解析：颜色和加粗、回车退格覆盖、擦除行、丢掉光标等控制序列、截断的序列不漏进正文 |
+| `VersionNumberTest` | 版本号比较（数字逐位比、正式版新于同号预发布）和解析 |
+| `appupdate/AppReleaseTest` | 应用自更新：Release 解析与挑选 APK、校验行、更新说明排版 |
+| `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、断点续传响应判断、测速、大小显示 |
 | `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
+| `ui/home/WakeBootLogTest` | 唤醒页开机自检：正常三阶段、自动升级 MaiBot 时多出的一行和进度分段、容器出问题时进度条停住 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
@@ -65,6 +69,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
 | `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入（含下载拦截先于页面脚本）、主题只补默认值、视口修补脚本（不给普通滚动区封顶、不随 DOM 变化重扫全页） |
 | `webui/WebUiTwoFingerScrollTest` | 两指滚动注入脚本的拼接与数字格式（不随系统语言变成逗号） |
+| `webui/WebUiPageBackgroundTest` | 网页底色上报的解析：认出前缀、保留半透明、忽略普通 console 输出和坏数据 |
 | `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限）、改写 viewport meta |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
 | `webui/WebUiDownloadNamesTest` | 网页下载的文件名（download 属性、Content-Disposition 含 filename*、地址路径、按类型猜）、去掉非法字符、交给“另存为”的 MIME 类型与扩展名一致 |
@@ -80,7 +85,8 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | --- | --- |
 | `TerminalLog` | 终端输出的每一行：MaiBot、NapCat、sshd、OOBE 命令、在线更新（D 级别） |
 | `MaiDroidWebUi` | WebView 加载、网页 console 输出、视口修补结果 |
-| `MaiBotProcessSupervisor`、`MaiBotRuntimeService`、`BootCompletedReceiver` | 进程监管、前台服务、开机广播 |
+| `MaiBotProcessSupervisor`、`MaiBotRuntimeService`、`BootCompletedReceiver`、`OobeSetupManager` | 进程监管、前台服务、开机广播、首次引导 |
+| `WebUiResponseRewriter` | 拦截 WebUI 页面 HTML 时的改写结果 |
 
 ```bash
 adb logcat -s TerminalLog
@@ -124,7 +130,7 @@ adb forward tcp:16099 tcp:6099
 - `WebUiActivity` 没有导出，`adb shell am start` 启动不了，只能从主页或消息平台页进入。
 - 用户切到 QQ 扫码再回来时，系统可能因配置变化重建 `MainActivity`。弹窗开关要用 `rememberSaveable`，判断“弹窗是不是被代码关掉的”之前先排除这一点。
 - 部分厂商的安全键盘在密码框聚焦时禁止截屏，用 `adb shell input` 驱动界面时先收起键盘再截图。
-- 容器里 `uv sync` 后 `uv.lock` 必然被改写，MaiBot 仓库的 `git status` 一直显示它被修改，在线更新会每次备份一份补丁，这不是用户改动。
+- 容器里 `uv sync` 后 `uv.lock` 必然被改写，MaiBot 仓库的 `git status` 一直显示它被修改，这不是用户改动；在线更新统计“改过的源码”时会排除它。
 
 ## 代码约定
 
@@ -138,7 +144,7 @@ adb forward tcp:16099 tcp:6099
 ### 命名
 
 - 类名、文件名说清“它是什么”：`*Manager` 管业务流程和界面状态，`*Supervisor` 管长驻进程，`*Scripts` 产出容器脚本，`*Files` 描述文件位置，`*State` 是界面状态。
-- 用枚举表达有限的取值（`OobeStep`、`OobeTaskKind`、`RuntimeComponent`、`PlatformAdapter`、`NapCatLoginPhase`），不要用魔数和用于比较的显示文字。
+- 用枚举表达有限的取值（`OobeStep`、`OobeTaskKind`、`RuntimeComponent`、`AccessMethod`、`NapCatLoginPhase`），不要用魔数和用于比较的显示文字。
 - 不写全限定名，用 import。
 
 ### 界面

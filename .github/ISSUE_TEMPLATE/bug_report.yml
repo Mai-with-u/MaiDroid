@@ -29,7 +29,7 @@ body:
     id: app-version
     attributes:
       label: MaiDroid 版本
-      description: 主页右下角进入“设置”，“应用版本”一行显示的就是。
+      description: 主页切到“设置”页签，“应用版本”一行显示的就是。
       placeholder: 例如 0.1.3
     validations:
       required: true
@@ -120,7 +120,7 @@ body:
       description: |
         请尽量贴上出问题前后的日志，没有日志很难定位。获取方式（任选其一）：
 
-        - 主页右下角打开“终端输出”，点顶栏的“复制全部输出”，粘贴到这里。长按某行可以多选，只复制相关的几行。
+        - 在主页打开“终端输出”（竖屏在右下角，横屏在左侧导航栏底部），点顶栏的“复制全部输出”，粘贴到这里。长按某行可以多选，只复制相关的几行。
         - 电脑上接手机执行 `adb logcat -s TerminalLog`。
         - MaiBot 自己的日志：系统“文件”应用侧边栏的“MaiBot”下的日志目录。
 

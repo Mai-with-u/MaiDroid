@@ -56,5 +56,5 @@ body:
     id: logs
     attributes:
       label: 日志或截图
-      description: 主页右下角打开“终端输出”，点顶栏的“复制全部输出”可以复制日志。贴之前请打码令牌、API Key、QQ 号等信息。
+      description: 在主页打开“终端输出”（竖屏在右下角，横屏在左侧导航栏底部），点顶栏的“复制全部输出”可以复制日志。贴之前请打码令牌、API Key、QQ 号等信息。
       render: text

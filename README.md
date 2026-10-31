@@ -57,7 +57,7 @@ flowchart TB
 
         subgraph Box["容器（proot + Debian，不需要 root）"]
             MaiBot["MaiBot（麦麦）<br/>WebUI：127.0.0.1:8001"]
-            Adapter["QQ 适配器插件<br/>由 MaiBot 加载"]
+            Adapter["适配器插件<br/>SnowLuma 适配器或<br/>QQ 官方机器人适配器<br/>由 MaiBot 加载"]
             NapCat["NapCat + LinuxQQ<br/>OneBot 服务：127.0.0.1:8095"]
             Sshd["sshd（可选）"]
         end
@@ -130,7 +130,7 @@ flowchart LR
 sequenceDiagram
     participant Q as QQ 服务器
     participant N as NapCat（容器里的 QQ）
-    participant A as QQ 适配器插件
+    participant A as SnowLuma 适配器插件
     participant M as MaiBot
     participant L as 大模型服务
 
@@ -144,7 +144,7 @@ sequenceDiagram
     N->>Q: 以你登录的 QQ 发出
 ```
 
-适配器是 MaiBot 的插件，装在 MaiBot 的 `plugins` 目录里。装好或改了配置之后要重启 MaiBot 才会加载，MaiDroid 会自己处理。QQ 官方机器人那条路没有 NapCat，适配器直接连 QQ 开放平台。
+适配器是 MaiBot 的插件，装在 MaiBot 的 `plugins` 目录里。装好或改了配置之后要重启 MaiBot 才会加载，MaiDroid 会自己处理。上图是 NapCat 那条路，用的是 SnowLuma 适配器（MaiBot-SnowLuma-Adapter，界面上叫“QQ 适配器”）；QQ 官方机器人那条路没有 NapCat，由 QQ 官方机器人适配器（MaiBot-QQ-Adapter）直接连 QQ 开放平台。几个名字的区别见 [消息平台接入](docs/platforms.md) 的术语表。
 
 ### 代码在哪
 
@@ -159,7 +159,7 @@ sequenceDiagram
 | MaiBot 的安装、启动、更新 | `maibot/`，在线更新在 `maibot/update/` |
 | QQ 接入 | `platform/napcat/`、`platform/qqofficial/` |
 | 前台服务、开机自启 | `service/` |
-| 嵌入的 MaiBot WebUI | `webui/`：令牌、WebView、请求改写、注入脚本、下载 |
+| 嵌入的 MaiBot WebUI | `webui/`：令牌、WebView、请求改写、注入脚本、横屏桌面版、两指滚动、上传、下载 |
 | 容器 SSH | `ssh/` |
 | 系统“文件”应用里的 MaiBot 目录 | `files/` |
 | MaiDroid 自己的更新 | `appupdate/` |
@@ -187,7 +187,7 @@ MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和
 
 ### 出问题了怎么反馈？
 
-打开主页的终端输出页（竖屏时在右下角），复制日志，到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交，贴日志前请把令牌、API Key、QQ 号这类信息打码。麦麦自己的回复和人设问题请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请去 [NapCatQQ](https://github.com/NapNeko/NapCatQQ/issues)。
+打开主页的终端输出页（竖屏时在右下角，横屏时在左侧导航栏底部），复制日志，到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交，贴日志前请把令牌、API Key、QQ 号这类信息打码。麦麦自己的回复和人设问题请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请去 [NapCatQQ](https://github.com/NapNeko/NapCatQQ/issues)。
 
 ## 现状
 
@@ -238,7 +238,7 @@ MaiDroid 以 [GNU General Public License v3.0](https://github.com/Mai-with-u/Mai
 
 - [MaiBot](https://github.com/Mai-with-u/MaiBot)：MaiDroid 要在手机上运行的 AI 智能体本体
 - [NapCatQQ](https://github.com/NapNeko/NapCatQQ)：提供 QQ 协议侧能力，让 MaiBot 通过 OneBot 接入 QQ
-- [MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)：MaiBot 的 QQ 适配器，通过 NapCat 接入个人 QQ 时用它收发消息
+- [MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)：MaiBot 的 SnowLuma 适配器（界面上叫“QQ 适配器”），通过 NapCat 接入个人 QQ 时用它收发消息
 - [MaiBot-QQ-Adapter](https://github.com/Mai-with-u/MaiBot-QQ-Adapter)：直连 QQ 开放平台的 MaiBot 适配器，提供 QQ 官方机器人接入
 - [Termux](https://github.com/termux/termux-packages)：容器引导环境（bootstrap）与 proot 相关软件包的来源
 - [PRoot](https://github.com/proot-me/proot)：无需 root 即可在 Android 上运行 Debian 容器
