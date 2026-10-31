@@ -39,6 +39,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 
 | 测试 | 覆盖 |
 | --- | --- |
+| `files/ContainerDocumentsTest` | 容器文件共享：documentId 与路径互转、拒绝越界 id、按容器语义解析符号链接（l2s 替身、绝对路径链接、链接成环）、MIME 推断、新建时避开重名 |
 | `maibot/MaiBotDependencyStepTest` | 依赖安装失败文案、从 uv 输出里提炼失败原因 |
 | `maibot/MaiBotStartupTest` | 等 WebUI 时的判断：就绪、反复退出、没拉起、超时 |
 | `maibot/MaiBotAgreementTest` | 协议 hash 与 MaiBot 的算法一致（换行归一） |
