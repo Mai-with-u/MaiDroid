@@ -6,10 +6,10 @@
 
 | 项 | 要求 |
 | --- | --- |
-| JDK | 运行 Gradle 用 JDK 17 以上即可；Gradle 守护进程按 `gradle/gradle-daemon-jvm.properties` 使用 JDK 21，本机没有时会经 foojay 自动下载 |
-| Android SDK | compileSdk 36（36.1），缺平台时 AGP 会自动安装（需要已接受许可证） |
-| AGP / Kotlin | 9.2.1 / 2.2.10，版本统一在 `gradle/libs.versions.toml` |
-| 设备 | arm64，Android 8.0（API 26）以上；APK 只带 arm64 的 proot |
+| JDK | 运行 `gradlew` 需要本机有 JDK。Gradle 守护进程使用的 JDK 版本写在 `gradle/gradle-daemon-jvm.properties`，本机没有时会经 foojay 自动下载 |
+| Android SDK | 编译用的 SDK 版本写在 `app/build.gradle.kts` 的 `compileSdk`，缺平台时 AGP 会自动安装（需要已接受许可证） |
+| AGP / Kotlin | 版本统一在 `gradle/libs.versions.toml` |
+| 设备 | arm64；最低系统版本是 `app/build.gradle.kts` 的 `minSdk`；APK 只带 arm64 的 proot |
 
 `local.properties` 里写 `sdk.dir`，不进仓库。需要代理时把 `systemProp.http(s).proxyHost/Port` 写进自己的 `~/.gradle/gradle.properties`，不要写进仓库的 `gradle.properties`（CI 和别人的机器没有这个代理）。
 
