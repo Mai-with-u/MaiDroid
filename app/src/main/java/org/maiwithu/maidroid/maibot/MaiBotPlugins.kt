@@ -10,16 +10,6 @@ import java.io.File
 private val ReservedPluginDirNames = setOf("data", "__pycache__")
 
 /**
- * 从 MaiBot 的 pyproject.toml 读主程序版本（[project] 的 version），读不到返回 null。
- * MaiBot 按这个版本检查插件清单的 host_application 范围，范围外的插件直接拒绝加载。
- */
-internal fun maiBotProjectVersion(pyproject: String): String? =
-    PluginConfigToml.rawValue(PluginConfigToml.lines(pyproject), "project", "version")
-        ?.let(PluginConfigToml::parseString)
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-
-/**
  * 在 MaiBot 的 plugins 目录里按清单 ID 找插件目录（大小写不敏感，与 MaiBot 的查找一致）：
  * 优先看 preferredDirName 这个目录，再扫其他目录；清单和 plugin.py 都在才算数。
  * 同一插件可能由 MaiDroid 安装，也可能由用户从 MaiBot WebUI 的插件市场安装，目录名不同但清单 ID 相同。

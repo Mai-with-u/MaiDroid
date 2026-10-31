@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.BuildConfig
+import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
@@ -102,7 +103,7 @@ internal class AppUpdateManager(
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var job: Job? = null
-    private val currentVersion = AppVersion.parse(currentVersionName)
+    private val currentVersion = VersionNumber.parse(currentVersionName)
     private val files = AppUpdateFiles(appContext.cacheDir)
     private val client = AppUpdateClient(userAgent = "MaiDroid/$currentVersionName")
 

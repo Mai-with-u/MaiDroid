@@ -148,4 +148,26 @@ class AppUpdateClientTest {
         assertEquals("512 KB", formatBytes(512 * 1024L))
         assertEquals("900 B", formatBytes(900))
     }
+
+    @Test
+    fun `partial content must start where the part file ends`() {
+        val total = 163110537L
+        assertEquals(
+            1024L,
+            rangeResponseStart(206, "bytes 1024-163110536/163110537", total - 1024, "application/octet-stream", 1024L, total)
+        )
+        assertNull(rangeResponseStart(206, "bytes 0-163110536/163110537", total, null, 1024L, total))
+        assertNull(rangeResponseStart(206, "bytes 1024-2047/999", 1024, null, 1024L, total))
+        assertNull(rangeResponseStart(206, null, 1024, null, 1024L, total))
+        assertNull(rangeResponseStart(416, "bytes */163110537", 0, null, total, total))
+    }
+
+    @Test
+    fun `full response restarts from zero unless it is an error page or the wrong size`() {
+        val total = 163110537L
+        assertEquals(0L, rangeResponseStart(200, null, total, "application/vnd.android.package-archive", 1024L, total))
+        assertEquals(0L, rangeResponseStart(200, null, -1, null, 0L, total))
+        assertNull(rangeResponseStart(200, null, -1, "text/html; charset=utf-8", 0L, total))
+        assertNull(rangeResponseStart(200, null, 512, null, 0L, total))
+    }
 }

@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.appupdate
 
 import kotlinx.serialization.json.JsonPrimitive
+import org.maiwithu.maidroid.VersionNumber
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -42,34 +43,11 @@ class AppReleaseTest {
     """.trimIndent()
 
     @Test
-    fun `versions compare numerically and stable beats prerelease`() {
-        val v012 = AppVersion.parse("0.1.2")!!
-        assertTrue(AppVersion.parse("v0.1.3")!! > v012)
-        assertTrue(AppVersion.parse("0.1.10")!! > AppVersion.parse("0.1.9")!!)
-        assertTrue(AppVersion.parse("0.2")!! > v012)
-        assertEquals(0, AppVersion.parse("0.1.2.0")!!.compareTo(v012))
-        assertTrue(AppVersion.parse("0.2.0")!! > AppVersion.parse("0.2.0-rc1")!!)
-        assertTrue(AppVersion.parse("0.2.0-rc2")!! > AppVersion.parse("0.2.0-rc1")!!)
-        assertTrue(AppVersion.parse("0.2.0-rc.10")!! > AppVersion.parse("0.2.0-rc.9")!!)
-        assertTrue(AppVersion.parse("0.2.0-rc1")!! > v012)
-    }
-
-    @Test
-    fun `version parsing rejects junk and keeps the canonical text`() {
-        assertNull(AppVersion.parse("latest"))
-        assertNull(AppVersion.parse("v1..2"))
-        assertNull(AppVersion.parse("1.2.3-"))
-        assertNull(AppVersion.parse("1.2.3-../x"))
-        assertEquals("0.1.0-beta", AppVersion.parse("v0.1.0-beta").toString())
-        assertEquals("1.0.0", AppVersion.parse("1.0.0+build7").toString())
-    }
-
-    @Test
     fun `parses latest release with apk and checksums`() {
         val release = parseAppRelease(releaseJson())!!
 
         assertEquals("v0.1.3", release.tag)
-        assertEquals(AppVersion.parse("0.1.3"), release.version)
+        assertEquals(VersionNumber.parse("0.1.3"), release.version)
         assertEquals("MaiDroid_v0.1.3.apk", release.apk?.name)
         assertEquals(163110537L, release.apk?.size)
         assertEquals(apkSha, release.apkSha256)
@@ -141,27 +119,5 @@ class AppReleaseTest {
             ),
             lines
         )
-    }
-
-    @Test
-    fun `partial content must start where the part file ends`() {
-        val total = 163110537L
-        assertEquals(
-            1024L,
-            rangeResponseStart(206, "bytes 1024-163110536/163110537", total - 1024, "application/octet-stream", 1024L, total)
-        )
-        assertNull(rangeResponseStart(206, "bytes 0-163110536/163110537", total, null, 1024L, total))
-        assertNull(rangeResponseStart(206, "bytes 1024-2047/999", 1024, null, 1024L, total))
-        assertNull(rangeResponseStart(206, null, 1024, null, 1024L, total))
-        assertNull(rangeResponseStart(416, "bytes */163110537", 0, null, total, total))
-    }
-
-    @Test
-    fun `full response restarts from zero unless it is an error page or the wrong size`() {
-        val total = 163110537L
-        assertEquals(0L, rangeResponseStart(200, null, total, "application/vnd.android.package-archive", 1024L, total))
-        assertEquals(0L, rangeResponseStart(200, null, -1, null, 0L, total))
-        assertNull(rangeResponseStart(200, null, -1, "text/html; charset=utf-8", 0L, total))
-        assertNull(rangeResponseStart(200, null, 512, null, 0L, total))
     }
 }

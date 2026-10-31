@@ -22,6 +22,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -342,5 +343,51 @@ internal class AppUpdateClient(userAgent: String) {
             output.write(buffer, 0, read)
         }
         return output.toByteArray()
+    }
+}
+
+/**
+ * 判断一次断点续传请求的响应能不能接在已下载的部分后面，返回响应体对应的文件起始位置，不能用返回 null。
+ *
+ * - 206：Content-Range 的起点必须正是请求的位置，总长和 Release 里的大小一致（大小未知时不比）；
+ * - 200：服务器不支持断点续传，整个文件从头发，返回 0，调用方要清掉已下载的部分重写；
+ *   但 text/ 开头的类型是镜像的错误页，长度和 Release 不符也不是这个文件，都不用；
+ * - 其它状态码（含 416）都不能用。
+ */
+internal fun rangeResponseStart(
+    code: Int,
+    contentRange: String?,
+    contentLength: Long,
+    contentType: String?,
+    requestedStart: Long,
+    expectedTotal: Long
+): Long? {
+    if (contentType?.trim()?.startsWith("text/", ignoreCase = true) == true) return null
+    return when (code) {
+        206 -> {
+            val match = CONTENT_RANGE.matchEntire(contentRange?.trim().orEmpty()) ?: return null
+            val start = match.groupValues[1].toLong()
+            val total = match.groupValues[3].toLongOrNull()
+            when {
+                start != requestedStart -> null
+                expectedTotal > 0 && total != null && total != expectedTotal -> null
+                else -> start
+            }
+        }
+        200 -> if (expectedTotal > 0 && contentLength >= 0 && contentLength != expectedTotal) null else 0L
+        else -> null
+    }
+}
+
+private val CONTENT_RANGE = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""", RegexOption.IGNORE_CASE)
+
+/** 安装包大小、下载进度的显示：163110537 -> "155.6 MB"，按 1024 进位，与系统设置里看到的一致。 */
+internal fun formatBytes(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0L)
+    return when {
+        value >= 1024L * 1024 * 1024 -> "%.2f GB".format(Locale.ROOT, value / (1024.0 * 1024 * 1024))
+        value >= 1024L * 1024 -> "%.1f MB".format(Locale.ROOT, value / (1024.0 * 1024))
+        value >= 1024L -> "%.0f KB".format(Locale.ROOT, value / 1024.0)
+        else -> "$value B"
     }
 }

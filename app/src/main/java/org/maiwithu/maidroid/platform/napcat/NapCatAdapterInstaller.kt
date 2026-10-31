@@ -5,7 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.appupdate.AppVersion
+import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import java.io.File
@@ -117,8 +117,8 @@ internal class NapCatAdapterInstaller(
  * 版本号读不到或解析不了时不拦（让 MaiBot 自己判断）。
  */
 internal fun adapterHostVersionProblem(maiBotVersion: String?): String? {
-    val current = maiBotVersion?.let(AppVersion::parse) ?: return null
-    val required = AppVersion.parse(NapCatAdapterScripts.MIN_MAIBOT_VERSION) ?: return null
+    val current = maiBotVersion?.let(VersionNumber::parse) ?: return null
+    val required = VersionNumber.parse(NapCatAdapterScripts.MIN_MAIBOT_VERSION) ?: return null
     if (current >= required) return null
     return "QQ 适配器需要 MaiBot ${NapCatAdapterScripts.MIN_MAIBOT_VERSION} 以上（当前 $maiBotVersion），" +
         "请先在设置页“MaiBot 更新”里更新 MaiBot"

@@ -6,14 +6,15 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import org.maiwithu.maidroid.VersionNumber
 
 class AppUpdateFilesTest {
     @get:Rule
     val temp = TemporaryFolder()
 
-    private val v012 = AppVersion.parse("0.1.2")!!
-    private val v013 = AppVersion.parse("0.1.3")!!
-    private val v014 = AppVersion.parse("0.1.4")!!
+    private val v012 = VersionNumber.parse("0.1.2")!!
+    private val v013 = VersionNumber.parse("0.1.3")!!
+    private val v014 = VersionNumber.parse("0.1.4")!!
 
     @Test
     fun `file names carry the version and round trip`() {
@@ -22,7 +23,7 @@ class AppUpdateFilesTest {
         assertEquals("MaiDroid-0.1.3.apk", files.apkFile(v013).name)
         assertEquals("MaiDroid-0.1.3.apk.part", files.partFile(v013).name)
         assertEquals(v013, AppUpdateFiles.versionOf("MaiDroid-0.1.3.apk.part"))
-        assertEquals(AppVersion.parse("0.2.0-rc1"), AppUpdateFiles.versionOf("MaiDroid-0.2.0-rc1.apk"))
+        assertEquals(VersionNumber.parse("0.2.0-rc1"), AppUpdateFiles.versionOf("MaiDroid-0.2.0-rc1.apk"))
         assertNull(AppUpdateFiles.versionOf("MaiDroid_v0.1.3.apk"))
         assertNull(AppUpdateFiles.versionOf("MaiDroid-0.1.3.zip"))
     }
