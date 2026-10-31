@@ -3,7 +3,7 @@ package org.maiwithu.maidroid.webui
 /**
  * 注入 MaiBot WebUI 页面的脚本。
  *
- * - pageBootstrap：拦截 HTML 时插在页面第一个脚本之前，先于页面自己的脚本执行（主题 + vh 兜底）。
+ * - pageBootstrap：拦截 HTML 时插在页面第一个脚本之前，先于页面自己的脚本执行（主题 + vh 兜底 + 下载拦截）。
  * - viewportPatch：页面加载完后经 evaluateJavascript 执行（视口高度与导航栏留白）。
  */
 internal object WebUiInjectedScripts {
@@ -121,8 +121,12 @@ internal object WebUiInjectedScripts {
         </script>
     """.trimIndent()
 
-    /** 主题脚本 + vh 兜底脚本，拼在一起注入 HTML。 */
-    fun pageBootstrap(): String = themeBootstrapScript + "\n" + viewportUnitFixScript
+    /**
+     * 主题脚本 + vh 兜底脚本 + 下载拦截（见 WebUiDownloadScripts），拼在一起注入 HTML。
+     * 下载拦截也要先于页面脚本：它包住 URL.createObjectURL，页面生成导出文件之前就得装好。
+     */
+    fun pageBootstrap(): String =
+        themeBootstrapScript + "\n" + viewportUnitFixScript + "\n" + WebUiDownloadScripts.bootstrapTag
 
     /**
      * 页面加载完后执行的视口修补：把视口高度和导航栏占高写进 CSS 变量，

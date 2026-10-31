@@ -65,6 +65,27 @@ class MaiBotWebUiTest {
     }
 
     @Test
+    fun injectPageBootstrapInstallsDownloadHookBeforeFirstScript() {
+        val html = "<html><head><script src=\"/app.js\"></script></head></html>"
+
+        val injected = WebUiResponseRewriter.injectPageBootstrap(html)
+
+        // 下载拦截要在页面生成导出文件之前包住 URL.createObjectURL，所以也得先于页面脚本
+        val hookIndex = injected.indexOf("URL.createObjectURL = function")
+        val appScriptIndex = injected.indexOf("<script src=\"/app.js\">")
+        assertTrue(hookIndex in 0 until appScriptIndex)
+        assertTrue(injected.contains("window.${WebUiDownloadScripts.BRIDGE_NAME}"))
+    }
+
+    @Test
+    fun saveUrlScriptQuotesUrlAndFileName() {
+        // 地址和文件名按 JSON 字符串嵌进脚本，引号和反斜杠不会截断脚本
+        val script = WebUiDownloadScripts.saveUrlScript("blob:http://127.0.0.1:8001/abc", "a\"b\\c.txt")
+
+        assertTrue(script.endsWith("saveUrl(\"blob:http://127.0.0.1:8001/abc\", \"a\\\"b\\\\c.txt\");"))
+    }
+
+    @Test
     fun themeBootstrapOnlyFillsMissingThemeSettings() {
         // 用户在 WebUI 外观设置里换过主题后，每次启动不能再被改回“未来复古”：只在键为空时写默认值
         val injected = WebUiResponseRewriter.injectPageBootstrap("<head></head>")

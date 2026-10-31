@@ -90,7 +90,7 @@ flowchart TB
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
 | `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatAdapterScripts`、`NapCatAdapterInstaller`、`NapCatAdapterConfig`、`NapCatQrCodeRefresh` |
 | `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
-| `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、网页选文件 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiFileChooser`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
+| `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、网页选文件、网页下载 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiFileChooser`、`WebUiDownloads`、`WebUiBlobReceiver`、`WebUiDownloadScripts`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionList`、`OobeTaskList`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页、底部导航与横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`HomeNavigationRail`、`WebUiTab` |
@@ -204,11 +204,14 @@ provider 由系统在 `Application.onCreate` 之前创建，所以它自己建 `
 WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开时：
 
 1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
-2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本（主题只在 WebUI 还没存过外观设置时写默认值，不覆盖用户的选择）。构造时传了 `viewportReservedBottomCssPx` 的话，样式表里的 `env(safe-area-inset-bottom)` 会再加上这段高度，让 WebUI 自己的底栏、对话框整体上移让位。
+2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题、vh 兜底和下载拦截脚本（主题只在 WebUI 还没存过外观设置时写默认值，不覆盖用户的选择）。构造时传了 `viewportReservedBottomCssPx` 的话，样式表里的 `env(safe-area-inset-bottom)` 会再加上这段高度，让 WebUI 自己的底栏、对话框整体上移让位。
 3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，有让位高度时给滚动区补同样的留白。桌面版不执行这一步。
 
 横屏时 MaiBot WebUI 按桌面版排版：每次加载前 `WebUiWebViewClient.applyDesktopViewport` 按 WebView 尺寸用 `WebUiDesktopViewport` 算出布局宽度（保证布局视口不小于 1040 CSS px 宽；1024 是 WebUI 桌面布局的断点，再窄会退回手机版，刚过断点时首页卡片会挤坏，所以多留一点。高度不设下限，WebUI 没有按高度切换的断点），拦截 HTML 时把 viewport meta 换成这个宽度，并打开 WebView 的 `useWideViewPort` 和总览模式，整页按宽度缩进 WebView。加载后 WebView 宽度再变（比如挖孔安全区晚一帧生效）就用脚本就地改写 viewport，不重新加载；只压矮高度（弹出键盘）时不改。竖屏、NapCat 管理页照旧按手机版。
 4. 网页的上传按钮（本地聊天室发图片、加表情包等）经 `WebUiChromeClient.onShowFileChooser` 交给 `WebUiFileChooser`，用宿主注册的 ActivityResult 打开系统选文件页，把选中的 `content://` 地址回传网页。WebView 默认不处理文件选择，不接这一步上传按钮点了没反应。
+5. 网页的导出、下载按钮交给 `WebUiDownloads`（`createWebUiWebView` 必须传入，它注册 `DownloadListener` 和 JS 桥 `window.MaiDroidDownloads`），最后都弹系统“另存为”（`ACTION_CREATE_DOCUMENT`，不用存储权限）。WebView 没有 `DownloadListener` 时下载请求发出后就被取消，导出按钮点了没反应。分两种：
+   - http 地址（数据迁移导出的 zip）：`onDownloadStart` 拿到地址和 `Content-Disposition` 里的文件名 -> 另存为 -> 带上 WebView 的 Cookie（登录态 `maibot_session`）重新请求，边下边写。
+   - `blob:`、`data:` 地址（主题、界面设置、日志、表达方式、图片等网页现场生成的文件）：网页点完常常立刻 `revokeObjectURL`，内容只在网页内存里，`onDownloadStart` 也不带 `download` 属性的文件名。所以 `WebUiDownloadScripts` 随页面注入（NapCat 管理页由 service worker 接管，HTML 拦不到，由 `WebUiWebViewClient` 在页面加载完时补装），包住 `URL.createObjectURL` 记下每个 Blob，在 `a[download]` 被点击的那一刻读出内容，分块 base64 经 JS 桥送给 `WebUiBlobReceiver` 存成缓存文件，再另存为。没经过点击拦截的 blob 下载（比如网页派发合成点击事件）落到 `onDownloadStart`，宿主补跑一次脚本按地址取内容，名字按类型猜。
 
 竖屏时 WebUI 页签里 APP 底栏默认收成右下角的小按钮（`CollapsedHomeNavigationButton`），网页自己的底部导航贴着屏幕底边，所以页签和全屏 `WebUiActivity` 都不传让位高度。点小按钮会盖一层遮罩并弹出完整底栏，点遮罩、按返回键、切换标签或打开终端时收起；这个状态在 `HomeTabsShell` 里。
 

@@ -64,6 +64,7 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiChromeClient
+import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiPageBackground
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
@@ -73,6 +74,7 @@ import org.maiwithu.maidroid.webui.createWebUiWebView
 internal class WebUiTabState internal constructor(
     val webView: WebView,
     val fileChooser: WebUiFileChooser,
+    val downloads: WebUiDownloads,
     val webViewClient: WebUiWebViewClient
 ) {
     var webViewError by mutableStateOf<String?>(null)
@@ -99,11 +101,12 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         }
 
         val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
+        val downloads = WebUiDownloads(context, MaiBotWebUi.LOG_TAG)
 
         // 回调里要改页签状态，状态里又要持有 WebView 和 client：先建它们，回调经 holder 找到稍后建好的状态。
         var tabState: WebUiTabState? = null
 
-        val webView = createWebUiWebView(context).apply {
+        val webView = createWebUiWebView(context, downloads).apply {
             // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
             // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
             // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
@@ -137,7 +140,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             }
         )
         webView.webViewClient = webViewClient
-        WebUiTabState(webView, fileChooser, webViewClient).also { tabState = it }
+        WebUiTabState(webView, fileChooser, downloads, webViewClient).also { tabState = it }
     }
 
     // 网页点上传按钮 -> fileChooser 用这个 launcher 打开系统选文件页 -> 选完回到这里，把结果交回网页。
@@ -146,15 +149,23 @@ internal fun rememberWebUiTabState(): WebUiTabState {
     ) { result ->
         state.fileChooser.onResult(result.resultCode, result.data)
     }
+    // 网页点导出 -> downloads 用这个 launcher 弹“另存为” -> 选好位置回到这里，交给 downloads 写文件。
+    val downloadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        state.downloads.onResult(result.resultCode, result.data)
+    }
     SideEffect {
         state.fileChooser.launcher = fileChooserLauncher
+        state.downloads.launcher = downloadLauncher
     }
 
     DisposableEffect(state) {
         onDispose {
-            // 先把没回复的选文件请求按取消结束，再销毁 WebView。
+            // 先把没回复的选文件请求按取消结束、丢掉还没选位置的下载，再销毁 WebView。
             state.fileChooser.launcher = null
             state.fileChooser.cancelPending()
+            state.downloads.release()
             state.webView.destroy()
         }
     }

@@ -110,6 +110,10 @@ internal class WebUiWebViewClient(
 
     override fun onPageFinished(view: WebView, url: String) {
         CookieManager.getInstance().flush()
+        // 补装下载拦截（已装过就跳过）：NapCat 管理页由 service worker 接管，HTML 从它的缓存出来，
+        // shouldInterceptRequest 拦不到，注入 HTML 的那份就没装上（真机实测），导出日志时 blob 已被 revoke，读不到内容。
+        // 用户点导出总在页面加载完之后，这时装上足够。
+        view.evaluateJavascript(WebUiDownloadScripts.installScript, null)
         val desktopWidth = desktopLayoutWidthCss
         if (desktopWidth == null) {
             view.evaluateJavascript(WebUiInjectedScripts.viewportPatch(viewportReservedBottomCssPx)) { result ->
