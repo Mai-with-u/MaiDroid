@@ -185,4 +185,15 @@ class MaiBotWebUiTest {
         val scrollSafeRule = script.lines().single { it.contains("""'[data-maidroid-scroll-safe-area="true"]{""") }
         assertTrue(scrollSafeRule.contains("var(--maidroid-webview-reserved-bottom)"))
     }
+
+    @Test
+    fun viewportPatchLeavesPageScrollAreasAtTheirOwnSize() {
+        val script = WebUiInjectedScripts.viewportPatch(0)
+
+        // 普通滚动区不再被统一封顶成一屏高：真机竖屏上 max-h-80 的表格被撑成整屏，单指只能滚表格
+        assertFalse(script.contains("max-height:var(--maidroid-webview-height)"))
+        // 对话框规则只认对话框本身，不按类名子串匹配：WebUI 类名里到处是 --layout-sidebar-* 这样的变量名
+        val dialogRule = script.lines().single { it.contains("""'[role="dialog"]""") }
+        assertFalse(dialogRule.contains("[class*="))
+    }
 }

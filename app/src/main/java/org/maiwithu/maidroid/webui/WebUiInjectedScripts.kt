@@ -130,7 +130,8 @@ internal object WebUiInjectedScripts {
 
     /**
      * 页面加载完后执行的视口修补：把视口高度和导航栏占高写进 CSS 变量，
-     * 强制 html/body/#root、全屏容器、对话框按真实视口高度排版，并给会被导航栏挡住的滚动区补底部留白；
+     * 强制 html/body/#root、全屏容器、对话框按真实视口高度排版，并给会被导航栏挡住的滚动区补底部留白
+     * （页面里的普通滚动区保持网页自己的尺寸，不统一封顶）；
      * 之后监听尺寸变化和 DOM 变化持续重算。返回值是一段 JSON，记录探针量到的 vh 和最终用的高度，打进日志方便排查。
      */
     fun viewportPatch(reservedBottomCssPx: Int): String {
@@ -167,11 +168,16 @@ internal object WebUiInjectedScripts {
                   '.min-h-screen{min-height:var(--maidroid-webview-height)!important}',
                   '.h-screen{height:var(--maidroid-webview-height)!important}',
                   '[data-maidroid-scroll-safe-area="true"]{scroll-padding-bottom:calc(var(--maidroid-webview-reserved-bottom) + 1rem)!important;padding-bottom:calc(var(--maidroid-original-padding-bottom, 0px) + var(--maidroid-webview-reserved-bottom) + 1rem)!important;box-sizing:border-box!important}',
-                  '[class~="min-h-screen"][class~="overflow-y-auto"],[class~="h-screen"][class~="overflow-y-auto"],[class~="overflow-y-auto"],[class~="overflow-auto"],[class~="overscroll-contain"]{max-height:var(--maidroid-webview-height)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
+                  // 不给页面里的普通滚动区（overflow-y-auto、overflow-auto、overscroll-contain）统一封顶成一屏高：
+                  // 那是 vh 还恒为 0 时的兜底，现在 vh 正常，这样做反而把网页自己定的尺寸改掉了。真机竖屏上
+                  // 数据管理页 max-h-80 的表格被撑成整屏、单指只能滚表格，首页和模型配置页多出一层套在外面的滚动，
+                  // 机器人配置页最底下一截压在底栏下面滚不出来。去掉后这些页面都按网页原样排版，只剩一层页面滚动。
                   '[class~="min-h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"],[class~="h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"]{justify-content:flex-start!important}',
                   // 对话框类容器只把最大高度限制在视口减 1rem，不再减导航栏高度：
                   // 贴底的内边距已经由样式表里的安全区改写避开导航栏，这里再减一次会让对话框底部多出一段空白。
-                  '[role="dialog"],[data-radix-dialog-content],[class*="DialogContent"],[class*="dialog-content"],[class*="modal-content"],[class*="drawer"],[class*="Drawer"],[class*="sidebar"],[class*="Sidebar"]{max-height:calc(var(--maidroid-webview-height) - 1rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
+                  // 只认对话框本身：以前还按类名子串匹配 drawer、sidebar 等，WebUI 的类名里到处是
+                  // --layout-sidebar-* 这样的变量名，侧栏里每个链接、每个列表都被强加了滚动，真正的对话框靠 role 就能认出来。
+                  '[role="dialog"],[data-radix-dialog-content]{max-height:calc(var(--maidroid-webview-height) - 1rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
                   '[class~="max-h-screen"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 1rem)!important}'
                 ].join('\n');
               };
