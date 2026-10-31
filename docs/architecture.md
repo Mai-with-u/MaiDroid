@@ -204,8 +204,10 @@ provider 由系统在 `Application.onCreate` 之前创建，所以它自己建 `
 WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开时：
 
 1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
-2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题、vh 兜底和下载拦截脚本（主题只在 WebUI 还没存过外观设置时写默认值，不覆盖用户的选择）。构造时传了 `viewportReservedBottomCssPx` 的话，样式表里的 `env(safe-area-inset-bottom)` 会再加上这段高度，让 WebUI 自己的底栏、对话框整体上移让位。
-3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，有让位高度时给滚动区补同样的留白。桌面版不执行这一步。
+2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题、vh 兜底和下载拦截脚本（主题只在 WebUI 还没存过外观设置时写默认值，不覆盖用户的选择）。样式表、脚本等其余请求不改。
+3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框；页面里的普通滚动区保持网页自己的尺寸。桌面版不执行这一步。
+
+WebView 由 `createWebUiWebView` 统一创建，装了两指滚动（`WebUiTwoFingerScroll`）：第二根手指按下时给网页补一个 CANCEL，之后两指的竖直位移交给注入的脚本，从两指中点往外找可滚动的容器，先滚外层、外层到头再滚里层，松手按系统的 OverScroller 甩出惯性。用来越过占满屏幕、会吃掉单指滑动的子块。
 
 横屏时 MaiBot WebUI 按桌面版排版：每次加载前 `WebUiWebViewClient.applyDesktopViewport` 按 WebView 尺寸用 `WebUiDesktopViewport` 算出布局宽度（保证布局视口不小于 1040 CSS px 宽；1024 是 WebUI 桌面布局的断点，再窄会退回手机版，刚过断点时首页卡片会挤坏，所以多留一点。高度不设下限，WebUI 没有按高度切换的断点），拦截 HTML 时把 viewport meta 换成这个宽度，并打开 WebView 的 `useWideViewPort` 和总览模式，整页按宽度缩进 WebView。加载后 WebView 宽度再变（比如挖孔安全区晚一帧生效）就用脚本就地改写 viewport，不重新加载；只压矮高度（弹出键盘）时不改。竖屏、NapCat 管理页照旧按手机版。
 4. 网页的上传按钮（本地聊天室发图片、加表情包等）经 `WebUiChromeClient.onShowFileChooser` 交给 `WebUiFileChooser`，用宿主注册的 ActivityResult 打开系统选文件页，把选中的 `content://` 地址回传网页。WebView 默认不处理文件选择，不接这一步上传按钮点了没反应。

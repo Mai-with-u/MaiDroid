@@ -4,7 +4,7 @@ package org.maiwithu.maidroid.webui
  * 注入 MaiBot WebUI 页面的脚本。
  *
  * - pageBootstrap：拦截 HTML 时插在页面第一个脚本之前，先于页面自己的脚本执行（主题 + vh 兜底 + 下载拦截）。
- * - viewportPatch：页面加载完后经 evaluateJavascript 执行（视口高度与导航栏留白）。
+ * - viewportPatch：页面加载完后经 evaluateJavascript 执行（竖屏下按可视视口高度排版）。
  */
 internal object WebUiInjectedScripts {
     private const val THEME_MODE = "dark"
@@ -129,152 +129,86 @@ internal object WebUiInjectedScripts {
         themeBootstrapScript + "\n" + viewportUnitFixScript + "\n" + WebUiDownloadScripts.bootstrapTag
 
     /**
-     * 页面加载完后执行的视口修补：把视口高度和导航栏占高写进 CSS 变量，
-     * 强制 html/body/#root、全屏容器、对话框按真实视口高度排版，并给会被导航栏挡住的滚动区补底部留白
-     * （页面里的普通滚动区保持网页自己的尺寸，不统一封顶）；
-     * 之后监听尺寸变化和 DOM 变化持续重算。返回值是一段 JSON，记录探针量到的 vh 和最终用的高度，打进日志方便排查。
+     * 页面加载完后执行的视口修补（只用于竖屏手机版）：把可视视口高度写进 CSS 变量，
+     * 强制 html/body/#root、全屏容器、对话框按这个高度排版，页面里的普通滚动区保持网页自己的尺寸，不统一封顶。
+     * 弹出键盘、转屏等视口尺寸变化时重算这个变量；样式本身不随 DOM 变化重写。
+     * 返回值是一段 JSON，记录探针量到的 vh 和最终用的高度，打进日志方便排查。
      */
-    fun viewportPatch(reservedBottomCssPx: Int): String {
-        val safeReservedBottom = reservedBottomCssPx.coerceAtLeast(0)
-        return """
-            (() => {
-              const reservedBottom = $safeReservedBottom;
-              const styleId = '$VIEWPORT_PATCH_STYLE_ID';
+    fun viewportPatch(): String = """
+        (() => {
+          const styleId = '$VIEWPORT_PATCH_STYLE_ID';
 
-              const readViewportHeight = () => {
-                const visualHeight = window.visualViewport && window.visualViewport.height;
-                return Math.max(
-                  1,
-                  Math.round(
-                    visualHeight ||
-                    window.innerHeight ||
-                    document.documentElement.clientHeight ||
-                    document.body.clientHeight ||
-                    1
-                  )
-                );
-              };
+          const readViewportHeight = () => {
+            const visualHeight = window.visualViewport && window.visualViewport.height;
+            return Math.max(
+              1,
+              Math.round(
+                visualHeight ||
+                window.innerHeight ||
+                document.documentElement.clientHeight ||
+                document.body.clientHeight ||
+                1
+              )
+            );
+          };
 
-              const ensureStyle = () => {
-                let style = document.getElementById(styleId);
-                if (!style) {
-                  style = document.createElement('style');
-                  style.id = styleId;
-                  document.head.appendChild(style);
-                }
+          const styleText = [
+            'html,body,#root{width:100%!important;height:var(--maidroid-webview-height)!important;min-height:var(--maidroid-webview-height)!important;overflow:auto!important;overscroll-behavior:none!important}',
+            '.min-h-screen{min-height:var(--maidroid-webview-height)!important}',
+            '.h-screen{height:var(--maidroid-webview-height)!important}',
+            // 不给页面里的普通滚动区（overflow-y-auto、overflow-auto、overscroll-contain）统一封顶成一屏高：
+            // 那是 vh 还恒为 0 时的兜底，现在 vh 正常，这样做反而把网页自己定的尺寸改掉了。真机竖屏上
+            // 数据管理页 max-h-80 的表格被撑成整屏、单指只能滚表格，首页和模型配置页多出一层套在外面的滚动，
+            // 机器人配置页最底下一截压在底栏下面滚不出来。去掉后这些页面都按网页原样排版，只剩一层页面滚动。
+            '[class~="min-h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"],[class~="h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"]{justify-content:flex-start!important}',
+            // 对话框最高为视口减 1rem，内容超出时在对话框里滚动，不会顶出屏幕。
+            // 只认对话框本身：以前还按类名子串匹配 drawer、sidebar 等，WebUI 的类名里到处是
+            // --layout-sidebar-* 这样的变量名，侧栏里每个链接、每个列表都被强加了滚动，真正的对话框靠 role 就能认出来。
+            '[role="dialog"],[data-radix-dialog-content]{max-height:calc(var(--maidroid-webview-height) - 1rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}'
+          ].join('\n');
 
-                style.textContent = [
-                  'html,body,#root{width:100%!important;height:var(--maidroid-webview-height)!important;min-height:var(--maidroid-webview-height)!important;overflow:auto!important;overscroll-behavior:none!important}',
-                  '.min-h-screen{min-height:var(--maidroid-webview-height)!important}',
-                  '.h-screen{height:var(--maidroid-webview-height)!important}',
-                  '[data-maidroid-scroll-safe-area="true"]{scroll-padding-bottom:calc(var(--maidroid-webview-reserved-bottom) + 1rem)!important;padding-bottom:calc(var(--maidroid-original-padding-bottom, 0px) + var(--maidroid-webview-reserved-bottom) + 1rem)!important;box-sizing:border-box!important}',
-                  // 不给页面里的普通滚动区（overflow-y-auto、overflow-auto、overscroll-contain）统一封顶成一屏高：
-                  // 那是 vh 还恒为 0 时的兜底，现在 vh 正常，这样做反而把网页自己定的尺寸改掉了。真机竖屏上
-                  // 数据管理页 max-h-80 的表格被撑成整屏、单指只能滚表格，首页和模型配置页多出一层套在外面的滚动，
-                  // 机器人配置页最底下一截压在底栏下面滚不出来。去掉后这些页面都按网页原样排版，只剩一层页面滚动。
-                  '[class~="min-h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"],[class~="h-screen"][class~="items-center"][class~="justify-center"][class~="overflow-y-auto"]{justify-content:flex-start!important}',
-                  // 对话框类容器只把最大高度限制在视口减 1rem，不再减导航栏高度：
-                  // 贴底的内边距已经由样式表里的安全区改写避开导航栏，这里再减一次会让对话框底部多出一段空白。
-                  // 只认对话框本身：以前还按类名子串匹配 drawer、sidebar 等，WebUI 的类名里到处是
-                  // --layout-sidebar-* 这样的变量名，侧栏里每个链接、每个列表都被强加了滚动，真正的对话框靠 role 就能认出来。
-                  '[role="dialog"],[data-radix-dialog-content]{max-height:calc(var(--maidroid-webview-height) - 1rem)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}',
-                  '[class~="max-h-screen"]{max-height:calc(var(--maidroid-webview-height) - var(--maidroid-webview-reserved-bottom) - 1rem)!important}'
-                ].join('\n');
-              };
+          // 样式表只在缺失或内容不同时才写：视口每变一次都重写会让整页重新匹配样式。
+          const ensureStyle = () => {
+            let style = document.getElementById(styleId);
+            if (!style) {
+              style = document.createElement('style');
+              style.id = styleId;
+              document.head.appendChild(style);
+            }
+            if (style.textContent !== styleText) style.textContent = styleText;
+          };
 
-              const scrollCandidatePattern = /scroll|overscroll|drawer|sidebar|sheet|dialog|modal|menu|nav|radix/i;
+          const apply = () => {
+            const viewportHeight = readViewportHeight();
+            document.documentElement.style.setProperty('--maidroid-webview-height', viewportHeight + 'px');
+            ensureStyle();
+            return viewportHeight;
+          };
 
-              const markScrollSafeAreas = (viewportHeight) => {
-                // 上游移动端底栏在场时，内容区底部留白已由上游按底栏实际位置算好（底栏已随安全区上移到导航栏之上），
-                // 这里不再叠加启发式留白；底栏隐藏（聊天页等）时才由这里兜底给滚动区让出导航栏高度。
-                const upstreamDockPresent = !!document.querySelector('[data-mobile-tabbar="true"]');
-                const scrollPaddingActive = reservedBottom > 0 && !upstreamDockPresent;
-                const candidates = [
-                  document.scrollingElement,
-                  document.documentElement,
-                  document.body,
-                  document.getElementById('root'),
-                  ...document.querySelectorAll('body *')
-                ].filter(Boolean);
+          // 以前这里还盯着整个 body 的 DOM 变化，每次变化都把全页元素量一遍，给滚动区补 APP 导航栏的留白；
+          // 留白高度早已恒为 0（导航栏不再盖在网页上），那一遍全页测量只剩开销，连同监听一起去掉。
+          if (!window.__maidroidViewportPatchInstalled) {
+            window.__maidroidViewportPatchInstalled = true;
+            window.addEventListener('resize', apply, { passive: true });
+            window.addEventListener('orientationchange', () => setTimeout(apply, 50), { passive: true });
+            if (window.visualViewport) {
+              window.visualViewport.addEventListener('resize', apply, { passive: true });
+            }
+          }
 
-                candidates.forEach((element) => {
-                  const computed = window.getComputedStyle(element);
-                  const rect = element.getBoundingClientRect();
-                  const className = typeof element.className === 'string' ? element.className : '';
-                  const id = element.id || '';
-                  const overflowY = computed.overflowY || computed.overflow;
-                  const canScroll = element.scrollHeight > element.clientHeight + 12;
-                  const scrollStyled = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
-                  const viewportSized = rect.height >= viewportHeight * 0.45 || element === document.scrollingElement;
-                  const importantSurface =
-                    element === document.scrollingElement ||
-                    element === document.body ||
-                    element.id === 'root' ||
-                    computed.position === 'fixed' ||
-                    scrollCandidatePattern.test(className + ' ' + id);
-                  const shouldMark = scrollPaddingActive && canScroll && (scrollStyled || viewportSized || importantSurface);
+          const probe = document.createElement('div');
+          probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:100vh;pointer-events:none';
+          document.body.appendChild(probe);
+          const measuredVh = probe.getBoundingClientRect().height;
+          probe.remove();
 
-                  if (shouldMark) {
-                    if (!element.hasAttribute('data-maidroid-scroll-safe-area')) {
-                      element.style.setProperty(
-                        '--maidroid-original-padding-bottom',
-                        computed.paddingBottom || '0px'
-                      );
-                    }
-                    element.setAttribute('data-maidroid-scroll-safe-area', 'true');
-                  } else if (element.hasAttribute('data-maidroid-scroll-safe-area')) {
-                    element.removeAttribute('data-maidroid-scroll-safe-area');
-                    element.style.removeProperty('--maidroid-original-padding-bottom');
-                  }
-                });
-              };
-
-              const apply = () => {
-                const viewportHeight = readViewportHeight();
-                document.documentElement.style.setProperty('--maidroid-webview-height', viewportHeight + 'px');
-                document.documentElement.style.setProperty('--maidroid-webview-reserved-bottom', reservedBottom + 'px');
-                ensureStyle();
-                markScrollSafeAreas(viewportHeight);
-                return viewportHeight;
-              };
-
-              if (!window.__maidroidViewportPatchInstalled) {
-                window.__maidroidViewportPatchInstalled = true;
-                window.addEventListener('resize', apply, { passive: true });
-                window.addEventListener('orientationchange', () => setTimeout(apply, 50), { passive: true });
-                if (window.visualViewport) {
-                  window.visualViewport.addEventListener('resize', apply, { passive: true });
-                  window.visualViewport.addEventListener('scroll', apply, { passive: true });
-                }
-                window.__maidroidViewportPatchObserver = new MutationObserver(() => {
-                  window.clearTimeout(window.__maidroidViewportPatchTimer);
-                  window.__maidroidViewportPatchTimer = window.setTimeout(apply, 50);
-                });
-                if (document.body) {
-                  window.__maidroidViewportPatchObserver.observe(document.body, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['class', 'style', 'open', 'data-state']
-                  });
-                }
-              }
-
-              const probe = document.createElement('div');
-              probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:100vh;pointer-events:none';
-              document.body.appendChild(probe);
-              const measuredVh = probe.getBoundingClientRect().height;
-              probe.remove();
-
-              const viewportHeight = apply();
-              window.dispatchEvent(new Event('resize'));
-              return JSON.stringify({
-                patched: true,
-                vh: measuredVh,
-                viewportHeight,
-                reservedBottom
-              });
-            })()
-        """.trimIndent()
-    }
+          const viewportHeight = apply();
+          window.dispatchEvent(new Event('resize'));
+          return JSON.stringify({
+            patched: true,
+            vh: measuredVh,
+            viewportHeight
+          });
+        })()
+    """.trimIndent()
 }

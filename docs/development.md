@@ -63,7 +63,8 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
-| `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入（含下载拦截先于页面脚本）、主题只补默认值、样式表安全区改写、视口修补脚本 |
+| `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入（含下载拦截先于页面脚本）、主题只补默认值、视口修补脚本（不给普通滚动区封顶、不随 DOM 变化重扫全页） |
+| `webui/WebUiTwoFingerScrollTest` | 两指滚动注入脚本的拼接与数字格式（不随系统语言变成逗号） |
 | `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限）、改写 viewport meta |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
 | `webui/WebUiDownloadNamesTest` | 网页下载的文件名（download 属性、Content-Disposition 含 filename*、地址路径、按类型猜）、去掉非法字符、交给“另存为”的 MIME 类型与扩展名一致 |

@@ -14,13 +14,9 @@ import android.webkit.WebViewClient
  * 也可能是 NapCat 管理页，所以不以 MaiBot 命名。
  * 请求经 WebUiResponseRewriter 改写 -> 页面加载完后落盘 Cookie 并执行视口修补脚本 -> 主框架加载失败时回调给界面显示重试条。
  * onPageFinishedCallback 只在主框架加载成功时回调，加载失败后报错页的“加载完成”不算。
- *
- * viewportReservedBottomCssPx 是浮在网页上方的 APP 底部导航栏的占高（CSS px，等于 dp），
- * 同时用于改写样式表里的底部安全区和视口修补时给滚动区留白；全屏打开时为 0。
  */
 internal class WebUiWebViewClient(
     private val logTag: String,
-    private val viewportReservedBottomCssPx: Int = 0,
     private val onPageFinishedCallback: (WebView, String) -> Unit = { _, _ -> },
     private val onMainFrameError: (WebResourceRequest, WebResourceError) -> Unit = { _, _ -> }
 ) : WebViewClient() {
@@ -97,7 +93,6 @@ internal class WebUiWebViewClient(
             WebUiResponseRewriter.intercept(
                 request = it,
                 logTag = logTag,
-                bottomInsetCssPx = viewportReservedBottomCssPx,
                 desktopLayoutWidthCss = desktopLayoutWidthCss
             )
         }
@@ -116,7 +111,7 @@ internal class WebUiWebViewClient(
         view.evaluateJavascript(WebUiDownloadScripts.installScript, null)
         val desktopWidth = desktopLayoutWidthCss
         if (desktopWidth == null) {
-            view.evaluateJavascript(WebUiInjectedScripts.viewportPatch(viewportReservedBottomCssPx)) { result ->
+            view.evaluateJavascript(WebUiInjectedScripts.viewportPatch()) { result ->
                 Log.d(logTag, "viewport patch $result")
             }
         } else {
