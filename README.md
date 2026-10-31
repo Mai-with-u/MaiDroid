@@ -187,7 +187,9 @@ MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和
 
 ### 出问题了怎么反馈？
 
-打开主页的终端输出页（竖屏时在右下角，横屏时在左侧导航栏底部），复制日志，到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交，贴日志前请把令牌、API Key、QQ 号这类信息打码。麦麦自己的回复和人设问题请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请去 [NapCatQQ](https://github.com/NapNeko/NapCatQQ/issues)。
+打开主页的终端输出页（竖屏时在右下角，横屏时在左侧导航栏底部），复制日志，到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交，贴日志前请把令牌、API Key、QQ 号这类信息打码。
+
+MaiBot相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请去 [NapCatQQ](https://github.com/NapNeko/NapCatQQ/issues)。
 
 ## 现状
 

@@ -29,7 +29,7 @@
 ## 检查清单
 
 - [ ] 目标分支是 `dev`
-- [ ] 提交信息用 Conventional Commits，冒号后的说明用中文；单个提交增删合计不超过 800 行
+- [ ] 提交信息遵循 Conventional Commits
 - [ ] 用户可见的变化已写进 `CHANGELOG.md` 的 `## [Unreleased]`
 - [ ] 新写或修改的代码带中文注释，写清触发条件、执行顺序和原因
 - [ ] 没有写只对特定 MaiBot 版本生效的改动，也没有修改 MaiBot 本身（确实需要的话，请在上面写清原因，见 `docs/contributing.md`）
