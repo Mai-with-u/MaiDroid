@@ -18,6 +18,12 @@ val HarmonySans = FontFamily(
     Font(R.font.harmonyos_sans_sc_bold, FontWeight.Bold)
 )
 
+// 等宽字体，只给唤醒页的开机自检画面用：点线引导要按字符宽度对齐成一列。
+val JetBrainsMono = FontFamily(
+    Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
+    Font(R.font.jetbrains_mono_bold, FontWeight.Bold)
+)
+
 /**
  * Typography matching the Figma design system.
  *
