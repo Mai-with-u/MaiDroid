@@ -216,7 +216,7 @@ MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和
 
 构建产物通常位于 `app/build/outputs/`。
 
-日常开发在 `dev` 分支，提交 PR 请以 `dev` 为目标。提交改动前请先读 [贡献指南](docs/contributing.md)：MaiBot 会持续更新，所以非必要不做只对特定版本生效的修改，也不建议改动 MaiBot 本身。发布新版本和签名的流程也写在那里。
+日常开发在 `dev` 分支，提交 PR 请以 `dev` 为目标。提交改动前请先读 [贡献指南](docs/contributing.md)：MaiBot 会持续更新，所以非必要不做只对特定版本生效的修改，也不建议改动 MaiBot 本身。里面还要求目录结构一眼能看懂、术语不能误导人、文档和代码一起更新。发布新版本和签名的流程也写在那里。
 
 文档索引：
 
@@ -224,7 +224,7 @@ MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和
 - [容器运行时](docs/container-runtime.md)：文件布局、proot 命令、首次引导每一步、MaiBot 启动与在线更新、容器 SSH
 - [消息平台接入](docs/platforms.md)：QQ 官方机器人、NapCat，以及新增平台的步骤
 - [开发指南](docs/development.md)：构建、测试、真机调试、代码约定
-- [贡献指南](docs/contributing.md)：对 MaiBot 的改动原则、发布与签名
+- [贡献指南](docs/contributing.md)：对 MaiBot 的改动原则、可维护性要求、发布与签名
 
 ## 开源许可
 
