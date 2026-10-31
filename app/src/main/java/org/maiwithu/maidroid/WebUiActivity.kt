@@ -1,14 +1,21 @@
 package org.maiwithu.maidroid
 
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
 import android.webkit.WebView
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiChromeClient
+import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
@@ -16,7 +23,7 @@ import org.maiwithu.maidroid.webui.createWebUiWebView
 /**
  * 全屏打开一个 WebUI 页面：主页唤醒按钮打开 MaiBot WebUI，NapCat 设置按钮打开 NapCat 管理页。
  * MaiBot WebUI 会换成带访问令牌的自动登录地址；返回键先在网页内后退，退到底再关闭页面；
- * 网页里的上传按钮经 WebUiFileChooser 打开系统选文件页。
+ * 网页里的上传按钮经 WebUiFileChooser 打开系统选文件页，导出、下载按钮经 WebUiDownloads 弹“另存为”。
  */
 class WebUiActivity : ComponentActivity() {
     companion object {
@@ -35,16 +42,50 @@ class WebUiActivity : ComponentActivity() {
         fileChooser.onResult(result.resultCode, result.data)
     }
 
+    // 下载要用应用上下文，属性初始化时 Activity 还没有，所以在 onCreate 里建。
+    private lateinit var downloads: WebUiDownloads
+
+    // 网页点导出 -> downloads 用这个 launcher 弹“另存为” -> 选好位置回到这里，交给 downloads 写文件。
+    private val downloadLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        downloads.onResult(result.resultCode, result.data)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // 横屏时和主界面一样隐藏状态栏和导航栏（从边缘滑动临时呼出），竖屏保持系统栏常显。
+        applySystemBars(
+            window = window,
+            landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+            hideNavigationBar = false
+        )
 
         fileChooser.launcher = fileChooserLauncher
-        webView = createWebUiWebView(this).apply {
-            webViewClient = WebUiWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
+        downloads = WebUiDownloads(this, MaiBotWebUi.LOG_TAG).apply { launcher = downloadLauncher }
+        val webViewClient = WebUiWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
+        webView = createWebUiWebView(this, downloads).apply {
+            this.webViewClient = webViewClient
             webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
         }
-        setContentView(webView)
+        // 网页放进一层容器，容器按系统栏、挖孔和键盘留内边距：Android 15 起强制沉浸式，
+        // 不留的话网页会画到状态栏和横屏侧边的摄像头挖孔下面，弹出的键盘也会直接盖住网页（adjustResize 不再缩小窗口）；
+        // 旧系统由窗口自己避让，这里拿到的是 0。悬浮键盘不占底部，报上来的键盘高度是 0，网页不用让。
+        val container = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
+            val safe = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime()
+            )
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+        setContentView(container)
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -60,16 +101,23 @@ class WebUiActivity : ComponentActivity() {
         )
 
         val url = intent.getStringExtra(EXTRA_URL) ?: MaiBotWebUi.URL
-        val launchUrl = if (MaiBotWebUi.isMaiBotWebUiUrl(url)) {
+        val isMaiBotWebUi = MaiBotWebUi.isMaiBotWebUiUrl(url)
+        val launchUrl = if (isMaiBotWebUi) {
             MaiBotWebUi.launchUrl(appDependencies.runtimePaths, TerminalLog.logs.value, baseUrl = url)
         } else {
             url
         }
-        webView.loadUrl(launchUrl)
+        // 等 WebView 排好版、量出尺寸再加载：横屏时 MaiBot WebUI 要按尺寸算桌面版布局宽度；
+        // NapCat 管理页不在这次的桌面版范围内，始终按手机版。
+        webView.doOnLayout {
+            webViewClient.applyDesktopViewport(webView, enabled = isMaiBotWebUi)
+            webView.loadUrl(launchUrl)
+        }
     }
 
     override fun onDestroy() {
         fileChooser.cancelPending()
+        downloads.release()
         webView.destroy()
         super.onDestroy()
     }

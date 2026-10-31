@@ -1,0 +1,17 @@
+# 工作流里的第三方 Action 都固定到了提交哈希（后面带版本号注释），不会自己升级。
+# 这里让 Dependabot 每月检查一次，有新版本就提一个合并更新的 PR，改的哈希和版本号注释一起更新。
+# PR 目标是 dev：日常开发都在 dev，main 只接收从 dev 合入的发布内容。
+# Gradle 依赖（AGP、Kotlin、Compose 等）版本之间互相牵制，需要成套升级并真机验证，所以不交给机器人自动提。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

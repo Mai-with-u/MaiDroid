@@ -4,21 +4,26 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appDependencies
+import java.util.TimeZone
 
 /**
  * 托管容器里所有长驻进程的前台服务：MaiBot、NapCat（装了才启动）和容器 sshd（开了才启动）。
  *
  * 常驻通知 + 部分唤醒锁让系统不在后台杀掉它；服务销毁时依次停掉 sshd、NapCat、MaiBot。
  * 所有“把 MaiBot 拉起来 / 重启”的入口（主页唤醒、开机广播、装完平台、在线更新）都经 start 走到这里。
+ * 服务活着时还监听手机改时区，让容器时区跟着改（见 ContainerTimeZone）。
  */
 class MaiBotRuntimeService : Service() {
 
@@ -62,10 +67,28 @@ class MaiBotRuntimeService : Service() {
     private val napCatProcess get() = appDependencies.napCatProcess
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // 手机改时区（手动改，或开着自动时区跨了时区）时系统发这条广播：同步容器时区，MaiBot 在跑就重启。
+    private val timeZoneReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_TIMEZONE_CHANGED) return
+            Log.d(TAG, "Phone time zone changed")
+            // 框架收到改时区时也会这样清掉本进程缓存的默认时区；这里先清一次，免得广播比框架的更新先到、读到旧时区。
+            TimeZone.setDefault(null)
+            maiBotProcess.followPhoneTimeZone()
+        }
+    }
+
+    // 时区广播只在服务活着（容器在跑）时需要跟进，所以随服务注册、随服务注销；它是系统广播，不对其他应用开放。
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
         acquireWakeLock()
+        ContextCompat.registerReceiver(
+            this,
+            timeZoneReceiver,
+            IntentFilter(Intent.ACTION_TIMEZONE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     // 每次 start 都会走到这里：先挂常驻通知 -> 按设置同步 sshd -> 只同步 SSH 时到此为止；
@@ -93,6 +116,7 @@ class MaiBotRuntimeService : Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy")
+        unregisterReceiver(timeZoneReceiver)
         containerSsh.stop()
         napCatProcess.stop()
         maiBotProcess.stop()

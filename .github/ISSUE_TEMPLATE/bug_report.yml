@@ -1,0 +1,134 @@
+# 缺陷报告表单：把排查要用到的版本、机型、出问题的环节和日志一次问全，
+# 省得维护者来回追问。选项里的环节与 docs/architecture.md 的包划分一一对应。
+name: 缺陷报告
+description: MaiDroid 用着不对劲、报错、闪退或和预期不一样
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前先看两件事：
+
+        - **只管 MaiDroid 本身**：手机上的安装引导、容器、进程管理、界面、WebUI 嵌入、消息平台接入等。麦麦的回复内容、人设、插件逻辑属于 MaiBot 本体，请去 [MaiBot 仓库](https://github.com/Mai-with-u/MaiBot/issues)；QQ 协议本身的问题（登录风控、被踢下线等）请去 [NapCatQQ 仓库](https://github.com/NapNeko/NapCatQQ/issues)。拿不准归谁时照常提交，我们帮你判断。
+        - **一个 Issue 一个问题**，几个不相关的问题请分开提交。
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我搜索过现有的 Issues（包括已关闭的），没有找到相同的问题
+          required: true
+        - label: 我已经更新到最新的 Release 版本，问题仍然存在
+          required: true
+        - label: 我已经在下面贴的日志、截图里去掉了 API Key、访问令牌、QQ 号、群号等隐私信息
+          required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: MaiDroid 版本
+      description: 主页切到“设置”页签，“应用版本”一行显示的就是。
+      placeholder: 例如 0.1.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: 安装来源
+      description: 自己构建的 debug 包和 Release 包签名不同，行为也可能不同，请如实选择。
+      options:
+        - GitHub Release 下载
+        - 应用内更新（设置页“应用版本”）
+        - 自己构建（debug 包）
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: maibot-version
+    attributes:
+      label: MaiBot 版本
+      description: 设置页“MaiBot 更新”一行显示的就是。还没装好 MaiBot（卡在首次引导里）可以不填。
+      placeholder: 例如 1.3.18
+
+  - type: input
+    id: device
+    attributes:
+      label: 手机型号和系统版本
+      description: 厂商系统对后台保活、权限、安装器的限制差异很大，请写清品牌和系统。
+      placeholder: 例如 荣耀 Magic6 / MagicOS 9.0（Android 15）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的环节
+      description: 选最接近的一项，不确定就选“其他 / 不确定”。
+      options:
+        - 首次引导（授权、配置容器、安装 MaiBot）
+        - 容器运行时（解包、proot、网络、DNS、时区）
+        - MaiBot 启动 / 运行 / 在线更新
+        - WebUI 页签（嵌入的 MaiBot 网页，含导出、下载、上传）
+        - 消息平台：QQ（NapCat）
+        - 消息平台：QQ 官方机器人
+        - 容器 SSH
+        - 应用自更新（设置页“应用版本”）
+        - 文件共享（系统“文件”应用里的 MaiBot / MaiDroid 容器）
+        - 前台服务 / 后台保活 / 开机自启
+        - 终端输出页
+        - 界面、动画、横屏 / 平板适配
+        - 其他 / 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么？和你预期的有什么不同？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 越具体越好，能让别人照着做一遍出现同样的问题。只出现过一次、没有固定步骤的话，写下出问题之前你在做什么。
+      value: |
+        1.
+        2.
+        3.
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 出现频率
+      options:
+        - 每次都出现
+        - 偶尔出现
+        - 只出现过一次
+        - 不确定
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        请尽量贴上出问题前后的日志，没有日志很难定位。获取方式（任选其一）：
+
+        - 在主页打开“终端输出”（竖屏在右下角，横屏在左侧导航栏底部），点顶栏的“复制全部输出”，粘贴到这里。长按某行可以多选，只复制相关的几行。
+        - 电脑上接手机执行 `adb logcat -s TerminalLog`。
+        - MaiBot 自己的日志：系统“文件”应用侧边栏的“MaiBot”下的日志目录。
+
+        **贴之前请检查并打码**：日志里可能出现访问令牌、API Key、QQ 号、群号和聊天内容。日志太长可以作为文件拖进下面的“补充信息”。
+      render: text
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 截图、录屏、之前做过的尝试，以及其他你觉得有用的东西。图片和文件可以直接拖进输入框。

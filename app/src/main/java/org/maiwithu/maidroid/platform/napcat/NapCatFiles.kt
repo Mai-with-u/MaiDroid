@@ -1,10 +1,13 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.maiwithu.maidroid.maibot.findPluginDirById
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import java.io.File
 
 /** NapCat 相关文件在宿主机侧（容器 rootfs 内）的位置，以及“是否已装好”的判断。 */
 internal class NapCatFiles(paths: RuntimePaths) {
+    private val maiBotPluginsDir: File = paths.maiBotPluginsDir
+
     /** 容器内 /root/napcat：NapCat 本体、配置和登录二维码缓存。 */
     val napCatDir: File = File(paths.rootfsDir, "root/napcat")
     val configDir: File = File(napCatDir, "config")
@@ -27,8 +30,23 @@ internal class NapCatFiles(paths: RuntimePaths) {
     /** 启动 Xvfb 和 LinuxQQ 的脚本，每次启动前由 NapCatScripts.prepareRuntime 重新生成。 */
     val launcher: File = File(paths.rootfsDir, "root/launcher.sh")
 
-    /** MaiBot 侧的 NapCat 适配器插件配置，里面写着连 OneBot 用的端口和 token，由 NapCatAdapterConfig 改写。 */
-    val maiBotAdapterConfig: File = File(paths.maiBotPluginsDir, "MaiBot-Napcat-Adapter/config.toml")
+    /** MaiBot 的 pyproject.toml，读主程序版本判断能不能装 SnowLuma 适配器。 */
+    val maiBotPyproject: File = paths.maiBotPyproject
+
+    /**
+     * MaiBot 侧的 SnowLuma 适配器插件（SnowLumaAdapterScripts）：和 MaiBot 一样按清单 ID 找，
+     * 用户也可能从 MaiBot WebUI 的插件市场装过，只认固定目录名会再装一份、同一插件 ID 出现两份会冲突。
+     */
+    fun adapterDir(): File? =
+        findPluginDirById(maiBotPluginsDir, SnowLumaAdapterScripts.PLUGIN_ID, SnowLumaAdapterScripts.DIR_NAME)
+
+    /** 已停更的旧适配器（MaiBot-Napcat-Adapter）还在就返回它的目录，迁移时要删掉。 */
+    fun legacyAdapterDir(): File? =
+        findPluginDirById(maiBotPluginsDir, SnowLumaAdapterScripts.LEGACY_PLUGIN_ID, SnowLumaAdapterScripts.LEGACY_DIR_NAME)
+
+    /** SnowLuma 适配器的配置，里面写着连 OneBot 用的端口和 token，由 SnowLumaAdapterConfig 改写；还没装时指向将要安装的位置。 */
+    fun adapterConfig(): File =
+        File(adapterDir() ?: File(maiBotPluginsDir, SnowLumaAdapterScripts.DIR_NAME), "config.toml")
 
     /** QQ 本地登录数据目录，读不到 OneBot 配置时从这里的子目录名推断 QQ 号。 */
     val qqLoginDataDir: File = File(paths.rootfsDir, "root/.config/QQ/nt_qq/global/nt_data/Login")
@@ -37,7 +55,20 @@ internal class NapCatFiles(paths: RuntimePaths) {
     val installProgressFile: File = File(paths.termuxTmpDir, "progress")
     val installProgressDescriptionFile: File = File(paths.termuxTmpDir, "progress_des")
 
-    /** 安装标记、OneBot 配置、MaiBot 适配器配置三者都在才算装好。 */
-    fun isInstalled(): Boolean =
-        readyMarker.isFile && defaultOneBotConfig.isFile && maiBotAdapterConfig.isFile
+    /** NapCat 本体装好了（安装标记和 OneBot 配置都在），可以启动 QQ；不管 MaiBot 侧的适配器。 */
+    fun isNapCatReady(): Boolean = readyMarker.isFile && defaultOneBotConfig.isFile
+
+    /** 第一次安装时保存的 OneBot token，读不到返回 null。 */
+    fun readOneBotToken(): String? = oneBotTokenFile.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** SnowLuma 适配器装好了，并且它的配置已经迁移成连本机 NapCat（见 SnowLumaAdapterConfig.isMigrated）。 */
+    fun isAdapterConfigured(): Boolean {
+        if (adapterDir() == null) return false
+        val config = adapterConfig().takeIf { it.isFile }?.readText() ?: return false
+        val token = readOneBotToken() ?: return false
+        return SnowLumaAdapterConfig.isMigrated(config, token)
+    }
+
+    /** NapCat 本体和 SnowLuma 适配器都装好、适配器配置也迁移好了才算装好，消息平台页按这个显示。 */
+    fun isInstalled(): Boolean = isNapCatReady() && isAdapterConfigured()
 }

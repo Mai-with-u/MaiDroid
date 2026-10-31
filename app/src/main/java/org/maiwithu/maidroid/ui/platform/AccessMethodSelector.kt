@@ -39,34 +39,34 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-private val AdapterSelectorItemWidth = 72.dp
+private val AccessMethodSelectorItemWidth = 72.dp
 
-private val AdapterSelectorItemSpacing = 2.dp
+private val AccessMethodSelectorItemSpacing = 2.dp
 
-private val AdapterSelectorPadding = 2.dp
+private val AccessMethodSelectorPadding = 2.dp
 
 /**
  * 选择器按选项数定宽：每格 72dp 正好放下 12sp 的“官方机器人”五个字不折行。
  * 三个选项时约 224dp，卡片最窄 272dp 减去内边距还剩 240dp，放得下。
  */
-internal fun adapterSelectorWidth(adapterCount: Int): Dp {
-    val count = adapterCount.coerceAtLeast(1)
-    return AdapterSelectorItemWidth * count.toFloat() +
-        AdapterSelectorItemSpacing * (count - 1).toFloat() +
-        AdapterSelectorPadding * 2f
+internal fun accessMethodSelectorWidth(accessMethodCount: Int): Dp {
+    val count = accessMethodCount.coerceAtLeast(1)
+    return AccessMethodSelectorItemWidth * count.toFloat() +
+        AccessMethodSelectorItemSpacing * (count - 1).toFloat() +
+        AccessMethodSelectorPadding * 2f
 }
 
 /** 胶囊形的接入方式选择器，选中项的底色块带弹性动画滑到对应位置。 */
 @Composable
-internal fun AdapterSelector(
-    adapters: List<PlatformAdapter>,
-    selectedAdapter: PlatformAdapter?,
-    onAdapterSelected: (PlatformAdapter) -> Unit,
+internal fun AccessMethodSelector(
+    accessMethods: List<AccessMethod>,
+    selectedAccessMethod: AccessMethod?,
+    onAccessMethodSelected: (AccessMethod) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val selectedIndex = adapters.indexOf(selectedAdapter).coerceAtLeast(0)
-    val itemSpacing = AdapterSelectorItemSpacing
-    val horizontalPadding = AdapterSelectorPadding
+    val selectedIndex = accessMethods.indexOf(selectedAccessMethod).coerceAtLeast(0)
+    val itemSpacing = AccessMethodSelectorItemSpacing
+    val horizontalPadding = AccessMethodSelectorPadding
 
     BoxWithConstraints(
         modifier = modifier
@@ -74,9 +74,9 @@ internal fun AdapterSelector(
             .background(CardBorder)
             .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
     ) {
-        val itemWidth = if (adapters.isNotEmpty()) {
-            (maxWidth - horizontalPadding * 2f - itemSpacing * (adapters.size - 1).toFloat()) /
-                adapters.size.toFloat()
+        val itemWidth = if (accessMethods.isNotEmpty()) {
+            (maxWidth - horizontalPadding * 2f - itemSpacing * (accessMethods.size - 1).toFloat()) /
+                accessMethods.size.toFloat()
         } else {
             0.dp
         }
@@ -86,7 +86,7 @@ internal fun AdapterSelector(
                 dampingRatio = 0.76f,
                 stiffness = Spring.StiffnessMediumLow
             ),
-            label = "AdapterSelectorOffset"
+            label = "AccessMethodSelectorOffset"
         )
 
         Box(
@@ -105,27 +105,27 @@ internal fun AdapterSelector(
                 .padding(horizontal = horizontalPadding, vertical = horizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(itemSpacing)
         ) {
-            adapters.forEach { adapter ->
-                val selected = adapter == selectedAdapter
+            accessMethods.forEach { accessMethod ->
+                val selected = accessMethod == selectedAccessMethod
                 val textColor by animateColorAsState(
                     targetValue = if (selected) TextPrimary else TextMuted,
                     animationSpec = spring(
                         dampingRatio = 1f,
                         stiffness = Spring.StiffnessMediumLow
                     ),
-                    label = "AdapterSelectorTextColor"
+                    label = "AccessMethodSelectorTextColor"
                 )
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(38.dp)
                         .clip(RoundedCornerShape(Corners.Chip))
-                        .clickable(onClick = { onAdapterSelected(adapter) }),
+                        .clickable(onClick = { onAccessMethodSelected(accessMethod) }),
                     contentAlignment = Alignment.Center
                 ) {
                     // 字号被系统放大时宁可截断也不折成两行，避免撑破 38dp 高的胶囊。
                     Text(
-                        text = adapter.label,
+                        text = accessMethod.label,
                         color = textColor,
                         fontSize = TextSizes.Caption,
                         fontWeight = FontWeight.Bold,

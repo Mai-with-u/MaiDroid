@@ -113,13 +113,21 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ### GitHub 镜像
 
-国内直连 GitHub 不稳定。`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 两个 shell 函数，依次尝试 gitproxy.mrhjx.cn、ghproxy.vip、直连、gh-proxy.com 等镜像，每个镜像重试 3 次。新增镜像改 `MIRROR_SPECS` 即可，OOBE 卡片上的说明会自动更新。
+国内直连 GitHub 不稳定。`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 两个 shell 函数，依次尝试 gitproxy.mrhjx.cn、ghproxy.vip、直连、gh-proxy.com 等镜像，每个镜像重试 3 次。新增或调整镜像只改 `GitHubMirrors.ALL` 一处：容器脚本里的镜像列表从它生成，宿主侧的应用自更新（`appupdate`）也用同一份列表。
 
 git 默认不检测传输停滞，镜像连上后卡住会一直等。两个函数都带 `-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60`：连续 60 秒低于 1 KB/s 就判这一次失败，接着重试或换镜像。
 
 ### 容器 DNS
 
 proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resolv.conf` 里的服务器查询。`ContainerDns` 在宿主侧读出手机当前网络的 DNS（`ConnectivityManager` 的 `LinkProperties.dnsServers`）放在最前，阿里、114、Google、Cloudflare 作兜底；有些网络会拦截公共 DNS，只写公共 DNS 时容器里所有下载都会失败。glibc 只用前三个 nameserver、按顺序尝试，所以不加 `rotate`；带网卡后缀的 IPv6 链路本地地址会被丢掉。配置容器和每次开始安装时都会重写一次。
+
+### 容器时区
+
+Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内手机上会差 8 个小时。`ContainerTimeZone` 在宿主侧把 rootfs 的 `/etc/localtime` 指向手机当前时区的 zoneinfo 文件，`/etc/timezone` 写同一个名字：
+
+- `ProotCommand` 在每条容器命令启动前同步一次，内容没变不写盘；手机在应用没跑时改过时区，下次拉起的进程也会用上新时区。同步失败不挡命令，容器沿用原时区。
+- 前台服务活着时监听 `ACTION_TIMEZONE_CHANGED`：收到后立刻同步，MaiBot 正在跑就重启它。进程启动时就读定了时区，不重启会一直按旧时区报时。NapCat 不重启（会断开 QQ 登录），它只影响自己的日志时间，下次启动用上新时区；SSH 里新开的命令直接读 `/etc/localtime`，同步后立刻生效。
+- 容器的 tzdata 里没有手机的时区名（手机的 tzdata 更新，或是 `GMT+08:00` 这类自定义时区）时，按当下的偏移换成 `Etc/GMT∓N`（正负号和 UTC+8 的写法相反），偏移不是整点就退回 `Etc/UTC`。
 
 ### proot 下的 git
 
@@ -142,7 +150,7 @@ proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resol
 
 ### uv 的参数
 
-`MaiBotScripts` 里所有 uv 命令共用一段前缀：`UV_PYTHON=">=3.12,<3.14"`（新版 Python 刚出时 aarch64 上很多包没有预编译轮子，容器里又没有编译器）、`UV_NO_DEV=1`（跳过测试依赖）、`UV_LINK_MODE=copy`。安装依赖和启动时 `uv run` 的自动同步用同一套参数，否则会反复重建 `.venv`。
+`MaiBotScripts` 里所有 uv 命令共用一段前缀：`UV_PYTHON` 限定 Python 的版本范围，具体范围见 `MaiBotScripts.UV_PYTHON_REQUEST`（不放开上限，因为新版 Python 刚出时 aarch64 上很多包没有预编译轮子，容器里又没有编译器）、`UV_NO_DEV=1`（跳过测试依赖）、`UV_LINK_MODE=copy`。安装依赖和启动时 `uv run` 的自动同步用同一套参数，否则会反复重建 `.venv`。
 
 容器里 `uv sync` 后 `uv.lock` 必然被改写（源地址换成镜像），`git status` 会一直显示它被修改，这不是用户改动。
 
@@ -175,9 +183,15 @@ hash 要按 MaiBot 的算法算（`agreementHash`）：它用 Python 文本模�
 OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新不用 `git pull`：
 
 1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。
-2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 有被改过的受版本管理文件就先 `git diff` 导出补丁到 `/root/.maidroid/maibot-backups/` -> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
+2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 在终端日志里列出被改过的受版本管理文件（不备份，MaiDroid 不支持在手机上改源码；`uv.lock` 由 MaiDroid 改写成镜像源，不算用户改动）-> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
 
 被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。
+
+三个入口共用上面两段脚本：
+
+- **设置页“MaiBot 更新”**：用户手动检查、点“更新并重启”。
+- **启动时检查**（`checkOnLaunch`）：每次打开应用进入主页时做一次“检查”，查到新版本由主页弹出 MaiBot 更新弹窗；连不上不提示。
+- **MaiDroid 更新后的自动升级**（`updateAfterAppUpgrade`）：MaiDroid 刚更新过的第一次启动，在唤醒页上先 `runWhileStopped` 拦住麦麦的启动 -> 检查 -> 有新版本或源码被改过就按“更新”的流程切到上游、重装依赖 -> 拉起麦麦。拉取失败照常启动现在的版本；升级到一半失败才弹窗。是否“刚更新过”的判断在 `shouldAutoUpdateMaiBot`，设置页“应用版本”弹窗底部可以关掉。
 
 ## 容器 SSH（`ssh/`）
 

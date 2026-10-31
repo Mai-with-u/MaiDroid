@@ -65,6 +65,36 @@ class MaiBotWebUiTest {
     }
 
     @Test
+    fun injectPageBootstrapInstallsDownloadHookBeforeFirstScript() {
+        val html = "<html><head><script src=\"/app.js\"></script></head></html>"
+
+        val injected = WebUiResponseRewriter.injectPageBootstrap(html)
+
+        // 下载拦截要在页面生成导出文件之前包住 URL.createObjectURL，所以也得先于页面脚本
+        val hookIndex = injected.indexOf("URL.createObjectURL = function")
+        val appScriptIndex = injected.indexOf("<script src=\"/app.js\">")
+        assertTrue(hookIndex in 0 until appScriptIndex)
+        assertTrue(injected.contains("window.${WebUiDownloadScripts.BRIDGE_NAME}"))
+    }
+
+    @Test
+    fun saveUrlScriptQuotesUrlAndFileName() {
+        // 地址和文件名按 JSON 字符串嵌进脚本，引号和反斜杠不会截断脚本
+        val script = WebUiDownloadScripts.saveUrlScript("blob:http://127.0.0.1:8001/abc", "a\"b\\c.txt")
+
+        assertTrue(script.endsWith("saveUrl(\"blob:http://127.0.0.1:8001/abc\", \"a\\\"b\\\\c.txt\");"))
+    }
+
+    @Test
+    fun themeBootstrapOnlyFillsMissingThemeSettings() {
+        // 用户在 WebUI 外观设置里换过主题后，每次启动不能再被改回“未来复古”：只在键为空时写默认值
+        val injected = WebUiResponseRewriter.injectPageBootstrap("<head></head>")
+
+        assertTrue(injected.contains("localStorage.getItem('maibot-theme-mode') === null"))
+        assertTrue(injected.contains("localStorage.getItem('maibot-theme-dashboard-style') === null"))
+    }
+
+    @Test
     fun injectThemeBootstrapFallsBackToHeadAndPrefix() {
         val withHead = WebUiResponseRewriter.injectPageBootstrap("<head></head><body></body>")
         assertTrue(withHead.indexOf("__maidroidVhFixInstalled") < withHead.indexOf("</head>"))
@@ -75,84 +105,25 @@ class MaiBotWebUiTest {
     }
 
     @Test
-    fun rewriteBottomSafeAreaAddsNavigationInsetToDeclarations() {
-        // 上游悬浮底栏的 Tailwind 产物：声明里是 env 写法，选择器里的括号带反斜杠转义
-        val css = ".bottom-\\[calc\\(env\\(safe-area-inset-bottom\\)\\+14px\\)\\]" +
-            "{bottom:calc(env(safe-area-inset-bottom) + 14px)}"
+    fun viewportPatchLeavesPageScrollAreasAtTheirOwnSize() {
+        val script = WebUiInjectedScripts.viewportPatch()
 
-        val rewritten = WebUiResponseRewriter.rewriteBottomSafeArea(css, 80)
-
-        assertEquals(
-            ".bottom-\\[calc\\(env\\(safe-area-inset-bottom\\)\\+14px\\)\\]" +
-                "{bottom:calc(calc(env(safe-area-inset-bottom) + 80px) + 14px)}",
-            rewritten
-        )
-    }
-
-    @Test
-    fun rewriteBottomSafeAreaHandlesMaxShorthandFallbackAndCase() {
-        val css = "a{padding-bottom:max(1.5rem,env(safe-area-inset-bottom))}" +
-            "b{padding:10px 10px calc(ENV(safe-area-inset-bottom) + 12px)}" +
-            "c{margin-bottom:env( safe-area-inset-bottom , 0px )}"
-
-        val rewritten = WebUiResponseRewriter.rewriteBottomSafeArea(css, 80)
-
-        assertTrue(rewritten.contains("max(1.5rem,calc(env(safe-area-inset-bottom) + 80px))"))
-        assertTrue(rewritten.contains("calc(calc(ENV(safe-area-inset-bottom) + 80px) + 12px)"))
-        // 带回退值的写法整体保留在 calc 里
-        assertTrue(rewritten.contains("calc(env( safe-area-inset-bottom , 0px ) + 80px)"))
-    }
-
-    @Test
-    fun rewriteBottomSafeAreaLeavesOtherEnvAndZeroInsetUntouched() {
-        val css = "a{padding-top:env(safe-area-inset-top)}b{bottom:env(safe-area-inset-bottom)}"
-
-        // 占高为 0 时不改动任何样式；只改底部安全区，顶部安全区保持原样
-        assertEquals(css, WebUiResponseRewriter.rewriteBottomSafeArea(css, 0))
-        assertEquals(css, WebUiResponseRewriter.rewriteBottomSafeArea(css, -8))
-
-        val rewritten = WebUiResponseRewriter.rewriteBottomSafeArea(css, 80)
-        assertTrue(rewritten.contains("padding-top:env(safe-area-inset-top)"))
-        assertTrue(rewritten.contains("bottom:calc(env(safe-area-inset-bottom) + 80px)"))
-    }
-
-    @Test
-    fun isLocalStylesheetUrlOnlyAcceptsLoopbackCss() {
-        assertTrue(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index-abc.css"))
-        assertTrue(WebUiResponseRewriter.isLocalStylesheetUrl("http", "localhost", "/assets/Chat.CSS"))
-        assertTrue(WebUiResponseRewriter.isLocalStylesheetUrl("https", "[::1]", "/a.css"))
-
-        // 第三方站点、非 CSS 资源、非 http(s) 协议都不拦截
-        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("https", "fonts.googleapis.com", "/css/a.css"))
-        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/index.js"))
-        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", "/assets/font.woff2"))
-        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", "127.0.0.1", null))
-        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("file", "127.0.0.1", "/a.css"))
-        assertFalse(WebUiResponseRewriter.isLocalStylesheetUrl("http", null, "/a.css"))
-    }
-
-    @Test
-    fun viewportPatchSkipsHeuristicPaddingWhenUpstreamDockIsPresent() {
-        val script = WebUiInjectedScripts.viewportPatch(80)
-
-        // 上游底栏在场时不再叠加启发式留白，避免和上游按底栏位置算好的留白重复
-        assertTrue(script.contains("""document.querySelector('[data-mobile-tabbar="true"]')"""))
-        assertTrue(script.contains("const scrollPaddingActive = reservedBottom > 0 && !upstreamDockPresent;"))
-        assertTrue(script.contains("const shouldMark = scrollPaddingActive &&"))
-        assertTrue(script.contains("const reservedBottom = 80;"))
-    }
-
-    @Test
-    fun viewportPatchDialogMaxHeightDoesNotSubtractNavigationInset() {
-        val script = WebUiInjectedScripts.viewportPatch(80)
-
-        // 对话框的贴底内边距已由安全区改写让出导航栏高度，最大高度规则不能再减一次，否则底部多出空白
+        // 普通滚动区不再被统一封顶成一屏高：真机竖屏上 max-h-80 的表格被撑成整屏，单指只能滚表格
+        assertFalse(script.contains("max-height:var(--maidroid-webview-height)"))
+        // 对话框最高为视口减 1rem；只认对话框本身，不按类名子串匹配（WebUI 类名里到处是 --layout-sidebar-* 变量名）
         val dialogRule = script.lines().single { it.contains("""'[role="dialog"]""") }
         assertTrue(dialogRule.contains("max-height:calc(var(--maidroid-webview-height) - 1rem)!important"))
-        assertFalse(dialogRule.contains("reserved-bottom"))
+        assertFalse(dialogRule.contains("[class*="))
+    }
 
-        // 滚动区的兜底留白仍然使用导航栏高度，不受这次调整影响
-        val scrollSafeRule = script.lines().single { it.contains("""'[data-maidroid-scroll-safe-area="true"]{""") }
-        assertTrue(scrollSafeRule.contains("var(--maidroid-webview-reserved-bottom)"))
+    @Test
+    fun viewportPatchDoesNotRescanPageOnDomChanges() {
+        val script = WebUiInjectedScripts.viewportPatch()
+
+        // 导航栏留白去掉后，不再盯 DOM 变化、每次把全页元素量一遍；只在视口尺寸变化时重算高度
+        assertFalse(script.contains("MutationObserver"))
+        assertFalse(script.contains("querySelectorAll('body *')"))
+        assertFalse(script.contains("reserved"))
+        assertTrue(script.contains("visualViewport.addEventListener('resize', apply"))
     }
 }

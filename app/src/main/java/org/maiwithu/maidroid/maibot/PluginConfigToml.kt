@@ -1,7 +1,7 @@
 package org.maiwithu.maidroid.maibot
 
 /**
- * 逐行读写 MaiBot 插件 config.toml 的工具，各平台适配器的配置读写（QqOfficialAdapterConfig、NapCatAdapterConfig）共用。
+ * 逐行读写 MaiBot 插件 config.toml 的工具，各平台适配器的配置读写（QqOfficialAdapterConfig、SnowLumaAdapterConfig）共用。
  *
  * 只改目标节里的目标键，其余节、键和注释原样保留：用户可能在 MaiBot WebUI 的插件配置里改过别的项，不能被覆盖。
  * 只认 MaiBot 写回配置时用的单行写法（`key = "value"`、`key = true`），不是通用 TOML 解析器。
@@ -48,6 +48,31 @@ internal object PluginConfigToml {
         var insertAt = range.last + 1
         while (insertAt > range.first && lines[insertAt - 1].isBlank()) insertAt--
         lines.add(insertAt, entry)
+    }
+
+    /**
+     * rawValue 读到的原始文本是否在这一行内写完：引号、方括号、花括号都闭合了（# 之后的行尾注释不算）。
+     * 多行数组、多行字符串只读得到第一行，原样搬到别的配置里会写出坏掉的 TOML，调用方据此跳过。
+     */
+    fun isCompleteValue(raw: String): Boolean {
+        var depth = 0
+        var quote: Char? = null
+        var index = 0
+        while (index < raw.length) {
+            val char = raw[index]
+            when {
+                // 基本字符串里的反斜杠转义下一个字符，跳过它（\" 不算字符串结束）
+                quote == '"' && char == '\\' -> index++
+                quote != null && char == quote -> quote = null
+                quote != null -> Unit
+                char == '"' || char == '\'' -> quote = char
+                char == '#' -> break
+                char == '[' || char == '{' -> depth++
+                char == ']' || char == '}' -> depth--
+            }
+            index++
+        }
+        return quote == null && depth == 0 && raw.substringBefore('#').isNotBlank()
     }
 
     fun parseBoolean(raw: String): Boolean? =

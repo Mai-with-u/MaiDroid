@@ -42,11 +42,12 @@ internal class MaiBotProcessSupervisor(
 ) {
 
     companion object {
+        // TAG 是 logcat 标签；LOG_PREFIX 是写进终端输出（TerminalLog）的行首前缀，两者不是一回事。
         private const val TAG = "MaiBotProcessSupervisor"
-        private const val LOG_TAG = "[MaiBot]"
+        private const val LOG_PREFIX = "[MaiBot]"
 
         /** 每次拉起 MaiBot 都会打这一行；QQ 官方机器人据此判断之前的连接报错已经属于上一轮。 */
-        const val PROCESS_STARTED_LOG = "$LOG_TAG Process started"
+        const val PROCESS_STARTED_LOG = "$LOG_PREFIX Process started"
 
         // 意外退出后的重启间隔：5 秒起步，每次翻倍，最长 1 分钟。
         private const val INITIAL_RESTART_DELAY_MS = 5_000L
@@ -106,6 +107,22 @@ internal class MaiBotProcessSupervisor(
     }
 
     /**
+     * 手机改了时区：先把容器的系统时区改过去 -> MaiBot 正在跑就重启。
+     * 已经在跑的 MaiBot 启动时就读定了时区，不重启会一直按旧时区报时；没在跑的下次启动自然用上新时区。
+     */
+    fun followPhoneTimeZone() {
+        scope.launch {
+            val zoneId = commandRunner.syncTimeZone() ?: return@launch
+            if (!_status.value.running) return@launch
+            appendLog("$LOG_PREFIX Phone time zone changed to $zoneId, restarting")
+            lifecycleMutex.withLock {
+                stopLocked()
+                startLocked()
+            }
+        }
+    }
+
+    /**
      * 停住 MaiBot 执行一段维护逻辑（如在线更新）。
      *
      * 先挂上维护标记 -> 停掉 MaiBot 并清理残留进程 -> 执行 block -> 摘掉维护标记。
@@ -124,7 +141,7 @@ internal class MaiBotProcessSupervisor(
 
     private fun startLocked() {
         if (maintenanceInProgress) {
-            appendLog("$LOG_TAG Under maintenance, start request ignored")
+            appendLog("$LOG_PREFIX Under maintenance, start request ignored")
             return
         }
         if (superviseJob?.isActive == true) return
@@ -133,7 +150,7 @@ internal class MaiBotProcessSupervisor(
         val notReady = readiness.maiBotLaunchRequirements().firstOrNull { !it.ready }
         if (notReady != null) {
             appendLog(
-                "$LOG_TAG Runtime validation failed: " +
+                "$LOG_PREFIX Runtime validation failed: " +
                     "${notReady.name} is not ready: ${notReady.path}. ${notReady.hint}"
             )
             // 记下没拉起的原因，等 WebUI 的一方（OOBE）据此立刻报错，而不是空等到超时。
@@ -171,7 +188,7 @@ internal class MaiBotProcessSupervisor(
             runProcessOnce(ownGeneration)
             if (shouldStayStopped(ownGeneration)) break
 
-            appendLog("$LOG_TAG Restarting in ${restartDelayMs}ms...")
+            appendLog("$LOG_PREFIX Restarting in ${restartDelayMs}ms...")
             delay(restartDelayMs)
             restartDelayMs = (restartDelayMs * BACKOFF_MULTIPLIER)
                 .toLong()
@@ -187,7 +204,7 @@ internal class MaiBotProcessSupervisor(
         var startedProcess: Process? = null
         try {
             val script = MaiBotScripts.launch()
-            appendLog("$LOG_TAG Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
+            appendLog("$LOG_PREFIX Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
 
             val currentProcess = commandRunner.start(script, MaiBotAgreement.environment(paths))
             startedProcess = currentProcess
@@ -206,10 +223,10 @@ internal class MaiBotProcessSupervisor(
             }
 
             val exitCode = currentProcess.waitFor()
-            appendLog("$LOG_TAG Process exited with code: $exitCode")
+            appendLog("$LOG_PREFIX Process exited with code: $exitCode")
             recordUnexpectedExit(ownGeneration, exitCode)
         } catch (e: Exception) {
-            appendLog("$LOG_TAG Failed to start process: ${e.message}")
+            appendLog("$LOG_PREFIX Failed to start process: ${e.message}")
             Log.e(TAG, "Failed to start MaiBot process", e)
             recordUnexpectedExit(ownGeneration, exitCode = null)
         } finally {
@@ -236,7 +253,7 @@ internal class MaiBotProcessSupervisor(
     // 先 SIGTERM 给 MaiBot 3 秒收尾，仍未退出再强杀，强杀时在终端里记一笔。
     private fun terminate(target: Process) {
         if (target.terminateGracefully()) {
-            appendLog("$LOG_TAG Force-killed process that ignored SIGTERM")
+            appendLog("$LOG_PREFIX Force-killed process that ignored SIGTERM")
         }
     }
 
@@ -245,7 +262,7 @@ internal class MaiBotProcessSupervisor(
             if (line.isNotBlank()) appendLog(line)
         }
         if (!result.success) {
-            appendLog("$LOG_TAG Cleanup command exited with code: ${result.exitCode}")
+            appendLog("$LOG_PREFIX Cleanup command exited with code: ${result.exitCode}")
         }
     }
 

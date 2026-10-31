@@ -44,6 +44,14 @@ const val SubtleGlassBlurRadius = 6f
 val TerminalBackground = Color(0xFF0B0B0C)  // 日志区底色，比卡片更黑一档
 val TerminalText = Color(0xFFD0D0D4)        // 没有颜色序列的日志文字
 
-// 唤醒页、启动页的插画按这个尺寸（dp）的设计稿绘制，运行时按实际屏幕等比缩放。
+// ── 唤醒页（开机自检画面）：墨黑底 + 三档灰字，强调色沿用品牌橙 ──────────────
+val BootInk = Color(0xFF0A0B0D)        // 底色，也是收尾时上下拉开的两扇快门
+val BootTrack = Color(0xFF22262B)      // 进度条轨道
+val BootText = Color(0xFFECECE7)       // 抬头
+val BootTextDim = Color(0xFF9A9EA5)    // 自检行
+val BootTextFaint = Color(0xFF5C6168)  // 百分比、SKIP
+val BootAccent = BrandOrange           // 进度条、LINK 行、收尾时的中缝和快门边线
+
+// 启动页的插画按这个尺寸（dp）的设计稿绘制，运行时按实际屏幕等比缩放。
 const val DesignFrameWidthDp = 412f
 const val DesignFrameHeightDp = 917f

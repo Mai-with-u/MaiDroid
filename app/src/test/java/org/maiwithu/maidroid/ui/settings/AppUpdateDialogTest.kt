@@ -4,18 +4,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.appupdate.AppDownloadProgress
 import org.maiwithu.maidroid.appupdate.AppRelease
 import org.maiwithu.maidroid.appupdate.AppReleaseAsset
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
-import org.maiwithu.maidroid.appupdate.AppVersion
 
 class AppUpdateDialogTest {
     private val release = AppRelease(
         tag = "v0.1.3",
-        version = AppVersion.parse("0.1.3")!!,
+        version = VersionNumber.parse("0.1.3")!!,
         pageUrl = "https://github.com/Mai-with-u/MaiDroid/releases/tag/v0.1.3",
         publishedAtEpochSeconds = null,
         notes = "### 新增\n\n- 检查更新",

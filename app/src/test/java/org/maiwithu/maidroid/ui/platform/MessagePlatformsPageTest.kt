@@ -21,19 +21,19 @@ class MessagePlatformsPageTest {
     }
 
     @Test
-    fun `three adapter selector fits inside the narrowest card`() {
+    fun `three access method selector fits inside the narrowest card`() {
         // 卡片最窄 272dp，左右各 16dp 内边距，选择器最多 240dp。
-        assertEquals(224f, adapterSelectorWidth(3).value)
-        assertTrue(adapterSelectorWidth(3).value <= 240f)
-        assertEquals(76f, adapterSelectorWidth(1).value)
+        assertEquals(224f, accessMethodSelectorWidth(3).value)
+        assertTrue(accessMethodSelectorWidth(3).value <= 240f)
+        assertEquals(76f, accessMethodSelectorWidth(1).value)
     }
 
     @Test
-    fun `official bot sits leftmost and each adapter has its own provider text`() {
+    fun `official bot sits leftmost and each access method has its own provider text`() {
         val qq = AvailablePlatforms.first { it.name == "QQ" }
-        assertEquals(listOf(PlatformAdapter.QqOfficial, PlatformAdapter.NapCat, PlatformAdapter.SnowLuma), qq.adapters)
-        assertEquals("将由 QQ 官方接口提供服务", qq.adapterProviders[PlatformAdapter.QqOfficial] ?: qq.provider)
-        assertEquals("将由 NapCat 提供服务", qq.adapterProviders[PlatformAdapter.NapCat] ?: qq.provider)
+        assertEquals(listOf(AccessMethod.QqOfficial, AccessMethod.NapCat, AccessMethod.SnowLumaClient), qq.accessMethods)
+        assertEquals("将由 QQ 官方接口提供服务", qq.accessMethodProviders[AccessMethod.QqOfficial] ?: qq.provider)
+        assertEquals("将由 NapCat 提供服务", qq.accessMethodProviders[AccessMethod.NapCat] ?: qq.provider)
     }
 
     @Test
@@ -52,8 +52,22 @@ class MessagePlatformsPageTest {
     }
 
     @Test
+    fun `phones use lists and tablets keep the card grid`() {
+        // 手机竖屏约 360dp 宽：单列分组列表
+        assertEquals(PlatformsLayout.List, messagePlatformsLayout(widthDp = 360f, heightDp = 755f))
+        // 手机横屏全屏、让出左侧导航后约 659×360dp：左右两栏
+        assertEquals(PlatformsLayout.TwoPane, messagePlatformsLayout(widthDp = 659f, heightDp = 360f))
+        // 又矮又窄的分屏小窗放不下两栏，退回单列列表
+        assertEquals(PlatformsLayout.List, messagePlatformsLayout(widthDp = 480f, heightDp = 360f))
+        // 平板竖屏、横屏和折叠屏内屏都保持卡片网格
+        assertEquals(PlatformsLayout.Grid, messagePlatformsLayout(widthDp = 800f, heightDp = 1180f))
+        assertEquals(PlatformsLayout.Grid, messagePlatformsLayout(widthDp = 1180f, heightDp = 800f))
+        assertEquals(PlatformsLayout.Grid, messagePlatformsLayout(widthDp = 673f, heightDp = 841f))
+    }
+
+    @Test
     fun `unsupported platforms show plain placeholder copy`() {
-        AvailablePlatforms.filter { it.adapters.isEmpty() }.forEach { platform ->
+        AvailablePlatforms.filter { it.accessMethods.isEmpty() }.forEach { platform ->
             assertEquals("暂未适配", platform.provider)
         }
     }

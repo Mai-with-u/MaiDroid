@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.BuildConfig
+import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
@@ -81,6 +82,7 @@ internal data class AppUpdateState(
  * MaiDroid 应用本体的在线更新：查 GitHub 最新 Release -> 下载 APK -> 校验 -> 交给系统安装器。
  *
  * 进程级单例，关掉弹窗、离开设置页后下载照常进行，回来能看到最新进度。
+ * 每次打开应用进入主页时主界面会调 [checkOnLaunch] 自动查一次，查到新版本就弹窗提醒。
  * 网络部分（同时试直连和所有镜像、用最快的那条）在 [AppUpdateClient]；
  * 每一步都写进终端日志，前缀 `[MaiDroid 更新]`。
  */
@@ -90,7 +92,8 @@ internal class AppUpdateManager(
     private val apiUrl: String
 ) {
     companion object {
-        private const val LOG_TAG = "[MaiDroid 更新]"
+        // 写进终端输出（TerminalLog）的行首前缀，不是 logcat 标签。
+        private const val LOG_PREFIX = "[MaiDroid 更新]"
         private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         // 除了安装包本身，再留出系统解包安装时要用的余量
         private const val FREE_SPACE_MARGIN_BYTES = 64L * 1024 * 1024
@@ -101,39 +104,64 @@ internal class AppUpdateManager(
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var job: Job? = null
-    private val currentVersion = AppVersion.parse(currentVersionName)
+    private val currentVersion = VersionNumber.parse(currentVersionName)
     private val files = AppUpdateFiles(appContext.cacheDir)
     private val client = AppUpdateClient(userAgent = "MaiDroid/$currentVersionName")
 
     private val _state = MutableStateFlow(AppUpdateState(currentVersion = currentVersionName))
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
 
+    private val _launchPrompt = MutableStateFlow(false)
+
+    /** 启动时的自动检查查到了新版本、用户还没关掉提醒：主界面据此在主页上弹出更新弹窗。 */
+    val launchPrompt: StateFlow<Boolean> = _launchPrompt.asStateFlow()
+
+    // 正在进行的这次检查是不是启动时的自动检查：是的话查到新版本要弹窗提醒，查失败了不打扰用户。
+    // 用户在设置页打开更新弹窗后改回 false，结果直接显示在那个弹窗里。
+    private var checkingOnLaunch = false
+
     init {
-        // 上次的更新已经装上了：缓存里不比当前新的安装包没用了，打开设置页时顺手清掉
+        // 上次的更新已经装上了：缓存里不比当前新的安装包没用了，启动检查或打开设置页时顺手清掉
         scope.launch(Dispatchers.IO) { files.deleteInstalledOrUnknown(currentVersion) }
     }
 
     /** 检查更新：同时向直连和所有镜像请求最新 Release，用最先返回的那个和当前版本比较。 */
-    fun checkForUpdate() {
+    fun checkForUpdate() = startCheck(onLaunch = false)
+
+    /**
+     * 打开应用进入主页时自动检查一次：和手动检查走同一套流程，
+     * 查到新版本（或这一版安装包已下好待安装）时置位 [launchPrompt]，主页弹窗提醒用户更新；
+     * 已是最新、连不上都不提示。正在下载或校验时跳过，用户已经在更新了，不打断。
+     */
+    fun checkOnLaunch() = startCheck(onLaunch = true)
+
+    /** 不再弹启动提醒：用户关掉了提醒弹窗，或者自己在设置页打开了更新弹窗（结果改在那里显示）。 */
+    fun dismissLaunchPrompt() {
+        checkingOnLaunch = false
+        _launchPrompt.value = false
+    }
+
+    private fun startCheck(onLaunch: Boolean) {
         if (job?.isActive == true) return
+        checkingOnLaunch = onLaunch
         job = scope.launch {
             _state.update {
                 it.copy(phase = AppUpdatePhase.Checking, errorMessage = null, failedAction = null)
             }
             val sourceCount = GitHubMirrors.candidatesFor(apiUrl).size
             TerminalLog.append("")
-            TerminalLog.append("$LOG_TAG 检查新版本，同时尝试 $sourceCount 条线路，当前 v$currentVersionName")
+            TerminalLog.append("$LOG_PREFIX 检查新版本，同时尝试 $sourceCount 条线路，当前 v$currentVersionName")
 
             val win = client.fetchLatestRelease(apiUrl)
             if (win == null) {
-                fail(AppUpdateAction.Check, "连不上 GitHub 和所有镜像，请检查网络后重试")
+                failCheck("连不上 GitHub 和所有镜像，请检查网络后重试")
                 return@launch
             }
             val release = win.value
-            TerminalLog.append("$LOG_TAG 经 ${win.mirror.name} 获取到最新版本 ${release.tag}")
+            TerminalLog.append("$LOG_PREFIX 经 ${win.mirror.name} 获取到最新版本 ${release.tag}")
 
             if (currentVersion != null && release.version <= currentVersion) {
-                TerminalLog.append("$LOG_TAG 已是最新版本")
+                TerminalLog.append("$LOG_PREFIX 已是最新版本")
                 _state.update {
                     it.copy(phase = AppUpdatePhase.UpToDate, release = release, checkSource = win.mirror.name)
                 }
@@ -141,7 +169,7 @@ internal class AppUpdateManager(
             }
             if (release.apk == null) {
                 _state.update { it.copy(release = release, checkSource = win.mirror.name) }
-                fail(AppUpdateAction.Check, "最新版本 ${release.tag} 里没有找到安装包")
+                failCheck("最新版本 ${release.tag} 里没有找到安装包")
                 return@launch
             }
 
@@ -150,7 +178,7 @@ internal class AppUpdateManager(
             }
             val installable = canInstallOverCurrent(release.certSha256, ownSigners)
             if (!installable) {
-                TerminalLog.append("$LOG_TAG 当前安装包的签名和发布版不同（调试版或自行构建），不能直接覆盖安装")
+                TerminalLog.append("$LOG_PREFIX 当前安装包的签名和发布版不同（调试版或自行构建），不能直接覆盖安装")
             }
             // 换了更新的版本时，别的版本下了一半的包已经没用；这一版下完校验过的包还在就直接待安装
             val (ready, partial) = withContext(Dispatchers.IO) {
@@ -167,7 +195,22 @@ internal class AppUpdateManager(
                     checkSource = win.mirror.name
                 )
             }
+            // 启动检查查到新版本：主页弹窗提醒（待安装时弹窗里直接是“安装”按钮）
+            if (checkingOnLaunch) {
+                TerminalLog.append("$LOG_PREFIX 发现新版本 ${release.tag}，弹窗提醒更新")
+                _launchPrompt.value = true
+            }
         }
+    }
+
+    // 检查这一步失败：用户自己点的检查照常报错；启动时的自动检查只记日志、退回空闲，不在设置页挂一条没人问过的失败。
+    private fun failCheck(message: String) {
+        if (!checkingOnLaunch) {
+            fail(AppUpdateAction.Check, message)
+            return
+        }
+        TerminalLog.append("$LOG_PREFIX 启动时检查更新没有成功：$message")
+        _state.update { it.copy(phase = AppUpdatePhase.Idle, progress = null) }
     }
 
     /**
@@ -201,7 +244,7 @@ internal class AppUpdateManager(
             }
             TerminalLog.append("")
             TerminalLog.append(
-                "$LOG_TAG 下载 ${asset.name}（${formatBytes(asset.size)}）" +
+                "$LOG_PREFIX 下载 ${asset.name}（${formatBytes(asset.size)}）" +
                     if (existing > 0) "，从已下载的 ${formatBytes(existing)} 处接着下" else ""
             )
 
@@ -209,7 +252,7 @@ internal class AppUpdateManager(
                 client.downloadApk(asset, part, DownloadListener())
             } catch (e: CancellationException) {
                 // 用户取消：已下载的部分留着，下次点下载接着下
-                TerminalLog.append("$LOG_TAG 已取消下载，已下载的部分保留")
+                TerminalLog.append("$LOG_PREFIX 已取消下载，已下载的部分保留")
                 _state.update {
                     it.copy(phase = AppUpdatePhase.Available, progress = null, partialBytes = part.length())
                 }
@@ -240,7 +283,7 @@ internal class AppUpdateManager(
         val packageUri = "package:${appContext.packageName}".toUri()
         val opened = startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, packageUri)) ||
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri))
-        if (!opened) TerminalLog.append("$LOG_TAG 打不开“安装未知应用”设置页")
+        if (!opened) TerminalLog.append("$LOG_PREFIX 打不开“安装未知应用”设置页")
     }
 
     /**
@@ -253,7 +296,7 @@ internal class AppUpdateManager(
         val apk = files.apkFile(release.version)
         job = scope.launch {
             if (!withContext(Dispatchers.IO) { apk.exists() }) {
-                TerminalLog.append("$LOG_TAG 安装包已被系统清理，需要重新下载")
+                TerminalLog.append("$LOG_PREFIX 安装包已被系统清理，需要重新下载")
                 _state.update {
                     it.copy(
                         phase = AppUpdatePhase.Available,
@@ -279,7 +322,7 @@ internal class AppUpdateManager(
                 .setDataAndType(uri, APK_MIME_TYPE)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (startActivity(intent)) {
-                TerminalLog.append("$LOG_TAG 已打开系统安装器：${release.tag}")
+                TerminalLog.append("$LOG_PREFIX 已打开系统安装器：${release.tag}")
             } else {
                 fail(AppUpdateAction.Install, "没有找到系统安装器")
             }
@@ -288,7 +331,7 @@ internal class AppUpdateManager(
 
     private suspend fun verifyDownloaded(release: AppRelease, part: File) {
         _state.update { it.copy(phase = AppUpdatePhase.Verifying) }
-        TerminalLog.append("$LOG_TAG 下载完成，校验安装包")
+        TerminalLog.append("$LOG_PREFIX 下载完成，校验安装包")
         val apk = files.apkFile(release.version)
         val problem = withContext(Dispatchers.IO) {
             // 先在 .part 上核对大小和 SHA-256；系统解析安装包要求 .apk 后缀，所以改名后再核对包名、版本号和签名
@@ -309,7 +352,7 @@ internal class AppUpdateManager(
             fail(AppUpdateAction.Download, "$problem，已删除，请重新下载")
             return
         }
-        TerminalLog.append("$LOG_TAG 安装包校验通过：${apk.name}")
+        TerminalLog.append("$LOG_PREFIX 安装包校验通过：${apk.name}")
         _state.update {
             it.copy(phase = AppUpdatePhase.ReadyToInstall, progress = null, partialBytes = 0)
         }
@@ -335,7 +378,7 @@ internal class AppUpdateManager(
         }
 
     private fun fail(action: AppUpdateAction, message: String) {
-        TerminalLog.append("$LOG_TAG 失败：$message")
+        TerminalLog.append("$LOG_PREFIX 失败：$message")
         _state.update {
             it.copy(
                 phase = AppUpdatePhase.Failed,
@@ -353,7 +396,7 @@ internal class AppUpdateManager(
         override fun onSourceChosen(source: String, startByte: Long) {
             speed.reset()
             TerminalLog.append(
-                "$LOG_TAG 经 $source 下载" + if (startByte > 0) "，从 ${formatBytes(startByte)} 处接着下" else ""
+                "$LOG_PREFIX 经 $source 下载" + if (startByte > 0) "，从 ${formatBytes(startByte)} 处接着下" else ""
             )
         }
 
@@ -369,7 +412,7 @@ internal class AppUpdateManager(
         }
 
         override fun onSourceFailed(source: String, reason: String) {
-            TerminalLog.append("$LOG_TAG $source 中断（$reason），换线路接着下")
+            TerminalLog.append("$LOG_PREFIX $source 中断（$reason），换线路接着下")
         }
     }
 }

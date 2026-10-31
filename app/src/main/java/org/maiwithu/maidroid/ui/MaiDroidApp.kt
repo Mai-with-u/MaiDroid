@@ -20,6 +20,7 @@ import eightbitlab.com.blurview.BlurTarget
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.MainViewModel
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.terminal.TerminalLog
@@ -28,6 +29,8 @@ import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.home.HomeScreen
 import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
+import org.maiwithu.maidroid.ui.settings.AppUpdateDialogHost
+import org.maiwithu.maidroid.ui.settings.MaiBotUpdateDialogHost
 import org.maiwithu.maidroid.ui.splash.StartupSplashPage
 
 // 启动页停留时长；之后若还没同意过协议，再等一小会儿弹出授权弹窗，让页面切换动画先走完。
@@ -38,7 +41,8 @@ private const val AUTHORIZATION_DIALOG_DELAY_MS = 420L
 private const val EXIT_ANIMATION_MS = 260L
 
 /**
- * 应用的根界面：启动页 ->（OOBE 没完成时）OOBE 三步 + 首次授权弹窗 ->（完成后）主页。
+ * 应用的根界面：启动页 ->（OOBE 没完成时）OOBE 三步 + 首次授权弹窗 ->（完成后）主页，
+ * 主页上启动时查到 MaiDroid 或 MaiBot 的新版本会弹更新提醒。
  *
  * 流程状态在 MainViewModel 里，权限状态和跳转在 SystemPermissionController 里；
  * 这里只负责按状态切换页面，以及处理需要 Activity 的动作（打开 WebUI、退出应用）。
@@ -58,10 +62,16 @@ internal fun MaiDroidApp(
     val authorizationAccepted by viewModel.authorizationAccepted.collectAsState()
     val oobeStep by viewModel.oobeStep.collectAsState()
     val webUiOnline by viewModel.webUiOnline.collectAsState()
+    val maiBotStatus by viewModel.maiBotStatus.collectAsState()
     val setupState by viewModel.setupManager.state.collectAsState()
     val terminalLogs by TerminalLog.logs.collectAsState()
     var showAuthorizationDialog by rememberSaveable { mutableStateOf(false) }
     var oobeBlurTarget by remember { mutableStateOf<BlurTarget?>(null) }
+    val appUpdater = remember(context) { context.appDependencies.appUpdater }
+    val appUpdatePrompt by appUpdater.launchPrompt.collectAsState()
+    val maiBotUpdater = remember(context) { context.appDependencies.maiBotUpdater }
+    val maiBotUpdatePrompt by maiBotUpdater.launchPrompt.collectAsState()
+    val maiBotUpdateState by maiBotUpdater.state.collectAsState()
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -102,6 +112,9 @@ internal fun MaiDroidApp(
             setupComplete -> HomeScreen(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
+                maiBotStatus = maiBotStatus,
+                // MaiDroid 更新后首次启动：唤醒页上显示 MaiBot 自动升级的进度
+                maiBotUpdate = if (viewModel.autoUpdatingMaiBot) maiBotUpdateState else null,
                 terminalLogs = terminalLogs,
                 permissionState = permissions.state,
                 permissionActions = permissions.settingsActions,
@@ -157,6 +170,16 @@ internal fun MaiDroidApp(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+        }
+    }
+
+    // 启动时自动检查查到新版本：启动页播完、进了主页再弹更新弹窗提醒，用户可以直接下载安装或更新麦麦；
+    // 关掉后本次不再弹，下次打开应用重新检查、重新提醒。结果出来时人在全屏 WebUI 里的话，回到主页再弹。
+    // MaiDroid 本体和 MaiBot 都有新版本时不叠着弹：先弹 MaiDroid，关掉后再弹 MaiBot。
+    if (setupComplete && !showStartupSplash) {
+        when {
+            appUpdatePrompt -> AppUpdateDialogHost(onDismiss = appUpdater::dismissLaunchPrompt)
+            maiBotUpdatePrompt -> MaiBotUpdateDialogHost(onDismiss = maiBotUpdater::dismissLaunchPrompt)
         }
     }
 }

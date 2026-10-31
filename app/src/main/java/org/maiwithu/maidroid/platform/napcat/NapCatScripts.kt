@@ -1,7 +1,6 @@
 package org.maiwithu.maidroid.platform.napcat
 
 import org.maiwithu.maidroid.runtime.ContainerScript
-import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
 import org.maiwithu.maidroid.runtime.shellQuote
 
@@ -14,18 +13,18 @@ import org.maiwithu.maidroid.runtime.shellQuote
 internal object NapCatScripts {
 
     /**
-     * 首次安装：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
-     * 克隆 MaiBot 的 NapCat 适配器插件 -> 打 napcat_ready 标记 -> 生成 launcher.sh。
+     * 首次安装 NapCat 本体：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
+     * 打 napcat_ready 标记 -> 生成 launcher.sh。
      * token 只在第一次安装时生成，之后重装沿用容器里已保存的那份，避免 MaiBot 适配器配置失配。
-     * 适配器的 config.toml 不在这里写：脚本跑完后由 NapCatPlatformManager 在宿主侧按 NapCatAdapterConfig 改写，
-     * 这样重装时能保留用户在 WebUI 里改过的配置。
+     * MaiBot 侧的 SnowLuma 适配器不在这里装：脚本跑完后由 SnowLumaAdapterInstaller 另外安装，配置等 MaiBot 生成后再迁移，
+     * 这样 NapCat 已装好、只缺适配器（老用户迁移）时不用再跑一遍 NapCat 安装器。
      */
     fun install(token: String): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
             installBody(token),
             prepareRuntimeBody(),
-            "maidroid_progress 1.0 ${shellQuote("NapCat install and auto configuration completed")}"
+            "maidroid_progress 0.9 ${shellQuote("NapCat install completed")}"
         ).joinToString("\n"),
         workingDirectory = "/root"
     )
@@ -121,8 +120,8 @@ internal object NapCatScripts {
               {
                 "name": "WsServer",
                 "enable": true,
-                "host": "${NapCatAdapterConfig.ONE_BOT_HOST}",
-                "port": ${NapCatAdapterConfig.ONE_BOT_PORT},
+                "host": "${SnowLumaAdapterConfig.ONE_BOT_HOST}",
+                "port": ${SnowLumaAdapterConfig.ONE_BOT_PORT},
                 "reportSelfMessage": false,
                 "enableForcePushEvent": true,
                 "messagePostFormat": "array",
@@ -139,20 +138,7 @@ internal object NapCatScripts {
         }
         EOF
 
-        maidroid_progress 0.88 "Install MaiBot NapCat adapter"
-        INSTALL_DIR=${shellQuote(InContainerPaths.MAIBOT_DIR)}
-        ADAPTER_DIR="${'$'}INSTALL_DIR/plugins/MaiBot-Napcat-Adapter"
-        if [ -d "${'$'}INSTALL_DIR" ]; then
-            mkdir -p "${'$'}INSTALL_DIR/plugins"
-            if [ ! -d "${'$'}ADAPTER_DIR" ]; then
-                # 适配器仓库现在在 Mai-with-u 组织下，直接用现名克隆，不再依赖旧组织名的自动跳转。
-                git clone --depth=1 --branch main https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
-            fi
-        else
-            printf "[NapCat] MaiBot directory does not exist, skip adapter install: %s\n" "${'$'}INSTALL_DIR"
-        fi
-
-        maidroid_progress 0.96 "Record NapCat install state"
+        maidroid_progress 0.86 "Record NapCat install state"
         printf "ready\n" > "${'$'}HOME/.maidroid/napcat_ready"
         """.trimIndent()
 

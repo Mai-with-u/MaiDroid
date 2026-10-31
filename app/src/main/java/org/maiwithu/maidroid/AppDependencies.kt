@@ -4,6 +4,8 @@ import android.content.Context
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
+import org.maiwithu.maidroid.platform.napcat.SnowLumaAdapterInstaller
+import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
@@ -37,11 +39,17 @@ internal class AppDependencies(context: Context) {
     val containerSsh: ContainerSshManager by lazy {
         ContainerSshManager(settings, runtimeReadiness, commandRunner)
     }
+    // 消息平台页安装和 NapCat 启动前换装共用一个，迁移适配器配置时靠它的锁串行。
+    private val snowLumaAdapterInstaller: SnowLumaAdapterInstaller by lazy {
+        SnowLumaAdapterInstaller(NapCatFiles(runtimePaths), commandRunner)
+    }
     val napCatProcess: NapCatProcessSupervisor by lazy {
-        NapCatProcessSupervisor(runtimePaths, commandRunner)
+        NapCatProcessSupervisor(runtimePaths, commandRunner, maiBotProcess, snowLumaAdapterInstaller)
     }
     val napCat: NapCatPlatformManager by lazy {
-        NapCatPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess)
+        NapCatPlatformManager(
+            appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller
+        )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {
         QqOfficialPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess)

@@ -1,471 +1,320 @@
 package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
-import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
-import org.maiwithu.maidroid.ui.theme.TextPrimary
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
+import org.maiwithu.maidroid.ui.theme.BootAccent
+import org.maiwithu.maidroid.ui.theme.BootInk
+import org.maiwithu.maidroid.ui.theme.BootText
+import org.maiwithu.maidroid.ui.theme.BootTextDim
+import org.maiwithu.maidroid.ui.theme.BootTextFaint
+import org.maiwithu.maidroid.ui.theme.BootTrack
+import org.maiwithu.maidroid.ui.theme.JetBrainsMono
+import kotlin.math.exp
+import kotlin.math.roundToInt
 
-// 唤醒页专用的冷色科技风配色（其余页面不用）。
-private val WakeBackground = Color(0xFF07090D)
-private val WakeOrange = Color(0xFFE8921E)
-private val WakeTextBlue = Color(0xFFA0B4C8)
-private val WakeMutedBlue = Color(0xFF788CA0)
-private val WakeOnline = Color(0xFF64C88C)
-private val WakeOffline = Color(0xFFE8A064)
+private val BootEasing = CubicBezierEasing(0.65f, 0f, 0.35f, 1f)
+
+private val BootMetaStyle = TextStyle(
+    fontFamily = JetBrainsMono,
+    fontSize = 11.sp,
+    letterSpacing = 0.12.em
+)
+
+// 自检行逐行出现的间隔；进度走满、LINK 行出现后停一下再收尾。
+private const val BootLineStepMillis = 170L
+private const val BootCompleteHoldMillis = 220L
+
+// 等待中的光标闪烁周期（亮、灭各一次）的一半。
+private const val BootCursorBlinkMillis = 530L
+
+// 进度条追赶目标值：差得多时按时间常数（秒）指数逼近，差得少时至少按最低速度（每秒走的比例）前进，
+// 末尾几个百分点干脆利落地走完，不在 97%–99% 上磨蹭。
+private const val BootProgressSmoothingSeconds = 0.12f
+private const val BootProgressMinSpeed = 0.8f
+
+// 收尾时间轴（毫秒）：0–300 文字淡出 -> 200–480 中缝从中间向两侧划开 ->
+// 500 起中缝交给两扇快门的边线，快门用 800 上下拉开，露出底下已经就位的主页。
+private const val ExitTextFadeMillis = 300f
+private const val ExitSeamStartMillis = 200f
+private const val ExitSeamMillis = 280f
+private const val ExitShutterStartMillis = 500f
+private const val ExitShutterMillis = 800f
+private const val ExitTotalMillis = 1_300
 
 /**
- * 设计稿坐标到实际尺寸的换算：横向按宽度比例、纵向按高度比例，文字和描边按两者中较小的比例，
- * 这样不同长宽比的屏幕上插画不变形、文字不溢出。
- */
-private class DesignScale(val scaleX: Float, val scaleY: Float) {
-    val textScale: Float = minOf(scaleX, scaleY)
-    fun x(value: Float): Dp = (value * scaleX).dp
-    fun y(value: Float): Dp = (value * scaleY).dp
-    fun sp(value: Float): TextUnit = (value * textScale).sp
-}
-
-/**
- * 主页的“唤醒麦麦”页：OOBE 完成后、WebUI 还没起来时显示。
- * 每 30 秒（WakeRetryIntervalMillis）自动唤醒一次 MaiBot，进度条在这段时间内从左走到右；WebUI 一上线就切到主页。
+ * 主页的“唤醒麦麦”页：OOBE 完成后、WebUI 还没起来时盖在主页上面，样式是终端开机自检画面。
+ *
+ * 抬头 -> 容器 ->（MaiDroid 更新后首次启动时）MaiBot 自动升级 -> MaiBot 进程 -> WebUI 自检行按真实状态逐行打出
+ * （后一行要等前一行有结论）-> 都通过后打出 LINK 行，
+ * 进度条走满 -> 停一下调 onFinished，让主页在底下就位 -> leaving 变 true 后播收尾：文字淡出、中缝划开、快门上下拉开 ->
+ * 拉开后调 onLeft，由主页把这一层移除。点 SKIP 也调 onFinished，同样走收尾这一段。
+ * 自动唤醒（每 WakeRetryIntervalMillis 一次）由 HomeScreen 负责，这里只显示进度。
+ * maiBotUpdate 只在这次启动要自动升级 MaiBot 时传入（整页存续期间不变），据此多显示一行升级进度；
+ * 升级期间麦麦被拦着不启动，自动唤醒的请求会被忽略，升级完由更新管理器拉起。
  */
 @Composable
 internal fun WakeMaiPage(
     webUiOnline: Boolean,
+    maiBotStatus: MaiBotProcessStatus,
     versionName: String,
-    wakeCycle: Int,
+    maiBotUpdate: MaiBotUpdateState?,
+    leaving: Boolean,
+    onFinished: () -> Unit,
+    onLeft: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 只算唤醒页出现之后的意外退出，之前崩过几次和这次唤醒无关。
+    val baselineExits = remember { maiBotStatus.exitCount }
+    val lines = bootLines(
+        webUiOnline,
+        maiBotStatus,
+        exits = maiBotStatus.exitCount - baselineExits,
+        update = maiBotUpdate?.let(::maiBotUpdateBootLine)
+    )
+    val currentLines by rememberUpdatedState(lines)
+    val currentOnFinished by rememberUpdatedState(onFinished)
+    val currentOnLeft by rememberUpdatedState(onLeft)
+
+    var revealed by remember { mutableIntStateOf(0) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    var cursorVisible by remember { mutableStateOf(true) }
+    val exitClock = remember { Animatable(0f) }
+
+    // 逐行打出：上一行还没结论（MaiBot 还在升级、还在起、WebUI 还没上线）就停在这里等，有结论后隔一拍再打出下一行。
+    LaunchedEffect(Unit) {
+        while (revealed <= currentLines.size) {
+            if (revealed > 0) {
+                snapshotFlow { currentLines[revealed - 1].check.concluded }.first { it }
+            }
+            delay(BootLineStepMillis)
+            revealed++
+        }
+    }
+
+    // 进度条每帧朝当前阶段的目标值平滑追赶，只进不退，也不越过目标值。
+    LaunchedEffect(Unit) {
+        var lastFrame = withFrameNanos { it }
+        var stageRevealed = revealed
+        var stageStart = lastFrame
+        while (true) {
+            withFrameNanos { now ->
+                if (revealed != stageRevealed) {
+                    stageRevealed = revealed
+                    stageStart = now
+                }
+                val target = bootProgressTarget(revealed, currentLines, waitingSeconds = (now - stageStart) / 1e9f)
+                val elapsed = (now - lastFrame) / 1e9f
+                lastFrame = now
+                if (target != null && target > progress) {
+                    val step = maxOf(
+                        (target - progress) * (1f - exp(-elapsed / BootProgressSmoothingSeconds)),
+                        BootProgressMinSpeed * elapsed
+                    )
+                    progress = minOf(target, progress + step)
+                }
+            }
+        }
+    }
+
+    // LINK 行出来、进度走满 -> 停一下 -> 通知主页切过去。
+    LaunchedEffect(Unit) {
+        snapshotFlow { revealed > currentLines.size && progress >= 1f }.first { it }
+        delay(BootCompleteHoldMillis)
+        currentOnFinished()
+    }
+
+    // 还在等的阶段，状态词后面的光标按终端的节奏闪烁。
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(BootCursorBlinkMillis)
+            cursorVisible = !cursorVisible
+        }
+    }
+
+    LaunchedEffect(leaving) {
+        if (!leaving) return@LaunchedEffect
+        exitClock.animateTo(ExitTotalMillis.toFloat(), tween(ExitTotalMillis, easing = LinearEasing))
+        currentOnLeft()
+    }
+
+    val percent by remember { derivedStateOf { (progress * 100).roundToInt() } }
+    val stalled = lines.any { it.check == BootCheck.Warning || it.check == BootCheck.Failed }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(WakeBackground)
-    ) {
-        val scale = DesignScale(
-            scaleX = maxWidth.value / DesignFrameWidthDp,
-            scaleY = maxHeight.value / DesignFrameHeightDp
-        )
-        val textScale = scale.textScale
-        val wakeProgress = remember { Animatable(if (webUiOnline) 1f else 0f) }
-
-        LaunchedEffect(wakeCycle, webUiOnline) {
-            if (webUiOnline) {
-                wakeProgress.snapTo(1f)
-            } else {
-                wakeProgress.snapTo(0f)
-                wakeProgress.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(
-                        durationMillis = WakeRetryIntervalMillis.toInt(),
-                        easing = LinearEasing
-                    )
-                )
+            // 只占住触摸、不消费：收尾时主页已经在底下，快门拉开之前不让点击漏到下面的网页上。
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) awaitPointerEvent()
+                }
             }
+    ) {
+        val bodyWidth = minOf(maxWidth * 0.86f, 480.dp)
+
+        BootShutters(
+            exitMillis = { exitClock.value },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .width(bodyWidth)
+                .graphicsLayer { alpha = 1f - (exitClock.value / ExitTextFadeMillis).coerceIn(0f, 1f) }
+        ) {
+            BootLog(
+                header = "MAIDROID v$versionName // BOOT",
+                lines = lines,
+                revealed = revealed,
+                cursorVisible = cursorVisible,
+                blockedReason = maiBotStatus.launchBlockedReason,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(22.dp))
+
+            BootProgressBar(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+            )
+
+            BootMeta(
+                percent = percent,
+                // 卡住或在反复重启时把 SKIP 提亮一档，提示可以先进主页看终端输出和设置。
+                emphasizeSkip = stalled,
+                onSkip = onFinished
+            )
         }
+    }
+}
 
-        Image(
-            painter = painterResource(R.drawable.home_background),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .offset(x = scale.x(0f), y = scale.y(-4f))
-                .width(scale.x(600f))
-                .height(scale.y(789f))
-                .graphicsLayer { alpha = 0.5f }
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(scale.y(156.75f))
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            WakeBackground.copy(alpha = 0.85f),
-                            WakeBackground.copy(alpha = 0f)
-                        )
-                    )
-                )
-        )
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(scale.y(384.04f))
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0f to WakeBackground.copy(alpha = 0f),
-                            0.3f to WakeBackground.copy(alpha = 0.8f),
-                            0.6f to WakeBackground.copy(alpha = 0.97f),
-                            1f to WakeBackground
-                        )
-                    )
-                )
-        )
-
-        HudOverlay(modifier = Modifier.fillMaxSize())
-
-        HeaderLabels(
-            webUiOnline = webUiOnline,
-            versionName = versionName,
-            scale = scale
-        )
-
-        BootTelemetry(
-            scale = scale
-        )
-
-        Text(
-            text = "麦麦Bot",
-            color = TextPrimary,
-            fontSize = scale.sp(48f),
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = scale.sp(4f),
-            lineHeight = scale.sp(52f),
-            modifier = Modifier
-                .offset(x = scale.x(40f), y = scale.y(588f))
-                .width(scale.x(220f))
-        )
-
-        Text(
-            text = "MaiSaka × MaiDroid",
-            color = WakeOrange.copy(alpha = 0.85f),
-            fontSize = scale.sp(16f),
-            fontWeight = FontWeight.Bold,
-            letterSpacing = scale.sp(6f),
-            lineHeight = scale.sp(20f),
-            modifier = Modifier
-                .offset(x = scale.x(39f), y = scale.y(643f))
-                .width(scale.x(315f))
-        )
-
-        Box(
-            modifier = Modifier
-                .offset(x = scale.x(39f), y = scale.y(667f))
-                .width(scale.x(303f))
-                .height(scale.y(3f))
-                .background(WakeOrange.copy(alpha = 0.25f))
-        )
-
-        Text(
-            text = "一个正在努力成为人类的BOT。",
-            color = Color(0xFFB4C3D7).copy(alpha = 0.7f),
-            fontSize = scale.sp(12f),
-            fontWeight = FontWeight.Bold,
-            letterSpacing = scale.sp(1f),
-            lineHeight = scale.sp(16f),
-            modifier = Modifier
-                .offset(x = scale.x(40f), y = scale.y(679f))
-                .width(scale.x(240f))
-        )
-
-        WakeProgressBar(
-            progress = wakeProgress.value,
-            webUiOnline = webUiOnline,
-            modifier = Modifier
-                .offset(x = scale.x(38f), y = scale.y(706f))
-                .width(scale.x(335.7f))
-                .height(scale.y(59.6f)),
-            textScale = textScale
-        )
-
-        Text(
-            text = if (webUiOnline) {
-                "MAIBOT READY  //  ENTERING WEBUI"
-            } else {
-                "WEBUI OFFLINE  //  AUTO WAKE"
-            },
-            color = Color(0xFF96A5B9).copy(alpha = 0.4f),
-            fontSize = scale.sp(7.05f),
-            letterSpacing = scale.sp(2f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = scale.y(118f))
-                .width(scale.x(335.7f))
+// 4dp 细进度条：深灰轨道上画一段强调色。进度在绘制阶段读取，走动时只重画、不重组。
+@Composable
+private fun BootProgressBar(progress: () -> Float, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        drawRect(color = BootTrack)
+        drawRect(
+            color = BootAccent,
+            size = Size(size.width * progress().coerceIn(0f, 1f), size.height)
         )
     }
 }
+
+// 进度条下面一行：左边三位数百分比，右边 SKIP。SKIP 上下留出点按区域，所以这一行不再额外留间距。
 @Composable
-private fun HeaderLabels(
-    webUiOnline: Boolean,
-    versionName: String,
-    scale: DesignScale
+private fun BootMeta(
+    percent: Int,
+    emphasizeSkip: Boolean,
+    onSkip: () -> Unit
 ) {
-
-    Text(
-        text = "MAISAKA",
-        color = WakeOrange.copy(alpha = 0.9f),
-        fontSize = scale.sp(8.62f),
-        letterSpacing = scale.sp(4f),
-        modifier = Modifier
-            .offset(x = scale.x(31f), y = scale.y(44f))
-            .width(scale.x(90f))
-    )
-
-    Text(
-        text = "牢麦待机中",
-        color = WakeTextBlue.copy(alpha = 0.7f),
-        fontSize = scale.sp(7.05f),
-        letterSpacing = scale.sp(1.5f),
-        modifier = Modifier
-            .offset(x = scale.x(31f), y = scale.y(58f))
-            .width(scale.x(96f))
-    )
-
-    Text(
-        text = "v$versionName",
-        color = WakeMutedBlue.copy(alpha = 0.6f),
-        fontSize = scale.sp(7.84f),
-        textAlign = TextAlign.End,
-        modifier = Modifier
-            .offset(x = scale.x(320f), y = scale.y(45f))
-            .width(scale.x(58f))
-    )
+    val skipInteraction = remember { MutableInteractionSource() }
+    val skipPressed by skipInteraction.collectIsPressedAsState()
+    val skipColor = when {
+        skipPressed -> BootText
+        emphasizeSkip -> BootTextDim
+        else -> BootTextFaint
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.End,
-        modifier = Modifier
-            .offset(x = scale.x(300f), y = scale.y(56f))
-            .width(scale.x(78f))
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .size(scale.x(3.9f))
-                .clip(CircleShape)
-                .background(if (webUiOnline) WakeOnline else WakeOffline)
-        )
-        Spacer(modifier = Modifier.width(scale.x(4f)))
         Text(
-            text = if (webUiOnline) "ONLINE" else "OFFLINE",
-            color = if (webUiOnline) WakeOnline.copy(alpha = 0.8f) else WakeOffline.copy(alpha = 0.82f),
-            fontSize = scale.sp(7.05f),
-            letterSpacing = scale.sp(2f)
+            text = "${percent.coerceIn(0, 100).toString().padStart(3, '0')}%",
+            style = BootMetaStyle,
+            color = BootTextFaint,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "SKIP ⏎",
+            style = BootMetaStyle,
+            color = skipColor,
+            modifier = Modifier
+                .clickable(
+                    interactionSource = skipInteraction,
+                    indication = null,
+                    role = Role.Button,
+                    onClickLabel = "跳过，先进入主页",
+                    onClick = onSkip
+                )
+                .padding(start = 24.dp, top = 10.dp, bottom = 10.dp)
         )
     }
 }
 
+// 底色就是两扇快门：上扇占 50.5%，下扇从 49.5% 起，中间叠 1% 免得拉开前露缝。
+// 收尾时中缝（与下扇上沿重合）先从中间向两侧划开，到 500ms 交给两扇快门各自的边线，快门再带着边线上下拉开。
 @Composable
-private fun BootTelemetry(
-    scale: DesignScale
-) {
-
-    Text(
-        text = "114°51'N  41°91'E",
-        color = Color(0xFF788CAA).copy(alpha = 0.4f),
-        fontSize = scale.sp(6.27f),
-        letterSpacing = scale.sp(1f),
-        modifier = Modifier
-            .offset(x = scale.x(16.8f), y = scale.y(352.7f))
-            .width(scale.x(124f))
-    )
-
-    Text(
-        text = "MAI.BOOT  //  AUTO WAKE",
-        color = Color(0xFFC8A064).copy(alpha = 0.35f),
-        fontSize = scale.sp(6.27f),
-        letterSpacing = scale.sp(1.5f),
-        modifier = Modifier
-            .offset(x = scale.x(16.8f), y = scale.y(362.1f))
-            .width(scale.x(180f))
-    )
-}
-
-@Composable
-private fun WakeProgressBar(
-    progress: Float,
-    webUiOnline: Boolean,
-    modifier: Modifier,
-    textScale: Float
-) {
-    val clampedProgress = progress.coerceIn(0f, 1f)
-
-    Box(
-        modifier = modifier
-            .shadow(
-                elevation = (7f * textScale).dp,
-                shape = WakeButtonShape,
-                ambientColor = WakeOrange.copy(alpha = 0.2f),
-                spotColor = WakeOrange.copy(alpha = 0.34f)
-            )
-            .clip(WakeButtonShape)
-            .background(Color(0xFF151A22))
-            .drawWithContent {
-                drawContent()
-                drawLine(
-                    color = TextPrimary.copy(alpha = 0.18f),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 1.dp.toPx()
-                )
-                drawLine(
-                    color = Color.Black.copy(alpha = 0.22f),
-                    start = Offset(0f, size.height),
-                    end = Offset(size.width - 18.dp.toPx(), size.height),
-                    strokeWidth = 1.dp.toPx()
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .fillMaxWidth(clampedProgress)
-                .background(WakeOrange)
-        )
-
-        Text(
-            text = if (webUiOnline) "麦麦已唤醒" else "正在唤醒麦麦",
-            color = TextPrimary,
-            fontSize = (20f * textScale).sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (2f * textScale).sp,
-            lineHeight = (24f * textScale).sp
-        )
-    }
-}
-
-private val WakeButtonShape = GenericShape { size, _ ->
-    val radius = size.height * 0.1f
-    val cut = size.height * 0.3f
-    moveTo(radius, 0f)
-    lineTo(size.width, 0f)
-    lineTo(size.width, size.height - cut)
-    lineTo(size.width - cut, size.height)
-    lineTo(radius, size.height)
-    quadraticTo(0f, size.height, 0f, size.height - radius)
-    lineTo(0f, radius)
-    quadraticTo(0f, 0f, radius, 0f)
-    close()
-}
-
-@Composable
-private fun HudOverlay(modifier: Modifier = Modifier) {
+private fun BootShutters(exitMillis: () -> Float, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
-        val sx = size.width / DesignFrameWidthDp
-        val sy = size.height / DesignFrameHeightDp
-        val scale = minOf(sx, sy)
-        fun x(value: Float) = value * sx
-        fun y(value: Float) = value * sy
-        fun stroke(value: Float) = (value * scale).coerceAtLeast(1f)
+        val t = exitMillis()
+        val line = 1.dp.toPx()
+        val shutterHeight = size.height * 0.505f
+        val open = BootEasing.transform(((t - ExitShutterStartMillis) / ExitShutterMillis).coerceIn(0f, 1f))
+        val travel = shutterHeight * 1.01f * open
 
-        fun line(
-            startX: Float,
-            startY: Float,
-            endX: Float,
-            endY: Float,
-            alpha: Float,
-            color: Color = WakeOrange,
-            width: Float = 0.78f
-        ) {
-            drawLine(
-                color = color.copy(alpha = alpha),
-                start = Offset(x(startX), y(startY)),
-                end = Offset(x(endX), y(endY)),
-                strokeWidth = stroke(width)
+        val topBottom = shutterHeight - travel
+        drawRect(color = BootInk, topLeft = Offset(0f, -travel), size = Size(size.width, shutterHeight))
+        val bottomTop = size.height - shutterHeight + travel
+        drawRect(color = BootInk, topLeft = Offset(0f, bottomTop), size = Size(size.width, shutterHeight))
+
+        if (t >= ExitShutterStartMillis) {
+            drawRect(color = BootAccent, topLeft = Offset(0f, topBottom - line), size = Size(size.width, line))
+            drawRect(color = BootAccent, topLeft = Offset(0f, bottomTop), size = Size(size.width, line))
+        } else if (t > ExitSeamStartMillis) {
+            val seam = BootEasing.transform(((t - ExitSeamStartMillis) / ExitSeamMillis).coerceIn(0f, 1f))
+            val seamWidth = size.width * seam
+            drawRect(
+                color = BootAccent,
+                topLeft = Offset((size.width - seamWidth) / 2f, size.height - shutterHeight),
+                size = Size(seamWidth, line)
             )
         }
-
-        fun diamond(
-            left: Float,
-            top: Float,
-            side: Float,
-            alpha: Float,
-            fillAlpha: Float = 0f,
-            width: Float = 1f
-        ) {
-            val cx = x(left + side / 2f)
-            val cy = y(top + side / 2f)
-            val half = side * 0.36f * scale
-            val path = Path().apply {
-                moveTo(cx, cy - half)
-                lineTo(cx + half, cy)
-                lineTo(cx, cy + half)
-                lineTo(cx - half, cy)
-                close()
-            }
-            if (fillAlpha > 0f) {
-                drawPath(path = path, color = WakeOrange.copy(alpha = fillAlpha))
-            }
-            drawPath(
-                path = path,
-                color = WakeOrange.copy(alpha = alpha),
-                style = Stroke(width = stroke(width))
-            )
-        }
-
-        line(16.8f, 17.24f, 35.1f, 17.24f, 0.6f)
-        line(16.8f, 17.24f, 16.8f, 36.05f, 0.6f)
-        line(376.9f, 17.24f, 395.2f, 17.24f, 0.6f)
-        line(394.45f, 17.24f, 394.45f, 36.05f, 0.6f)
-        line(31f, 72f, 381.96f, 72f, 0.3f)
-
-        line(16.8f, 109.7f, 16.8f, 344.9f, 0.2f)
-        line(394.45f, 125.4f, 394.45f, 344.9f, 0.15f, Color(0xFFC8C8DC))
-        listOf(313.5f, 344.85f, 407.56f, 438.91f).forEach { y ->
-            line(0f, y, 412f, y, 0.04f, Color(0xFFB4C8DC))
-        }
-
-        line(17f, 899f, 38.36f, 899f, 0.45f)
-        line(17f, 877f, 17f, 899f, 0.45f)
-        line(374f, 899f, 395.36f, 899f, 0.45f)
-        line(394.6f, 877f, 394.6f, 899f, 0.45f)
-
-        diamond(152.6f, 89.7f, 8.75f, 0.5f, width = 1.5f)
-        diamond(42f, 243.25f, 15.31f, 0.55f, fillAlpha = 0.1f, width = 1.5f)
-        diamond(350.96f, 152.98f, 7.66f, 0.35f)
-        diamond(22.89f, 372.97f, 6.56f, 0.3f)
-        diamond(381.48f, 347.3f, 10.94f, 0.4f)
-        diamond(206f, 83.52f, 5.47f, 0.25f)
-        diamond(61.04f, 465.94f, 8.75f, 0.3f)
-        diamond(19.07f, 574.76f, 19.69f, 0.9f, fillAlpha = 0.25f, width = 2f)
-        diamond(383.01f, 26.74f, 6.56f, 0.5f, fillAlpha = 0.5f, width = 0f)
     }
 }

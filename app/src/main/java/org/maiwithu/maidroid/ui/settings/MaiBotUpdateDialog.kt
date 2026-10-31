@@ -4,22 +4,28 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.maibot.update.MaiBotRevision
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
-import org.maiwithu.maidroid.maibot.update.MaiBotUpdateScripts
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -100,6 +106,23 @@ internal fun formatRevisionTime(
         .withZone(zoneId)
         .format(Instant.ofEpochSecond(epochSeconds))
 
+/**
+ * 接上 MaiBot 更新管理器的更新弹窗：设置页点“MaiBot 更新”、启动时查到上游新版本的提醒共用这一个。
+ * 状态都在进程级的更新管理器里，弹窗关掉再打开、Activity 重建后都能接上检查和更新进度。
+ */
+@Composable
+internal fun MaiBotUpdateDialogHost(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val updater = remember(context) { context.appDependencies.maiBotUpdater }
+    val state by updater.state.collectAsState()
+    MaiBotUpdateDialog(
+        state = state,
+        onCheck = updater::checkForUpdate,
+        onApply = updater::applyUpdate,
+        onDismiss = onDismiss
+    )
+}
+
 @Composable
 internal fun MaiBotUpdateDialog(
     state: MaiBotUpdateState,
@@ -109,7 +132,7 @@ internal fun MaiBotUpdateDialog(
 ) {
     val primaryButton = maiBotUpdatePrimaryButton(state)
     val showLatest = state.latest != null && state.phase != MaiBotUpdatePhase.Idle
-    // 有新版本或上次更新失败时提醒：被改过的受版本管理文件会先导出补丁，再还原为上游版本。
+    // 有新版本或上次更新失败时提醒：用户改过的源码文件更新时会直接还原为上游版本，不做备份。
     val showLocalChangeNote = state.localChangeCount > 0 && (
         state.phase == MaiBotUpdatePhase.Available ||
             state.failedAction == MaiBotUpdateAction.Apply
@@ -127,7 +150,11 @@ internal fun MaiBotUpdateDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 手机横屏时弹窗很矮，内容区可以滚动，不会被截掉。
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 RevisionBlock(
                     label = if (state.branch != null) "当前版本 · ${state.branch}" else "当前版本",
                     revision = state.installed,
@@ -146,13 +173,9 @@ internal fun MaiBotUpdateDialog(
 
                 if (showLocalChangeNote) {
                     UpdateNote(
-                        "检测到 ${state.localChangeCount} 个源码文件被修改。更新前会导出补丁到 " +
-                            "${MaiBotUpdateScripts.BACKUP_DIR}，再还原为上游版本；配置、数据和插件不受影响。"
+                        "检测到 ${state.localChangeCount} 个 MaiBot 源码文件被改动过，更新时会直接还原为上游版本；" +
+                            "配置、数据和插件不受影响。"
                     )
-                }
-
-                if (state.phase == MaiBotUpdatePhase.Updated && state.backupFile != null) {
-                    UpdateNote("本地改动已备份到 ${state.backupFile}")
                 }
             }
         },

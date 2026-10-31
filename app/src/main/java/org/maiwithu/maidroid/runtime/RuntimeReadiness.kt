@@ -98,8 +98,6 @@ internal class RuntimeReadiness(private val paths: RuntimePaths) {
             ?.let { "${it.name} 未就绪：${it.hint}" }
     }
 
-    fun isContainerReady(): Boolean = containerRequirements().all { it.ready }
-
     /** APK 里的容器资源已经解包完整（rootfs、bootstrap、proot 依赖库都在），不含 apt 装的系统依赖。 */
     fun isBaseRuntimeReady(): Boolean =
         paths.rootfsMarker.isFile && paths.bootstrapMarker.isFile &&

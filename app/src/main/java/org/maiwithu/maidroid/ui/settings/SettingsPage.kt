@@ -1,7 +1,5 @@
 package org.maiwithu.maidroid.ui.settings
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -16,14 +14,11 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,16 +52,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
@@ -78,6 +69,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
+import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
@@ -126,7 +118,6 @@ internal fun SettingsPage(
     var showUpdateDialog by remember { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
-    var installPermissionGranted by remember { mutableStateOf(appUpdater.canRequestPackageInstalls()) }
     var selectedDetail by rememberSaveable { mutableStateOf<String?>(null) }
     var sshPortText by remember { mutableStateOf(sshState.port.toString()) }
     var sshPasswordText by remember { mutableStateOf("") }
@@ -136,10 +127,12 @@ internal fun SettingsPage(
         updateManager.loadInstalledRevision()
     }
 
-    // 每次回到前台重新读“安装未知应用”：用户从系统设置页开完权限回来，按钮直接变成“安装”。
-    LifecycleResumeEffect(appUpdater) {
-        installPermissionGranted = appUpdater.canRequestPackageInstalls()
-        onPauseOrDispose {}
+    // 设置页的更新弹窗开着时，启动时的自动检查（还没出结果的话）改在这个弹窗里显示结果，不再另弹一个提醒。
+    LaunchedEffect(showAppUpdateDialog) {
+        if (showAppUpdateDialog) appUpdater.dismissLaunchPrompt()
+    }
+    LaunchedEffect(showUpdateDialog) {
+        if (showUpdateDialog) updateManager.dismissLaunchPrompt()
     }
 
     // 点“应用版本”就开始检查：已经有结果（有新版本、下载中、待安装）时只打开弹窗，不重新检查。
@@ -163,21 +156,12 @@ internal fun SettingsPage(
             .fillMaxSize()
             .background(PageBackground)
     ) {
-        val density = LocalDensity.current
-        val layoutDirection = LocalLayoutDirection.current
-        val safeDrawingLeft = with(density) {
-            WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp()
-        }
-        val safeDrawingRight = with(density) {
-            WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp()
-        }
+        // 横屏挖孔的左右安全区由主页外壳统一让开，这里拿到的宽度已经是安全区内的宽度。
         val useTwoPane = settingsUseTwoPane(
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        val safeContentWidth = (maxWidth - safeDrawingLeft - safeDrawingRight)
-            .coerceAtLeast(0.dp)
-        val navigationWidth = settingsNavigationWidthDp(safeContentWidth.value).dp
+        val navigationWidth = settingsNavigationWidthDp(maxWidth.value).dp
 
         BackHandler(enabled = !useTwoPane && selectedDetail != null) {
             selectedDetail = null
@@ -211,7 +195,6 @@ internal fun SettingsPage(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PageBackground)
-                    .absolutePadding(left = safeDrawingLeft, right = safeDrawingRight)
             ) {
                 SettingsNavigationPane(
                     webUiOnline = webUiOnline,
@@ -296,38 +279,12 @@ internal fun SettingsPage(
         }
 
         if (showUpdateDialog) {
-            MaiBotUpdateDialog(
-                state = updateState,
-                onCheck = updateManager::checkForUpdate,
-                onApply = updateManager::applyUpdate,
-                onDismiss = { showUpdateDialog = false }
-            )
+            MaiBotUpdateDialogHost(onDismiss = { showUpdateDialog = false })
         }
 
         if (showAppUpdateDialog) {
-            AppUpdateDialog(
-                state = appUpdateState,
-                installPermissionGranted = installPermissionGranted,
-                onCheck = appUpdater::checkForUpdate,
-                onDownload = appUpdater::download,
-                onCancelDownload = appUpdater::cancelDownload,
-                onGrantInstallPermission = appUpdater::openInstallPermissionSettings,
-                onInstall = appUpdater::install,
-                onOpenReleasePage = {
-                    // 签名和发布版不同的包不能在应用里覆盖安装，交给浏览器打开 Release 页面
-                    val pageUrl = appUpdateState.release?.pageUrl.orEmpty()
-                    val opened = pageUrl.isNotBlank() && try {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, pageUrl.toUri()))
-                        true
-                    } catch (_: ActivityNotFoundException) {
-                        false
-                    }
-                    if (!opened) {
-                        Toast.makeText(context, "没有找到可以打开下载页的浏览器", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onDismiss = { showAppUpdateDialog = false }
-            )
+            // 设置页点开的更新弹窗底部带“关闭 MaiBot 自动更新”开关；启动时自动弹的提醒不带
+            AppUpdateDialogHost(onDismiss = { showAppUpdateDialog = false }, showMaiBotAutoUpdateSwitch = true)
         }
 
         if (showSshDialog) {
@@ -379,16 +336,19 @@ private fun SettingsNavigationPane(
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
+    // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
+    // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
+    val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
 
     LazyColumn(
         modifier = modifier
             .background(PageBackground)
             .padding(top = statusBarTop),
         contentPadding = PaddingValues(
-            top = if (compact) 4.dp else 44.dp,
+            top = if (compact) compactTop else 44.dp,
             start = if (compact) 12.dp else 18.dp,
             end = if (compact) 12.dp else 18.dp,
-            bottom = 112.dp
+            bottom = LocalBottomNavigationClearance.current
         ),
         verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
     ) {

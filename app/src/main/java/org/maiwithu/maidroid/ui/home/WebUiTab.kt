@@ -9,13 +9,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -56,18 +64,31 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiChromeClient
+import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
+import org.maiwithu.maidroid.webui.WebUiPageBackground
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
 /** WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。 */
 internal class WebUiTabState internal constructor(
     val webView: WebView,
-    val fileChooser: WebUiFileChooser
+    val fileChooser: WebUiFileChooser,
+    val downloads: WebUiDownloads,
+    val webViewClient: WebUiWebViewClient
 ) {
     var webViewError by mutableStateOf<String?>(null)
     var reloadToken by mutableIntStateOf(0)
     var webViewHasSize by mutableStateOf(false)
+
+    /** 网页自己的底色（见 WebUiPageBackground）；还没报上来或加载失败时为 null。横屏时涂在侧栏底下让出的那一条。 */
+    var pageBackground by mutableStateOf<Color?>(null)
+
+    /** 清掉错误提示并重新加载：换一个加载令牌，页签的 update 看到令牌变了就按当前尺寸重新 loadUrl。 */
+    fun reload() {
+        webViewError = null
+        reloadToken += 1
+    }
 }
 
 /** 创建 WebUI 页签的 WebView（debug 包允许 Chrome 远程调试），离开主页时销毁。 */
@@ -80,8 +101,12 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         }
 
         val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
+        val downloads = WebUiDownloads(context, MaiBotWebUi.LOG_TAG)
 
-        val webView = createWebUiWebView(context).apply {
+        // 回调里要改页签状态，状态里又要持有 WebView 和 client：先建它们，回调经 holder 找到稍后建好的状态。
+        var tabState: WebUiTabState? = null
+
+        val webView = createWebUiWebView(context, downloads).apply {
             // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
             // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
             // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
@@ -93,22 +118,29 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             overScrollMode = WebView.OVER_SCROLL_NEVER
             isFocusable = true
             isFocusableInTouchMode = true
-            webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
-        }
-
-        WebUiTabState(webView, fileChooser).also { tabState ->
-            webView.webViewClient = WebUiWebViewClient(
+            webChromeClient = WebUiChromeClient(
                 logTag = MaiBotWebUi.LOG_TAG,
-                // APP 底栏在 WebUI 页签默认收成右下角的小按钮，网页底部不用再给它留白；
-                // 展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
-                onPageFinishedCallback = { _, _ ->
-                    tabState.webViewError = null
-                },
-                onMainFrameError = { _, error ->
-                    tabState.webViewError = "${error.errorCode}: ${error.description}"
-                }
+                fileChooser = fileChooser,
+                onPageBackgroundColor = { argb -> tabState?.pageBackground = Color(argb) }
             )
         }
+
+        val webViewClient = WebUiWebViewClient(
+            logTag = MaiBotWebUi.LOG_TAG,
+            // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时是左侧悬浮的侧栏，网页已让出它的宽度），
+            // 网页底部不用再给它留白；展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
+            // 加载成功 -> 清掉错误提示，注入底色脚本，网页随即报上底色（之后换主题再报）；加载失败 -> 底色作废。
+            onPageFinishedCallback = { view, _ ->
+                tabState?.webViewError = null
+                view.evaluateJavascript(WebUiPageBackground.watchScript, null)
+            },
+            onMainFrameError = { _, error ->
+                tabState?.webViewError = "${error.errorCode}: ${error.description}"
+                tabState?.pageBackground = null
+            }
+        )
+        webView.webViewClient = webViewClient
+        WebUiTabState(webView, fileChooser, downloads, webViewClient).also { tabState = it }
     }
 
     // 网页点上传按钮 -> fileChooser 用这个 launcher 打开系统选文件页 -> 选完回到这里，把结果交回网页。
@@ -117,15 +149,23 @@ internal fun rememberWebUiTabState(): WebUiTabState {
     ) { result ->
         state.fileChooser.onResult(result.resultCode, result.data)
     }
+    // 网页点导出 -> downloads 用这个 launcher 弹“另存为” -> 选好位置回到这里，交给 downloads 写文件。
+    val downloadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        state.downloads.onResult(result.resultCode, result.data)
+    }
     SideEffect {
         state.fileChooser.launcher = fileChooserLauncher
+        state.downloads.launcher = downloadLauncher
     }
 
     DisposableEffect(state) {
         onDispose {
-            // 先把没回复的选文件请求按取消结束，再销毁 WebView。
+            // 先把没回复的选文件请求按取消结束、丢掉还没选位置的下载，再销毁 WebView。
             state.fileChooser.launcher = null
             state.fileChooser.cancelPending()
+            state.downloads.release()
             state.webView.destroy()
         }
     }
@@ -135,7 +175,9 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
 /**
  * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），WebView 拿到非零尺寸后才开始加载。
- * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”，右上角是刷新按钮。
+ * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局宽度至少 1040），竖屏按手机版。
+ * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”；竖屏时右上角是刷新按钮，横屏时刷新按钮在左侧导航栏里。
+ * startClearance：横屏时左侧悬浮侧栏的宽度，网页和横幅都让开它，让出的那一条涂网页自己的底色。
  */
 @Composable
 internal fun WebUiTabPage(
@@ -144,13 +186,39 @@ internal fun WebUiTabPage(
     state: WebUiTabState,
     modifier: Modifier = Modifier,
     terminalLogs: List<String> = emptyList(),
-    url: String = MaiBotWebUi.URL
+    url: String = MaiBotWebUi.URL,
+    showRefreshButton: Boolean = true,
+    startClearance: Dp = 0.dp
 ) {
     val statusBarTop = statusBarTopInset()
+    // 横幅右侧给刷新按钮让出位置；刷新按钮挪进导航栏时左右对称留白。
+    val bannerEndPadding = if (showRefreshButton) 56.dp else 16.dp
+
+    // 弹出键盘时 WebView 底部让出键盘的高度。主界面是全面屏（edge-to-edge），清单里的 adjustResize 不再缩小窗口，
+    // 不让的话 WebView 一直是全高，键盘直接盖住网页下半截（聊天页的输入栏首当其冲）。
+    // 点输入框 -> 键盘开始弹出 -> WebView 一次缩到键盘上沿 -> 网页可视高度变矮，内核把正在输入的框滚到可见处，
+    // 贴底的输入栏落在键盘正上方。按键盘的最终高度（imeAnimationTarget）只缩一次，不跟着键盘动画逐帧缩放：
+    // WebUI 页面重，每帧重新排版会卡；收起键盘时 WebView 先恢复全高，露出的部分还被正在收起的键盘盖着，看不出跳动。
+    // 横屏时有些输入法会切成悬浮键盘，悬浮键盘不占底部、报上来的高度是 0，这时 WebView 保持原样不缩。
+    @OptIn(ExperimentalLayoutApi::class)
+    val imeClearance = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
+
+    // 麦麦重启（改时区、换装 SnowLuma 适配器等）的那十几秒里页签刚好重新加载（比如切回应用时界面被重建），
+    // 会停在“网页无法打开”：WebUI 重新上线时，上次加载失败就自动重载一次，不用再手动点刷新或“唤醒”。
+    // 在别的标签时上线，切回 WebUI 页签的第一帧也会检查一次。只在上线的那一刻重载，WebUI 自身出错不会反复刷新。
+    LaunchedEffect(webUiOnline) {
+        if (webUiOnline && state.webViewError != null) {
+            state.reload()
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
+            // 横屏：整页先涂网页底色 -> 左边让出侧栏宽度 -> 余下部分照旧铺页面底色、放网页和横幅。
+            // 侧栏的毛玻璃底下透出的就是网页的颜色，切换标签时这一条跟着网页一起滑走；网页还没报上底色时用页面底色。
+            .background(state.pageBackground ?: PageBackground)
+            .padding(start = startClearance)
             .background(PageBackground)
     ) {
         AndroidView(
@@ -168,16 +236,21 @@ internal fun WebUiTabPage(
                 if (state.webViewHasSize && webView.tag != loadRequest) {
                     webView.tag = loadRequest
                     state.webViewError = null
+                    // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                    // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
+                    state.webViewClient.applyDesktopViewport(webView)
                     Log.d(
                         MaiBotWebUi.LOG_TAG,
                         "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                            "${webView.width}x${webView.height}"
+                            "${webView.width}x${webView.height}, " +
+                            "desktop width=${state.webViewClient.desktopLayoutWidthCss}"
                     )
                     webView.loadUrl(launchUrl)
                 }
             },
             modifier = Modifier
                 .padding(top = statusBarTop)
+                .windowInsetsPadding(imeClearance)
                 .fillMaxSize()
                 .onSizeChanged { size ->
                     state.webViewHasSize = size.width > 0 && size.height > 0
@@ -188,19 +261,16 @@ internal fun WebUiTabPage(
             WebUiStatusBanner(
                 message = "WebView 加载失败：${state.webViewError}",
                 action = "重试",
-                onAction = {
-                    state.webViewError = null
-                    state.reloadToken += 1
-                },
+                onAction = state::reload,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
             )
         } else if (!webUiOnline) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 56.dp)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Corners.Chip))
                     .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
@@ -239,15 +309,14 @@ internal fun WebUiTabPage(
             }
         }
 
-        WebUiRefreshButton(
-            onClick = {
-                state.webViewError = null
-                state.reloadToken += 1
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = statusBarTop + 8.dp, end = 16.dp)
-        )
+        if (showRefreshButton) {
+            WebUiRefreshButton(
+                onClick = state::reload,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = statusBarTop + 8.dp, end = 16.dp)
+            )
+        }
     }
 }
 

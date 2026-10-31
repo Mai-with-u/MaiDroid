@@ -30,7 +30,6 @@ class MaiBotUpdateReportTest {
         assertEquals(1792663038L, report.latest?.committedAtEpochSeconds)
         assertEquals("Update pyproject.toml", report.latest?.subject)
         assertEquals(2, report.localChangeCount)
-        assertNull(report.backupFile)
         assertTrue(report.hasUpdate)
     }
 
@@ -39,17 +38,13 @@ class MaiBotUpdateReportTest {
         val report = parseMaiBotUpdateReport(
             listOf(
                 "MAIDROID_UPDATE_INSTALLED=$oldCommit\t1792600000\told",
-                "MAIDROID_UPDATE_BACKUP=/root/.maidroid/maibot-backups/local-changes-20261022.patch",
+                "[MaiBotUpdate] resetting to ad2b474",
                 "MAIDROID_UPDATE_INSTALLED=$newCommit\t1792663038\tnew",
                 "MAIDROID_UPDATE_LATEST=$newCommit\t1792663038\tnew"
             ).joinToString("\r\n")
         )
 
         assertEquals(newCommit, report.installed?.commit)
-        assertEquals(
-            "/root/.maidroid/maibot-backups/local-changes-20261022.patch",
-            report.backupFile
-        )
         assertFalse(report.hasUpdate)
     }
 

@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.runtime
 
 import java.io.File
+import java.util.TimeZone
 
 /**
  * 把 ContainerScript 翻译成宿主机上可执行的 proot 命令行，并给出 proot 需要的环境变量。
@@ -38,9 +39,18 @@ internal class ProotCommand(private val paths: RuntimePaths) {
         }
     }
 
+    /**
+     * 把容器的系统时区同步成手机当前时区，返回容器现在用的时区名；rootfs 没装好或写盘失败时返回 null。
+     * 时区同步失败不该挡住容器命令，失败时容器沿用原来的时区。
+     */
+    fun syncTimeZone(): String? =
+        runCatching { ContainerTimeZone.sync(paths.rootfsDir, TimeZone.getDefault()) }.getOrNull()
+
     private fun prootArguments(workingDirectory: String): List<String> {
         paths.termuxTmpDir.mkdirs()
         ensureFakeProcFiles()
+        // 每条容器命令启动前都对一次时区：手机在应用没跑时改过时区，下次拉起的进程也能用上新时区。
+        syncTimeZone()
         return listOf(
             paths.prootExecutable.absolutePath,
             "--link2symlink",

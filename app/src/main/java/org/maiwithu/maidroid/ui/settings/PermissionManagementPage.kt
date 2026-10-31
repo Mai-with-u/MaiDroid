@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -88,7 +89,7 @@ internal fun PermissionManagementPage(
                 top = 40.dp,
                 start = 16.dp,
                 end = 16.dp,
-                bottom = 112.dp
+                bottom = LocalBottomNavigationClearance.current
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

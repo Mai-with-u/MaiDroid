@@ -36,7 +36,8 @@ internal class NapCatPlatformManager(
     paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val napCatProcess: NapCatProcessSupervisor
+    private val napCatProcess: NapCatProcessSupervisor,
+    private val adapterInstaller: SnowLumaAdapterInstaller
 ) {
     private companion object {
         const val STATUS_REFRESH_INTERVAL_MS = 2_000L
@@ -161,13 +162,15 @@ internal class NapCatPlatformManager(
 
     /**
      * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就只重启运行时；否则在后台：
-     * 检查容器和 MaiBot 源码 -> 跑安装脚本（进度文件每 500 毫秒同步到进度环）->
-     * 宿主侧写适配器配置（连接项 + 放开的聊天名单）-> 装好后经前台服务启动 NapCat 并重启 MaiBot 加载适配器。
+     * 检查容器、MaiBot 源码和 MaiBot 版本 -> NapCat 本体没装才跑 NapCat 安装脚本（进度文件每 500 毫秒同步到进度环）->
+     * 没装就装 MaiBot 侧的 SnowLuma 适配器（SnowLumaAdapterInstaller，顺带删掉停更的旧适配器）->
+     * 经前台服务拉起 NapCat 并重启 MaiBot，让它加载适配器、生成默认配置 -> 等配置生成后迁移连接设置，
+     * MaiBot 发现配置变了会自己热启用适配器。
      */
     fun installNapCat() {
         if (installJob?.isActive == true) return
 
-        if (files.isInstalled()) {
+        if (files.isInstalled() && !adapterInstaller.needsInstall()) {
             refresh()
             restartRuntime()
             return
@@ -187,9 +190,9 @@ internal class NapCatPlatformManager(
             val validationError = withContext(Dispatchers.IO) {
                 readiness.containerProblem()
                     ?: if (!readiness.isMaiBotSourceReady()) {
-                        "MaiBot 源码尚未安装，无法配置 NapCat 适配器"
+                        "MaiBot 源码尚未安装，无法配置 QQ 适配器"
                     } else {
-                        null
+                        adapterInstaller.maiBotVersionProblem()
                     }
             }
             if (validationError != null) {
@@ -197,27 +200,41 @@ internal class NapCatPlatformManager(
                 return@launch
             }
 
-            statusReader.clearInstallProgress()
-            startProgressWatcher()
-
             TerminalLog.append("")
             TerminalLog.append("[NapCat] 启动安装流程")
 
-            val result = runInstallScript(NapCatScripts.install(token = generateToken()))
-            progressJob?.cancel()
-            progressJob = null
-
-            if (!result.success) {
-                fail(result.summary())
-                return@launch
-            }
-            val configError = writeAdapterConfig()
-            if (configError != null) {
-                fail("写入 NapCat 适配器配置失败：$configError")
-                return@launch
+            if (!withContext(Dispatchers.IO) { files.isNapCatReady() }) {
+                statusReader.clearInstallProgress()
+                startProgressWatcher()
+                val result = runInstallScript(NapCatScripts.install(token = generateToken()))
+                progressJob?.cancel()
+                progressJob = null
+                if (!result.success) {
+                    fail(result.summary())
+                    return@launch
+                }
             }
 
-            if (files.isInstalled()) {
+            if (withContext(Dispatchers.IO) { adapterInstaller.needsInstall() }) {
+                _state.update { it.copy(progress = 0.92f, progressDescription = "下载 MaiBot 的 QQ 适配器") }
+                val adapterError = adapterInstaller.install(onLine = TerminalLog::append)
+                if (adapterError != null) {
+                    fail(adapterError)
+                    return@launch
+                }
+            }
+
+            // 重启 MaiBot 让它加载新适配器、按适配器默认值生成配置（同时拉起 NapCat），生成后再迁移连接设置。
+            _state.update { it.copy(progress = 0.95f, progressDescription = "等麦麦生成 QQ 适配器配置") }
+            TerminalLog.append("[NapCat] 重启麦麦加载 QQ 适配器，等它生成配置后迁移连接设置")
+            restartRuntime()
+            val migrationError = adapterInstaller.migrateConfigWhenReady()
+            if (migrationError != null) {
+                fail(migrationError)
+                return@launch
+            }
+
+            if (withContext(Dispatchers.IO) { files.isInstalled() }) {
                 val snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = false) }
                 _state.update {
                     it.copy(
@@ -230,21 +247,11 @@ internal class NapCatPlatformManager(
                         qrCodeLastModified = snapshot.qrCodeLastModified
                     )
                 }
-                TerminalLog.append("[NapCat] 安装完成，正在启动 NapCat 并重启 MaiBot 以加载适配器")
-                restartRuntime()
+                TerminalLog.append("[NapCat] 安装完成，麦麦会按迁移好的配置自动启用 QQ 适配器")
             } else {
-                fail(result.summary())
+                fail("NapCat 或 QQ 适配器的文件不完整，请重试")
             }
         }
-    }
-
-    // 安装脚本跑完后写适配器配置：token 用脚本保存（或沿用）的那份，已有配置时只改连接项、补名单模式，保留用户改过的其余配置。
-    private suspend fun writeAdapterConfig(): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val token = files.oneBotTokenFile.takeIf { it.isFile }?.readText()?.trim()
-            check(!token.isNullOrEmpty()) { "找不到 OneBot token" }
-            rewriteAdapterConfig(files.maiBotAdapterConfig) { existing -> NapCatAdapterConfig.write(existing, token) }
-        }.exceptionOrNull()?.let { it.message.orEmpty().ifBlank { it.javaClass.simpleName } }
     }
 
     // NapCat 装好或已存在时，经前台服务重启运行时：NapCat 若未运行会被拉起，MaiBot 重启后加载适配器。
