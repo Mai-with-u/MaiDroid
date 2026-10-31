@@ -13,9 +13,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.absolutePadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -26,12 +33,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import eightbitlab.com.blurview.BlurTarget
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
+import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.platform.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
@@ -43,7 +53,7 @@ internal const val WakeRetryIntervalMillis = 30_000L
 
 /**
  * OOBE 完成后的主页。WebUI 第一次上线前显示唤醒页（每 30 秒自动唤醒一次 MaiBot），
- * 上线后切到带底部导航的三栏外壳：WebUI、消息平台、设置；右下角按钮打开终端输出。
+ * 上线后切到三栏外壳：WebUI、消息平台、设置；竖屏导航在底部（右下角按钮打开终端输出），横屏导航在左侧。
  */
 @Composable
 fun HomeScreen(
@@ -111,7 +121,11 @@ fun HomeScreen(
     }
 }
 
-// 三栏外壳：页面内容包在 BlurTargetHost 里，底部悬浮导航栏据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
+/**
+ * 三栏外壳：页面内容包在 BlurTargetHost 里，竖屏底部悬浮导航栏据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
+ * 窗口宽大于高时导航改为左侧竖栏（见 homeUsesNavigationRail），页面让出这一列，不再被导航盖住。
+ * 横屏摄像头挖孔转到屏幕左右两侧，整个外壳左右让开安全区：导航栏和页面都不会画进挖孔。
+ */
 @Composable
 private fun HomeTabsShell(
     selectedTab: HomeTab,
@@ -130,105 +144,150 @@ private fun HomeTabsShell(
     var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
     val webUiTabState = rememberWebUiTabState()
 
-    // WebUI 页签里网页自带底部导航，APP 底栏再叠一层会占掉约五分之一屏幕：
+    // 竖屏时 WebUI 页签里网页自带底部导航，APP 底栏再叠一层会占掉约五分之一屏幕：
     // 在 WebUI 页签默认把 APP 底栏收成右下角的小按钮 -> 点开后盖一层暗色遮罩并弹出完整底栏 ->
     // 点遮罩、按返回键、切换标签或打开终端都会收起。消息平台、设置页照常显示完整底栏。
+    // 横屏侧栏不挡网页，不需要收起。
     var navExpanded by rememberSaveable { mutableStateOf(false) }
-    val navCollapsible = selectedTab == HomeTab.WebUi
-    BackHandler(enabled = navCollapsible && navExpanded) { navExpanded = false }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(PageBackground)
     ) {
-        BlurTargetHost(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(PageBackground),
-            onTargetChanged = { blurTarget = it }
-        ) {
-            AnimatedContent(
-                targetState = selectedTab,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(PageBackground),
-                transitionSpec = { horizontalSlideTransition(forward = targetState >= initialState, dampingRatio = 0.82f) },
-                label = "HomeTabTransition"
-            ) { tab ->
-                when (tab) {
-                    HomeTab.WebUi -> WebUiTabPage(
-                        webUiOnline = webUiOnline,
-                        onWakeMai = { onWakeMai(true) },
-                        state = webUiTabState,
-                        terminalLogs = terminalLogs,
-                        modifier = Modifier.fillMaxSize()
-                    )
+        val useRail = homeUsesNavigationRail(maxWidth.value, maxHeight.value)
+        val navCollapsible = !useRail && selectedTab == HomeTab.WebUi
+        BackHandler(enabled = navCollapsible && navExpanded) { navExpanded = false }
 
-                    HomeTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
-                    HomeTab.Settings -> SettingsPage(
-                        webUiOnline = webUiOnline,
-                        versionName = versionName,
-                        permissionState = permissionState,
-                        permissionActions = permissionActions,
-                        modifier = Modifier.fillMaxSize()
-                    )
+        val density = LocalDensity.current
+        val layoutDirection = LocalLayoutDirection.current
+        val safeLeft = with(density) { WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp() }
+        val safeRight = with(density) { WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp() }
+
+        val selectTab: (HomeTab) -> Unit = { tab ->
+            navExpanded = false
+            onTabSelected(tab)
+        }
+        val openTerminal = {
+            navExpanded = false
+            onTerminalClick()
+        }
+
+        // 三个页面；横竖屏共用，只是摆放的位置和列表末尾留白不同。
+        val tabPages: @Composable (Modifier) -> Unit = { pagesModifier ->
+            BlurTargetHost(
+                modifier = pagesModifier.background(PageBackground),
+                onTargetChanged = { blurTarget = it }
+            ) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(PageBackground),
+                    transitionSpec = { horizontalSlideTransition(forward = targetState >= initialState, dampingRatio = 0.82f) },
+                    label = "HomeTabTransition"
+                ) { tab ->
+                    when (tab) {
+                        HomeTab.WebUi -> WebUiTabPage(
+                            webUiOnline = webUiOnline,
+                            onWakeMai = { onWakeMai(true) },
+                            state = webUiTabState,
+                            terminalLogs = terminalLogs,
+                            showRefreshButton = !useRail,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        HomeTab.Platforms -> MessagePlatformsPage(modifier = Modifier.fillMaxSize())
+                        HomeTab.Settings -> SettingsPage(
+                            webUiOnline = webUiOnline,
+                            versionName = versionName,
+                            permissionState = permissionState,
+                            permissionActions = permissionActions,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
 
-        // 展开时的遮罩：挡住网页的点击，点一下就收起底栏。
-        AnimatedVisibility(
-            visible = navCollapsible && navExpanded,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.matchParentSize()
-        ) {
+        if (useRail) {
+            // 横屏：左侧竖栏 -> 右边页面；页面不被导航盖住，列表末尾只留一点呼吸空间。
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .absolutePadding(left = safeLeft, right = safeRight)
+            ) {
+                HomeNavigationRail(
+                    selectedTab = selectedTab,
+                    onTabSelected = selectTab,
+                    onTerminalClick = openTerminal,
+                    onRefreshWebUi = if (selectedTab == HomeTab.WebUi) webUiTabState::reload else null
+                )
+
+                CompositionLocalProvider(LocalBottomNavigationClearance provides RailBottomClearance) {
+                    tabPages(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    )
+                }
+            }
+        } else {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    // 遮罩只负责收起底栏，不需要按压反馈。
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { navExpanded = false }
+                    .absolutePadding(left = safeLeft, right = safeRight)
+            ) {
+                tabPages(Modifier.fillMaxSize())
+
+                // 展开时的遮罩：挡住网页的点击，点一下就收起底栏。
+                AnimatedVisibility(
+                    visible = navCollapsible && navExpanded,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.matchParentSize()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            // 遮罩只负责收起底栏，不需要按压反馈。
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { navExpanded = false }
+                            )
                     )
-            )
-        }
-
-        AnimatedVisibility(
-            visible = !navCollapsible || navExpanded,
-            enter = fadeIn() + slideInVertically { height -> height / 2 },
-            exit = fadeOut() + slideOutVertically { height -> height / 2 },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            HomeBottomNavigation(
-                selectedTab = selectedTab,
-                blurTarget = blurTarget,
-                onTabSelected = { tab ->
-                    navExpanded = false
-                    onTabSelected(tab)
-                },
-                onTerminalClick = {
-                    navExpanded = false
-                    onTerminalClick()
                 }
-            )
-        }
 
-        AnimatedVisibility(
-            visible = navCollapsible && !navExpanded,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = CollapsedHomeNavigationBottomPadding)
-        ) {
-            CollapsedHomeNavigationButton(
-                blurTarget = blurTarget,
-                onClick = { navExpanded = true }
-            )
+                AnimatedVisibility(
+                    visible = !navCollapsible || navExpanded,
+                    enter = fadeIn() + slideInVertically { height -> height / 2 },
+                    exit = fadeOut() + slideOutVertically { height -> height / 2 },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) {
+                    HomeBottomNavigation(
+                        selectedTab = selectedTab,
+                        blurTarget = blurTarget,
+                        onTabSelected = selectTab,
+                        onTerminalClick = openTerminal
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = navCollapsible && !navExpanded,
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = CollapsedHomeNavigationBottomPadding)
+                ) {
+                    CollapsedHomeNavigationButton(
+                        blurTarget = blurTarget,
+                        onClick = { navExpanded = true }
+                    )
+                }
+            }
         }
 
         if (showTerminalOutput) {
@@ -239,3 +298,6 @@ private fun HomeTabsShell(
         }
     }
 }
+
+/** 横屏侧栏模式下列表末尾的留白：导航不盖住页面，只留一点让最后一项不贴底。 */
+private val RailBottomClearance = 16.dp

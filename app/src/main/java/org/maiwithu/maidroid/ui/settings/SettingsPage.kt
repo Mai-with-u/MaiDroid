@@ -16,14 +16,11 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,8 +54,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +73,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
+import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
@@ -163,21 +159,12 @@ internal fun SettingsPage(
             .fillMaxSize()
             .background(PageBackground)
     ) {
-        val density = LocalDensity.current
-        val layoutDirection = LocalLayoutDirection.current
-        val safeDrawingLeft = with(density) {
-            WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp()
-        }
-        val safeDrawingRight = with(density) {
-            WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp()
-        }
+        // 横屏挖孔的左右安全区由主页外壳统一让开，这里拿到的宽度已经是安全区内的宽度。
         val useTwoPane = settingsUseTwoPane(
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        val safeContentWidth = (maxWidth - safeDrawingLeft - safeDrawingRight)
-            .coerceAtLeast(0.dp)
-        val navigationWidth = settingsNavigationWidthDp(safeContentWidth.value).dp
+        val navigationWidth = settingsNavigationWidthDp(maxWidth.value).dp
 
         BackHandler(enabled = !useTwoPane && selectedDetail != null) {
             selectedDetail = null
@@ -211,7 +198,6 @@ internal fun SettingsPage(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PageBackground)
-                    .absolutePadding(left = safeDrawingLeft, right = safeDrawingRight)
             ) {
                 SettingsNavigationPane(
                     webUiOnline = webUiOnline,
@@ -388,7 +374,7 @@ private fun SettingsNavigationPane(
             top = if (compact) 4.dp else 44.dp,
             start = if (compact) 12.dp else 18.dp,
             end = if (compact) 12.dp else 18.dp,
-            bottom = 112.dp
+            bottom = LocalBottomNavigationClearance.current
         ),
         verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
     ) {
