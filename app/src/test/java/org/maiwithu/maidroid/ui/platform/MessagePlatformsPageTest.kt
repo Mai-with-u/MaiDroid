@@ -1,7 +1,6 @@
 package org.maiwithu.maidroid.ui.platform
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -53,10 +52,17 @@ class MessagePlatformsPageTest {
     }
 
     @Test
-    fun `short windows scroll the whole page instead of pinning the header`() {
-        // 手机横屏全屏只有 360dp 左右高，竖屏手机 700dp 以上
-        assertTrue(platformsUseSingleScroll(360f))
-        assertFalse(platformsUseSingleScroll(755f))
+    fun `phones use lists and tablets keep the card grid`() {
+        // 手机竖屏约 360dp 宽：单列分组列表
+        assertEquals(PlatformsLayout.List, messagePlatformsLayout(widthDp = 360f, heightDp = 755f))
+        // 手机横屏全屏、让出左侧导航后约 659×360dp：左右两栏
+        assertEquals(PlatformsLayout.TwoPane, messagePlatformsLayout(widthDp = 659f, heightDp = 360f))
+        // 又矮又窄的分屏小窗放不下两栏，退回单列列表
+        assertEquals(PlatformsLayout.List, messagePlatformsLayout(widthDp = 480f, heightDp = 360f))
+        // 平板竖屏、横屏和折叠屏内屏都保持卡片网格
+        assertEquals(PlatformsLayout.Grid, messagePlatformsLayout(widthDp = 800f, heightDp = 1180f))
+        assertEquals(PlatformsLayout.Grid, messagePlatformsLayout(widthDp = 1180f, heightDp = 800f))
+        assertEquals(PlatformsLayout.Grid, messagePlatformsLayout(widthDp = 673f, heightDp = 841f))
     }
 
     @Test

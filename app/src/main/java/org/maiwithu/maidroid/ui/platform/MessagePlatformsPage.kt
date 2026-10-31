@@ -32,8 +32,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
@@ -45,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -87,15 +90,30 @@ private const val PlatformGridMinCardWidthDp = 272f
 private const val PlatformGridMaxCardWidthDp = 420f
 private const val PlatformGridSpacingDp = 12f
 private val PlatformGridHorizontalPadding = 16.dp
-private const val PlatformListHeaderKey = "platform-list-header"
 
-/**
- * 窗口矮于这个高度时（手机横屏）消息平台页改成整页滚动：标题、已安装平台、分类放进网格顶部一起滚。
- * 这几块固定在顶部合计约 320dp，矮窗口里平台列表只剩一条缝。
- */
-private const val PlatformSingleScrollMaxHeightDp = 560f
+/** 消息平台页的三种排版，按窗口大小选，见 [messagePlatformsLayout]。 */
+internal enum class PlatformsLayout {
+    /** 手机竖屏等窄窗口：标题、已连接、发现从上到下排成分组列表，整页一起滚动。 */
+    List,
 
-internal fun platformsUseSingleScroll(heightDp: Float): Boolean = heightDp < PlatformSingleScrollMaxHeightDp
+    /** 手机横屏等矮窗口：左栏标题和已连接，右栏发现，两栏各自滚动。 */
+    TwoPane,
+
+    /** 平板：已安装横排小卡片，发现用大卡片网格，标题和分类固定在顶部。 */
+    Grid
+}
+
+// 手机横屏约 360dp 高，放不下平板那套固定在顶部的标题、已安装和分类（合计约 320dp），改左右两栏；
+// 两栏至少 520dp 宽，右栏才放得下“发现”标题加四个分类按钮。手机竖屏约 360~420dp 宽，用单列列表。
+private const val PlatformTwoPaneMaxHeightDp = 560f
+private const val PlatformTwoPaneMinWidthDp = 520f
+private const val PlatformListMaxWidthDp = 600f
+
+internal fun messagePlatformsLayout(widthDp: Float, heightDp: Float): PlatformsLayout = when {
+    heightDp < PlatformTwoPaneMaxHeightDp && widthDp >= PlatformTwoPaneMinWidthDp -> PlatformsLayout.TwoPane
+    widthDp < PlatformListMaxWidthDp -> PlatformsLayout.List
+    else -> PlatformsLayout.Grid
+}
 
 /**
  * Chooses the largest practical card layout for the available content width.
@@ -134,6 +152,16 @@ internal fun filterPlatforms(
     }
 }
 
+/** 平台卡片和列表行上各个按钮的回调，三种排版共用，省得每一层都传一长串参数。 */
+private class PlatformActions(
+    val onInstalledSettingsClick: (InstalledPlatform) -> Unit,
+    val onAdapterSelected: (AvailablePlatform, PlatformAdapter) -> Unit,
+    val onNapCatInstall: () -> Unit,
+    val onNapCatSettings: () -> Unit,
+    val onQqOfficialSettings: () -> Unit,
+    val onUnsupportedInstall: () -> Unit
+)
+
 @Composable
 internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -166,22 +194,11 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     var showQqOfficialConfig by rememberSaveable { mutableStateOf(false) }
     val categories = listOf("全部", "国内", "海外", "其他")
     val installedPlatforms = installedPlatformCards(napCatState, qqOfficialState)
+    val runningCount = installedPlatforms.count { it.running }
+    val onSearchClick: () -> Unit = { if (searchOpen) closeSearch() else searchOpen = true }
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(PageBackground)
-    ) {
-        val statusBarTop = statusBarTopInset()
-        // Grow the generous portrait spacing back gradually instead of jumping
-        // at a breakpoint when a landscape window is resized.
-        val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f))
-            .coerceIn(0f, 1f)
-        // The previous 64dp top slot assumed a roughly 24dp status bar. Keep its
-        // visual breathing room separate from the inset reported by the system.
-        val topSpacing = 8.dp + 32.dp * verticalExpansion
-        val sectionSpacing = 8.dp + 16.dp * verticalExpansion
-        val onInstalledSettingsClick: (InstalledPlatform) -> Unit = { platform ->
+    val actions = PlatformActions(
+        onInstalledSettingsClick = { platform ->
             when (platform.kind) {
                 InstalledPlatformKind.NapCat -> {
                     napCatManager.refresh()
@@ -192,8 +209,12 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     showQqOfficialConfig = true
                 }
             }
-        }
-        val onNapCatSettings: () -> Unit = {
+        },
+        onAdapterSelected = { platform, adapter ->
+            selectedAdapters = selectedAdapters + (platform.name to adapter)
+        },
+        onNapCatInstall = { napCatManager.installNapCat() },
+        onNapCatSettings = {
             napCatManager.refresh()
             // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
             // 不能只看 OneBot 端口：登录后端口还没起来或 WsServer 被关掉时，
@@ -209,126 +230,212 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     showNapCatQrCode = true
                 }
             }
-        }
+        },
         // 官方机器人没装时点下载、装好后点齿轮都打开同一个凭据弹窗：先填 AppID 再安装。
-        val onQqOfficialSettings: () -> Unit = {
+        onQqOfficialSettings = {
             qqOfficialManager.refresh()
             showQqOfficialConfig = true
-        }
-        val onUnsupportedInstall: () -> Unit = {
+        },
+        onUnsupportedInstall = {
             Toast.makeText(context, "这个平台暂未适配，敬请期待", Toast.LENGTH_SHORT).show()
         }
+    )
 
-        if (platformsUseSingleScroll(maxHeight.value)) {
-            // 矮窗口（手机横屏）：标题、已安装平台、分类都放进网格最上面，整页一起滚动；
-            // 否则这几块固定在顶部会占掉几乎全部高度，平台列表只剩一条缝。
-            PlatformList(
-                platforms = filterPlatforms(AvailablePlatforms, selectedCategory, searchQuery),
-                selectedAdapters = selectedAdapters,
-                napCatState = napCatState,
-                qqOfficialState = qqOfficialState,
-                onAdapterSelected = { platform, adapter ->
-                    selectedAdapters = selectedAdapters + (platform.name to adapter)
-                },
-                onNapCatInstall = { napCatManager.installNapCat() },
-                onNapCatSettings = onNapCatSettings,
-                onQqOfficialSettings = onQqOfficialSettings,
-                onUnsupportedInstall = onUnsupportedInstall,
-                topPadding = statusBarTop + topSpacing,
-                // 页头和第一排卡片之间用网格自己的行距隔开。
-                header = {
-                    Column {
-                        MessagePlatformsHeader(
-                            runningCount = installedPlatforms.count { it.running },
-                            searchOpen = searchOpen,
-                            onSearchClick = { if (searchOpen) closeSearch() else searchOpen = true },
-                            horizontalPadding = 0.dp
-                        )
-                        if (searchOpen) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            PlatformSearchField(
-                                query = searchQuery,
-                                onQueryChange = { searchQuery = it },
-                                horizontalPadding = 0.dp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(sectionSpacing))
-                        InstalledPlatformsRow(
-                            platforms = installedPlatforms,
-                            onSettingsClick = onInstalledSettingsClick,
-                            horizontalPadding = 0.dp
-                        )
-                        Spacer(modifier = Modifier.height(sectionSpacing))
-                        DiscoverHeader(
-                            platformCount = filterPlatforms(AvailablePlatforms, selectedCategory, searchQuery).size,
-                            categories = categories,
-                            selectedCategory = selectedCategory,
-                            onCategorySelected = { selectedCategory = it },
-                            horizontalPadding = 0.dp
-                        )
-                    }
-                }
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(PageBackground)
-                    .padding(top = statusBarTop)
-            ) {
-                Spacer(modifier = Modifier.height(topSpacing))
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(PageBackground)
+    ) {
+        val statusBarTop = statusBarTopInset()
+        val bottomClearance = LocalBottomNavigationClearance.current
+        val pageWidth = maxWidth
+        // Grow the generous portrait spacing back gradually instead of jumping
+        // at a breakpoint when a landscape window is resized.
+        val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f))
+            .coerceIn(0f, 1f)
+        // The previous 64dp top slot assumed a roughly 24dp status bar. Keep its
+        // visual breathing room separate from the inset reported by the system.
+        val topSpacing = 8.dp + 32.dp * verticalExpansion
+        val sectionSpacing = 8.dp + 16.dp * verticalExpansion
+
+        // 手机两种排版共用的三块：页头（带搜索框）、已连接、发现。
+        val listHeader: @Composable (Boolean) -> Unit = { compact ->
+            Column {
                 MessagePlatformsHeader(
-                    runningCount = installedPlatforms.count { it.running },
+                    runningCount = runningCount,
                     searchOpen = searchOpen,
-                    onSearchClick = { if (searchOpen) closeSearch() else searchOpen = true }
+                    onSearchClick = onSearchClick,
+                    horizontalPadding = 0.dp,
+                    compact = compact
                 )
                 if (searchOpen) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    PlatformSearchField(query = searchQuery, onQueryChange = { searchQuery = it })
+                    PlatformSearchField(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        horizontalPadding = 0.dp
+                    )
                 }
-                Spacer(modifier = Modifier.height(sectionSpacing))
-                InstalledPlatformsRow(
-                    platforms = installedPlatforms,
-                    onSettingsClick = onInstalledSettingsClick
-                )
-                Spacer(modifier = Modifier.height(sectionSpacing))
-                DiscoverHeader(
-                    platformCount = filterPlatforms(AvailablePlatforms, selectedCategory, searchQuery).size,
+            }
+        }
+        val installedSection: @Composable () -> Unit = {
+            PlatformSection(title = "已连接") {
+                if (installedPlatforms.isEmpty()) {
+                    EmptyInstalledPlatformRow()
+                }
+                installedPlatforms.forEachIndexed { index, platform ->
+                    if (index > 0) PlatformRowDivider()
+                    InstalledPlatformRow(
+                        platform = platform,
+                        onSettingsClick = { actions.onInstalledSettingsClick(platform) }
+                    )
+                }
+            }
+        }
+        // 竖屏分类按钮放在“发现”标题下面；横屏右栏够宽，放在标题右边省一行。
+        val discoverSection: @Composable (Boolean) -> Unit = { chipsBesideTitle ->
+            val chips: @Composable () -> Unit = {
+                CompactCategoryChips(
                     categories = categories,
                     selectedCategory = selectedCategory,
                     onCategorySelected = { selectedCategory = it }
                 )
-                Spacer(modifier = Modifier.height(sectionSpacing))
+            }
+            val visiblePlatforms = filterPlatforms(AvailablePlatforms, selectedCategory, searchQuery)
+            PlatformSection(
+                title = "发现",
+                titleTrailing = if (chipsBesideTitle) chips else null,
+                belowTitle = if (chipsBesideTitle) null else chips
+            ) {
+                if (visiblePlatforms.isEmpty()) {
+                    EmptyPlatformRow()
+                }
+                visiblePlatforms.forEachIndexed { index, platform ->
+                    if (index > 0) PlatformRowDivider()
+                    key(platform.name) {
+                        PlatformRow(
+                            platform = platform,
+                            selectedAdapter = selectedAdapters[platform.name] ?: platform.adapters.firstOrNull(),
+                            napCatState = napCatState,
+                            qqOfficialState = qqOfficialState,
+                            onAdapterSelected = { adapter -> actions.onAdapterSelected(platform, adapter) },
+                            onNapCatInstall = actions.onNapCatInstall,
+                            onNapCatSettings = actions.onNapCatSettings,
+                            onQqOfficialSettings = actions.onQqOfficialSettings,
+                            onUnsupportedInstall = actions.onUnsupportedInstall
+                        )
+                    }
+                }
+            }
+        }
 
-                AnimatedContent(
-                    targetState = selectedCategory,
+        when (messagePlatformsLayout(maxWidth.value, maxHeight.value)) {
+            PlatformsLayout.List -> {
+                // 手机竖屏：页头 -> 已连接 -> 发现，整页一起滚动，底部给浮动导航栏留出空间。
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(PageBackground),
-                    transitionSpec = {
-                        val forward = categories.indexOf(targetState) >= categories.indexOf(initialState)
-                        horizontalSlideTransition(forward = forward, dampingRatio = 0.82f)
-                    },
-                    label = "PlatformCategoryTransition"
-                ) { category ->
-                    val visiblePlatforms = remember(category, searchQuery) {
-                        filterPlatforms(AvailablePlatforms, category, searchQuery)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = PlatformGridHorizontalPadding)
+                        .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    listHeader(false)
+                    installedSection()
+                    discoverSection(false)
+                }
+            }
+
+            PlatformsLayout.TwoPane -> {
+                // 手机横屏：左栏页头和已连接，右栏发现；两栏各自滚动，一屏能看到全部平台。
+                val leftPaneWidth = (pageWidth * 0.4f).coerceIn(220.dp, 320.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = statusBarTop)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(leftPaneWidth)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = PlatformGridHorizontalPadding, end = 8.dp)
+                            .padding(top = topSpacing, bottom = bottomClearance),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        listHeader(true)
+                        installedSection()
                     }
 
-                    PlatformList(
-                        platforms = visiblePlatforms,
-                        selectedAdapters = selectedAdapters,
-                        napCatState = napCatState,
-                        qqOfficialState = qqOfficialState,
-                        onAdapterSelected = { platform, adapter ->
-                            selectedAdapters = selectedAdapters + (platform.name to adapter)
-                        },
-                        onNapCatInstall = { napCatManager.installNapCat() },
-                        onNapCatSettings = onNapCatSettings,
-                        onQqOfficialSettings = onQqOfficialSettings,
-                        onUnsupportedInstall = onUnsupportedInstall
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = 8.dp, end = PlatformGridHorizontalPadding)
+                            .padding(top = topSpacing, bottom = bottomClearance)
+                    ) {
+                        discoverSection(true)
+                    }
+                }
+            }
+
+            PlatformsLayout.Grid -> {
+                // 平板：标题、已安装、分类固定在顶部，下面的平台网格单独滚动，切分类时整块滑动。
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(PageBackground)
+                        .padding(top = statusBarTop)
+                ) {
+                    Spacer(modifier = Modifier.height(topSpacing))
+                    MessagePlatformsHeader(
+                        runningCount = runningCount,
+                        searchOpen = searchOpen,
+                        onSearchClick = onSearchClick
                     )
+                    if (searchOpen) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        PlatformSearchField(query = searchQuery, onQueryChange = { searchQuery = it })
+                    }
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+                    InstalledPlatformsRow(
+                        platforms = installedPlatforms,
+                        onSettingsClick = actions.onInstalledSettingsClick
+                    )
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+                    DiscoverHeader(
+                        platformCount = filterPlatforms(AvailablePlatforms, selectedCategory, searchQuery).size,
+                        categories = categories,
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = { selectedCategory = it }
+                    )
+                    Spacer(modifier = Modifier.height(sectionSpacing))
+
+                    AnimatedContent(
+                        targetState = selectedCategory,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(PageBackground),
+                        transitionSpec = {
+                            val forward = categories.indexOf(targetState) >= categories.indexOf(initialState)
+                            horizontalSlideTransition(forward = forward, dampingRatio = 0.82f)
+                        },
+                        label = "PlatformCategoryTransition"
+                    ) { category ->
+                        val visiblePlatforms = remember(category, searchQuery) {
+                            filterPlatforms(AvailablePlatforms, category, searchQuery)
+                        }
+
+                        PlatformGrid(
+                            platforms = visiblePlatforms,
+                            selectedAdapters = selectedAdapters,
+                            napCatState = napCatState,
+                            qqOfficialState = qqOfficialState,
+                            actions = actions
+                        )
+                    }
                 }
             }
         }
@@ -402,18 +509,12 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PlatformList(
+private fun PlatformGrid(
     platforms: List<AvailablePlatform>,
     selectedAdapters: Map<String, PlatformAdapter>,
     napCatState: NapCatPlatformState,
     qqOfficialState: QqOfficialPlatformState,
-    onAdapterSelected: (AvailablePlatform, PlatformAdapter) -> Unit,
-    onNapCatInstall: () -> Unit,
-    onNapCatSettings: () -> Unit,
-    onQqOfficialSettings: () -> Unit,
-    onUnsupportedInstall: () -> Unit,
-    topPadding: Dp = 0.dp,
-    header: (@Composable () -> Unit)? = null
+    actions: PlatformActions
 ) {
     val bottomClearance = LocalBottomNavigationClearance.current
 
@@ -428,31 +529,20 @@ private fun PlatformList(
         val widthBasedColumnCount = calculatePlatformGridColumnCount(availableWidth.value)
         // Do not reserve empty columns when a category has fewer results; the
         // resulting narrower grid stays centered by the parent container.
-        // 页头放进网格时网格始终占满宽度：页头不能跟着筛选结果变窄。
-        val columnCount = if (header != null) {
-            widthBasedColumnCount
-        } else {
-            minOf(widthBasedColumnCount, platforms.size.coerceAtLeast(1))
-        }
+        val columnCount = minOf(widthBasedColumnCount, platforms.size.coerceAtLeast(1))
         val maximumGridWidth = PlatformGridMaxCardWidthDp.dp * columnCount.toFloat() +
             PlatformGridSpacingDp.dp * (columnCount - 1).toFloat()
-        val gridWidth = if (header != null) availableWidth else minOf(availableWidth, maximumGridWidth)
+        val gridWidth = minOf(availableWidth, maximumGridWidth)
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(columnCount),
             modifier = Modifier
                 .width(gridWidth)
                 .fillMaxHeight(),
-            contentPadding = PaddingValues(top = topPadding, bottom = bottomClearance),
+            contentPadding = PaddingValues(bottom = bottomClearance),
             horizontalArrangement = Arrangement.spacedBy(PlatformGridSpacingDp.dp),
             verticalArrangement = Arrangement.spacedBy(PlatformGridSpacingDp.dp)
         ) {
-            if (header != null) {
-                item(key = PlatformListHeaderKey, span = { GridItemSpan(maxLineSpan) }) {
-                    header()
-                }
-            }
-
             if (platforms.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Box(
@@ -469,37 +559,39 @@ private fun PlatformList(
                     items = platforms,
                     key = { platform -> platform.name }
                 ) { platform ->
-                    // 整页滚动时切换分类不再整块滑动，改由每张卡片自己淡入淡出、挪到新位置。
-                    Box(modifier = Modifier.animateItem()) {
-                        PlatformInstallCard(
-                            platform = platform,
-                            selectedAdapter = selectedAdapters[platform.name] ?: platform.adapters.firstOrNull(),
-                            napCatState = napCatState,
-                            qqOfficialState = qqOfficialState,
-                            onAdapterSelected = { adapter -> onAdapterSelected(platform, adapter) },
-                            onNapCatInstall = onNapCatInstall,
-                            onNapCatSettings = onNapCatSettings,
-                            onQqOfficialSettings = onQqOfficialSettings,
-                            onUnsupportedInstall = onUnsupportedInstall
-                        )
-                    }
+                    PlatformInstallCard(
+                        platform = platform,
+                        selectedAdapter = selectedAdapters[platform.name] ?: platform.adapters.firstOrNull(),
+                        napCatState = napCatState,
+                        qqOfficialState = qqOfficialState,
+                        onAdapterSelected = { adapter -> actions.onAdapterSelected(platform, adapter) },
+                        onNapCatInstall = actions.onNapCatInstall,
+                        onNapCatSettings = actions.onNapCatSettings,
+                        onQqOfficialSettings = actions.onQqOfficialSettings,
+                        onUnsupportedInstall = actions.onUnsupportedInstall
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * 页头：“消息平台”标题、运行中的平台数，右边是搜索按钮。
+ * 紧凑版给手机横屏左栏用，字号和设置页分栏左侧的“设置”标题一致，也不再占固定的 66dp 高。
+ */
 @Composable
 private fun MessagePlatformsHeader(
     runningCount: Int,
     searchOpen: Boolean,
     onSearchClick: () -> Unit,
-    horizontalPadding: Dp = PlatformGridHorizontalPadding
+    horizontalPadding: Dp = PlatformGridHorizontalPadding,
+    compact: Boolean = false
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(66.dp)
+            .then(if (compact) Modifier else Modifier.height(66.dp))
             .padding(horizontal = horizontalPadding),
         verticalAlignment = Alignment.Top
     ) {
@@ -507,12 +599,12 @@ private fun MessagePlatformsHeader(
             Text(
                 text = "消息平台",
                 color = TextPrimary,
-                fontSize = TextSizes.Display,
+                fontSize = if (compact) 27.sp else TextSizes.Display,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 34.sp
+                lineHeight = if (compact) 30.sp else 34.sp
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(if (compact) 6.dp else 8.dp))
 
             Text(
                 text = if (runningCount > 0) {
@@ -521,9 +613,9 @@ private fun MessagePlatformsHeader(
                     "暂无平台正在运行"
                 },
                 color = TextMuted,
-                fontSize = TextSizes.BodyLarge,
+                fontSize = if (compact) TextSizes.Body else TextSizes.BodyLarge,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 18.sp
+                lineHeight = if (compact) 17.sp else 18.sp
             )
         }
 
@@ -593,12 +685,11 @@ private fun PlatformSearchField(
 @Composable
 private fun InstalledPlatformsRow(
     platforms: List<InstalledPlatform>,
-    onSettingsClick: (InstalledPlatform) -> Unit,
-    horizontalPadding: Dp = PlatformGridHorizontalPadding
+    onSettingsClick: (InstalledPlatform) -> Unit
 ) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = horizontalPadding),
+        contentPadding = PaddingValues(horizontal = PlatformGridHorizontalPadding),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (platforms.isEmpty()) {
@@ -621,13 +712,12 @@ private fun DiscoverHeader(
     platformCount: Int,
     categories: List<String>,
     selectedCategory: String,
-    onCategorySelected: (String) -> Unit,
-    horizontalPadding: Dp = PlatformGridHorizontalPadding
+    onCategorySelected: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding)
+            .padding(horizontal = PlatformGridHorizontalPadding)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

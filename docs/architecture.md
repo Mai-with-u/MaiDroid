@@ -94,7 +94,7 @@ flowchart TB
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionList`、`OobeTaskList`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页、底部导航与横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`HomeNavigationRail`、`WebUiTab` |
-| `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
+| `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformRows`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
 | `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings` |
 | `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalOutputState` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |

@@ -59,7 +59,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、测速 |
 | `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
-| `ui/platform/MessagePlatformsPageTest` | 平台网格列数、选择器宽度、平台目录、矮窗口整页滚动 |
+| `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入、主题只补默认值、样式表安全区改写、视口修补脚本 |

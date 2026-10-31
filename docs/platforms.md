@@ -12,12 +12,13 @@ MaiBot 通过插件（适配器）连接聊天平台。MaiDroid 的“消息平�
 ## 消息平台页的结构
 
 - `PlatformCatalog.kt`：“发现”区展示哪些平台（`AvailablePlatforms`），每个平台可选的接入方式（`PlatformAdapter`），以及“已安装”行按真实状态生成卡片的规则（`installedPlatformCards`）。设置页的“运行中平台数”也按这里统计。
-- `MessagePlatformsPage.kt`：页面本身，持有各弹窗的开关（`rememberSaveable`，用户切去 QQ 扫码导致 Activity 重建后弹窗还在）。
-- `PlatformCards.kt`：已安装小卡片、平台安装卡片（右上角按钮按选中的接入方式显示下载 / 进度环 / 设置）。
+- `MessagePlatformsPage.kt`：页面本身，按窗口大小选排版（`messagePlatformsLayout`）：手机竖屏是单列分组列表，手机横屏分左右两栏，平板是卡片网格；还持有各弹窗的开关（`rememberSaveable`，用户切去 QQ 扫码导致 Activity 重建后弹窗还在）。
+- `PlatformRows.kt`：手机用的分组列表，已连接行、发现行和分类小胶囊，样子和设置页一致。
+- `PlatformCards.kt`：平板用的已安装小卡片、平台安装卡片。右侧按钮按选中的接入方式显示下载 / 进度环 / 设置，这个状态和点击逻辑（`platformInstallAction`）卡片和列表行共用。
 - `AdapterSelector.kt`：接入方式选择器。
 - `NapCatDialogs.kt`、`QqOfficialConfigDialog.kt`：两种接入方式各自的弹窗。
 
-Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示，点下载会提示“还没有做适配”。注意区分：“SnowLuma”选项指在手机上跑 SnowLuma 客户端（代替 NapCat），没有做；NapCat 选项装的 MaiBot 侧插件是 MaiBot-SnowLuma-Adapter，它同时支持 NapCat 和 SnowLuma 两种客户端。
+Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平板卡片上点下载会提示“暂未适配”，手机列表里没适配的平台直接标“暂未适配”，不放下载按钮；QQ 选 SnowLuma 时点下载同样提示。注意区分：“SnowLuma”选项指在手机上跑 SnowLuma 客户端（代替 NapCat），没有做；NapCat 选项装的 MaiBot 侧插件是 MaiBot-SnowLuma-Adapter，它同时支持 NapCat 和 SnowLuma 两种客户端。
 
 ## QQ 官方机器人
 
