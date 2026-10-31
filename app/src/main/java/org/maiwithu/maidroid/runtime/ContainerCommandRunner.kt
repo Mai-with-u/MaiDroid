@@ -30,6 +30,9 @@ internal class ContainerCommandRunner(private val paths: RuntimePaths) {
     /** 脚本在宿主机上实际执行的 proot 命令行，供安装页和终端日志展示。 */
     fun commandLine(script: ContainerScript): List<String> = proot.commandLine(script)
 
+    /** 立即把容器时区同步成手机当前时区（手机改时区时调用），返回容器现在用的时区名，没同步成返回 null。 */
+    fun syncTimeZone(): String? = proot.syncTimeZone()
+
     /** 启动长驻的容器脚本（MaiBot、sshd、NapCat），输出读取和生命周期由调用方负责。 */
     fun start(script: ContainerScript, extraEnvironment: Map<String, String> = emptyMap()): Process {
         val processBuilder = ProcessBuilder(commandLine(script))

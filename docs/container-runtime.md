@@ -121,6 +121,14 @@ git 默认不检测传输停滞，镜像连上后卡住会一直等。两个函�
 
 proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resolv.conf` 里的服务器查询。`ContainerDns` 在宿主侧读出手机当前网络的 DNS（`ConnectivityManager` 的 `LinkProperties.dnsServers`）放在最前，阿里、114、Google、Cloudflare 作兜底；有些网络会拦截公共 DNS，只写公共 DNS 时容器里所有下载都会失败。glibc 只用前三个 nameserver、按顺序尝试，所以不加 `rotate`；带网卡后缀的 IPv6 链路本地地址会被丢掉。配置容器和每次开始安装时都会重写一次。
 
+### 容器时区
+
+Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内手机上会差 8 个小时。`ContainerTimeZone` 在宿主侧把 rootfs 的 `/etc/localtime` 指向手机当前时区的 zoneinfo 文件，`/etc/timezone` 写同一个名字：
+
+- `ProotCommand` 在每条容器命令启动前同步一次，内容没变不写盘；手机在应用没跑时改过时区，下次拉起的进程也会用上新时区。同步失败不挡命令，容器沿用原时区。
+- 前台服务活着时监听 `ACTION_TIMEZONE_CHANGED`：收到后立刻同步，MaiBot 正在跑就重启它。进程启动时就读定了时区，不重启会一直按旧时区报时。NapCat 不重启（会断开 QQ 登录），它只影响自己的日志时间，下次启动用上新时区；SSH 里新开的命令直接读 `/etc/localtime`，同步后立刻生效。
+- 容器的 tzdata 里没有手机的时区名（手机的 tzdata 更新，或是 `GMT+08:00` 这类自定义时区）时，按当下的偏移换成 `Etc/GMT∓N`（正负号和 UTC+8 的写法相反），偏移不是整点就退回 `Etc/UTC`。
+
 ### proot 下的 git
 
 `--link2symlink` 会把 git 写 packfile 时用的硬链接换成指向绝对路径的符号链接。克隆到临时目录再改名后，这些链接还指着旧路径，git 读不到对象（`fatal: bad object HEAD`），在线更新和 MaiBot 自带的更新检查都会失败。所以容器里的 git 克隆一律加 `-c core.createObject=rename`，这个配置会写进仓库的 `.git/config`，之后的 fetch 也沿用。

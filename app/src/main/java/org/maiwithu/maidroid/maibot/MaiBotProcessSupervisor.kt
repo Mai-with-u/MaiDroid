@@ -106,6 +106,22 @@ internal class MaiBotProcessSupervisor(
     }
 
     /**
+     * 手机改了时区：先把容器的系统时区改过去 -> MaiBot 正在跑就重启。
+     * 已经在跑的 MaiBot 启动时就读定了时区，不重启会一直按旧时区报时；没在跑的下次启动自然用上新时区。
+     */
+    fun followPhoneTimeZone() {
+        scope.launch {
+            val zoneId = commandRunner.syncTimeZone() ?: return@launch
+            if (!_status.value.running) return@launch
+            appendLog("$LOG_TAG Phone time zone changed to $zoneId, restarting")
+            lifecycleMutex.withLock {
+                stopLocked()
+                startLocked()
+            }
+        }
+    }
+
+    /**
      * 停住 MaiBot 执行一段维护逻辑（如在线更新）。
      *
      * 先挂上维护标记 -> 停掉 MaiBot 并清理残留进程 -> 执行 block -> 摘掉维护标记。
