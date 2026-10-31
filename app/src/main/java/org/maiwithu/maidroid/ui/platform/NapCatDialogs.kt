@@ -4,13 +4,16 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,6 +33,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -139,65 +143,38 @@ internal fun NapCatQrCodeDialog(
             )
         },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                val bitmap = qrBitmap
-                if (bitmap != null) {
-                    Box(
-                        modifier = Modifier
-                            .size(260.dp)
-                            .clip(RoundedCornerShape(Corners.Control))
-                            .background(Color.White)
-                            .padding(10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = "NapCat 登录二维码",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
+            // 竖排（二维码在上、说明在下）放得下就竖排；手机横屏时弹窗只有一两百 dp 高，
+            // 改成二维码在左、说明在右，二维码按可用高度缩小，说明文字太长时可以滚动。
+            BoxWithConstraints {
+                val availableHeight = maxHeight
+                val sideBySide = availableHeight != Dp.Infinity && availableHeight < QrCodeSize + QrHintsMinHeight
+                if (sideBySide) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        QrCodeImage(
+                            bitmap = qrBitmap,
+                            installed = state.installed,
+                            size = minOf(QrCodeSize, availableHeight),
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            QrLoginHints(state)
+                        }
                     }
                 } else {
-                    Text(
-                        text = if (state.installed) {
-                            "NapCat 尚未生成二维码，请稍等片刻后刷新。"
-                        } else {
-                            "NapCat 尚未安装。"
-                        },
-                        color = TextMuted,
-                        fontSize = TextSizes.Body,
-                        lineHeight = 17.sp
-                    )
-                }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        QrCodeImage(bitmap = qrBitmap, installed = state.installed, size = QrCodeSize)
 
-                Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                Text(
-                    text = "请使用QQ扫码登录……或者截图发给其他设备，然后用QQ扫码",
-                    color = TextFaint,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 14.sp
-                )
-
-                // 扫码进度来自 NapCat：已扫码时提示去手机确认，换码中提示稍等，二维码过期会自动换新。
-                napCatQrLoginHint(state)?.let { hint ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = hint,
-                        color = TextMuted,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 15.sp
-                    )
-                }
-
-                (state.qrRefreshError ?: state.errorMessage)?.let { error ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = error,
-                        color = StatusDanger,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 15.sp
-                    )
+                        QrLoginHints(state)
+                    }
                 }
             }
         },
@@ -234,6 +211,83 @@ internal fun NapCatQrCodeDialog(
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
+}
+
+/** 二维码边长：竖屏时的固定大小，横屏时按弹窗可用高度缩小，但不超过它。 */
+private val QrCodeSize = 260.dp
+
+/** 二维码下方说明文字大约要占的高度，用来判断竖排放不放得下。 */
+private val QrHintsMinHeight = 96.dp
+
+/** 白底圆角里的登录二维码；还没有二维码时换成一句原因。 */
+@Composable
+private fun QrCodeImage(
+    bitmap: ImageBitmap?,
+    installed: Boolean,
+    size: Dp,
+    modifier: Modifier = Modifier
+) {
+    if (bitmap != null) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(RoundedCornerShape(Corners.Control))
+                .background(Color.White)
+                .padding(10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = "NapCat 登录二维码",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    } else {
+        Text(
+            text = if (installed) {
+                "NapCat 尚未生成二维码，请稍等片刻后刷新。"
+            } else {
+                "NapCat 尚未安装。"
+            },
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 17.sp,
+            modifier = modifier
+        )
+    }
+}
+
+/** 二维码旁的说明：怎么扫、扫码进度、出错原因。 */
+@Composable
+private fun QrLoginHints(state: NapCatPlatformState) {
+    Text(
+        text = "请使用QQ扫码登录……或者截图发给其他设备，然后用QQ扫码",
+        color = TextFaint,
+        fontSize = TextSizes.Caption,
+        lineHeight = 14.sp
+    )
+
+    // 扫码进度来自 NapCat：已扫码时提示去手机确认，换码中提示稍等，二维码过期会自动换新。
+    napCatQrLoginHint(state)?.let { hint ->
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = hint,
+            color = TextMuted,
+            fontSize = TextSizes.Caption,
+            lineHeight = 15.sp
+        )
+    }
+
+    (state.qrRefreshError ?: state.errorMessage)?.let { error ->
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = error,
+            color = StatusDanger,
+            fontSize = TextSizes.Caption,
+            lineHeight = 15.sp
+        )
+    }
 }
 
 /** 二维码弹窗里的扫码进度提示；NapCat 未汇报进度（未运行或弹窗刚打开）时不显示。 */

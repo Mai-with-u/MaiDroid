@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.ui.platform
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -49,6 +50,13 @@ class MessagePlatformsPageTest {
         assertEquals(listOf("QQ"), filterPlatforms(AvailablePlatforms, "全部", " qq ").map { it.name })
         assertEquals(listOf("Discord"), filterPlatforms(AvailablePlatforms, "海外", "游戏").map { it.name })
         assertTrue(filterPlatforms(AvailablePlatforms, "国内", "Discord").isEmpty())
+    }
+
+    @Test
+    fun `short windows scroll the whole page instead of pinning the header`() {
+        // 手机横屏全屏只有 360dp 左右高，竖屏手机 700dp 以上
+        assertTrue(platformsUseSingleScroll(360f))
+        assertFalse(platformsUseSingleScroll(755f))
     }
 
     @Test

@@ -196,7 +196,11 @@ internal fun AppUpdateDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 手机横屏时弹窗很矮，内容区可以滚动，不会被截掉；更新说明自己限高滚动，嵌在里面互不影响。
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 VersionLine(label = "当前版本", value = "v${state.currentVersion}", highlight = false)
 
                 if (showNewRelease && release != null) {
