@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
@@ -64,6 +65,9 @@ internal class MainViewModel(
 
     /** MaiBot WebUI 现在能不能访问（不只是进程在跑）。 */
     val webUiOnline: StateFlow<Boolean> = _webUiOnline.asStateFlow()
+
+    /** MaiBot 进程是否在跑、意外退出过几次、为什么没拉起来；唤醒页的自检行据此显示启动进度。 */
+    val maiBotStatus: StateFlow<MaiBotProcessStatus> = container.maiBotProcess.status
 
     init {
         // OOBE 完成后：拉起前台服务（启动 MaiBot）-> 持续探测 WebUI 是否在线。

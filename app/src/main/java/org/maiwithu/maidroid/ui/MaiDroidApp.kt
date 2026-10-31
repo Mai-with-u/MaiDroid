@@ -58,6 +58,7 @@ internal fun MaiDroidApp(
     val authorizationAccepted by viewModel.authorizationAccepted.collectAsState()
     val oobeStep by viewModel.oobeStep.collectAsState()
     val webUiOnline by viewModel.webUiOnline.collectAsState()
+    val maiBotStatus by viewModel.maiBotStatus.collectAsState()
     val setupState by viewModel.setupManager.state.collectAsState()
     val terminalLogs by TerminalLog.logs.collectAsState()
     var showAuthorizationDialog by rememberSaveable { mutableStateOf(false) }
@@ -102,6 +103,7 @@ internal fun MaiDroidApp(
             setupComplete -> HomeScreen(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
+                maiBotStatus = maiBotStatus,
                 terminalLogs = terminalLogs,
                 permissionState = permissions.state,
                 permissionActions = permissions.settingsActions,

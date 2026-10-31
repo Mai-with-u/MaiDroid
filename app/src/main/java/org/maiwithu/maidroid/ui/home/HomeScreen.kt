@@ -25,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,6 +37,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import eightbitlab.com.blurview.BlurTarget
 import kotlinx.coroutines.delay
+import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
@@ -48,54 +48,53 @@ import org.maiwithu.maidroid.ui.settings.SettingsPage
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
 import org.maiwithu.maidroid.ui.theme.PageBackground
 
-// WebUI 离线时每隔这么久自动唤醒一次 MaiBot；唤醒页的进度条也按这个时长走满。
+// 唤醒页还在时（WebUI 离线），每隔这么久自动唤醒一次 MaiBot。
 internal const val WakeRetryIntervalMillis = 30_000L
 
 /**
- * OOBE 完成后的主页。WebUI 第一次上线前显示唤醒页（每 30 秒自动唤醒一次 MaiBot），
- * 上线后切到三栏外壳：WebUI、消息平台、设置；竖屏导航在底部（右下角按钮打开终端输出），横屏导航在左侧。
+ * OOBE 完成后的主页。WebUI 第一次上线前盖着唤醒页（开机自检画面，每 30 秒自动唤醒一次 MaiBot），
+ * 自检走完或点 SKIP 后切到三栏外壳：WebUI、消息平台、设置；竖屏导航在底部（右下角按钮打开终端输出），横屏导航在左侧。
  */
 @Composable
-fun HomeScreen(
+internal fun HomeScreen(
     webUiOnline: Boolean,
     versionName: String,
     onWakeMai: (showToast: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    maiBotStatus: MaiBotProcessStatus = MaiBotProcessStatus(),
     terminalLogs: List<String> = emptyList(),
     permissionState: PermissionState = PermissionState(),
     permissionActions: PermissionActions = PermissionActions()
 ) {
+    // 唤醒页盖在三栏外壳上面。tabsVisible：自检走完或点了 SKIP，唤醒页开始收尾、自动唤醒停止；
+    // 等唤醒页的快门完全拉开，wakePageVisible 变 false，把这一层移除。
     var tabsVisible by rememberSaveable { mutableStateOf(false) }
-    var wakeCycle by rememberSaveable { mutableIntStateOf(0) }
+    var wakePageVisible by rememberSaveable { mutableStateOf(true) }
+    // WebUI 一上线就先把外壳组合在唤醒页底下：WebView 趁自检收尾的一两秒把网页加载好，快门拉开时直接是加载完的页面。
+    // 组合后不再撤掉，WebUI 短暂掉线也不会让 WebView 重新加载。
+    var shellComposed by rememberSaveable { mutableStateOf(false) }
     var selectedTab by rememberSaveable { mutableStateOf(HomeTab.WebUi) }
     var showTerminalOutput by remember { mutableStateOf(false) }
 
     LaunchedEffect(webUiOnline) {
-        if (webUiOnline && !tabsVisible) {
-            tabsVisible = true
-            selectedTab = HomeTab.WebUi
-        }
+        if (webUiOnline) shellComposed = true
     }
 
     LaunchedEffect(tabsVisible, webUiOnline) {
         if (tabsVisible || webUiOnline) return@LaunchedEffect
 
         while (true) {
-            wakeCycle += 1
             onWakeMai(false)
             delay(WakeRetryIntervalMillis)
         }
     }
 
-    AnimatedContent(
-        targetState = tabsVisible,
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground),
-        transitionSpec = { horizontalSlideTransition(forward = targetState, dampingRatio = 0.86f) },
-        label = "HomeEntryTransition"
-    ) { showTabs ->
-        if (showTabs) {
+            .background(PageBackground)
+    ) {
+        if (shellComposed || tabsVisible) {
             HomeTabsShell(
                 selectedTab = selectedTab,
                 webUiOnline = webUiOnline,
@@ -110,11 +109,23 @@ fun HomeScreen(
                 onTerminalClick = { showTerminalOutput = true },
                 modifier = Modifier.fillMaxSize()
             )
-        } else {
+        }
+
+        if (wakePageVisible) {
             WakeMaiPage(
                 webUiOnline = webUiOnline,
+                maiBotStatus = maiBotStatus,
                 versionName = versionName,
-                wakeCycle = wakeCycle,
+                leaving = tabsVisible,
+                // 自检走完（WebUI 已上线）或点了 SKIP：外壳先在底下就位并停在 WebUI 页签，唤醒页开始收尾。
+                // 点 SKIP 进来时 WebUI 可能还没上线，WebUI 页签会显示离线状态，自动唤醒也随之停止，改由那里的按钮手动唤醒。
+                onFinished = {
+                    if (!tabsVisible) {
+                        selectedTab = HomeTab.WebUi
+                        tabsVisible = true
+                    }
+                },
+                onLeft = { wakePageVisible = false },
                 modifier = Modifier.fillMaxSize()
             )
         }
