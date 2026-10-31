@@ -52,6 +52,6 @@ val BootTextDim = Color(0xFF9A9EA5)    // 自检行
 val BootTextFaint = Color(0xFF5C6168)  // 百分比、SKIP
 val BootAccent = BrandOrange           // 进度条、LINK 行、收尾时的中缝和快门边线
 
-// 唤醒页、启动页的插画按这个尺寸（dp）的设计稿绘制，运行时按实际屏幕等比缩放。
+// 启动页的插画按这个尺寸（dp）的设计稿绘制，运行时按实际屏幕等比缩放。
 const val DesignFrameWidthDp = 412f
 const val DesignFrameHeightDp = 917f
