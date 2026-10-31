@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.time.Instant
+import java.util.Locale
 
 /**
  * 应用版本号：a.b.c 数字段，后面可以带 `-rc1` 这类预发布后缀，与 Release 标签（去掉开头的 v）一一对应。
@@ -265,3 +266,14 @@ private fun JsonObject.long(key: String): Long? =
 
 private fun JsonObject.boolean(key: String): Boolean? =
     runCatching { this[key]?.jsonPrimitive?.booleanOrNull }.getOrNull()
+
+/** 安装包大小、下载进度的显示：163110537 -> "155.6 MB"，按 1024 进位，与系统设置里看到的一致。 */
+internal fun formatBytes(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0L)
+    return when {
+        value >= 1024L * 1024 * 1024 -> "%.2f GB".format(Locale.ROOT, value / (1024.0 * 1024 * 1024))
+        value >= 1024L * 1024 -> "%.1f MB".format(Locale.ROOT, value / (1024.0 * 1024))
+        value >= 1024L -> "%.0f KB".format(Locale.ROOT, value / 1024.0)
+        else -> "$value B"
+    }
+}
