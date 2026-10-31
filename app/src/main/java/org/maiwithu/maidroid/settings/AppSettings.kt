@@ -4,7 +4,7 @@ import com.tencent.mmkv.MMKV
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
 
 /**
- * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置。
+ * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置、MaiBot 自动更新。
  * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。键名已在用户设备上存在，不能改。
  */
 internal class AppSettings(
@@ -19,6 +19,8 @@ internal class AppSettings(
         const val KEY_CONTAINER_SSH_CONFIGURED = "container_ssh_configured"
         const val KEY_CONTAINER_SSH_PORT = "container_ssh_port"
         const val KEY_CONTAINER_SSH_ROOT_PASSWORD = "container_ssh_root_password"
+        const val KEY_LAST_LAUNCHED_VERSION_CODE = "last_launched_version_code"
+        const val KEY_MAIBOT_AUTO_UPDATE_DISABLED = "maibot_auto_update_disabled"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
     }
@@ -56,6 +58,23 @@ internal class AppSettings(
 
     val containerSshRootPassword: String
         get() = kv.decodeString(KEY_CONTAINER_SSH_ROOT_PASSWORD, "") ?: ""
+
+    /**
+     * 上一次打开主界面时 MaiDroid 的版本号（versionCode）；比当前小说明 MaiDroid 刚更新过。
+     * 记录这个值之前的旧版本升上来时读到 0，同样算刚更新过。
+     */
+    var lastLaunchedVersionCode: Int
+        get() = kv.decodeInt(KEY_LAST_LAUNCHED_VERSION_CODE, 0)
+        set(value) {
+            kv.encode(KEY_LAST_LAUNCHED_VERSION_CODE, value)
+        }
+
+    /** 用户在设置页打开了“关闭 MaiBot 自动更新”：MaiDroid 更新后首次启动时不再自动升级 MaiBot。默认关（即自动更新）。 */
+    var maiBotAutoUpdateDisabled: Boolean
+        get() = kv.decodeBool(KEY_MAIBOT_AUTO_UPDATE_DISABLED, false)
+        set(value) {
+            kv.encode(KEY_MAIBOT_AUTO_UPDATE_DISABLED, value)
+        }
 
     fun saveContainerSsh(port: Int, rootPassword: String) {
         kv.encode(KEY_CONTAINER_SSH_PORT, port.coerceIn(ContainerSshPortRange))

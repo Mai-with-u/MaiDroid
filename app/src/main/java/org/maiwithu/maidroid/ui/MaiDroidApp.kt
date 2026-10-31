@@ -71,6 +71,7 @@ internal fun MaiDroidApp(
     val appUpdatePrompt by appUpdater.launchPrompt.collectAsState()
     val maiBotUpdater = remember(context) { context.appDependencies.maiBotUpdater }
     val maiBotUpdatePrompt by maiBotUpdater.launchPrompt.collectAsState()
+    val maiBotUpdateState by maiBotUpdater.state.collectAsState()
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -112,6 +113,8 @@ internal fun MaiDroidApp(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
                 maiBotStatus = maiBotStatus,
+                // MaiDroid 更新后首次启动：唤醒页上显示 MaiBot 自动升级的进度
+                maiBotUpdate = if (viewModel.autoUpdatingMaiBot) maiBotUpdateState else null,
                 terminalLogs = terminalLogs,
                 permissionState = permissions.state,
                 permissionActions = permissions.settingsActions,

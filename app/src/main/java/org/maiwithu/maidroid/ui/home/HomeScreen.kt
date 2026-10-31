@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import eightbitlab.com.blurview.BlurTarget
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
@@ -60,6 +61,8 @@ internal fun HomeScreen(
     onWakeMai: (showToast: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     maiBotStatus: MaiBotProcessStatus = MaiBotProcessStatus(),
+    // 只在这次启动要自动升级 MaiBot（MaiDroid 刚更新过）时传入，唤醒页据此多显示一行升级进度
+    maiBotUpdate: MaiBotUpdateState? = null,
     terminalLogs: List<String> = emptyList(),
     permissionState: PermissionState = PermissionState(),
     permissionActions: PermissionActions = PermissionActions()
@@ -114,6 +117,7 @@ internal fun HomeScreen(
                 webUiOnline = webUiOnline,
                 maiBotStatus = maiBotStatus,
                 versionName = versionName,
+                maiBotUpdate = maiBotUpdate,
                 leaving = tabsVisible,
                 // 自检走完（WebUI 已上线）或点了 SKIP：外壳先在底下就位并停在 WebUI 页签，唤醒页开始收尾。
                 // 点 SKIP 进来时 WebUI 可能还没上线，WebUI 页签会显示离线状态，自动唤醒也随之停止，改由那里的按钮手动唤醒。

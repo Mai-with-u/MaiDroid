@@ -54,10 +54,30 @@ internal data class MaiBotUpdateState(
 }
 
 /**
+ * 这次打开主界面要不要先自动升级 MaiBot：MaiDroid 刚更新过（上次打开时的版本号比现在小）、
+ * OOBE 早已完成（新装的走 OOBE，装的就是最新版）、用户没在设置页打开“关闭 MaiBot 自动更新”。
+ */
+internal fun shouldAutoUpdateMaiBot(
+    setupComplete: Boolean,
+    lastLaunchedVersionCode: Int,
+    currentVersionCode: Int,
+    autoUpdateDisabled: Boolean
+): Boolean = setupComplete && !autoUpdateDisabled && lastLaunchedVersionCode < currentVersionCode
+
+// MaiDroid 更新后自动升级 MaiBot 的结果：没做成（不算失败，照常启动）、已是最新、升级完成、升级到一半失败。
+private sealed interface AutoUpdateOutcome {
+    data class Skipped(val reason: String) : AutoUpdateOutcome
+    data object UpToDate : AutoUpdateOutcome
+    data object Updated : AutoUpdateOutcome
+    data class Failed(val reason: String) : AutoUpdateOutcome
+}
+
+/**
  * MaiBot 在线更新：检查上游 -> 停止麦麦 -> 切换源码 -> 同步依赖 -> 重启麦麦。
  *
  * 进程级单例，切到后台或关掉设置页后更新照常进行，回到设置页能看到最新进度。
- * 每次打开应用进入主页时主界面会调 [checkOnLaunch] 自动查一次，查到新版本就弹窗提醒。
+ * 每次打开应用进入主页时主界面会调 [checkOnLaunch] 自动查一次，查到新版本就弹窗提醒；
+ * MaiDroid 更新后的第一次启动改调 [updateAfterAppUpgrade]，在唤醒页上直接升级。
  * 所有命令输出都会写进终端日志，失败时可以在终端里看完整过程。
  */
 internal class MaiBotUpdateManager(
@@ -217,6 +237,81 @@ internal class MaiBotUpdateManager(
                 )
             }
         }
+    }
+
+    /**
+     * MaiDroid 更新后第一次启动时自动升级 MaiBot，唤醒页上显示进度；挂起到整个过程结束
+     * （过程本身在更新管理器自己的作用域里跑，界面关掉也会做完）。
+     * 全程拦住麦麦的启动（唤醒页的自动唤醒、服务的启动请求都不会把它拉起来）：
+     * 拉取上游 -> 有新版本或源码被改过就还原改动、切到上游、重装依赖 -> 放开并拉起麦麦。
+     * 已是最新就直接拉起；拉取失败不打扰，照常拉起现在的版本，之后的启动检查和设置页里都还能更新；
+     * 更新失败时弹出 MaiBot 更新弹窗说明原因，可以重试。
+     */
+    suspend fun updateAfterAppUpgrade() {
+        if (job?.isActive == true) return
+        checkingOnLaunch = false
+        val updateJob = scope.launch {
+            showProgress(MaiBotUpdatePhase.Checking, "MaiDroid 已更新，正在检查 MaiBot 新版本...")
+            TerminalLog.append("")
+            TerminalLog.append("$LOG_TAG MaiDroid 已更新，启动麦麦前先把 MaiBot 升级到上游最新版本")
+            // 先进入维护再做任何耗时操作：这一句在启动时同步执行，唤醒页随后发来的启动请求都会被拦下
+            val outcome = maiBotProcess.runWhileStopped { autoUpdateWhileStopped() }
+
+            TerminalLog.append("$LOG_TAG 启动 MaiBot")
+            restartMaiBot()
+
+            when (outcome) {
+                is AutoUpdateOutcome.Skipped -> {
+                    TerminalLog.append("$LOG_TAG 这次没有自动升级（${outcome.reason}），照常启动现在的版本")
+                    _state.update { it.copy(phase = MaiBotUpdatePhase.Idle, progressText = null) }
+                }
+                AutoUpdateOutcome.UpToDate -> {
+                    TerminalLog.append("$LOG_TAG 已是最新版本 ${_state.value.installed?.shortCommit.orEmpty()}")
+                    _state.update {
+                        it.copy(phase = MaiBotUpdatePhase.UpToDate, progressText = null, errorMessage = null)
+                    }
+                }
+                AutoUpdateOutcome.Updated -> {
+                    TerminalLog.append("$LOG_TAG 自动升级完成：${_state.value.installed?.shortCommit.orEmpty()}")
+                    _state.update {
+                        it.copy(
+                            phase = MaiBotUpdatePhase.Updated,
+                            progressText = null,
+                            errorMessage = null,
+                            failedAction = null
+                        )
+                    }
+                }
+                // 升级到一半失败：弹出 MaiBot 更新弹窗，说明原因并给“重试更新”
+                is AutoUpdateOutcome.Failed -> {
+                    fail(MaiBotUpdateAction.Apply, outcome.reason)
+                    _launchPrompt.value = true
+                }
+            }
+        }
+        job = updateJob
+        updateJob.join()
+    }
+
+    // 自动升级在维护期间做的事：检查 -> （需要时）还原并切到上游、重装依赖。拉取失败、已是最新且没改过源码时不动源码。
+    private suspend fun autoUpdateWhileStopped(): AutoUpdateOutcome {
+        validationError()?.let { return AutoUpdateOutcome.Skipped(it) }
+        val result = runCommand(MaiBotUpdateScripts.fetchLatest())
+        val report = parseMaiBotUpdateReport(result.output)
+        applyReport(report)
+        if (!result.success || report.installed == null || report.latest == null) {
+            return AutoUpdateOutcome.Skipped("获取上游版本失败：${result.summary()}")
+        }
+        // 已是最新但源码被改过时也还原一次：MaiDroid 不支持在手机上改源码，误改的文件趁这次恢复
+        if (!report.hasUpdate && (report.localChangeCount ?: 0) == 0) return AutoUpdateOutcome.UpToDate
+        TerminalLog.append(
+            if (report.hasUpdate) {
+                "$LOG_TAG 发现新版本 ${report.latest.shortCommit}，当前 ${report.installed.shortCommit}，开始升级"
+            } else {
+                "$LOG_TAG 已是最新版本，但有 ${report.localChangeCount} 个源码文件被改动过，还原为上游版本"
+            }
+        )
+        return updateWhileStopped()?.let { AutoUpdateOutcome.Failed(it) } ?: AutoUpdateOutcome.Updated
     }
 
     /** 返回失败原因，成功返回 null。 */

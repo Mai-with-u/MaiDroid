@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.update.shouldAutoUpdateMaiBot
 import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
@@ -69,17 +70,35 @@ internal class MainViewModel(
     /** MaiBot 进程是否在跑、意外退出过几次、为什么没拉起来；唤醒页的自检行据此显示启动进度。 */
     val maiBotStatus: StateFlow<MaiBotProcessStatus> = container.maiBotProcess.status
 
+    /**
+     * 这次是不是 MaiDroid 更新后的第一次启动、要在唤醒页上先自动升级 MaiBot（设置页可关闭）；唤醒页据此多显示一行升级进度。
+     * 判定完立刻记下当前版本号：同一版本之后的启动（包括这次没升级完就被关掉）都不再自动升级，
+     * 转屏时 ViewModel 还在，也不会重复判定。
+     */
+    val autoUpdatingMaiBot: Boolean = shouldAutoUpdateMaiBot(
+        setupComplete = settings.setupComplete,
+        lastLaunchedVersionCode = settings.lastLaunchedVersionCode,
+        currentVersionCode = BuildConfig.VERSION_CODE,
+        autoUpdateDisabled = settings.maiBotAutoUpdateDisabled
+    ).also { settings.lastLaunchedVersionCode = BuildConfig.VERSION_CODE }
+
     init {
-        // OOBE 完成后：拉起前台服务（启动 MaiBot）-> 检查一次 MaiDroid 和 MaiBot 的新版本 -> 持续探测 WebUI 是否在线。
+        // OOBE 完成后：检查一次 MaiDroid 新版本 ->（MaiDroid 刚更新过时）先自动升级 MaiBot ->
+        // 拉起前台服务（启动 MaiBot）->（没自动升级时）检查一次 MaiBot 新版本 -> 持续探测 WebUI 是否在线。
         // 每次打开应用（新的 ViewModel）都查一次更新，转屏重建 Activity 时 ViewModel 还在，不会重复查；
-        // MaiBot 的检查只拉取上游提交、不动源码，和麦麦启动同时进行互不影响。
+        // MaiBot 的检查只拉取上游提交、不动源码，和麦麦启动同时进行互不影响；自动升级期间麦麦被拦着不启动，升级完由它拉起。
         // 查到新版本由主界面在主页上弹窗提醒，见 MaiDroidApp。
         viewModelScope.launch {
             setupComplete.collectLatest { complete ->
                 if (!complete) return@collectLatest
-                wakeMaiBot()
                 container.appUpdater.checkOnLaunch()
-                container.maiBotUpdater.checkOnLaunch()
+                if (autoUpdatingMaiBot) {
+                    container.maiBotUpdater.updateAfterAppUpgrade()
+                    wakeMaiBot()
+                } else {
+                    wakeMaiBot()
+                    container.maiBotUpdater.checkOnLaunch()
+                }
                 while (true) {
                     _webUiOnline.value = MaiBotWebUi.isReachable()
                     delay(if (_webUiOnline.value) WEB_UI_ONLINE_POLL_MS else WEB_UI_OFFLINE_POLL_MS)

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.ui.theme.BootAccent
 import org.maiwithu.maidroid.ui.theme.BootInk
 import org.maiwithu.maidroid.ui.theme.BootText
@@ -86,16 +87,20 @@ private const val ExitTotalMillis = 1_300
 /**
  * 主页的“唤醒麦麦”页：OOBE 完成后、WebUI 还没起来时盖在主页上面，样式是终端开机自检画面。
  *
- * 抬头 -> 容器 -> MaiBot 进程 -> WebUI 三行自检按真实状态逐行打出（后一行要等前一行有结论）-> 都通过后打出 LINK 行，
+ * 抬头 -> 容器 ->（MaiDroid 更新后首次启动时）MaiBot 自动升级 -> MaiBot 进程 -> WebUI 自检行按真实状态逐行打出
+ * （后一行要等前一行有结论）-> 都通过后打出 LINK 行，
  * 进度条走满 -> 停一下调 onFinished，让主页在底下就位 -> leaving 变 true 后播收尾：文字淡出、中缝划开、快门上下拉开 ->
  * 拉开后调 onLeft，由主页把这一层移除。点 SKIP 也调 onFinished，同样走收尾这一段。
  * 自动唤醒（每 WakeRetryIntervalMillis 一次）由 HomeScreen 负责，这里只显示进度。
+ * maiBotUpdate 只在这次启动要自动升级 MaiBot 时传入（整页存续期间不变），据此多显示一行升级进度；
+ * 升级期间麦麦被拦着不启动，自动唤醒的请求会被忽略，升级完由更新管理器拉起。
  */
 @Composable
 internal fun WakeMaiPage(
     webUiOnline: Boolean,
     maiBotStatus: MaiBotProcessStatus,
     versionName: String,
+    maiBotUpdate: MaiBotUpdateState?,
     leaving: Boolean,
     onFinished: () -> Unit,
     onLeft: () -> Unit,
@@ -103,7 +108,12 @@ internal fun WakeMaiPage(
 ) {
     // 只算唤醒页出现之后的意外退出，之前崩过几次和这次唤醒无关。
     val baselineExits = remember { maiBotStatus.exitCount }
-    val lines = bootLines(webUiOnline, maiBotStatus, exits = maiBotStatus.exitCount - baselineExits)
+    val lines = bootLines(
+        webUiOnline,
+        maiBotStatus,
+        exits = maiBotStatus.exitCount - baselineExits,
+        update = maiBotUpdate?.let(::maiBotUpdateBootLine)
+    )
     val currentLines by rememberUpdatedState(lines)
     val currentOnFinished by rememberUpdatedState(onFinished)
     val currentOnLeft by rememberUpdatedState(onLeft)
@@ -113,11 +123,11 @@ internal fun WakeMaiPage(
     var cursorVisible by remember { mutableStateOf(true) }
     val exitClock = remember { Animatable(0f) }
 
-    // 逐行打出：上一行还没结论（MaiBot 还在起、WebUI 还没上线）就停在这里等，有结论后隔一拍再打出下一行。
+    // 逐行打出：上一行还没结论（MaiBot 还在升级、还在起、WebUI 还没上线）就停在这里等，有结论后隔一拍再打出下一行。
     LaunchedEffect(Unit) {
-        while (revealed <= BootStageCount) {
+        while (revealed <= currentLines.size) {
             if (revealed > 0) {
-                snapshotFlow { currentLines[revealed - 1].check == BootCheck.Done }.first { it }
+                snapshotFlow { currentLines[revealed - 1].check.concluded }.first { it }
             }
             delay(BootLineStepMillis)
             revealed++
@@ -151,7 +161,7 @@ internal fun WakeMaiPage(
 
     // LINK 行出来、进度走满 -> 停一下 -> 通知主页切过去。
     LaunchedEffect(Unit) {
-        snapshotFlow { revealed > BootStageCount && progress >= 1f }.first { it }
+        snapshotFlow { revealed > currentLines.size && progress >= 1f }.first { it }
         delay(BootCompleteHoldMillis)
         currentOnFinished()
     }
