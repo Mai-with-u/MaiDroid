@@ -25,6 +25,7 @@ flowchart TB
     subgraph Modules["功能模块（由 AppDependencies 创建）"]
         MaiBot["MaiBotProcessSupervisor\nMaiBot 进程"]
         Update["MaiBotUpdateManager\n在线更新"]
+        AppUpdate["AppUpdateManager\n应用自更新"]
         NapCat["NapCatPlatformManager\nNapCatProcessSupervisor"]
         QqOfficial["QqOfficialPlatformManager"]
         Ssh["ContainerSshManager"]
@@ -46,6 +47,7 @@ flowchart TB
     Platforms --> NapCat
     Platforms --> QqOfficial
     Settings --> Update
+    Settings --> AppUpdate
     Settings --> Ssh
 
     VM -->|OOBE 完成后拉起| Service
@@ -81,6 +83,7 @@ flowchart TB
 | `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包、容器 DNS | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts`、`ContainerDns` |
 | `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管与启动判断、协议 hash、插件查找、插件 config.toml 逐行读写 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotStartup`、`MaiBotAgreement`、`MaiBotPlugins`、`PluginConfigToml` |
 | `maibot.update` | MaiBot 在线更新 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
+| `appupdate` | MaiDroid 应用本体的在线更新：查 GitHub 最新 Release、经镜像下载 APK、校验后交给系统安装器 | `AppUpdateManager`、`AppUpdateClient`、`AppRelease.kt`、`AppUpdateFiles`、`AppPackageCheck.kt` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `files` | 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等文件管理器，以及打开它的入口 | `ContainerDocumentsProvider`、`ContainerDocuments.kt`、`openMaiBotInFileManager` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
@@ -92,7 +95,7 @@ flowchart TB
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionList`、`OobeTaskList`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`WebUiTab` |
 | `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
-| `ui.settings` | 设置页、权限管理、在线更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`ContainerSshSettings` |
+| `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings` |
 | `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalOutputState` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |
 | `ui.component` | 跨页面的小组件 | `BackdropBlurView`、`BlurTargetHost`、`horizontalSlideTransition`、`statusBarTopInset` |
@@ -105,7 +108,7 @@ flowchart TB
 所有长生命周期的组件都在 `AppDependencies` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appDependencies.xxx` 用同一份实例：
 
 - 立即创建：`settings`、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
-- 第一次用时创建（`lazy`）：`maiBot`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`。平台管理器和更新管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
+- 第一次用时创建（`lazy`）：`maiBot`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`、`appUpdater`。平台管理器和更新管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
 
 新增模块时在这里加一个属性，构造函数里写清依赖，不要再写 `get(context)` 式的单例。
 
@@ -170,7 +173,7 @@ flowchart TB
 
 ## 日志
 
-- `TerminalLog`：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，主页右下角的终端按钮查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[GitHub]`。
+- `TerminalLog`：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，主页右下角的终端按钮查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[MaiDroid 更新]`、`[GitHub]`。
 - QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionErrors`。
 - WebView 相关日志在 `MaiDroidWebUi` 标签（`MaiBotWebUi.LOG_TAG`）。
 
@@ -184,6 +187,17 @@ flowchart TB
 两个根共用一套 documentId：`container:` 加相对容器根目录的路径，只认规范路径，带 `..`、空段的一律当作不存在。符号链接按容器语义解析：绝对路径相对容器根目录、`..` 到根目录为止，`--link2symlink` 写下的宿主绝对路径换算回容器路径，所以解析结果不会落到容器以外，`/root/storage/shared -> /sdcard` 这类链接也不会把共享存储暴露出去。列目录时隐藏 proot 的 `.l2s.*` 替身文件，删除不跟随链接。容器根目录、MaiBot 目录及其上级不能删除和改名。
 
 provider 由系统在 `Application.onCreate` 之前创建，所以它自己建 `RuntimePaths`，不用 `appDependencies`。
+
+## 应用自更新
+
+设置页“应用版本”一行检查的是 MaiDroid 自己（容器里的 MaiBot 走 `maibot.update`）。流程在 `AppUpdateManager`：
+
+1. 查 `releases/latest`（地址来自 `BuildConfig.APP_UPDATE_API_URL`），只看正式版，标签按 a.b.c 与 `versionName` 比较。Release 说明末尾发布流程追加的校验行给出 APK 和签名证书的 SHA-256。
+2. 当前安装包的签名证书和 Release 写的发布证书不一致（debug 包、自己签的包）时不在应用里下载，只给“打开下载页”：系统不允许不同签名的包覆盖安装，换成发布版得先卸载，会清掉容器数据。
+3. 下载到 `cacheDir/app-update/MaiDroid-<版本>.apk.part`，断点续传；下完核对大小、SHA-256，再改名为 `.apk` 读出包名、versionCode 和签名，确认是同一签名的更新版本后，经 FileProvider（只共享这个目录）交给系统安装器。没开“安装未知应用”时按钮先跳到系统授权页。
+4. 安装开始后系统会结束 MaiDroid 进程，麦麦和 NapCat 随之停止，用户重新打开应用即恢复。
+
+网络部分在 `AppUpdateClient`：查版本和下载都同时向直连和 `GitHubMirrors` 的所有镜像发请求，查版本取最先返回有效 JSON 的那条；下载时每条线路都从断点发 Range 请求，先收满 512 KB 的胜出并接着下完，中途断开或 20 秒没有数据就排除它重新赛跑。ghfast.top 不代理 `api.github.com`，只在下载时有用。
 
 ## 嵌入 MaiBot WebUI
 

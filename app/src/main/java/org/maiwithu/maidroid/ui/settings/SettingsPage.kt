@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -63,7 +65,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.appupdate.AppUpdateAction
+import org.maiwithu.maidroid.appupdate.AppUpdatePhase
+import org.maiwithu.maidroid.appupdate.AppUpdateState
 import org.maiwithu.maidroid.files.openMaiBotInFileManager
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
@@ -88,7 +95,8 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 private const val PermissionSettingsDetail = "permissions"
 
 /**
- * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、应用（消息平台、版本）。
+ * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
+ * 应用（消息平台、应用版本与 MaiDroid 自身的更新）。
  * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
@@ -106,6 +114,8 @@ internal fun SettingsPage(
     val napCatState by napCatManager.state.collectAsState()
     val updateManager = remember(context) { context.appDependencies.maiBotUpdater }
     val updateState by updateManager.state.collectAsState()
+    val appUpdater = remember(context) { context.appDependencies.appUpdater }
+    val appUpdateState by appUpdater.state.collectAsState()
     val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 在线、官方机器人已启用且无连接报错都算。
@@ -114,6 +124,9 @@ internal fun SettingsPage(
     }
     var showSshDialog by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
+    var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
+    var installPermissionGranted by remember { mutableStateOf(appUpdater.canRequestPackageInstalls()) }
     var selectedDetail by rememberSaveable { mutableStateOf<String?>(null) }
     var sshPortText by remember { mutableStateOf(sshState.port.toString()) }
     var sshPasswordText by remember { mutableStateOf("") }
@@ -121,6 +134,22 @@ internal fun SettingsPage(
     // 进入设置页时读取一次当前 MaiBot 版本，供“MaiBot 更新”一行显示。
     LaunchedEffect(updateManager) {
         updateManager.loadInstalledRevision()
+    }
+
+    // 每次回到前台重新读“安装未知应用”：用户从系统设置页开完权限回来，按钮直接变成“安装”。
+    LifecycleResumeEffect(appUpdater) {
+        installPermissionGranted = appUpdater.canRequestPackageInstalls()
+        onPauseOrDispose {}
+    }
+
+    // 点“应用版本”就开始检查：已经有结果（有新版本、下载中、待安装）时只打开弹窗，不重新检查。
+    fun openAppUpdateDialog() {
+        showAppUpdateDialog = true
+        val state = appUpdater.state.value
+        val needsCheck = state.phase == AppUpdatePhase.Idle ||
+            state.phase == AppUpdatePhase.UpToDate ||
+            (state.phase == AppUpdatePhase.Failed && state.failedAction == AppUpdateAction.Check)
+        if (needsCheck) appUpdater.checkForUpdate()
     }
 
     fun openSshDialog() {
@@ -198,6 +227,8 @@ internal fun SettingsPage(
                     onSshEnabledChange = onSshEnabledChange,
                     onUpdateClick = { showUpdateDialog = true },
                     onOpenFilesClick = onOpenFilesClick,
+                    appUpdateState = appUpdateState,
+                    onAppUpdateClick = { openAppUpdateDialog() },
                     modifier = Modifier
                         .width(navigationWidth)
                         .fillMaxHeight()
@@ -256,6 +287,8 @@ internal fun SettingsPage(
                         onSshEnabledChange = onSshEnabledChange,
                         onUpdateClick = { showUpdateDialog = true },
                         onOpenFilesClick = onOpenFilesClick,
+                        appUpdateState = appUpdateState,
+                        onAppUpdateClick = { openAppUpdateDialog() },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -268,6 +301,32 @@ internal fun SettingsPage(
                 onCheck = updateManager::checkForUpdate,
                 onApply = updateManager::applyUpdate,
                 onDismiss = { showUpdateDialog = false }
+            )
+        }
+
+        if (showAppUpdateDialog) {
+            AppUpdateDialog(
+                state = appUpdateState,
+                installPermissionGranted = installPermissionGranted,
+                onCheck = appUpdater::checkForUpdate,
+                onDownload = appUpdater::download,
+                onCancelDownload = appUpdater::cancelDownload,
+                onGrantInstallPermission = appUpdater::openInstallPermissionSettings,
+                onInstall = appUpdater::install,
+                onOpenReleasePage = {
+                    // 签名和发布版不同的包不能在应用里覆盖安装，交给浏览器打开 Release 页面
+                    val pageUrl = appUpdateState.release?.pageUrl.orEmpty()
+                    val opened = pageUrl.isNotBlank() && try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, pageUrl.toUri()))
+                        true
+                    } catch (_: ActivityNotFoundException) {
+                        false
+                    }
+                    if (!opened) {
+                        Toast.makeText(context, "没有找到可以打开下载页的浏览器", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = { showAppUpdateDialog = false }
             )
         }
 
@@ -315,6 +374,8 @@ private fun SettingsNavigationPane(
     onSshEnabledChange: (Boolean) -> Unit,
     onUpdateClick: () -> Unit,
     onOpenFilesClick: () -> Unit,
+    appUpdateState: AppUpdateState,
+    onAppUpdateClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
@@ -492,11 +553,23 @@ private fun SettingsNavigationPane(
 
                 SettingsDivider()
 
+                // 点这一行检查 MaiDroid 自身的更新（不是容器里的 MaiBot），副标题跟着检查、下载进度变化
                 SettingsNavigationRow(
                     icon = Icons.Outlined.Info,
                     title = "应用版本",
-                    supportingText = "v$versionName",
-                    accent = BrandOrange
+                    supportingText = appUpdateSummaryText(appUpdateState.copy(currentVersion = versionName)),
+                    accent = appUpdateAccent(appUpdateState),
+                    onClick = onAppUpdateClick,
+                    trailing = if (compact) null else {
+                        {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "检查 MaiDroid 更新",
+                                tint = TextMuted,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 )
             }
         }
@@ -668,6 +741,14 @@ private fun maiBotUpdateAccent(state: MaiBotUpdateState): Color =
         MaiBotUpdatePhase.Failed -> StatusWarning
         MaiBotUpdatePhase.UpToDate,
         MaiBotUpdatePhase.Updated -> StatusOnline
+        else -> BrandOrange
+    }
+
+// 失败标红，已是最新标绿，有新版本、下载中、待安装用主题橙提醒。
+private fun appUpdateAccent(state: AppUpdateState): Color =
+    when (state.phase) {
+        AppUpdatePhase.Failed -> StatusWarning
+        AppUpdatePhase.UpToDate -> StatusOnline
         else -> BrandOrange
     }
 

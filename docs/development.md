@@ -51,9 +51,13 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
+| `runtime/GitHubMirrorsTest` | 宿主侧可用的下载线路、容器脚本里的镜像列表 |
+| `appupdate/AppReleaseTest` | 应用自更新：版本号比较、Release 解析与挑选 APK、校验行、更新说明排版、断点续传响应判断 |
+| `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、测速 |
+| `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 平台网格列数、选择器宽度、平台目录 |
-| `ui/settings/*Test` | 设置页分栏规则、更新弹窗按钮与文案 |
+| `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入、样式表安全区改写、视口修补脚本 |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
@@ -85,6 +89,16 @@ adb shell run-as org.maiwithu.maidroid
 ```
 
 在应用目录里用 `lib/arm64/libproot_exec.so`、设置 `PROOT_LOADER`，按 `ProotCommand` 的参数就能进入容器手动复现命令。
+
+### 调试应用自更新
+
+debug 包的签名和发布版不同，查到新版本也只会给“打开下载页”。要在真机上把“下载 -> 校验 -> 系统安装”走一遍，让它查一个本机的假 Release 源：
+
+1. 用默认配置构建一个 debug 包（版本 B），算出它的 SHA-256；在电脑上起一个支持 Range 的静态服务，放这个 APK 和一份仿 `releases/latest` 的 JSON：`tag_name` 写 B 的版本号、`assets` 指向这个 APK，`body` 末尾照发布流程的格式写校验行，证书 SHA-256 填本机调试证书的（`apksigner verify --print-certs` 可以看）。
+2. `adb reverse tcp:8000 tcp:8000` 后，把 `versionName`、`versionCode` 临时改得比 B 低，加 `-PappUpdateApiUrl=http://127.0.0.1:8000/latest` 构建版本 A 装到手机上（比手机上已装的旧时用 `adb install -r -d`）。
+3. 在设置页点“应用版本”，走完下载、取消再继续、安装。非 GitHub 地址只走直连，不经镜像。
+
+`-PappUpdateApiUrl` 只影响本地构建，CI 和日常构建都用默认的 GitHub 地址。
 
 ### 调试 NapCat
 
