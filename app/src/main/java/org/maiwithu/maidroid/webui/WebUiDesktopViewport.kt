@@ -3,20 +3,24 @@ package org.maiwithu.maidroid.webui
 import kotlin.math.ceil
 
 /**
- * 横屏时让 MaiBot WebUI 按桌面版排版：网页看到的布局视口至少 1280×720 CSS px。
+ * 横屏时让 MaiBot WebUI 按桌面版排版：网页看到的布局视口至少 1040×576 CSS px。
  *
  * 做法：拦截页面 HTML 时把 viewport meta 改成 width=布局宽度 -> WebView 打开 useWideViewPort 和总览模式，
  * 按这个宽度把整页缩到 WebView 里。相当于调低了这块 WebView 的 CSS 像素密度：
- * WebUI 的响应式断点（min-width: 1024px 等）看到的是放大后的视口，自然切到桌面布局。
+ * WebUI 的响应式断点看到的是放大后的视口，自然切到桌面布局。
  * 竖屏不改，网页仍按 width=device-width 走手机版。
- * 下限先定过 1600×900，真机上字太小，改成 1280×720：手机横屏全屏时大约 1.5 个物理像素对一个 CSS 像素。
+ *
+ * 下限的来历：真机上试过 1600×900、1280×720，字都偏小；1024 是 WebUI 桌面布局的断点（min-width: 1024px，
+ * 左侧边栏从这里出现），再窄就退回手机版的底部标签栏。但刚过断点时首页 KEYS 卡片的 6 个快捷按钮
+ * 要布局宽 1030 以上才排得下两列，1024 时挤成一列冲出卡片，所以宽度下限取 1040，留出余量。
+ * WebUI 没有按高度切换的断点，高度只按 16:9 给到 576。调试机横屏实际是约 1055×576，大约 1.9 个物理像素对一个 CSS 像素。
  */
 internal object WebUiDesktopViewport {
-    /** 桌面版布局视口的最小宽度（CSS px）。 */
-    const val MIN_WIDTH_CSS = 1280
+    /** 桌面版布局视口的最小宽度（CSS px）：WebUI 桌面布局的断点 1024 再留一点余量，避开首页卡片刚过断点时被挤坏。 */
+    const val MIN_WIDTH_CSS = 1040
 
     /** 桌面版布局视口的最小高度（CSS px）。 */
-    const val MIN_HEIGHT_CSS = 720
+    const val MIN_HEIGHT_CSS = 576
 
     /**
      * 按 WebView 的物理像素尺寸算出桌面版的布局宽度（CSS px）；竖屏（宽不大于高）或还没量出尺寸时返回 null。

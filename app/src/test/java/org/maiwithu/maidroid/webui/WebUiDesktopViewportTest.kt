@@ -16,25 +16,25 @@ class WebUiDesktopViewportTest {
 
     @Test
     fun phoneLandscapeMeetsMinimumViewport() {
-        // 调试机横屏全屏、左侧让出挖孔和导航栏后的 WebView 实测 1977×1080：高度是瓶颈，宽度按 720 的高度反推
+        // 调试机横屏全屏、左侧让出挖孔和导航栏后的 WebView 实测 1977×1080：高度是瓶颈，宽度按 576 的高度反推
         val widthPx = 1977
         val heightPx = 1080
         val layoutWidth = WebUiDesktopViewport.layoutWidthCss(widthPx, heightPx, density = 3f)!!
 
-        assertEquals(1318, layoutWidth)
+        assertEquals(1055, layoutWidth)
         assertTrue(layoutWidth >= WebUiDesktopViewport.MIN_WIDTH_CSS)
         assertTrue(heightPx.toDouble() * layoutWidth / widthPx >= WebUiDesktopViewport.MIN_HEIGHT_CSS)
     }
 
     @Test
-    fun wideShortWindowUsesMinimumWidthWhenHeightAlreadyFits() {
-        // 宽高比不到 16:9 时 1280 宽已经让高度超过 720，就用 1280
-        assertEquals(1280, WebUiDesktopViewport.layoutWidthCss(widthPx = 2400, heightPx = 1600, density = 2f))
+    fun desktopWidthNeverDropsBelowMinimum() {
+        // 宽高比不到 16:9 时 1040 宽已经让高度超过 576，就用 1040；1024 是 WebUI 断点，刚过断点首页卡片会挤坏
+        assertEquals(1040, WebUiDesktopViewport.layoutWidthCss(widthPx = 2400, heightPx = 1600, density = 3f))
     }
 
     @Test
     fun largeScreenIsNotZoomedIn() {
-        // 平板横屏本来就有 2000 CSS px 宽，不把网页放大到 1280
+        // 平板横屏本来就有 2000 CSS px 宽，不把网页放大到 1024
         assertEquals(2000, WebUiDesktopViewport.layoutWidthCss(widthPx = 4000, heightPx = 2400, density = 2f))
     }
 
