@@ -62,6 +62,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
+| `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
 | `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入、主题只补默认值、样式表安全区改写、视口修补脚本 |
 | `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限）、改写 viewport meta |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
