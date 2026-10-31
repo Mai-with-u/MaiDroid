@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -7,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
@@ -22,7 +24,9 @@ import org.maiwithu.maidroid.terminal.TerminalLog
  */
 internal class NapCatProcessSupervisor(
     private val paths: RuntimePaths,
-    private val commandRunner: ContainerCommandRunner
+    private val commandRunner: ContainerCommandRunner,
+    private val maiBotProcess: MaiBotProcessSupervisor,
+    private val adapterInstaller: NapCatAdapterInstaller
 ) {
     private companion object {
         // 重启时等旧一轮读日志协程收尾的上限。
@@ -30,6 +34,10 @@ internal class NapCatProcessSupervisor(
     }
 
     private val files = NapCatFiles(paths)
+
+    // 等 MaiBot 生成适配器配置再迁移的后台任务；不跟 NapCat 进程一起取消，重启 NapCat 也不会重复起一个。
+    @Volatile
+    private var configMigrationJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lock = Any()
 
@@ -45,13 +53,14 @@ internal class NapCatProcessSupervisor(
 
     /**
      * 没装 NapCat 或已在运行时什么也不做。否则在后台：
-     * 补齐适配器的聊天名单模式 -> 清理残留进程 -> 重新生成 launcher.sh ->
+     * 需要时换装新版 QQ 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
      * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
+     * 只看 NapCat 本体装没装好：MaiBot 太旧、暂时换不了适配器的老用户，QQ 照样能登录。
      */
     fun start() {
         synchronized(lock) {
             if (isRunning) return
-            if (!files.isInstalled()) return
+            if (!files.isNapCatReady()) return
 
             RuntimeFileModes.ensureExecutableBits(paths)
             job = scope.launch { runOnce() }
@@ -77,7 +86,7 @@ internal class NapCatProcessSupervisor(
     }
 
     private suspend fun runOnce() {
-        ensureAdapterChatLists()
+        upgradeAdapter()
         runMaintenance(NapCatScripts.cleanup())
         runMaintenance(NapCatScripts.prepareRuntime())
 
@@ -106,18 +115,56 @@ internal class NapCatProcessSupervisor(
     }
 
     /**
-     * 旧版本 MaiDroid 写的适配器配置没有聊天名单模式，适配器按默认的空白名单把所有 QQ 消息丢掉；
-     * 每次启动 NapCat 前检查一次，缺了就补成全部接收。MaiBot 监听插件配置文件，改完会热重载，不用重启。
-     * 用户在 WebUI 里已经选过名单模式的不动；失败只记一行日志，不影响 NapCat 启动。
+     * 老用户换装：旧版本 MaiDroid 装的是已停更的 MaiBot-Napcat-Adapter。每次启动 NapCat 前检查一次：
+     * 还没有新适配器或旧的还在 -> 装上新适配器、删掉旧的 -> 重启 MaiBot 让它加载新插件并生成默认配置 ->
+     * 后台等配置生成后迁移（启用、连本机 NapCat、搬旧设置），不耽误 QQ 启动。
+     * 只差配置迁移（上次等配置时应用被杀或超时）就直接在后台等着迁移。
+     * MaiBot 低于新适配器要求的版本时先不动（旧适配器还能用），只提示去更新 MaiBot，更新后下次启动 NapCat 再换。
+     * 失败只记日志，不影响 NapCat 启动；下载失败时旧适配器还在，下次启动再试。
      */
-    private fun ensureAdapterChatLists() {
-        runCatching {
-            if (!files.maiBotAdapterConfig.isFile) return
-            if (rewriteAdapterConfig(files.maiBotAdapterConfig) { NapCatAdapterConfig.withOpenChatLists(it.orEmpty()) }) {
-                TerminalLog.append("[NapCat] 适配器聊天名单已改为全部接收（黑名单模式），可在 WebUI 的插件配置里调整")
+    private suspend fun upgradeAdapter() {
+        val needsInstall = runCatching {
+            paths.maiBotPyproject.isFile && adapterInstaller.needsInstall()
+        }.getOrDefault(false)
+        if (needsInstall) {
+            adapterInstaller.maiBotVersionProblem()?.let { problem ->
+                TerminalLog.append("[NapCat] 暂不更换 QQ 适配器：$problem")
+                return
             }
-        }.onFailure { error ->
-            TerminalLog.append("[NapCat] 补全适配器聊天名单失败: ${error.message.orEmpty()}")
+            TerminalLog.append("[NapCat] 更换 QQ 适配器：安装 MaiBot-SnowLuma-Adapter，删除已停更的 MaiBot-Napcat-Adapter")
+            val error = try {
+                adapterInstaller.install(onLine = TerminalLog::append)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.message.orEmpty().ifBlank { e.javaClass.simpleName }
+            }
+            if (error != null) {
+                TerminalLog.append("[NapCat] 更换 QQ 适配器失败，下次启动 NapCat 时重试：$error")
+                return
+            }
+            TerminalLog.append("[NapCat] QQ 适配器已下载，重启 MaiBot 加载新适配器并生成它的配置")
+            maiBotProcess.restart()
+        }
+        if (runCatching { adapterInstaller.needsConfigMigration() }.getOrDefault(false)) {
+            startConfigMigration()
+        }
+    }
+
+    // 后台等 MaiBot 生成适配器配置后迁移；已经有一个在等就不再起。
+    private fun startConfigMigration() {
+        synchronized(lock) {
+            if (configMigrationJob?.isActive == true) return
+            configMigrationJob = scope.launch {
+                val error = adapterInstaller.migrateConfigWhenReady(
+                    onWaiting = { TerminalLog.append("[NapCat] 等麦麦生成 QQ 适配器的配置，生成后自动迁移连接设置") }
+                )
+                if (error == null) {
+                    TerminalLog.append("[NapCat] QQ 适配器配置已迁移：已启用并连接本机 NapCat，麦麦会自动加载")
+                } else {
+                    TerminalLog.append("[NapCat] 迁移 QQ 适配器配置失败，下次启动 NapCat 时重试：$error")
+                }
+            }
         }
     }
 
