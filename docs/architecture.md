@@ -88,7 +88,7 @@ flowchart TB
 | `files` | 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等文件管理器，以及打开它的入口 | `ContainerDocumentsProvider`、`ContainerDocuments.kt`、`openMaiBotInFileManager` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
-| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatAdapterConfig`、`NapCatQrCodeRefresh` |
+| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatAdapterScripts`、`NapCatAdapterInstaller`、`NapCatAdapterConfig`、`NapCatQrCodeRefresh` |
 | `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
 | `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、网页选文件 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiFileChooser`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
 | `ui` | 根界面 | `MaiDroidApp` |
@@ -144,7 +144,7 @@ flowchart TB
 
 - **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下。运行状态在 `status`（`MaiBotProcessStatus`）：是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算）、启动前检查没过时被拦下的原因。OOBE 等 WebUI 时据此判断 MaiBot 是还在起、起来就崩还是根本没拉起，规则在 `MaiBotStartup`。
 - 启动前台服务的入口（OOBE、主页唤醒）都兜住了系统拒绝：应用在后台时 Android 12+ 不让新开前台服务，这时直接让 `MaiBotProcessSupervisor` 启动，回到前台进入主页时再拉服务。
-- **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。
+- **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的 QQ 适配器，旧版本装的 MaiBot-Napcat-Adapter 会换成 MaiBot-SnowLuma-Adapter，换完重启 MaiBot（见 platforms.md）。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 
 三者停止时都用 `Process.terminateGracefully()`：先 SIGTERM，3 秒后还活着再强杀；启动前还会用脚本按进程名清掉上次异常退出留下的残留。

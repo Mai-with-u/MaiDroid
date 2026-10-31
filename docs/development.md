@@ -44,9 +44,11 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `maibot/MaiBotStartupTest` | 等 WebUI 时的判断：就绪、反复退出、没拉起、超时 |
 | `maibot/MaiBotAgreementTest` | 协议 hash 与 MaiBot 的算法一致（换行归一） |
 | `maibot/PluginDirLookupTest` | 按清单 ID 找插件目录（插件市场副本、临时目录、保留目录） |
+| `maibot/MaiBotProjectVersionTest` | 从 pyproject.toml 读 MaiBot 版本 |
+| `maibot/PluginConfigTomlTest` | 判断配置值是否在一行内写完 |
 | `maibot/update/MaiBotUpdateReportTest` | 在线更新脚本输出的解析 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
-| `platform/napcat/NapCatAdapterConfigTest` | 适配器 config.toml 改写：连接项、补聊天名单模式、保留用户配置 |
+| `platform/napcat/NapCatAdapterConfigTest` | QQ 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 NapCat、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
