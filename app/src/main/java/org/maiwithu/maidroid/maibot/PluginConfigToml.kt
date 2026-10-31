@@ -50,6 +50,31 @@ internal object PluginConfigToml {
         lines.add(insertAt, entry)
     }
 
+    /**
+     * rawValue 读到的原始文本是否在这一行内写完：引号、方括号、花括号都闭合了（# 之后的行尾注释不算）。
+     * 多行数组、多行字符串只读得到第一行，原样搬到别的配置里会写出坏掉的 TOML，调用方据此跳过。
+     */
+    fun isCompleteValue(raw: String): Boolean {
+        var depth = 0
+        var quote: Char? = null
+        var index = 0
+        while (index < raw.length) {
+            val char = raw[index]
+            when {
+                // 基本字符串里的反斜杠转义下一个字符，跳过它（\" 不算字符串结束）
+                quote == '"' && char == '\\' -> index++
+                quote != null && char == quote -> quote = null
+                quote != null -> Unit
+                char == '"' || char == '\'' -> quote = char
+                char == '#' -> break
+                char == '[' || char == '{' -> depth++
+                char == ']' || char == '}' -> depth--
+            }
+            index++
+        }
+        return quote == null && depth == 0 && raw.substringBefore('#').isNotBlank()
+    }
+
     fun parseBoolean(raw: String): Boolean? =
         when (raw.substringBefore('#').trim()) {
             "true" -> true
