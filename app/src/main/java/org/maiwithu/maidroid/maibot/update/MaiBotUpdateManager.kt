@@ -58,6 +58,7 @@ internal data class MaiBotUpdateState(
  * MaiBot 在线更新：检查上游 -> 停止麦麦 -> 切换源码 -> 同步依赖 -> 重启麦麦。
  *
  * 进程级单例，切到后台或关掉设置页后更新照常进行，回到设置页能看到最新进度。
+ * 每次打开应用进入主页时主界面会调 [checkOnLaunch] 自动查一次，查到新版本就弹窗提醒。
  * 所有命令输出都会写进终端日志，失败时可以在终端里看完整过程。
  */
 internal class MaiBotUpdateManager(
@@ -77,6 +78,15 @@ internal class MaiBotUpdateManager(
 
     private val _state = MutableStateFlow(MaiBotUpdateState())
     val state: StateFlow<MaiBotUpdateState> = _state.asStateFlow()
+
+    private val _launchPrompt = MutableStateFlow(false)
+
+    /** 启动时的自动检查查到了上游新版本、用户还没关掉提醒：主界面据此在主页上弹出更新弹窗。 */
+    val launchPrompt: StateFlow<Boolean> = _launchPrompt.asStateFlow()
+
+    // 正在进行的这次检查是不是启动时的自动检查：是的话查到新版本要弹窗提醒，查失败了不打扰用户。
+    // 用户在设置页打开 MaiBot 更新弹窗后改回 false，结果直接显示在那个弹窗里。
+    private var checkingOnLaunch = false
 
     /**
      * 设置页打开时读一次当前安装的版本，只读本地仓库，不联网也不打断麦麦。
@@ -104,12 +114,28 @@ internal class MaiBotUpdateManager(
     }
 
     /** 检查更新：经 GitHub 镜像拉取上游最新提交并与当前版本比较，不改动工作区，麦麦照常运行。 */
-    fun checkForUpdate() {
+    fun checkForUpdate() = startCheck(onLaunch = false)
+
+    /**
+     * 打开应用进入主页时自动检查一次：和手动检查走同一套流程（只拉取上游提交，不动工作区，麦麦照常启动运行），
+     * 查到新版本时置位 [launchPrompt]，主页弹窗提醒用户更新；已是最新、拉取失败都不提示。
+     * 正在更新时跳过，不打断。
+     */
+    fun checkOnLaunch() = startCheck(onLaunch = true)
+
+    /** 不再弹启动提醒：用户关掉了提醒弹窗，或者自己在设置页打开了 MaiBot 更新弹窗（结果改在那里显示）。 */
+    fun dismissLaunchPrompt() {
+        checkingOnLaunch = false
+        _launchPrompt.value = false
+    }
+
+    private fun startCheck(onLaunch: Boolean) {
         if (job?.isActive == true) return
+        checkingOnLaunch = onLaunch
         job = scope.launch {
             showProgress(MaiBotUpdatePhase.Checking, "正在通过 GitHub 镜像获取上游版本...")
             validationError()?.let { error ->
-                fail(MaiBotUpdateAction.Check, error)
+                failCheck(error)
                 return@launch
             }
 
@@ -119,7 +145,7 @@ internal class MaiBotUpdateManager(
             val report = parseMaiBotUpdateReport(result.output)
             applyReport(report)
             if (!result.success || report.installed == null || report.latest == null) {
-                fail(MaiBotUpdateAction.Check, "获取上游版本失败：${result.summary()}")
+                failCheck("获取上游版本失败：${result.summary()}")
                 return@launch
             }
 
@@ -138,7 +164,22 @@ internal class MaiBotUpdateManager(
             _state.update {
                 it.copy(phase = phase, progressText = null, errorMessage = null, failedAction = null)
             }
+            // 启动检查查到新版本：主页弹窗提醒，用户点“更新并重启”就地更新
+            if (report.hasUpdate && checkingOnLaunch) {
+                TerminalLog.append("$LOG_TAG 弹窗提醒更新")
+                _launchPrompt.value = true
+            }
         }
+    }
+
+    // 检查这一步失败：用户自己点的检查照常报错；启动时的自动检查只记日志、退回空闲，不在设置页挂一条没人问过的失败。
+    private fun failCheck(message: String) {
+        if (!checkingOnLaunch) {
+            fail(MaiBotUpdateAction.Check, message)
+            return
+        }
+        TerminalLog.append("$LOG_TAG 启动时检查更新没有成功：$message")
+        _state.update { it.copy(phase = MaiBotUpdatePhase.Idle, progressText = null) }
     }
 
     /**

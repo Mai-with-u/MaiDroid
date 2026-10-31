@@ -131,6 +131,9 @@ internal fun SettingsPage(
     LaunchedEffect(showAppUpdateDialog) {
         if (showAppUpdateDialog) appUpdater.dismissLaunchPrompt()
     }
+    LaunchedEffect(showUpdateDialog) {
+        if (showUpdateDialog) updateManager.dismissLaunchPrompt()
+    }
 
     // 点“应用版本”就开始检查：已经有结果（有新版本、下载中、待安装）时只打开弹窗，不重新检查。
     fun openAppUpdateDialog() {
@@ -276,12 +279,7 @@ internal fun SettingsPage(
         }
 
         if (showUpdateDialog) {
-            MaiBotUpdateDialog(
-                state = updateState,
-                onCheck = updateManager::checkForUpdate,
-                onApply = updateManager::applyUpdate,
-                onDismiss = { showUpdateDialog = false }
-            )
+            MaiBotUpdateDialogHost(onDismiss = { showUpdateDialog = false })
         }
 
         if (showAppUpdateDialog) {

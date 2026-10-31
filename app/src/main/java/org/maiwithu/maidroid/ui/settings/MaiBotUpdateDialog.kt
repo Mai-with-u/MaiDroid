@@ -12,12 +12,17 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.maibot.update.MaiBotRevision
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
@@ -101,6 +106,23 @@ internal fun formatRevisionTime(
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         .withZone(zoneId)
         .format(Instant.ofEpochSecond(epochSeconds))
+
+/**
+ * 接上 MaiBot 更新管理器的更新弹窗：设置页点“MaiBot 更新”、启动时查到上游新版本的提醒共用这一个。
+ * 状态都在进程级的更新管理器里，弹窗关掉再打开、Activity 重建后都能接上检查和更新进度。
+ */
+@Composable
+internal fun MaiBotUpdateDialogHost(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val updater = remember(context) { context.appDependencies.maiBotUpdater }
+    val state by updater.state.collectAsState()
+    MaiBotUpdateDialog(
+        state = state,
+        onCheck = updater::checkForUpdate,
+        onApply = updater::applyUpdate,
+        onDismiss = onDismiss
+    )
+}
 
 @Composable
 internal fun MaiBotUpdateDialog(

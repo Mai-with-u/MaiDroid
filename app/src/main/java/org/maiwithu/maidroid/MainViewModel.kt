@@ -70,14 +70,16 @@ internal class MainViewModel(
     val maiBotStatus: StateFlow<MaiBotProcessStatus> = container.maiBotProcess.status
 
     init {
-        // OOBE 完成后：拉起前台服务（启动 MaiBot）-> 检查一次 MaiDroid 新版本 -> 持续探测 WebUI 是否在线。
+        // OOBE 完成后：拉起前台服务（启动 MaiBot）-> 检查一次 MaiDroid 和 MaiBot 的新版本 -> 持续探测 WebUI 是否在线。
         // 每次打开应用（新的 ViewModel）都查一次更新，转屏重建 Activity 时 ViewModel 还在，不会重复查；
+        // MaiBot 的检查只拉取上游提交、不动源码，和麦麦启动同时进行互不影响。
         // 查到新版本由主界面在主页上弹窗提醒，见 MaiDroidApp。
         viewModelScope.launch {
             setupComplete.collectLatest { complete ->
                 if (!complete) return@collectLatest
                 wakeMaiBot()
                 container.appUpdater.checkOnLaunch()
+                container.maiBotUpdater.checkOnLaunch()
                 while (true) {
                     _webUiOnline.value = MaiBotWebUi.isReachable()
                     delay(if (_webUiOnline.value) WEB_UI_ONLINE_POLL_MS else WEB_UI_OFFLINE_POLL_MS)
