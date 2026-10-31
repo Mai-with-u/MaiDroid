@@ -11,7 +11,7 @@ flowchart TB
     subgraph UI["界面（ui/、MainActivity、WebUiActivity）"]
         App["MaiDroidApp\n启动页 / OOBE / 主页切换"]
         Oobe["ui/oobe\n首次引导三步"]
-        Home["ui/home\nWebUI 页签、唤醒页、底部导航"]
+        Home["ui/home\nWebUI 页签、唤醒页、底栏 / 横屏侧栏"]
         Platforms["ui/platform\n消息平台页"]
         Settings["ui/settings\n设置、权限、更新、SSH"]
     end
@@ -93,7 +93,7 @@ flowchart TB
 | `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、网页选文件 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiFileChooser`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts`、`OobePermissionList`、`OobeTaskList`、`OobeAuthorizationDialog` |
-| `ui.home` | 主页外壳、唤醒页、底部导航、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`WebUiTab` |
+| `ui.home` | 主页外壳、唤醒页、底部导航与横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`HomeBottomNavigation`、`HomeNavigationRail`、`WebUiTab` |
 | `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog`、`PlatformCards`、`NapCatDialogs`、`QqOfficialConfigDialog` |
 | `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings` |
 | `ui.terminal` | 终端输出弹窗与嵌入面板 | `TerminalOutputDialog`、`TerminalOutputState` |
@@ -204,10 +204,14 @@ provider 由系统在 `Application.onCreate` 之前创建，所以它自己建 `
 WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开时：
 
 1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
-2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本。构造时传了 `viewportReservedBottomCssPx` 的话，样式表里的 `env(safe-area-inset-bottom)` 会再加上这段高度，让 WebUI 自己的底栏、对话框整体上移让位。
-3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，有让位高度时给滚动区补同样的留白。
+2. `WebUiWebViewClient` 让 `WebUiResponseRewriter` 改写请求：HTML 里注入主题和 vh 兜底脚本（主题只在 WebUI 还没存过外观设置时写默认值，不覆盖用户的选择）。构造时传了 `viewportReservedBottomCssPx` 的话，样式表里的 `env(safe-area-inset-bottom)` 会再加上这段高度，让 WebUI 自己的底栏、对话框整体上移让位。
+3. 页面加载完执行 `WebUiInjectedScripts.viewportPatch`，按真实视口高度修正全屏容器和对话框，有让位高度时给滚动区补同样的留白。桌面版不执行这一步。
+
+横屏时 MaiBot WebUI 按桌面版排版：每次加载前 `WebUiWebViewClient.applyDesktopViewport` 按 WebView 尺寸用 `WebUiDesktopViewport` 算出布局宽度（保证布局视口不小于 1280×720 CSS px），拦截 HTML 时把 viewport meta 换成这个宽度，并打开 WebView 的 `useWideViewPort` 和总览模式，整页按宽度缩进 WebView。加载后 WebView 宽度再变（比如挖孔安全区晚一帧生效）就用脚本就地改写 viewport，不重新加载；只压矮高度（弹出键盘）时不改。竖屏、NapCat 管理页照旧按手机版。
 4. 网页的上传按钮（本地聊天室发图片、加表情包等）经 `WebUiChromeClient.onShowFileChooser` 交给 `WebUiFileChooser`，用宿主注册的 ActivityResult 打开系统选文件页，把选中的 `content://` 地址回传网页。WebView 默认不处理文件选择，不接这一步上传按钮点了没反应。
 
-WebUI 页签里 APP 底栏默认收成右下角的小按钮（`CollapsedHomeNavigationButton`），网页自己的底部导航贴着屏幕底边，所以页签和全屏 `WebUiActivity` 都不传让位高度。点小按钮会盖一层遮罩并弹出完整底栏，点遮罩、按返回键、切换标签或打开终端时收起；这个状态在 `HomeTabsShell` 里。
+竖屏时 WebUI 页签里 APP 底栏默认收成右下角的小按钮（`CollapsedHomeNavigationButton`），网页自己的底部导航贴着屏幕底边，所以页签和全屏 `WebUiActivity` 都不传让位高度。点小按钮会盖一层遮罩并弹出完整底栏，点遮罩、按返回键、切换标签或打开终端时收起；这个状态在 `HomeTabsShell` 里。
+
+窗口宽大于高时主页导航改成左侧竖栏（`HomeNavigationRail`），独占一列不盖页面，WebUI 的刷新按钮也挪进侧栏；各页面列表末尾的留白从 `LocalBottomNavigationClearance` 取，侧栏模式下由外壳换成很小的值。横屏时 `MainActivity` 和 `WebUiActivity` 都隐藏状态栏和导航栏（`applySystemBars`），挖孔转到屏幕左右两侧，主页外壳统一按 `safeDrawing` 左右让开。
 
 Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数（见 `WebUiTab.rememberWebUiTabState`），否则 WebView 把页面高度当成 0，vh 恒为 0 整页空白。
