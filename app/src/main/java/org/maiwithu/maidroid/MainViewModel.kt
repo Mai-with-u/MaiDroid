@@ -37,16 +37,16 @@ internal class MainViewModel(
         const val WEB_UI_OFFLINE_POLL_MS = 1_500L
     }
 
-    private val container = application.appDependencies
-    private val settings = container.settings
+    private val dependencies = application.appDependencies
+    private val settings = dependencies.settings
 
     val setupManager = OobeSetupManager(
         application,
         settings,
-        container.runtimePaths,
-        container.runtimeReadiness,
-        container.commandRunner,
-        container.maiBotProcess
+        dependencies.runtimePaths,
+        dependencies.runtimeReadiness,
+        dependencies.commandRunner,
+        dependencies.maiBotProcess
     )
 
     private val _setupComplete = MutableStateFlow(settings.setupComplete)
@@ -68,7 +68,7 @@ internal class MainViewModel(
     val webUiOnline: StateFlow<Boolean> = _webUiOnline.asStateFlow()
 
     /** MaiBot 进程是否在跑、意外退出过几次、为什么没拉起来；唤醒页的自检行据此显示启动进度。 */
-    val maiBotStatus: StateFlow<MaiBotProcessStatus> = container.maiBotProcess.status
+    val maiBotStatus: StateFlow<MaiBotProcessStatus> = dependencies.maiBotProcess.status
 
     /**
      * 这次是不是 MaiDroid 更新后的第一次启动、要在唤醒页上先自动升级 MaiBot（设置页可关闭）；唤醒页据此多显示一行升级进度。
@@ -91,13 +91,13 @@ internal class MainViewModel(
         viewModelScope.launch {
             setupComplete.collectLatest { complete ->
                 if (!complete) return@collectLatest
-                container.appUpdater.checkOnLaunch()
+                dependencies.appUpdater.checkOnLaunch()
                 if (autoUpdatingMaiBot) {
-                    container.maiBotUpdater.updateAfterAppUpgrade()
+                    dependencies.maiBotUpdater.updateAfterAppUpgrade()
                     wakeMaiBot()
                 } else {
                     wakeMaiBot()
-                    container.maiBotUpdater.checkOnLaunch()
+                    dependencies.maiBotUpdater.checkOnLaunch()
                 }
                 while (true) {
                     _webUiOnline.value = MaiBotWebUi.isReachable()
@@ -128,7 +128,7 @@ internal class MainViewModel(
     // 进入或重试“安装 MaiBot”：容器没配好（例如进程被回收后恢复到这一步、容器文件被清掉一部分）
     // 就退回“配置容器”一步，由它补齐后再进来，而不是在安装页上报一个只能返回才能解决的错误。
     private fun startInstallOrReturnToContainer() {
-        if (container.runtimeReadiness.containerProblem() == null) {
+        if (dependencies.runtimeReadiness.containerProblem() == null) {
             setupManager.startInstall()
         } else {
             savedState[KEY_OOBE_STEP] = OobeStep.Container
@@ -186,7 +186,7 @@ internal class MainViewModel(
      */
     fun wakeMaiBot() {
         runCatching { MaiBotRuntimeService.start(getApplication()) }
-            .onFailure { container.maiBotProcess.start() }
+            .onFailure { dependencies.maiBotProcess.start() }
     }
 
     override fun onCleared() {

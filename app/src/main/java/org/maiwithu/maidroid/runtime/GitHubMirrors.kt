@@ -22,7 +22,7 @@ internal object GitHubMirrors {
     /** 每个镜像连续尝试的次数，全部失败才换下一个镜像。 */
     const val RETRY_PER_MIRROR = 3
 
-    /** 宿主侧界面和日志里直连 GitHub 的显示名。 */
+    /** 直连 GitHub（不经镜像）这条线路在界面和日志里的显示名，容器脚本和宿主侧共用。 */
     const val DIRECT_NAME = "直连"
 
     // git 默认不检测传输停滞：镜像连上后卡住不动，clone/fetch 会一直等下去，OOBE 就停在“正在克隆”出不来。
@@ -31,10 +31,11 @@ internal object GitHubMirrors {
 
     // 容器脚本按这个顺序依次重试。ghfast.top 是 NapCat 官方安装脚本也在用的线路，
     // 能代理 git clone 和 Release 下载，但不代理 api.github.com（实测 403），放在最后兜底。
+    // 前缀为空的那一项是直连：原样访问原始地址（github.com、api.github.com 等），不经任何镜像。
     val ALL: List<GitHubMirror> = listOf(
         GitHubMirror("gitproxy.mrhjx.cn", "https://gitproxy.mrhjx.cn"),
         GitHubMirror("ghproxy.vip", "https://ghproxy.vip"),
-        GitHubMirror("raw.githubusercontent.com", ""),
+        GitHubMirror(DIRECT_NAME, ""),
         GitHubMirror("gh-proxy.com", "https://gh-proxy.com"),
         GitHubMirror("v6.gh-proxy.org", "https://v6.gh-proxy.org"),
         GitHubMirror("cdn.gh-proxy.com", "https://cdn.gh-proxy.com"),
@@ -53,20 +54,11 @@ internal object GitHubMirrors {
     // shell 函数里每项是“显示名|地址前缀”，前缀为空表示直连。
     private val MIRROR_SPECS = ALL.map { "${it.name}|${it.prefix}" }
 
-    /** OOBE 卡片上展示的镜像说明，例如“GitHub 镜像自动重试（每源 3 次）: a -> b -> c”。 */
-    val DESCRIPTION: String =
-        "GitHub 镜像自动重试（每源 ${RETRY_PER_MIRROR} 次）: " +
-            ALL.joinToString(" -> ") { it.name }
-
-    /**
-     * 宿主侧下载一个地址时可以试的线路：GitHub 的地址返回直连加全部镜像，其它地址只有直连。
-     * 直连在宿主侧显示为“直连”，不沿用容器日志里的 raw.githubusercontent.com。
-     */
+    /** 宿主侧下载一个地址时可以试的线路：GitHub 的地址返回直连加全部镜像，其它地址只有直连。 */
     fun candidatesFor(url: String): List<GitHubMirror> {
         val host = runCatching { URI(url).host?.lowercase() }.getOrNull()
-        val direct = GitHubMirror(DIRECT_NAME, "")
-        if (host == null || host !in MIRRORED_HOSTS) return listOf(direct)
-        return ALL.map { if (it.isDirect) direct else it }
+        if (host == null || host !in MIRRORED_HOSTS) return ALL.filter { it.isDirect }
+        return ALL
     }
 
     /** 定义 maidroid_github_clone、maidroid_github_fetch 两个 shell 函数（及其内部辅助函数）。 */

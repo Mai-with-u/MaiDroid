@@ -34,6 +34,6 @@ class GitHubMirrorsTest {
         val shell = GitHubMirrors.shellFunctions()
 
         assertTrue(shell.contains("'ghfast.top|https://ghfast.top'"))
-        assertTrue(shell.contains("'raw.githubusercontent.com|'"))
+        assertTrue(shell.contains("'${GitHubMirrors.DIRECT_NAME}|'"))
     }
 }

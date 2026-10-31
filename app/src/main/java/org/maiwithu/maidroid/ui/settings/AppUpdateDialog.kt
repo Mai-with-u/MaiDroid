@@ -281,7 +281,7 @@ internal fun AppUpdateDialog(
             ) {
                 VersionLine(label = "当前版本", value = "v${state.currentVersion}", highlight = false)
 
-                if (showNewRelease && release != null) {
+                if (showNewRelease) {
                     val details = listOfNotNull(
                         release.tag,
                         release.publishedAtEpochSeconds?.let(::formatReleaseDate),

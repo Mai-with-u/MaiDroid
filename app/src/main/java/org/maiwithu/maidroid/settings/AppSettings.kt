@@ -4,7 +4,8 @@ import com.tencent.mmkv.MMKV
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
 
 /**
- * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置、MaiBot 自动更新。
+ * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置、
+ * 上次打开时的 MaiDroid 版本号、是否关闭 MaiDroid 更新后的 MaiBot 自动升级。
  * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。键名已在用户设备上存在，不能改。
  */
 internal class AppSettings(
@@ -69,7 +70,10 @@ internal class AppSettings(
             kv.encode(KEY_LAST_LAUNCHED_VERSION_CODE, value)
         }
 
-    /** 用户在设置页打开了“关闭 MaiBot 自动更新”：MaiDroid 更新后首次启动时不再自动升级 MaiBot。默认关（即自动更新）。 */
+    /**
+     * 用户在设置页“应用版本”弹窗底部打开了“关闭 MaiBot 自动更新”：MaiDroid 更新后首次启动时不再自动升级 MaiBot。
+     * 默认 false，即自动升级。只管这一次自动升级，启动时的 MaiBot 新版本提醒不受它影响。
+     */
     var maiBotAutoUpdateDisabled: Boolean
         get() = kv.decodeBool(KEY_MAIBOT_AUTO_UPDATE_DISABLED, false)
         set(value) {

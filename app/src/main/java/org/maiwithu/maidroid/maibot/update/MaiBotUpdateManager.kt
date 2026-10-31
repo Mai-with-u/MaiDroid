@@ -88,7 +88,8 @@ internal class MaiBotUpdateManager(
     private val maiBotProcess: MaiBotProcessSupervisor
 ) {
     companion object {
-        private const val LOG_TAG = "[MaiBot 更新]"
+        // 写进终端输出（TerminalLog）的行首前缀，不是 logcat 标签。
+        private const val LOG_PREFIX = "[MaiBot 更新]"
     }
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -159,7 +160,7 @@ internal class MaiBotUpdateManager(
             }
 
             TerminalLog.append("")
-            TerminalLog.append("$LOG_TAG 检查上游版本")
+            TerminalLog.append("$LOG_PREFIX 检查上游版本")
             val result = runCommand(MaiBotUpdateScripts.fetchLatest())
             val report = parseMaiBotUpdateReport(result.output)
             applyReport(report)
@@ -175,9 +176,9 @@ internal class MaiBotUpdateManager(
             }
             TerminalLog.append(
                 if (report.hasUpdate) {
-                    "$LOG_TAG 发现新版本 ${report.latest.shortCommit}，当前 ${report.installed.shortCommit}"
+                    "$LOG_PREFIX 发现新版本 ${report.latest.shortCommit}，当前 ${report.installed.shortCommit}"
                 } else {
-                    "$LOG_TAG 已是最新版本 ${report.installed.shortCommit}"
+                    "$LOG_PREFIX 已是最新版本 ${report.installed.shortCommit}"
                 }
             )
             _state.update {
@@ -185,7 +186,7 @@ internal class MaiBotUpdateManager(
             }
             // 启动检查查到新版本：主页弹窗提醒，用户点“更新并重启”就地更新
             if (report.hasUpdate && checkingOnLaunch) {
-                TerminalLog.append("$LOG_TAG 弹窗提醒更新")
+                TerminalLog.append("$LOG_PREFIX 弹窗提醒更新")
                 _launchPrompt.value = true
             }
         }
@@ -197,7 +198,7 @@ internal class MaiBotUpdateManager(
             fail(MaiBotUpdateAction.Check, message)
             return
         }
-        TerminalLog.append("$LOG_TAG 启动时检查更新没有成功：$message")
+        TerminalLog.append("$LOG_PREFIX 启动时检查更新没有成功：$message")
         _state.update { it.copy(phase = MaiBotUpdatePhase.Idle, progressText = null) }
     }
 
@@ -216,10 +217,10 @@ internal class MaiBotUpdateManager(
             }
 
             TerminalLog.append("")
-            TerminalLog.append("$LOG_TAG 停止 MaiBot，准备切换到上游最新版本")
+            TerminalLog.append("$LOG_PREFIX 停止 MaiBot，准备切换到上游最新版本")
             val failure = maiBotProcess.runWhileStopped { updateWhileStopped() }
 
-            TerminalLog.append("$LOG_TAG 重新启动 MaiBot")
+            TerminalLog.append("$LOG_PREFIX 重新启动 MaiBot")
             restartMaiBot()
 
             if (failure != null) {
@@ -227,7 +228,7 @@ internal class MaiBotUpdateManager(
                 return@launch
             }
             val installed = _state.value.installed
-            TerminalLog.append("$LOG_TAG 更新完成：${installed?.shortCommit.orEmpty()}")
+            TerminalLog.append("$LOG_PREFIX 更新完成：${installed?.shortCommit.orEmpty()}")
             _state.update {
                 it.copy(
                     phase = MaiBotUpdatePhase.Updated,
@@ -253,26 +254,26 @@ internal class MaiBotUpdateManager(
         val updateJob = scope.launch {
             showProgress(MaiBotUpdatePhase.Checking, "MaiDroid 已更新，正在检查 MaiBot 新版本...")
             TerminalLog.append("")
-            TerminalLog.append("$LOG_TAG MaiDroid 已更新，启动麦麦前先把 MaiBot 升级到上游最新版本")
+            TerminalLog.append("$LOG_PREFIX MaiDroid 已更新，启动麦麦前先把 MaiBot 升级到上游最新版本")
             // 先进入维护再做任何耗时操作：这一句在启动时同步执行，唤醒页随后发来的启动请求都会被拦下
             val outcome = maiBotProcess.runWhileStopped { autoUpdateWhileStopped() }
 
-            TerminalLog.append("$LOG_TAG 启动 MaiBot")
+            TerminalLog.append("$LOG_PREFIX 启动 MaiBot")
             restartMaiBot()
 
             when (outcome) {
                 is AutoUpdateOutcome.Skipped -> {
-                    TerminalLog.append("$LOG_TAG 这次没有自动升级（${outcome.reason}），照常启动现在的版本")
+                    TerminalLog.append("$LOG_PREFIX 这次没有自动升级（${outcome.reason}），照常启动现在的版本")
                     _state.update { it.copy(phase = MaiBotUpdatePhase.Idle, progressText = null) }
                 }
                 AutoUpdateOutcome.UpToDate -> {
-                    TerminalLog.append("$LOG_TAG 已是最新版本 ${_state.value.installed?.shortCommit.orEmpty()}")
+                    TerminalLog.append("$LOG_PREFIX 已是最新版本 ${_state.value.installed?.shortCommit.orEmpty()}")
                     _state.update {
                         it.copy(phase = MaiBotUpdatePhase.UpToDate, progressText = null, errorMessage = null)
                     }
                 }
                 AutoUpdateOutcome.Updated -> {
-                    TerminalLog.append("$LOG_TAG 自动升级完成：${_state.value.installed?.shortCommit.orEmpty()}")
+                    TerminalLog.append("$LOG_PREFIX 自动升级完成：${_state.value.installed?.shortCommit.orEmpty()}")
                     _state.update {
                         it.copy(
                             phase = MaiBotUpdatePhase.Updated,
@@ -306,9 +307,9 @@ internal class MaiBotUpdateManager(
         if (!report.hasUpdate && (report.localChangeCount ?: 0) == 0) return AutoUpdateOutcome.UpToDate
         TerminalLog.append(
             if (report.hasUpdate) {
-                "$LOG_TAG 发现新版本 ${report.latest.shortCommit}，当前 ${report.installed.shortCommit}，开始升级"
+                "$LOG_PREFIX 发现新版本 ${report.latest.shortCommit}，当前 ${report.installed.shortCommit}，开始升级"
             } else {
-                "$LOG_TAG 已是最新版本，但有 ${report.localChangeCount} 个源码文件被改动过，还原为上游版本"
+                "$LOG_PREFIX 已是最新版本，但有 ${report.localChangeCount} 个源码文件被改动过，还原为上游版本"
             }
         )
         return updateWhileStopped()?.let { AutoUpdateOutcome.Failed(it) } ?: AutoUpdateOutcome.Updated
@@ -379,7 +380,7 @@ internal class MaiBotUpdateManager(
     }
 
     private fun fail(action: MaiBotUpdateAction, message: String) {
-        TerminalLog.append("$LOG_TAG 失败：$message")
+        TerminalLog.append("$LOG_PREFIX 失败：$message")
         _state.update {
             it.copy(
                 phase = MaiBotUpdatePhase.Failed,

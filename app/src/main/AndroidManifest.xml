@@ -2,16 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Network -->
+    <!-- 网络：下载 MaiBot 及依赖、访问大模型服务和 QQ，宿主访问容器里的 WebUI -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Foreground Service -->
+    <!-- 前台服务：托管容器里的长驻进程，常驻通知 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Keep Alive -->
+    <!-- 保活：唤醒锁、电池优化白名单、开机自启 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -19,7 +19,7 @@
     <!-- 应用自更新：把下载好的新版本安装包交给系统安装器 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- Storage (for rootfs extraction and file access on older devices) -->
+    <!-- 存储（OOBE 必需）：容器绑定 /sdcard，让容器里能存取手机文件；Android 11 起用“所有文件访问”，旧系统用读写外部存储，见 SystemPermissionController -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -90,7 +90,7 @@
                 android:resource="@xml/app_update_paths" />
         </provider>
 
-        <!-- Auto-start on boot -->
+        <!-- 开机自启：OOBE 完成且没关自启时拉起前台服务 -->
         <receiver
             android:name=".service.BootCompletedReceiver"
             android:exported="true"
