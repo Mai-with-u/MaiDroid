@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
@@ -63,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.files.openMaiBotInFileManager
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
@@ -86,7 +88,7 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 private const val PermissionSettingsDetail = "permissions"
 
 /**
- * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH）、系统（权限管理）、应用（消息平台、版本）。
+ * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、应用（消息平台、版本）。
  * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
@@ -152,6 +154,17 @@ internal fun SettingsPage(
             selectedDetail = null
         }
 
+        // 用系统“文件”应用打开 MaiBot 目录；没有文件应用接手时告诉用户去别的文件管理器里添加
+        val onOpenFilesClick: () -> Unit = {
+            if (!openMaiBotInFileManager(context)) {
+                Toast.makeText(
+                    context,
+                    "没有找到系统文件应用，可在 MT 管理器等文件管理器中添加“MaiBot”存储",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
         val onSshEnabledChange: (Boolean) -> Unit = { enabled ->
             if (enabled && !sshState.configured) {
                 Toast.makeText(context, "请先设置端口和 root 密码", Toast.LENGTH_SHORT).show()
@@ -184,6 +197,7 @@ internal fun SettingsPage(
                     onSshConfigureClick = { openSshDialog() },
                     onSshEnabledChange = onSshEnabledChange,
                     onUpdateClick = { showUpdateDialog = true },
+                    onOpenFilesClick = onOpenFilesClick,
                     modifier = Modifier
                         .width(navigationWidth)
                         .fillMaxHeight()
@@ -241,6 +255,7 @@ internal fun SettingsPage(
                         onSshConfigureClick = { openSshDialog() },
                         onSshEnabledChange = onSshEnabledChange,
                         onUpdateClick = { showUpdateDialog = true },
+                        onOpenFilesClick = onOpenFilesClick,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -299,6 +314,7 @@ private fun SettingsNavigationPane(
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
     onUpdateClick: () -> Unit,
+    onOpenFilesClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
@@ -402,6 +418,27 @@ private fun SettingsNavigationPane(
                         onCheckedChange = onSshEnabledChange
                     )
                 }
+
+                SettingsDivider()
+
+                // 容器在应用私有目录里，普通文件管理器看不到；这里经 ContainerDocumentsProvider 打开
+                SettingsNavigationRow(
+                    icon = Icons.Outlined.FolderOpen,
+                    title = "MaiBot 文件",
+                    supportingText = "在文件管理器中查看日志、插件和配置",
+                    accent = BrandOrange,
+                    onClick = onOpenFilesClick,
+                    trailing = if (compact) null else {
+                        {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "在文件管理器中打开 MaiBot 目录",
+                                tint = TextMuted,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                )
             }
         }
 

@@ -64,6 +64,18 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等；MANAGE_DOCUMENTS 保证只有系统文件框架能直接调用 -->
+        <provider
+            android:name=".files.ContainerDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
         <!-- Auto-start on boot -->
         <receiver
             android:name=".service.BootCompletedReceiver"
