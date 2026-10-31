@@ -1,5 +1,8 @@
 package org.maiwithu.maidroid.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,11 +19,20 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppDownloadProgress
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
@@ -161,6 +173,48 @@ internal fun appUpdateStatusText(state: AppUpdateState, installPermissionGranted
 // 下载或安装前提醒：系统安装器会结束 MaiDroid 进程，容器里的进程跟着停。
 private const val INSTALL_NOTE =
     "安装时系统会关闭 MaiDroid，麦麦和 NapCat 随之停止；装好后重新打开 MaiDroid 即可恢复，QQ 可能需要重新扫码。"
+
+/**
+ * 接上应用更新管理器的更新弹窗：设置页点“应用版本”、启动时查到新版本的提醒共用这一个。
+ * 状态都在进程级的更新管理器里，弹窗关掉再打开、Activity 重建后都能接上检查和下载进度。
+ */
+@Composable
+internal fun AppUpdateDialogHost(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val appUpdater = remember(context) { context.appDependencies.appUpdater }
+    val state by appUpdater.state.collectAsState()
+    var installPermissionGranted by remember { mutableStateOf(appUpdater.canRequestPackageInstalls()) }
+
+    // 每次回到前台重新读“安装未知应用”：用户从系统设置页开完权限回来，按钮直接变成“安装”。
+    LifecycleResumeEffect(appUpdater) {
+        installPermissionGranted = appUpdater.canRequestPackageInstalls()
+        onPauseOrDispose {}
+    }
+
+    AppUpdateDialog(
+        state = state,
+        installPermissionGranted = installPermissionGranted,
+        onCheck = appUpdater::checkForUpdate,
+        onDownload = appUpdater::download,
+        onCancelDownload = appUpdater::cancelDownload,
+        onGrantInstallPermission = appUpdater::openInstallPermissionSettings,
+        onInstall = appUpdater::install,
+        onOpenReleasePage = {
+            // 签名和发布版不同的包不能在应用里覆盖安装，交给浏览器打开 Release 页面
+            val pageUrl = state.release?.pageUrl.orEmpty()
+            val opened = pageUrl.isNotBlank() && try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, pageUrl.toUri()))
+                true
+            } catch (_: ActivityNotFoundException) {
+                false
+            }
+            if (!opened) {
+                Toast.makeText(context, "没有找到可以打开下载页的浏览器", Toast.LENGTH_SHORT).show()
+            }
+        },
+        onDismiss = onDismiss
+    )
+}
 
 @Composable
 internal fun AppUpdateDialog(

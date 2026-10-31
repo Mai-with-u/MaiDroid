@@ -81,6 +81,7 @@ internal data class AppUpdateState(
  * MaiDroid 应用本体的在线更新：查 GitHub 最新 Release -> 下载 APK -> 校验 -> 交给系统安装器。
  *
  * 进程级单例，关掉弹窗、离开设置页后下载照常进行，回来能看到最新进度。
+ * 每次打开应用进入主页时主界面会调 [checkOnLaunch] 自动查一次，查到新版本就弹窗提醒。
  * 网络部分（同时试直连和所有镜像、用最快的那条）在 [AppUpdateClient]；
  * 每一步都写进终端日志，前缀 `[MaiDroid 更新]`。
  */
@@ -108,14 +109,39 @@ internal class AppUpdateManager(
     private val _state = MutableStateFlow(AppUpdateState(currentVersion = currentVersionName))
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
 
+    private val _launchPrompt = MutableStateFlow(false)
+
+    /** 启动时的自动检查查到了新版本、用户还没关掉提醒：主界面据此在主页上弹出更新弹窗。 */
+    val launchPrompt: StateFlow<Boolean> = _launchPrompt.asStateFlow()
+
+    // 正在进行的这次检查是不是启动时的自动检查：是的话查到新版本要弹窗提醒，查失败了不打扰用户。
+    // 用户在设置页打开更新弹窗后改回 false，结果直接显示在那个弹窗里。
+    private var checkingOnLaunch = false
+
     init {
-        // 上次的更新已经装上了：缓存里不比当前新的安装包没用了，打开设置页时顺手清掉
+        // 上次的更新已经装上了：缓存里不比当前新的安装包没用了，启动检查或打开设置页时顺手清掉
         scope.launch(Dispatchers.IO) { files.deleteInstalledOrUnknown(currentVersion) }
     }
 
     /** 检查更新：同时向直连和所有镜像请求最新 Release，用最先返回的那个和当前版本比较。 */
-    fun checkForUpdate() {
+    fun checkForUpdate() = startCheck(onLaunch = false)
+
+    /**
+     * 打开应用进入主页时自动检查一次：和手动检查走同一套流程，
+     * 查到新版本（或这一版安装包已下好待安装）时置位 [launchPrompt]，主页弹窗提醒用户更新；
+     * 已是最新、连不上都不提示。正在下载或校验时跳过，用户已经在更新了，不打断。
+     */
+    fun checkOnLaunch() = startCheck(onLaunch = true)
+
+    /** 不再弹启动提醒：用户关掉了提醒弹窗，或者自己在设置页打开了更新弹窗（结果改在那里显示）。 */
+    fun dismissLaunchPrompt() {
+        checkingOnLaunch = false
+        _launchPrompt.value = false
+    }
+
+    private fun startCheck(onLaunch: Boolean) {
         if (job?.isActive == true) return
+        checkingOnLaunch = onLaunch
         job = scope.launch {
             _state.update {
                 it.copy(phase = AppUpdatePhase.Checking, errorMessage = null, failedAction = null)
@@ -126,7 +152,7 @@ internal class AppUpdateManager(
 
             val win = client.fetchLatestRelease(apiUrl)
             if (win == null) {
-                fail(AppUpdateAction.Check, "连不上 GitHub 和所有镜像，请检查网络后重试")
+                failCheck("连不上 GitHub 和所有镜像，请检查网络后重试")
                 return@launch
             }
             val release = win.value
@@ -141,7 +167,7 @@ internal class AppUpdateManager(
             }
             if (release.apk == null) {
                 _state.update { it.copy(release = release, checkSource = win.mirror.name) }
-                fail(AppUpdateAction.Check, "最新版本 ${release.tag} 里没有找到安装包")
+                failCheck("最新版本 ${release.tag} 里没有找到安装包")
                 return@launch
             }
 
@@ -167,7 +193,22 @@ internal class AppUpdateManager(
                     checkSource = win.mirror.name
                 )
             }
+            // 启动检查查到新版本：主页弹窗提醒（待安装时弹窗里直接是“安装”按钮）
+            if (checkingOnLaunch) {
+                TerminalLog.append("$LOG_TAG 发现新版本 ${release.tag}，弹窗提醒更新")
+                _launchPrompt.value = true
+            }
         }
+    }
+
+    // 检查这一步失败：用户自己点的检查照常报错；启动时的自动检查只记日志、退回空闲，不在设置页挂一条没人问过的失败。
+    private fun failCheck(message: String) {
+        if (!checkingOnLaunch) {
+            fail(AppUpdateAction.Check, message)
+            return
+        }
+        TerminalLog.append("$LOG_TAG 启动时检查更新没有成功：$message")
+        _state.update { it.copy(phase = AppUpdatePhase.Idle, progress = null) }
     }
 
     /**

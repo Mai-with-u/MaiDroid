@@ -1,7 +1,5 @@
 package org.maiwithu.maidroid.ui.settings
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -60,8 +58,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
@@ -122,7 +118,6 @@ internal fun SettingsPage(
     var showUpdateDialog by remember { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
-    var installPermissionGranted by remember { mutableStateOf(appUpdater.canRequestPackageInstalls()) }
     var selectedDetail by rememberSaveable { mutableStateOf<String?>(null) }
     var sshPortText by remember { mutableStateOf(sshState.port.toString()) }
     var sshPasswordText by remember { mutableStateOf("") }
@@ -132,10 +127,9 @@ internal fun SettingsPage(
         updateManager.loadInstalledRevision()
     }
 
-    // 每次回到前台重新读“安装未知应用”：用户从系统设置页开完权限回来，按钮直接变成“安装”。
-    LifecycleResumeEffect(appUpdater) {
-        installPermissionGranted = appUpdater.canRequestPackageInstalls()
-        onPauseOrDispose {}
+    // 设置页的更新弹窗开着时，启动时的自动检查（还没出结果的话）改在这个弹窗里显示结果，不再另弹一个提醒。
+    LaunchedEffect(showAppUpdateDialog) {
+        if (showAppUpdateDialog) appUpdater.dismissLaunchPrompt()
     }
 
     // 点“应用版本”就开始检查：已经有结果（有新版本、下载中、待安装）时只打开弹窗，不重新检查。
@@ -291,29 +285,7 @@ internal fun SettingsPage(
         }
 
         if (showAppUpdateDialog) {
-            AppUpdateDialog(
-                state = appUpdateState,
-                installPermissionGranted = installPermissionGranted,
-                onCheck = appUpdater::checkForUpdate,
-                onDownload = appUpdater::download,
-                onCancelDownload = appUpdater::cancelDownload,
-                onGrantInstallPermission = appUpdater::openInstallPermissionSettings,
-                onInstall = appUpdater::install,
-                onOpenReleasePage = {
-                    // 签名和发布版不同的包不能在应用里覆盖安装，交给浏览器打开 Release 页面
-                    val pageUrl = appUpdateState.release?.pageUrl.orEmpty()
-                    val opened = pageUrl.isNotBlank() && try {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, pageUrl.toUri()))
-                        true
-                    } catch (_: ActivityNotFoundException) {
-                        false
-                    }
-                    if (!opened) {
-                        Toast.makeText(context, "没有找到可以打开下载页的浏览器", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onDismiss = { showAppUpdateDialog = false }
-            )
+            AppUpdateDialogHost(onDismiss = { showAppUpdateDialog = false })
         }
 
         if (showSshDialog) {
