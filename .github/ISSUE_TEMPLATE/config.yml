@@ -1,0 +1,16 @@
+# 新建 Issue 时只能从表单里选，不允许空白 Issue；
+# 不属于 MaiDroid 的问题在选择页直接引导到对应的上游仓库。
+blank_issues_enabled: false
+contact_links:
+  - name: MaiBot 本体的问题
+    url: https://github.com/Mai-with-u/MaiBot/issues
+    about: 麦麦的回复内容、人设、记忆、插件逻辑、MaiBot WebUI 本身的功能问题，请到 MaiBot 仓库
+  - name: QQ 适配器的问题（MaiBot-SnowLuma-Adapter）
+    url: https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter/issues
+    about: 通过 NapCat 接入 QQ 时，消息收发规则、适配器配置项本身的问题
+  - name: QQ 官方机器人适配器的问题（MaiBot-QQ-Adapter）
+    url: https://github.com/Mai-with-u/MaiBot-QQ-Adapter/issues
+    about: 通过 QQ 开放平台接入官方机器人时，适配器本身的问题
+  - name: NapCatQQ 本体的问题
+    url: https://github.com/NapNeko/NapCatQQ/issues
+    about: QQ 协议侧的登录、风控、掉线等问题，请到 NapCatQQ 仓库

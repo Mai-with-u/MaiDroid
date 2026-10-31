@@ -1,0 +1,60 @@
+# 使用求助表单：仓库没有开 Discussions，使用上的疑问先走这里，
+# 用 question 标签和缺陷区分开，维护者能分开处理。
+name: 使用求助
+description: 不确定怎么用、怎么配置，或者不确定是不是 Bug
+title: "[求助] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        开始之前，先翻一下 [README](https://github.com/Mai-with-u/MaiDroid#readme) 和 [docs](https://github.com/Mai-with-u/MaiDroid/tree/main/docs) 里的说明，很多常见问题已经写在里面了。
+
+        麦麦本身怎么配置（人设、模型、插件）请看 [MaiBot 的文档](https://github.com/Mai-with-u/MaiBot)，那部分不在 MaiDroid 的范围内。
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我看过 README 和 docs，也搜索过现有的 Issues，没有找到答案
+          required: true
+        - label: 我已经在下面贴的日志、截图里去掉了 API Key、访问令牌、QQ 号、群号等隐私信息
+          required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: MaiDroid 版本
+      description: 设置页“应用版本”一行显示的就是。
+      placeholder: 例如 0.1.3
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 手机型号和系统版本
+      placeholder: 例如 荣耀 Magic6 / MagicOS 9.0（Android 15）
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+      description: 你想做什么、做到哪一步卡住了、看到了什么提示。
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已经试过的办法
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或截图
+      description: 主页右下角打开“终端输出”，点顶栏的“复制全部输出”可以复制日志。贴之前请打码令牌、API Key、QQ 号等信息。
+      render: text
