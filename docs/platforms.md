@@ -36,7 +36,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示，点�
 
 ### config.toml 读写（`QqOfficialAdapterConfig`）
 
-只读写三项：`[plugin].enabled`、`[qq_official].app_id`、`[qq_official].app_secret`，其余内容（用户在 MaiBot WebUI 里改过的禁言、撤回等配置、注释）原样保留。它不是通用 TOML 解析器，只认 MaiBot 写回配置时用的单行写法。
+只读写三项：`[plugin].enabled`、`[qq_official].app_id`、`[qq_official].app_secret`，其余内容（用户在 MaiBot WebUI 里改过的禁言、撤回等配置、注释）原样保留。逐行读写交给 `maibot/PluginConfigToml`，它不是通用 TOML 解析器，只认 MaiBot 写回配置时用的单行写法。
 
 ### 连接状态怎么来的
 
@@ -57,15 +57,22 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示，点�
    - 生成 OneBot 访问 token（只在第一次安装时生成，存在 `/root/.maidroid/napcat_token`，重装沿用）；
    - 下载并运行 NapCat 官方的 Linux 安装器；
    - 写 `/root/napcat/config/onebot11.json`：在 `127.0.0.1:8095` 开 WebSocket 服务端，带上 token；
-   - 克隆 MaiBot-Napcat-Adapter 到 `plugins/` 并写好连 8095 的配置；
+   - 克隆 MaiBot-Napcat-Adapter 到 `plugins/`；
    - 写 `/root/.maidroid/napcat_ready` 标记，生成 `/root/launcher.sh`。
-3. 经前台服务启动 NapCat 并重启 MaiBot。
+3. 宿主侧改写适配器的 `config.toml`（`NapCatAdapterConfig.write`）：启用插件，连接项写成 8095 和上面的 token，再补上聊天名单模式（见下）。已有配置时其余内容原样保留，重装不会冲掉用户在 WebUI 里改过的配置。
+4. 经前台服务启动 NapCat 并重启 MaiBot。
 
 注意：安装器下载和适配器克隆目前直连 GitHub，没有走镜像。
 
+### 聊天名单
+
+适配器的 `[chat]` 默认群聊、私聊都是白名单，名单又是空的：扫码后所有 QQ 消息都会被丢弃，丢弃日志默认也不打印，看起来就是“麦麦在 QQ 上不回话”。所以 MaiDroid 在 `group_list_type`、`private_list_type` 没写时补成 `"blacklist"`（名单为空 = 全部接收），想只在某些群说话的用户去 WebUI 的插件配置里改；已经写了名单模式的不动。
+
+旧版本 MaiDroid 装好的配置没有这两项，`NapCatProcessSupervisor` 每次启动 NapCat 前检查一次，缺了就补上（`NapCatAdapterConfig.withOpenChatLists`）。MaiBot 监听插件配置文件，改完会热重载给适配器，不用重启。
+
 ### 运行（`NapCatProcessSupervisor`）
 
-每次启动：清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。
+每次启动：补齐适配器的聊天名单模式 -> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。
 
 ### 状态怎么来的（`NapCatStatusReader`、`NapCatWebUiClient`）
 

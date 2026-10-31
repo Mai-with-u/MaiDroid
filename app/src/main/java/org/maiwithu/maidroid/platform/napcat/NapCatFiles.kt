@@ -18,13 +18,16 @@ internal class NapCatFiles(paths: RuntimePaths) {
     /** NapCat 写出的 QQ 登录二维码，换码时会被覆盖。 */
     val qrCodeFile: File = File(napCatDir, "cache/qrcode.png")
 
+    /** 第一次安装时生成的 OneBot 访问 token，重装沿用；宿主侧写适配器配置时从这里读。 */
+    val oneBotTokenFile: File = File(paths.rootfsDir, "root/.maidroid/napcat_token")
+
     /** 安装脚本最后一步写的完成标记。 */
     val readyMarker: File = File(paths.rootfsDir, "root/.maidroid/napcat_ready")
 
     /** 启动 Xvfb 和 LinuxQQ 的脚本，每次启动前由 NapCatScripts.prepareRuntime 重新生成。 */
     val launcher: File = File(paths.rootfsDir, "root/launcher.sh")
 
-    /** MaiBot 侧的 NapCat 适配器插件配置，里面写着连 OneBot 用的端口和 token。 */
+    /** MaiBot 侧的 NapCat 适配器插件配置，里面写着连 OneBot 用的端口和 token，由 NapCatAdapterConfig 改写。 */
     val maiBotAdapterConfig: File = File(paths.maiBotPluginsDir, "MaiBot-Napcat-Adapter/config.toml")
 
     /** QQ 本地登录数据目录，读不到 OneBot 配置时从这里的子目录名推断 QQ 号。 */

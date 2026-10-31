@@ -79,12 +79,12 @@ flowchart TB
 | `terminal` | 全应用共享的终端输出 | `TerminalLog` |
 | `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
 | `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包、容器 DNS | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`ContainerSetupScripts`、`ContainerDns` |
-| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管与启动判断、协议 hash、插件查找 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotStartup`、`MaiBotAgreement`、`MaiBotPlugins` |
+| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管与启动判断、协议 hash、插件查找、插件 config.toml 逐行读写 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotStartup`、`MaiBotAgreement`、`MaiBotPlugins`、`PluginConfigToml` |
 | `maibot.update` | MaiBot 在线更新 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
-| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh` |
+| `platform.napcat` | QQ（NapCat）接入 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatAdapterConfig`、`NapCatQrCodeRefresh` |
 | `platform.qqofficial` | QQ 官方机器人接入 | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
 | `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、网页选文件 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiFileChooser`、`WebUiResponseRewriter`、`WebUiInjectedScripts` |
 | `ui` | 根界面 | `MaiDroidApp` |

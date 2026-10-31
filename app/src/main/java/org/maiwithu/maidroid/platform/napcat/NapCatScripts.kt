@@ -15,8 +15,10 @@ internal object NapCatScripts {
 
     /**
      * 首次安装：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
-     * 克隆 MaiBot 的 NapCat 适配器插件并写好连接配置 -> 打 napcat_ready 标记 -> 生成 launcher.sh。
+     * 克隆 MaiBot 的 NapCat 适配器插件 -> 打 napcat_ready 标记 -> 生成 launcher.sh。
      * token 只在第一次安装时生成，之后重装沿用容器里已保存的那份，避免 MaiBot 适配器配置失配。
+     * 适配器的 config.toml 不在这里写：脚本跑完后由 NapCatPlatformManager 在宿主侧按 NapCatAdapterConfig 改写，
+     * 这样重装时能保留用户在 WebUI 里改过的配置。
      */
     fun install(token: String): ContainerScript = ContainerScript(
         body = listOf(
@@ -119,8 +121,8 @@ internal object NapCatScripts {
               {
                 "name": "WsServer",
                 "enable": true,
-                "host": "127.0.0.1",
-                "port": 8095,
+                "host": "${NapCatAdapterConfig.ONE_BOT_HOST}",
+                "port": ${NapCatAdapterConfig.ONE_BOT_PORT},
                 "reportSelfMessage": false,
                 "enableForcePushEvent": true,
                 "messagePostFormat": "array",
@@ -137,7 +139,7 @@ internal object NapCatScripts {
         }
         EOF
 
-        maidroid_progress 0.88 "Install and configure MaiBot NapCat adapter"
+        maidroid_progress 0.88 "Install MaiBot NapCat adapter"
         INSTALL_DIR=${shellQuote(InContainerPaths.MAIBOT_DIR)}
         ADAPTER_DIR="${'$'}INSTALL_DIR/plugins/MaiBot-Napcat-Adapter"
         if [ -d "${'$'}INSTALL_DIR" ]; then
@@ -146,21 +148,8 @@ internal object NapCatScripts {
                 # 适配器仓库现在在 Mai-with-u 组织下，直接用现名克隆，不再依赖旧组织名的自动跳转。
                 git clone --depth=1 --branch main https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git "${'$'}ADAPTER_DIR"
             fi
-            cat > "${'$'}ADAPTER_DIR/config.toml" <<EOF
-        [plugin]
-        enabled = true
-        config_version = "0.1.0"
-
-        [napcat_server]
-        host = "127.0.0.1"
-        port = 8095
-        token = "${'$'}napcat_token"
-        heartbeat_interval = 30.0
-        reconnect_delay_sec = 5.0
-        action_timeout_sec = 15.0
-        EOF
         else
-            printf "[NapCat] MaiBot directory does not exist, skip adapter config: %s\n" "${'$'}INSTALL_DIR"
+            printf "[NapCat] MaiBot directory does not exist, skip adapter install: %s\n" "${'$'}INSTALL_DIR"
         fi
 
         maidroid_progress 0.96 "Record NapCat install state"

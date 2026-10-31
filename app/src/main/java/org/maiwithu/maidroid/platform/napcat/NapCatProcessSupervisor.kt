@@ -45,7 +45,8 @@ internal class NapCatProcessSupervisor(
 
     /**
      * 没装 NapCat 或已在运行时什么也不做。否则在后台：
-     * 清理残留进程 -> 重新生成 launcher.sh -> 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
+     * 补齐适配器的聊天名单模式 -> 清理残留进程 -> 重新生成 launcher.sh ->
+     * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
      */
     fun start() {
         synchronized(lock) {
@@ -76,6 +77,7 @@ internal class NapCatProcessSupervisor(
     }
 
     private suspend fun runOnce() {
+        ensureAdapterChatLists()
         runMaintenance(NapCatScripts.cleanup())
         runMaintenance(NapCatScripts.prepareRuntime())
 
@@ -100,6 +102,22 @@ internal class NapCatProcessSupervisor(
             TerminalLog.append("[NapCat] 启动异常: ${e.message.orEmpty()}")
         } finally {
             process = null
+        }
+    }
+
+    /**
+     * 旧版本 MaiDroid 写的适配器配置没有聊天名单模式，适配器按默认的空白名单把所有 QQ 消息丢掉；
+     * 每次启动 NapCat 前检查一次，缺了就补成全部接收。MaiBot 监听插件配置文件，改完会热重载，不用重启。
+     * 用户在 WebUI 里已经选过名单模式的不动；失败只记一行日志，不影响 NapCat 启动。
+     */
+    private fun ensureAdapterChatLists() {
+        runCatching {
+            if (!files.maiBotAdapterConfig.isFile) return
+            if (rewriteAdapterConfig(files.maiBotAdapterConfig) { NapCatAdapterConfig.withOpenChatLists(it.orEmpty()) }) {
+                TerminalLog.append("[NapCat] 适配器聊天名单已改为全部接收（黑名单模式），可在 WebUI 的插件配置里调整")
+            }
+        }.onFailure { error ->
+            TerminalLog.append("[NapCat] 补全适配器聊天名单失败: ${error.message.orEmpty()}")
         }
     }
 

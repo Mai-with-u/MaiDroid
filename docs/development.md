@@ -45,6 +45,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `maibot/PluginDirLookupTest` | 按清单 ID 找插件目录（插件市场副本、临时目录、保留目录） |
 | `maibot/update/MaiBotUpdateReportTest` | 在线更新脚本输出的解析 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
+| `platform/napcat/NapCatAdapterConfigTest` | 适配器 config.toml 改写：连接项、补聊天名单模式、保留用户配置 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |

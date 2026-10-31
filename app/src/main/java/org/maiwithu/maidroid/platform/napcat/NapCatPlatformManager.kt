@@ -162,7 +162,7 @@ internal class NapCatPlatformManager(
     /**
      * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就只重启运行时；否则在后台：
      * 检查容器和 MaiBot 源码 -> 跑安装脚本（进度文件每 500 毫秒同步到进度环）->
-     * 装好后经前台服务启动 NapCat 并重启 MaiBot 加载适配器。
+     * 宿主侧写适配器配置（连接项 + 放开的聊天名单）-> 装好后经前台服务启动 NapCat 并重启 MaiBot 加载适配器。
      */
     fun installNapCat() {
         if (installJob?.isActive == true) return
@@ -207,7 +207,17 @@ internal class NapCatPlatformManager(
             progressJob?.cancel()
             progressJob = null
 
-            if (result.success && files.isInstalled()) {
+            if (!result.success) {
+                fail(result.summary())
+                return@launch
+            }
+            val configError = writeAdapterConfig()
+            if (configError != null) {
+                fail("写入 NapCat 适配器配置失败：$configError")
+                return@launch
+            }
+
+            if (files.isInstalled()) {
                 val snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = false) }
                 _state.update {
                     it.copy(
@@ -226,6 +236,15 @@ internal class NapCatPlatformManager(
                 fail(result.summary())
             }
         }
+    }
+
+    // 安装脚本跑完后写适配器配置：token 用脚本保存（或沿用）的那份，已有配置时只改连接项、补名单模式，保留用户改过的其余配置。
+    private suspend fun writeAdapterConfig(): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val token = files.oneBotTokenFile.takeIf { it.isFile }?.readText()?.trim()
+            check(!token.isNullOrEmpty()) { "找不到 OneBot token" }
+            rewriteAdapterConfig(files.maiBotAdapterConfig) { existing -> NapCatAdapterConfig.write(existing, token) }
+        }.exceptionOrNull()?.let { it.message.orEmpty().ifBlank { it.javaClass.simpleName } }
     }
 
     // NapCat 装好或已存在时，经前台服务重启运行时：NapCat 若未运行会被拉起，MaiBot 重启后加载适配器。
