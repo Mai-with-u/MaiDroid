@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -34,9 +37,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,20 +63,78 @@ private val WakeMutedBlue = Color(0xFF788CA0)
 private val WakeOnline = Color(0xFF64C88C)
 private val WakeOffline = Color(0xFFE8A064)
 
+// 横屏版式的参照画幅：竖屏设计稿转 90°，横屏时所有元素按它统一缩放，不再横竖分开拉伸。
+private const val LandscapeFrameWidthDp = 917f
+private const val LandscapeFrameHeightDp = 412f
+
+// 插画原图的宽高比（home_background.png 是 623×800 的竖幅，边缘带故障风透明锯齿）。
+private const val WakeArtAspectRatio = 623f / 800f
+
 /**
- * 设计稿坐标到实际尺寸的换算：横向按宽度比例、纵向按高度比例，文字和描边按两者中较小的比例，
- * 这样不同长宽比的屏幕上插画不变形、文字不溢出。
+ * 设计稿坐标到实际尺寸的换算：横向按 scaleX、纵向按 scaleY，文字和描边按两者中较小的比例。
+ * x/y 换算尺寸（宽、高），px/py 换算位置：位置再加上 origin，横屏时用来把一组元素整体挪到屏幕的某个角。
+ * 竖屏 origin 为 0，和原来的绝对坐标完全一样。
  */
-private class DesignScale(val scaleX: Float, val scaleY: Float) {
+private class DesignScale(
+    val scaleX: Float,
+    val scaleY: Float,
+    val originX: Dp = 0.dp,
+    val originY: Dp = 0.dp
+) {
     val textScale: Float = minOf(scaleX, scaleY)
     fun x(value: Float): Dp = (value * scaleX).dp
     fun y(value: Float): Dp = (value * scaleY).dp
+    fun px(value: Float): Dp = originX + x(value)
+    fun py(value: Float): Dp = originY + y(value)
     fun sp(value: Float): TextUnit = (value * textScale).sp
+}
+
+/**
+ * 唤醒页各组元素的换算方式。竖屏四组都是同一个按设计稿拉伸的换算；
+ * 横屏时统一按 scale 缩放，再分别挪到左上（标题标签）、右上（版本与状态）、右下（遥测字样）、左下（标题与进度条）。
+ */
+private class WakeLayout(
+    val landscape: Boolean,
+    val scale: Float,
+    val headerLeft: DesignScale,
+    val headerRight: DesignScale,
+    val telemetry: DesignScale,
+    val titleBlock: DesignScale
+)
+
+/**
+ * 竖屏：沿用设计稿的绝对坐标，横纵分别按屏幕宽高比例拉伸。
+ * 横屏：按 917×412 的横向画幅统一缩放；左右各让出挖孔安全区（横屏时挖孔转到侧边）。
+ * 标题区设计稿里占 x 38~374、y 588~782，横屏时整块放到左下角，底边离屏幕底 28 个设计单位。
+ */
+private fun wakeLayout(width: Dp, height: Dp, safeLeft: Dp, safeRight: Dp): WakeLayout {
+    if (width <= height) {
+        val design = DesignScale(
+            scaleX = width.value / DesignFrameWidthDp,
+            scaleY = height.value / DesignFrameHeightDp
+        )
+        return WakeLayout(false, design.textScale, design, design, design, design)
+    }
+
+    val s = minOf(width.value / LandscapeFrameWidthDp, height.value / LandscapeFrameHeightDp)
+    fun scaled(originX: Dp, originY: Dp) = DesignScale(s, s, originX, originY)
+    val right = width - safeRight
+    return WakeLayout(
+        landscape = true,
+        scale = s,
+        headerLeft = scaled(safeLeft, 0.dp),
+        // 设计稿右侧标签的右边缘在 x=378（离右边 34），横屏时贴着安全区右边缘同样留 34。
+        headerRight = scaled(right - (DesignFrameWidthDp * s).dp, 0.dp),
+        // 遥测字样（设计稿 x=16.8、y=352.7）挪到右下角，压在插画上，离右边和底边各 34、52。
+        telemetry = scaled(right - ((34f + 180f + 16.8f) * s).dp, height - ((52f + 352.7f) * s).dp),
+        titleBlock = scaled(safeLeft + (10f * s).dp, height - ((28f + 782f) * s).dp)
+    )
 }
 
 /**
  * 主页的“唤醒麦麦”页：OOBE 完成后、WebUI 还没起来时显示。
  * 每 30 秒（WakeRetryIntervalMillis）自动唤醒一次 MaiBot，进度条在这段时间内从左走到右；WebUI 一上线就切到主页。
+ * 竖屏按设计稿铺满；横屏时插画竖着放在右侧，标题和进度条在左下，元素等比缩放、不横向拉伸。
  */
 @Composable
 internal fun WakeMaiPage(
@@ -84,11 +148,12 @@ internal fun WakeMaiPage(
             .fillMaxSize()
             .background(WakeBackground)
     ) {
-        val scale = DesignScale(
-            scaleX = maxWidth.value / DesignFrameWidthDp,
-            scaleY = maxHeight.value / DesignFrameHeightDp
-        )
-        val textScale = scale.textScale
+        val density = LocalDensity.current
+        val layoutDirection = LocalLayoutDirection.current
+        val safeLeft = with(density) { WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp() }
+        val safeRight = with(density) { WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp() }
+        val layout = wakeLayout(maxWidth, maxHeight, safeLeft, safeRight)
+        val portrait = layout.titleBlock
         val wakeProgress = remember { Animatable(if (webUiOnline) 1f else 0f) }
 
         LaunchedEffect(wakeCycle, webUiOnline) {
@@ -106,21 +171,36 @@ internal fun WakeMaiPage(
             }
         }
 
-        Image(
-            painter = painterResource(R.drawable.home_background),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .offset(x = scale.x(0f), y = scale.y(-4f))
-                .width(scale.x(600f))
-                .height(scale.y(789f))
-                .graphicsLayer { alpha = 0.5f }
-        )
+        if (layout.landscape) {
+            // 横屏：整幅插画竖着贴右侧，透明锯齿边缘直接融进深色背景。
+            Image(
+                painter = painterResource(R.drawable.home_background),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = safeRight + (24f * layout.scale).dp)
+                    .fillMaxHeight()
+                    .aspectRatio(WakeArtAspectRatio)
+                    .graphicsLayer { alpha = 0.5f }
+            )
+        } else {
+            Image(
+                painter = painterResource(R.drawable.home_background),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .offset(x = portrait.x(0f), y = portrait.y(-4f))
+                    .width(portrait.x(600f))
+                    .height(portrait.y(789f))
+                    .graphicsLayer { alpha = 0.5f }
+            )
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(scale.y(156.75f))
+                .height(if (layout.landscape) (156.75f * layout.scale).dp else portrait.y(156.75f))
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -135,7 +215,7 @@ internal fun WakeMaiPage(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(scale.y(384.04f))
+                .height(if (layout.landscape) maxHeight * 0.55f else portrait.y(384.04f))
                 .background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
@@ -148,145 +228,187 @@ internal fun WakeMaiPage(
                 )
         )
 
-        HudOverlay(modifier = Modifier.fillMaxSize())
+        if (layout.landscape) {
+            LandscapeHudOverlay(
+                scale = layout.scale,
+                safeLeft = safeLeft,
+                safeRight = safeRight,
+                titleTop = layout.titleBlock.py(588f),
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            HudOverlay(modifier = Modifier.fillMaxSize())
+        }
 
         HeaderLabels(
             webUiOnline = webUiOnline,
             versionName = versionName,
-            scale = scale
+            leftScale = layout.headerLeft,
+            rightScale = layout.headerRight
         )
 
-        BootTelemetry(
-            scale = scale
-        )
+        BootTelemetry(scale = layout.telemetry)
 
-        Text(
-            text = "麦麦Bot",
-            color = TextPrimary,
-            fontSize = scale.sp(48f),
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = scale.sp(4f),
-            lineHeight = scale.sp(52f),
-            modifier = Modifier
-                .offset(x = scale.x(40f), y = scale.y(588f))
-                .width(scale.x(220f))
-        )
-
-        Text(
-            text = "MaiSaka × MaiDroid",
-            color = WakeOrange.copy(alpha = 0.85f),
-            fontSize = scale.sp(16f),
-            fontWeight = FontWeight.Bold,
-            letterSpacing = scale.sp(6f),
-            lineHeight = scale.sp(20f),
-            modifier = Modifier
-                .offset(x = scale.x(39f), y = scale.y(643f))
-                .width(scale.x(315f))
-        )
-
-        Box(
-            modifier = Modifier
-                .offset(x = scale.x(39f), y = scale.y(667f))
-                .width(scale.x(303f))
-                .height(scale.y(3f))
-                .background(WakeOrange.copy(alpha = 0.25f))
-        )
-
-        Text(
-            text = "一个正在努力成为人类的BOT。",
-            color = Color(0xFFB4C3D7).copy(alpha = 0.7f),
-            fontSize = scale.sp(12f),
-            fontWeight = FontWeight.Bold,
-            letterSpacing = scale.sp(1f),
-            lineHeight = scale.sp(16f),
-            modifier = Modifier
-                .offset(x = scale.x(40f), y = scale.y(679f))
-                .width(scale.x(240f))
-        )
-
-        WakeProgressBar(
-            progress = wakeProgress.value,
+        WakeTitleBlock(
             webUiOnline = webUiOnline,
-            modifier = Modifier
-                .offset(x = scale.x(38f), y = scale.y(706f))
-                .width(scale.x(335.7f))
-                .height(scale.y(59.6f)),
-            textScale = textScale
+            progress = wakeProgress.value,
+            scale = layout.titleBlock
         )
 
-        Text(
-            text = if (webUiOnline) {
-                "MAIBOT READY  //  ENTERING WEBUI"
-            } else {
-                "WEBUI OFFLINE  //  AUTO WAKE"
-            },
-            color = Color(0xFF96A5B9).copy(alpha = 0.4f),
-            fontSize = scale.sp(7.05f),
-            letterSpacing = scale.sp(2f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = scale.y(118f))
-                .width(scale.x(335.7f))
-        )
+        val footerText = if (webUiOnline) {
+            "MAIBOT READY  //  ENTERING WEBUI"
+        } else {
+            "WEBUI OFFLINE  //  AUTO WAKE"
+        }
+        val footerColor = Color(0xFF96A5B9).copy(alpha = 0.4f)
+        if (layout.landscape) {
+            // 横屏放在进度条正下方，和进度条同宽居中。
+            val title = layout.titleBlock
+            Text(
+                text = footerText,
+                color = footerColor,
+                fontSize = title.sp(7.05f),
+                letterSpacing = title.sp(2f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .offset(x = title.px(38f), y = title.py(772f))
+                    .width(title.x(335.7f))
+            )
+        } else {
+            Text(
+                text = footerText,
+                color = footerColor,
+                fontSize = portrait.sp(7.05f),
+                letterSpacing = portrait.sp(2f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = portrait.y(118f))
+                    .width(portrait.x(335.7f))
+            )
+        }
     }
 }
+
+/** 左下的标题区：“麦麦Bot”、副标题、分隔线、标语和唤醒进度条，坐标都是设计稿里的位置。 */
+@Composable
+private fun WakeTitleBlock(
+    webUiOnline: Boolean,
+    progress: Float,
+    scale: DesignScale
+) {
+    Text(
+        text = "麦麦Bot",
+        color = TextPrimary,
+        fontSize = scale.sp(48f),
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = scale.sp(4f),
+        lineHeight = scale.sp(52f),
+        modifier = Modifier
+            .offset(x = scale.px(40f), y = scale.py(588f))
+            .width(scale.x(220f))
+    )
+
+    Text(
+        text = "MaiSaka × MaiDroid",
+        color = WakeOrange.copy(alpha = 0.85f),
+        fontSize = scale.sp(16f),
+        fontWeight = FontWeight.Bold,
+        letterSpacing = scale.sp(6f),
+        lineHeight = scale.sp(20f),
+        modifier = Modifier
+            .offset(x = scale.px(39f), y = scale.py(643f))
+            .width(scale.x(315f))
+    )
+
+    Box(
+        modifier = Modifier
+            .offset(x = scale.px(39f), y = scale.py(667f))
+            .width(scale.x(303f))
+            .height(scale.y(3f))
+            .background(WakeOrange.copy(alpha = 0.25f))
+    )
+
+    Text(
+        text = "一个正在努力成为人类的BOT。",
+        color = Color(0xFFB4C3D7).copy(alpha = 0.7f),
+        fontSize = scale.sp(12f),
+        fontWeight = FontWeight.Bold,
+        letterSpacing = scale.sp(1f),
+        lineHeight = scale.sp(16f),
+        modifier = Modifier
+            .offset(x = scale.px(40f), y = scale.py(679f))
+            .width(scale.x(240f))
+    )
+
+    WakeProgressBar(
+        progress = progress,
+        webUiOnline = webUiOnline,
+        modifier = Modifier
+            .offset(x = scale.px(38f), y = scale.py(706f))
+            .width(scale.x(335.7f))
+            .height(scale.y(59.6f)),
+        textScale = scale.textScale
+    )
+}
+
 @Composable
 private fun HeaderLabels(
     webUiOnline: Boolean,
     versionName: String,
-    scale: DesignScale
+    leftScale: DesignScale,
+    rightScale: DesignScale
 ) {
 
     Text(
         text = "MAISAKA",
         color = WakeOrange.copy(alpha = 0.9f),
-        fontSize = scale.sp(8.62f),
-        letterSpacing = scale.sp(4f),
+        fontSize = leftScale.sp(8.62f),
+        letterSpacing = leftScale.sp(4f),
         modifier = Modifier
-            .offset(x = scale.x(31f), y = scale.y(44f))
-            .width(scale.x(90f))
+            .offset(x = leftScale.px(31f), y = leftScale.py(44f))
+            .width(leftScale.x(90f))
     )
 
     Text(
         text = "牢麦待机中",
         color = WakeTextBlue.copy(alpha = 0.7f),
-        fontSize = scale.sp(7.05f),
-        letterSpacing = scale.sp(1.5f),
+        fontSize = leftScale.sp(7.05f),
+        letterSpacing = leftScale.sp(1.5f),
         modifier = Modifier
-            .offset(x = scale.x(31f), y = scale.y(58f))
-            .width(scale.x(96f))
+            .offset(x = leftScale.px(31f), y = leftScale.py(58f))
+            .width(leftScale.x(96f))
     )
 
     Text(
         text = "v$versionName",
         color = WakeMutedBlue.copy(alpha = 0.6f),
-        fontSize = scale.sp(7.84f),
+        fontSize = rightScale.sp(7.84f),
         textAlign = TextAlign.End,
         modifier = Modifier
-            .offset(x = scale.x(320f), y = scale.y(45f))
-            .width(scale.x(58f))
+            .offset(x = rightScale.px(320f), y = rightScale.py(45f))
+            .width(rightScale.x(58f))
     )
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End,
         modifier = Modifier
-            .offset(x = scale.x(300f), y = scale.y(56f))
-            .width(scale.x(78f))
+            .offset(x = rightScale.px(300f), y = rightScale.py(56f))
+            .width(rightScale.x(78f))
     ) {
         Box(
             modifier = Modifier
-                .size(scale.x(3.9f))
+                .size(rightScale.x(3.9f))
                 .clip(CircleShape)
                 .background(if (webUiOnline) WakeOnline else WakeOffline)
         )
-        Spacer(modifier = Modifier.width(scale.x(4f)))
+        Spacer(modifier = Modifier.width(rightScale.x(4f)))
         Text(
             text = if (webUiOnline) "ONLINE" else "OFFLINE",
             color = if (webUiOnline) WakeOnline.copy(alpha = 0.8f) else WakeOffline.copy(alpha = 0.82f),
-            fontSize = scale.sp(7.05f),
-            letterSpacing = scale.sp(2f)
+            fontSize = rightScale.sp(7.05f),
+            letterSpacing = rightScale.sp(2f)
         )
     }
 }
@@ -302,7 +424,7 @@ private fun BootTelemetry(
         fontSize = scale.sp(6.27f),
         letterSpacing = scale.sp(1f),
         modifier = Modifier
-            .offset(x = scale.x(16.8f), y = scale.y(352.7f))
+            .offset(x = scale.px(16.8f), y = scale.py(352.7f))
             .width(scale.x(124f))
     )
 
@@ -312,7 +434,7 @@ private fun BootTelemetry(
         fontSize = scale.sp(6.27f),
         letterSpacing = scale.sp(1.5f),
         modifier = Modifier
-            .offset(x = scale.x(16.8f), y = scale.y(362.1f))
+            .offset(x = scale.px(16.8f), y = scale.py(362.1f))
             .width(scale.x(180f))
     )
 }
@@ -386,6 +508,32 @@ private val WakeButtonShape = GenericShape { size, _ ->
     close()
 }
 
+/** 菱形装饰：中心 (centerX, centerY)、半条对角线 halfDiagonal 都是像素；fillAlpha 大于 0 时先填色再描边。 */
+private fun DrawScope.hudDiamond(
+    centerX: Float,
+    centerY: Float,
+    halfDiagonal: Float,
+    alpha: Float,
+    strokeWidth: Float,
+    fillAlpha: Float = 0f
+) {
+    val path = Path().apply {
+        moveTo(centerX, centerY - halfDiagonal)
+        lineTo(centerX + halfDiagonal, centerY)
+        lineTo(centerX, centerY + halfDiagonal)
+        lineTo(centerX - halfDiagonal, centerY)
+        close()
+    }
+    if (fillAlpha > 0f) {
+        drawPath(path = path, color = WakeOrange.copy(alpha = fillAlpha))
+    }
+    drawPath(
+        path = path,
+        color = WakeOrange.copy(alpha = alpha),
+        style = Stroke(width = strokeWidth)
+    )
+}
+
 @Composable
 private fun HudOverlay(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
@@ -421,23 +569,13 @@ private fun HudOverlay(modifier: Modifier = Modifier) {
             fillAlpha: Float = 0f,
             width: Float = 1f
         ) {
-            val cx = x(left + side / 2f)
-            val cy = y(top + side / 2f)
-            val half = side * 0.36f * scale
-            val path = Path().apply {
-                moveTo(cx, cy - half)
-                lineTo(cx + half, cy)
-                lineTo(cx, cy + half)
-                lineTo(cx - half, cy)
-                close()
-            }
-            if (fillAlpha > 0f) {
-                drawPath(path = path, color = WakeOrange.copy(alpha = fillAlpha))
-            }
-            drawPath(
-                path = path,
-                color = WakeOrange.copy(alpha = alpha),
-                style = Stroke(width = stroke(width))
+            hudDiamond(
+                centerX = x(left + side / 2f),
+                centerY = y(top + side / 2f),
+                halfDiagonal = side * 0.36f * scale,
+                alpha = alpha,
+                strokeWidth = stroke(width),
+                fillAlpha = fillAlpha
             )
         }
 
@@ -467,5 +605,81 @@ private fun HudOverlay(modifier: Modifier = Modifier) {
         diamond(61.04f, 465.94f, 8.75f, 0.3f)
         diamond(19.07f, 574.76f, 19.69f, 0.9f, fillAlpha = 0.25f, width = 2f)
         diamond(383.01f, 26.74f, 6.56f, 0.5f, fillAlpha = 0.5f, width = 0f)
+    }
+}
+
+/**
+ * 横屏的 HUD 线框：和竖屏同一套元素（四角折线、标题下的横线、两侧竖线、淡横纹、菱形），
+ * 但长度和粗细统一按 scale，位置贴着安全区内的四边和四角，不随屏幕宽高比拉长或压扁。
+ * 最显眼的实心菱形放在左下标题“麦麦Bot”的左上方，对应竖屏里它和标题的相对位置。
+ */
+@Composable
+private fun LandscapeHudOverlay(
+    scale: Float,
+    safeLeft: Dp,
+    safeRight: Dp,
+    titleTop: Dp,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val unit = scale * density
+        val left = safeLeft.toPx()
+        val right = size.width - safeRight.toPx()
+        val bottom = size.height
+        val titleTopPx = titleTop.toPx()
+        fun u(value: Float) = value * unit
+        fun stroke(value: Float) = (value * unit).coerceAtLeast(1f)
+
+        fun line(start: Offset, end: Offset, alpha: Float, color: Color = WakeOrange, width: Float = 0.78f) {
+            drawLine(
+                color = color.copy(alpha = alpha),
+                start = start,
+                end = end,
+                strokeWidth = stroke(width)
+            )
+        }
+
+        fun diamond(centerX: Float, centerY: Float, side: Float, alpha: Float, fillAlpha: Float = 0f, width: Float = 1f) {
+            hudDiamond(
+                centerX = centerX,
+                centerY = centerY,
+                halfDiagonal = u(side * 0.36f),
+                alpha = alpha,
+                strokeWidth = stroke(width),
+                fillAlpha = fillAlpha
+            )
+        }
+
+        // 四角折线
+        val inset = u(16.8f)
+        val top = u(17.24f)
+        val arm = u(18.3f)
+        line(Offset(left + inset, top), Offset(left + inset + arm, top), 0.6f)
+        line(Offset(left + inset, top), Offset(left + inset, top + arm), 0.6f)
+        line(Offset(right - inset - arm, top), Offset(right - inset, top), 0.6f)
+        line(Offset(right - inset, top), Offset(right - inset, top + arm), 0.6f)
+        val cornerBottom = bottom - u(18f)
+        line(Offset(left + inset, cornerBottom), Offset(left + inset + arm, cornerBottom), 0.45f)
+        line(Offset(left + inset, cornerBottom - arm), Offset(left + inset, cornerBottom), 0.45f)
+        line(Offset(right - inset - arm, cornerBottom), Offset(right - inset, cornerBottom), 0.45f)
+        line(Offset(right - inset, cornerBottom - arm), Offset(right - inset, cornerBottom), 0.45f)
+
+        // 标题标签下的横线、两侧竖线、几道很淡的横纹
+        line(Offset(left + u(31f), u(72f)), Offset(right - u(31f), u(72f)), 0.3f)
+        line(Offset(left + inset, u(110f)), Offset(left + inset, titleTopPx - u(40f)), 0.2f)
+        line(Offset(right - inset, u(125f)), Offset(right - inset, bottom - u(110f)), 0.15f, Color(0xFFC8C8DC))
+        listOf(0.34f, 0.38f, 0.45f, 0.49f).forEach { fraction ->
+            val y = size.height * fraction
+            line(Offset(0f, y), Offset(size.width, y), 0.04f, Color(0xFFB4C8DC))
+        }
+
+        // 菱形
+        diamond(left + u(157f), u(94f), 8.75f, 0.5f, width = 1.5f)
+        diamond(left + u(208.7f), u(86.3f), 5.47f, 0.25f)
+        diamond(right - u(57f), u(157f), 7.66f, 0.35f)
+        diamond(left + u(49.6f), u(150f), 15.31f, 0.55f, fillAlpha = 0.1f, width = 1.5f)
+        diamond(right - u(25f), size.height * 0.42f, 10.94f, 0.4f)
+        diamond(right - u(25.8f), u(30f), 6.56f, 0.5f, fillAlpha = 0.5f, width = 0f)
+        diamond(left + u(28.9f), titleTopPx - u(4f), 19.69f, 0.9f, fillAlpha = 0.25f, width = 2f)
     }
 }
