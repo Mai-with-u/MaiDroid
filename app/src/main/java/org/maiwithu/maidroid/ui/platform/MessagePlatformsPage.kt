@@ -155,7 +155,7 @@ internal fun filterPlatforms(
 /** 平台卡片和列表行上各个按钮的回调，三种排版共用，省得每一层都传一长串参数。 */
 private class PlatformActions(
     val onInstalledSettingsClick: (InstalledPlatform) -> Unit,
-    val onAdapterSelected: (AvailablePlatform, PlatformAdapter) -> Unit,
+    val onAccessMethodSelected: (AvailablePlatform, AccessMethod) -> Unit,
     val onNapCatInstall: () -> Unit,
     val onNapCatSettings: () -> Unit,
     val onQqOfficialSettings: () -> Unit,
@@ -186,7 +186,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     }
     BackHandler(enabled = searchOpen, onBack = closeSearch)
     // QQ 卡片默认选中最左边的官方机器人；用户切到 NapCat 等其他选项后，本次页面内记住所选。
-    var selectedAdapters by remember { mutableStateOf(mapOf("QQ" to PlatformAdapter.QqOfficial)) }
+    var selectedAccessMethods by remember { mutableStateOf(mapOf("QQ" to AccessMethod.QqOfficial)) }
     // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
     var showNapCatQrCode by rememberSaveable { mutableStateOf(false) }
     var showNapCatConfig by rememberSaveable { mutableStateOf(false) }
@@ -210,8 +210,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 }
             }
         },
-        onAdapterSelected = { platform, adapter ->
-            selectedAdapters = selectedAdapters + (platform.name to adapter)
+        onAccessMethodSelected = { platform, accessMethod ->
+            selectedAccessMethods = selectedAccessMethods + (platform.name to accessMethod)
         },
         onNapCatInstall = { napCatManager.installNapCat() },
         onNapCatSettings = {
@@ -315,10 +315,10 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     key(platform.name) {
                         PlatformRow(
                             platform = platform,
-                            selectedAdapter = selectedAdapters[platform.name] ?: platform.adapters.firstOrNull(),
+                            selectedAccessMethod = selectedAccessMethods[platform.name] ?: platform.accessMethods.firstOrNull(),
                             napCatState = napCatState,
                             qqOfficialState = qqOfficialState,
-                            onAdapterSelected = { adapter -> actions.onAdapterSelected(platform, adapter) },
+                            onAccessMethodSelected = { accessMethod -> actions.onAccessMethodSelected(platform, accessMethod) },
                             onNapCatInstall = actions.onNapCatInstall,
                             onNapCatSettings = actions.onNapCatSettings,
                             onQqOfficialSettings = actions.onQqOfficialSettings,
@@ -430,7 +430,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 
                         PlatformGrid(
                             platforms = visiblePlatforms,
-                            selectedAdapters = selectedAdapters,
+                            selectedAccessMethods = selectedAccessMethods,
                             napCatState = napCatState,
                             qqOfficialState = qqOfficialState,
                             actions = actions
@@ -511,7 +511,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 @Composable
 private fun PlatformGrid(
     platforms: List<AvailablePlatform>,
-    selectedAdapters: Map<String, PlatformAdapter>,
+    selectedAccessMethods: Map<String, AccessMethod>,
     napCatState: NapCatPlatformState,
     qqOfficialState: QqOfficialPlatformState,
     actions: PlatformActions
@@ -561,10 +561,10 @@ private fun PlatformGrid(
                 ) { platform ->
                     PlatformInstallCard(
                         platform = platform,
-                        selectedAdapter = selectedAdapters[platform.name] ?: platform.adapters.firstOrNull(),
+                        selectedAccessMethod = selectedAccessMethods[platform.name] ?: platform.accessMethods.firstOrNull(),
                         napCatState = napCatState,
                         qqOfficialState = qqOfficialState,
-                        onAdapterSelected = { adapter -> actions.onAdapterSelected(platform, adapter) },
+                        onAccessMethodSelected = { accessMethod -> actions.onAccessMethodSelected(platform, accessMethod) },
                         onNapCatInstall = actions.onNapCatInstall,
                         onNapCatSettings = actions.onNapCatSettings,
                         onQqOfficialSettings = actions.onQqOfficialSettings,

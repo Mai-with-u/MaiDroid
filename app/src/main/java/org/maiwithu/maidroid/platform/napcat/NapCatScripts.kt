@@ -16,7 +16,7 @@ internal object NapCatScripts {
      * 首次安装 NapCat 本体：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
      * 打 napcat_ready 标记 -> 生成 launcher.sh。
      * token 只在第一次安装时生成，之后重装沿用容器里已保存的那份，避免 MaiBot 适配器配置失配。
-     * MaiBot 侧的 QQ 适配器不在这里装：脚本跑完后由 NapCatAdapterInstaller 另外安装，配置等 MaiBot 生成后再迁移，
+     * MaiBot 侧的 SnowLuma 适配器不在这里装：脚本跑完后由 SnowLumaAdapterInstaller 另外安装，配置等 MaiBot 生成后再迁移，
      * 这样 NapCat 已装好、只缺适配器（老用户迁移）时不用再跑一遍 NapCat 安装器。
      */
     fun install(token: String): ContainerScript = ContainerScript(
@@ -120,8 +120,8 @@ internal object NapCatScripts {
               {
                 "name": "WsServer",
                 "enable": true,
-                "host": "${NapCatAdapterConfig.ONE_BOT_HOST}",
-                "port": ${NapCatAdapterConfig.ONE_BOT_PORT},
+                "host": "${SnowLumaAdapterConfig.ONE_BOT_HOST}",
+                "port": ${SnowLumaAdapterConfig.ONE_BOT_PORT},
                 "reportSelfMessage": false,
                 "enableForcePushEvent": true,
                 "messagePostFormat": "array",

@@ -9,11 +9,19 @@ import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextMuted
 
-/** 平台卡片下方选择器里的接入方式，label 是选择器上显示的文字。目前只有 QQ 有多种接入方式。 */
-internal enum class PlatformAdapter(val label: String) {
+/**
+ * 平台卡片下方选择器里的接入方式，label 是选择器上显示的文字。目前只有 QQ 有多种接入方式。
+ * 接入方式说的是“消息从哪条路进出 QQ”，和 MaiBot 的适配器插件不是一回事：每种接入方式各自用哪个适配器写在下面。
+ */
+internal enum class AccessMethod(val label: String) {
+    /** QQ 开放平台的官方机器人，MaiBot 侧用 MaiBot-QQ-Adapter 直连，代码在 platform/qqofficial。 */
     QqOfficial("官方机器人"),
+
+    /** 容器里跑 NapCat 登录个人 QQ，MaiBot 侧用 MaiBot-SnowLuma-Adapter 去连，代码在 platform/napcat。 */
     NapCat("NapCat"),
-    SnowLuma("SnowLuma")
+
+    /** 在手机上跑 SnowLuma 客户端代替 NapCat，还没适配，只是展示；和 NapCat 用的 SnowLuma 适配器不是一回事。 */
+    SnowLumaClient("SnowLuma")
 }
 
 // 已安装卡片点齿轮时按来源打开对应的配置弹窗。
@@ -40,9 +48,9 @@ internal data class AvailablePlatform(
     val description: String,
     val tags: List<String>,
     val badge: String? = null,
-    val adapters: List<PlatformAdapter> = emptyList(),
+    val accessMethods: List<AccessMethod> = emptyList(),
     // 选中某个适配器时卡片上的服务方说明换成这里的文字，没列出的适配器沿用 provider。
-    val adapterProviders: Map<PlatformAdapter, String> = emptyMap()
+    val accessMethodProviders: Map<AccessMethod, String> = emptyMap()
 )
 
 // 已安装平台只由 installedPlatformCards 按 NapCat 和 QQ 官方机器人的真实状态生成，
@@ -57,11 +65,11 @@ internal val AvailablePlatforms = listOf(
         description = "日常闲聊，水群必选平台",
         tags = listOf("国内", "常用"),
         badge = "最佳适配",
-        // 官方机器人放最左并默认选中（见 MessagePlatformsPage 的 selectedAdapters 初值）。
-        adapters = listOf(PlatformAdapter.QqOfficial, PlatformAdapter.NapCat, PlatformAdapter.SnowLuma),
-        adapterProviders = mapOf(
-            PlatformAdapter.NapCat to "将由 NapCat 提供服务",
-            PlatformAdapter.SnowLuma to "SnowLuma 暂未适配"
+        // 官方机器人放最左并默认选中（见 MessagePlatformsPage 的 selectedAccessMethods 初值）。
+        accessMethods = listOf(AccessMethod.QqOfficial, AccessMethod.NapCat, AccessMethod.SnowLumaClient),
+        accessMethodProviders = mapOf(
+            AccessMethod.NapCat to "将由 NapCat 提供服务",
+            AccessMethod.SnowLumaClient to "SnowLuma 暂未适配"
         )
     ),
     AvailablePlatform(

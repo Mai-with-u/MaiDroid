@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class NapCatAdapterConfigTest {
+class SnowLumaAdapterConfigTest {
     // MaiBot 按新适配器默认值生成的配置（节选）：默认关着、连 3001、没有 token
     private val generated = """
         [plugin]
@@ -70,14 +70,14 @@ class NapCatAdapterConfigTest {
 
     @Test
     fun `only configs written by MaiBot count as generated`() {
-        assertTrue(NapCatAdapterConfig.isGenerated(generated))
-        assertFalse(NapCatAdapterConfig.isGenerated("[plugin]\nenabled = true\n\n[client]\nport = 8095\n"))
-        assertFalse(NapCatAdapterConfig.isGenerated(""))
+        assertTrue(SnowLumaAdapterConfig.isGenerated(generated))
+        assertFalse(SnowLumaAdapterConfig.isGenerated("[plugin]\nenabled = true\n\n[client]\nport = 8095\n"))
+        assertFalse(SnowLumaAdapterConfig.isGenerated(""))
     }
 
     @Test
     fun `migration enables the adapter and points it at NapCat`() {
-        val migrated = NapCatAdapterConfig.migrate(generated, "tok", legacy = null)
+        val migrated = SnowLumaAdapterConfig.migrate(generated, "tok", legacy = null)
 
         assertEquals(
             generated
@@ -86,14 +86,14 @@ class NapCatAdapterConfigTest {
                 .replace("token = \"\"", "token = \"tok\""),
             migrated
         )
-        assertTrue(NapCatAdapterConfig.isMigrated(migrated, "tok"))
-        assertFalse(NapCatAdapterConfig.isMigrated(generated, "tok"))
-        assertFalse(NapCatAdapterConfig.isMigrated(migrated, "other"))
+        assertTrue(SnowLumaAdapterConfig.isMigrated(migrated, "tok"))
+        assertFalse(SnowLumaAdapterConfig.isMigrated(generated, "tok"))
+        assertFalse(SnowLumaAdapterConfig.isMigrated(migrated, "other"))
     }
 
     @Test
     fun `legacy settings with a counterpart are carried over`() {
-        val migrated = NapCatAdapterConfig.migrate(generated, "tok", legacy)
+        val migrated = SnowLumaAdapterConfig.migrate(generated, "tok", legacy)
 
         assertTrue(migrated.contains("[chat_abilities]\nenable_private_chat_tool = true\n"))
         assertTrue(migrated.contains("ban_user_id = [10001, 10002] # 广告号\nban_qq_bot = true\n"))
@@ -108,7 +108,7 @@ class NapCatAdapterConfigTest {
 
     @Test
     fun `multi-line legacy values are skipped instead of breaking the file`() {
-        val migrated = NapCatAdapterConfig.migrate(generated, "tok", legacy)
+        val migrated = SnowLumaAdapterConfig.migrate(generated, "tok", legacy)
 
         assertTrue(migrated.contains("regex_filter_patterns = []\n"))
         assertFalse(migrated.contains("\"^#\""))
@@ -116,9 +116,9 @@ class NapCatAdapterConfigTest {
 
     @Test
     fun `migrating an already migrated config changes nothing`() {
-        val migrated = NapCatAdapterConfig.migrate(generated, "tok", legacy)
+        val migrated = SnowLumaAdapterConfig.migrate(generated, "tok", legacy)
 
-        assertEquals(migrated, NapCatAdapterConfig.migrate(migrated, "tok", legacy = null))
+        assertEquals(migrated, SnowLumaAdapterConfig.migrate(migrated, "tok", legacy = null))
     }
 
     @Test
@@ -140,8 +140,8 @@ class NapCatAdapterConfigTest {
 
     @Test
     fun `install script clones the new adapter and removes the legacy one by manifest id`() {
-        val fresh = NapCatAdapterScripts.install(cloneAdapter = true).body
-        val existing = NapCatAdapterScripts.install(cloneAdapter = false).body
+        val fresh = SnowLumaAdapterScripts.install(cloneAdapter = true).body
+        val existing = SnowLumaAdapterScripts.install(cloneAdapter = false).body
 
         assertTrue(fresh.contains("maidroid_github_clone 'https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter.git'"))
         assertTrue(fresh.contains("'/opt/MaiBot/plugins/.MaiBot-SnowLuma-Adapter.tmp'"))

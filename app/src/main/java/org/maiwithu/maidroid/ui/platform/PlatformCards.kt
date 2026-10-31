@@ -269,18 +269,18 @@ private fun SmallTag(text: String) {
 @Composable
 internal fun PlatformInstallCard(
     platform: AvailablePlatform,
-    selectedAdapter: PlatformAdapter?,
+    selectedAccessMethod: AccessMethod?,
     napCatState: NapCatPlatformState,
     qqOfficialState: QqOfficialPlatformState,
-    onAdapterSelected: (PlatformAdapter) -> Unit,
+    onAccessMethodSelected: (AccessMethod) -> Unit,
     onNapCatInstall: () -> Unit,
     onNapCatSettings: () -> Unit,
     onQqOfficialSettings: () -> Unit,
     onUnsupportedInstall: () -> Unit
 ) {
-    val hasAdapters = platform.adapters.isNotEmpty()
+    val hasAccessMethods = platform.accessMethods.isNotEmpty()
     val installAction = platformInstallAction(
-        selectedAdapter = selectedAdapter,
+        selectedAccessMethod = selectedAccessMethod,
         napCatState = napCatState,
         qqOfficialState = qqOfficialState,
         onNapCatInstall = onNapCatInstall,
@@ -292,7 +292,7 @@ internal fun PlatformInstallCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (hasAdapters) 172.dp else 120.dp)
+            .height(if (hasAccessMethods) 172.dp else 120.dp)
             .clip(RoundedCornerShape(Corners.Card))
             .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
             .background(CardSurface)
@@ -333,7 +333,7 @@ internal fun PlatformInstallCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // 服务方说明跟着选择器走：选官方机器人时不再写“将由 NapCat 提供服务”。
-                val provider = platform.adapterProviders[selectedAdapter] ?: platform.provider
+                val provider = platform.accessMethodProviders[selectedAccessMethod] ?: platform.provider
                 Text(
                     text = "$provider\n${platform.description}",
                     color = TextFaint,
@@ -362,14 +362,14 @@ internal fun PlatformInstallCard(
                 .padding(top = 3.dp, end = 8.dp)
         )
 
-        if (hasAdapters) {
-            AdapterSelector(
-                adapters = platform.adapters,
-                selectedAdapter = selectedAdapter,
-                onAdapterSelected = onAdapterSelected,
+        if (hasAccessMethods) {
+            AccessMethodSelector(
+                accessMethods = platform.accessMethods,
+                selectedAccessMethod = selectedAccessMethod,
+                onAccessMethodSelected = onAccessMethodSelected,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .width(adapterSelectorWidth(platform.adapters.size))
+                    .width(accessMethodSelectorWidth(platform.accessMethods.size))
                     .height(42.dp)
             )
         }
@@ -396,7 +396,7 @@ internal class PlatformInstallAction(
  * 其他没适配的选项 -> 提示暂未适配。
  */
 internal fun platformInstallAction(
-    selectedAdapter: PlatformAdapter?,
+    selectedAccessMethod: AccessMethod?,
     napCatState: NapCatPlatformState,
     qqOfficialState: QqOfficialPlatformState,
     onNapCatInstall: () -> Unit,
@@ -404,8 +404,8 @@ internal fun platformInstallAction(
     onQqOfficialSettings: () -> Unit,
     onUnsupportedInstall: () -> Unit
 ): PlatformInstallAction {
-    val isNapCatTarget = selectedAdapter == PlatformAdapter.NapCat
-    val isQqOfficialTarget = selectedAdapter == PlatformAdapter.QqOfficial
+    val isNapCatTarget = selectedAccessMethod == AccessMethod.NapCat
+    val isQqOfficialTarget = selectedAccessMethod == AccessMethod.QqOfficial
     val state = when {
         isNapCatTarget -> InstallButtonState(
             installing = napCatState.isInstalling,

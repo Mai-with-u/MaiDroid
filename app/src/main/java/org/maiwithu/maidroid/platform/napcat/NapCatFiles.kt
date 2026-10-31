@@ -30,23 +30,23 @@ internal class NapCatFiles(paths: RuntimePaths) {
     /** 启动 Xvfb 和 LinuxQQ 的脚本，每次启动前由 NapCatScripts.prepareRuntime 重新生成。 */
     val launcher: File = File(paths.rootfsDir, "root/launcher.sh")
 
-    /** MaiBot 的 pyproject.toml，读主程序版本判断能不能装 QQ 适配器。 */
+    /** MaiBot 的 pyproject.toml，读主程序版本判断能不能装 SnowLuma 适配器。 */
     val maiBotPyproject: File = paths.maiBotPyproject
 
     /**
-     * MaiBot 侧的 QQ 适配器插件（NapCatAdapterScripts）：和 MaiBot 一样按清单 ID 找，
+     * MaiBot 侧的 SnowLuma 适配器插件（SnowLumaAdapterScripts）：和 MaiBot 一样按清单 ID 找，
      * 用户也可能从 MaiBot WebUI 的插件市场装过，只认固定目录名会再装一份、同一插件 ID 出现两份会冲突。
      */
     fun adapterDir(): File? =
-        findPluginDirById(maiBotPluginsDir, NapCatAdapterScripts.PLUGIN_ID, NapCatAdapterScripts.DIR_NAME)
+        findPluginDirById(maiBotPluginsDir, SnowLumaAdapterScripts.PLUGIN_ID, SnowLumaAdapterScripts.DIR_NAME)
 
     /** 已停更的旧适配器（MaiBot-Napcat-Adapter）还在就返回它的目录，迁移时要删掉。 */
     fun legacyAdapterDir(): File? =
-        findPluginDirById(maiBotPluginsDir, NapCatAdapterScripts.LEGACY_PLUGIN_ID, NapCatAdapterScripts.LEGACY_DIR_NAME)
+        findPluginDirById(maiBotPluginsDir, SnowLumaAdapterScripts.LEGACY_PLUGIN_ID, SnowLumaAdapterScripts.LEGACY_DIR_NAME)
 
-    /** QQ 适配器的配置，里面写着连 OneBot 用的端口和 token，由 NapCatAdapterConfig 改写；还没装时指向将要安装的位置。 */
+    /** SnowLuma 适配器的配置，里面写着连 OneBot 用的端口和 token，由 SnowLumaAdapterConfig 改写；还没装时指向将要安装的位置。 */
     fun adapterConfig(): File =
-        File(adapterDir() ?: File(maiBotPluginsDir, NapCatAdapterScripts.DIR_NAME), "config.toml")
+        File(adapterDir() ?: File(maiBotPluginsDir, SnowLumaAdapterScripts.DIR_NAME), "config.toml")
 
     /** QQ 本地登录数据目录，读不到 OneBot 配置时从这里的子目录名推断 QQ 号。 */
     val qqLoginDataDir: File = File(paths.rootfsDir, "root/.config/QQ/nt_qq/global/nt_data/Login")
@@ -61,14 +61,14 @@ internal class NapCatFiles(paths: RuntimePaths) {
     /** 第一次安装时保存的 OneBot token，读不到返回 null。 */
     fun readOneBotToken(): String? = oneBotTokenFile.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
 
-    /** QQ 适配器装好了，并且它的配置已经迁移成连本机 NapCat（见 NapCatAdapterConfig.isMigrated）。 */
+    /** SnowLuma 适配器装好了，并且它的配置已经迁移成连本机 NapCat（见 SnowLumaAdapterConfig.isMigrated）。 */
     fun isAdapterConfigured(): Boolean {
         if (adapterDir() == null) return false
         val config = adapterConfig().takeIf { it.isFile }?.readText() ?: return false
         val token = readOneBotToken() ?: return false
-        return NapCatAdapterConfig.isMigrated(config, token)
+        return SnowLumaAdapterConfig.isMigrated(config, token)
     }
 
-    /** NapCat 本体和 QQ 适配器都装好、适配器配置也迁移好了才算装好，消息平台页按这个显示。 */
+    /** NapCat 本体和 SnowLuma 适配器都装好、适配器配置也迁移好了才算装好，消息平台页按这个显示。 */
     fun isInstalled(): Boolean = isNapCatReady() && isAdapterConfigured()
 }

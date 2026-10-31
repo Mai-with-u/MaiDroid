@@ -37,7 +37,7 @@ internal class NapCatPlatformManager(
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
     private val napCatProcess: NapCatProcessSupervisor,
-    private val adapterInstaller: NapCatAdapterInstaller
+    private val adapterInstaller: SnowLumaAdapterInstaller
 ) {
     private companion object {
         const val STATUS_REFRESH_INTERVAL_MS = 2_000L
@@ -163,7 +163,7 @@ internal class NapCatPlatformManager(
     /**
      * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就只重启运行时；否则在后台：
      * 检查容器、MaiBot 源码和 MaiBot 版本 -> NapCat 本体没装才跑 NapCat 安装脚本（进度文件每 500 毫秒同步到进度环）->
-     * 没装就装 MaiBot 侧的 QQ 适配器（NapCatAdapterInstaller，顺带删掉停更的旧适配器）->
+     * 没装就装 MaiBot 侧的 SnowLuma 适配器（SnowLumaAdapterInstaller，顺带删掉停更的旧适配器）->
      * 经前台服务拉起 NapCat 并重启 MaiBot，让它加载适配器、生成默认配置 -> 等配置生成后迁移连接设置，
      * MaiBot 发现配置变了会自己热启用适配器。
      */

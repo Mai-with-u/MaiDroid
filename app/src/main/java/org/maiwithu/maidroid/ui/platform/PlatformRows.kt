@@ -218,17 +218,17 @@ internal fun EmptyPlatformRow() {
 @Composable
 internal fun PlatformRow(
     platform: AvailablePlatform,
-    selectedAdapter: PlatformAdapter?,
+    selectedAccessMethod: AccessMethod?,
     napCatState: NapCatPlatformState,
     qqOfficialState: QqOfficialPlatformState,
-    onAdapterSelected: (PlatformAdapter) -> Unit,
+    onAccessMethodSelected: (AccessMethod) -> Unit,
     onNapCatInstall: () -> Unit,
     onNapCatSettings: () -> Unit,
     onQqOfficialSettings: () -> Unit,
     onUnsupportedInstall: () -> Unit
 ) {
     // 有接入方式的平台才算已适配；目前只有 QQ。
-    val supported = platform.adapters.isNotEmpty()
+    val supported = platform.accessMethods.isNotEmpty()
 
     Column(
         modifier = Modifier
@@ -264,7 +264,7 @@ internal fun PlatformRow(
 
                 Text(
                     text = if (supported) {
-                        platform.adapterProviders[selectedAdapter] ?: platform.provider
+                        platform.accessMethodProviders[selectedAccessMethod] ?: platform.provider
                     } else {
                         platform.description
                     },
@@ -280,7 +280,7 @@ internal fun PlatformRow(
 
             if (supported) {
                 val installAction = platformInstallAction(
-                    selectedAdapter = selectedAdapter,
+                    selectedAccessMethod = selectedAccessMethod,
                     napCatState = napCatState,
                     qqOfficialState = qqOfficialState,
                     onNapCatInstall = onNapCatInstall,
@@ -297,12 +297,12 @@ internal fun PlatformRow(
             }
         }
 
-        if (platform.adapters.size > 1) {
+        if (platform.accessMethods.size > 1) {
             Spacer(modifier = Modifier.height(10.dp))
-            AdapterSelector(
-                adapters = platform.adapters,
-                selectedAdapter = selectedAdapter,
-                onAdapterSelected = onAdapterSelected,
+            AccessMethodSelector(
+                accessMethods = platform.accessMethods,
+                selectedAccessMethod = selectedAccessMethod,
+                onAccessMethodSelected = onAccessMethodSelected,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(42.dp)

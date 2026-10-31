@@ -203,7 +203,7 @@ internal fun WebUiTabPage(
     @OptIn(ExperimentalLayoutApi::class)
     val imeClearance = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
 
-    // 麦麦重启（改时区、换装 QQ 适配器等）的那十几秒里页签刚好重新加载（比如切回应用时界面被重建），
+    // 麦麦重启（改时区、换装 SnowLuma 适配器等）的那十几秒里页签刚好重新加载（比如切回应用时界面被重建），
     // 会停在“网页无法打开”：WebUI 重新上线时，上次加载失败就自动重载一次，不用再手动点刷新或“唤醒”。
     // 在别的标签时上线，切回 WebUI 页签的第一帧也会检查一次。只在上线的那一刻重载，WebUI 自身出错不会反复刷新。
     LaunchedEffect(webUiOnline) {

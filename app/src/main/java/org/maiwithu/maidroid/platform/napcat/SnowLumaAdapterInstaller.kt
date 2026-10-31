@@ -11,7 +11,7 @@ import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import java.io.File
 
 /**
- * 装 MaiBot 侧的 QQ 适配器（MaiBot-SnowLuma-Adapter）并把它的配置迁移成连本机 NapCat。
+ * 装 MaiBot 侧的 SnowLuma 适配器（MaiBot-SnowLuma-Adapter）并把它的配置迁移成连本机 NapCat。
  * 首次安装 NapCat（NapCatPlatformManager）和老用户启动 NapCat 前的换装（NapCatProcessSupervisor）共用
  * AppDependencies 里的同一个实例，迁移用锁串行，两边同时触发也只迁移一次。
  *
@@ -20,7 +20,7 @@ import java.io.File
  * migrateConfigWhenReady 等 MaiBot 按适配器默认值生成 config.toml -> 在上面启用插件、写连接项、搬旧设置。
  * MaiBot 发现配置变了会自己补装依赖（silk-python）并热启用适配器。
  */
-internal class NapCatAdapterInstaller(
+internal class SnowLumaAdapterInstaller(
     private val files: NapCatFiles,
     private val commandRunner: ContainerCommandRunner
 ) {
@@ -64,7 +64,7 @@ internal class NapCatAdapterInstaller(
                 ?.let { pendingLegacyConfig = it }
             files.adapterDir() == null
         }
-        val result = commandRunner.run(NapCatAdapterScripts.install(cloneAdapter), onLine = onLine)
+        val result = commandRunner.run(SnowLumaAdapterScripts.install(cloneAdapter), onLine = onLine)
         if (!result.success) return "下载 QQ 适配器失败：${result.summary()}"
         if (withContext(Dispatchers.IO) { files.adapterDir() } == null) return "QQ 适配器目录不完整"
         return null
@@ -86,15 +86,15 @@ internal class NapCatAdapterInstaller(
             if (files.adapterDir() == null) return "找不到 QQ 适配器目录"
             val config = files.adapterConfig()
             val text = config.takeIf { it.isFile }?.readText()
-            if (text != null && NapCatAdapterConfig.isMigrated(text, token)) {
+            if (text != null && SnowLumaAdapterConfig.isMigrated(text, token)) {
                 pendingLegacyConfig = null
                 return null
             }
-            if (text != null && NapCatAdapterConfig.isGenerated(text)) {
+            if (text != null && SnowLumaAdapterConfig.isGenerated(text)) {
                 delay(CONFIG_SETTLE_DELAY_MS)
                 return runCatching {
                     rewriteAdapterConfig(config) { current ->
-                        NapCatAdapterConfig.migrate(current ?: text, token, pendingLegacyConfig)
+                        SnowLumaAdapterConfig.migrate(current ?: text, token, pendingLegacyConfig)
                     }
                     pendingLegacyConfig = null
                 }.exceptionOrNull()?.let {
@@ -118,8 +118,8 @@ internal class NapCatAdapterInstaller(
  */
 internal fun adapterHostVersionProblem(maiBotVersion: String?): String? {
     val current = maiBotVersion?.let(VersionNumber::parse) ?: return null
-    val required = VersionNumber.parse(NapCatAdapterScripts.MIN_MAIBOT_VERSION) ?: return null
+    val required = VersionNumber.parse(SnowLumaAdapterScripts.MIN_MAIBOT_VERSION) ?: return null
     if (current >= required) return null
-    return "QQ 适配器需要 MaiBot ${NapCatAdapterScripts.MIN_MAIBOT_VERSION} 以上（当前 $maiBotVersion），" +
+    return "QQ 适配器需要 MaiBot ${SnowLumaAdapterScripts.MIN_MAIBOT_VERSION} 以上（当前 $maiBotVersion），" +
         "请先在设置页“MaiBot 更新”里更新 MaiBot"
 }

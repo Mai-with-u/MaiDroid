@@ -26,7 +26,7 @@ internal class NapCatProcessSupervisor(
     private val paths: RuntimePaths,
     private val commandRunner: ContainerCommandRunner,
     private val maiBotProcess: MaiBotProcessSupervisor,
-    private val adapterInstaller: NapCatAdapterInstaller
+    private val adapterInstaller: SnowLumaAdapterInstaller
 ) {
     private companion object {
         // 重启时等旧一轮读日志协程收尾的上限。
@@ -53,7 +53,7 @@ internal class NapCatProcessSupervisor(
 
     /**
      * 没装 NapCat 或已在运行时什么也不做。否则在后台：
-     * 需要时换装新版 QQ 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
+     * 需要时换装新版 SnowLuma 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
      * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
      * 只看 NapCat 本体装没装好：MaiBot 太旧、暂时换不了适配器的老用户，QQ 照样能登录。
      */

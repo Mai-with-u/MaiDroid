@@ -4,16 +4,16 @@ import org.maiwithu.maidroid.maibot.PluginConfigToml
 import java.io.File
 
 /**
- * MaiBot 的 QQ 适配器插件（MaiBot-SnowLuma-Adapter，见 NapCatAdapterScripts）的 config.toml 迁移。
+ * MaiBot 侧 SnowLuma 适配器插件（MaiBot-SnowLuma-Adapter，见 SnowLumaAdapterScripts）的 config.toml 迁移。
  *
  * MaiDroid 不自己从头写这份配置：MaiBot 第一次加载插件时会按适配器的默认值生成一份完整的配置
  * （含 MaiBot 强制要求的 plugin.config_version，以及适配器当前版本的所有配置段），
- * MaiDroid 等它生成后再在上面改（NapCatAdapterInstaller.migrateConfigWhenReady）：
+ * MaiDroid 等它生成后再在上面改（SnowLumaAdapterInstaller.migrateConfigWhenReady）：
  * 启用插件（适配器默认关着，不开不会去连）-> [client] 指向本机 NapCat（地址、端口、OneBot token）->
  * 旧适配器 MaiBot-Napcat-Adapter 的配置里有对应项的设置原样搬过来。其余节和注释原样保留。
  * MaiBot 监听插件配置文件，改完会自己补装依赖并热启用适配器。
  */
-internal object NapCatAdapterConfig {
+internal object SnowLumaAdapterConfig {
     /** 与 NapCatScripts 写进 onebot11.json 的 WebSocket 服务端一致。 */
     const val ONE_BOT_HOST = "127.0.0.1"
     const val ONE_BOT_PORT = 8095

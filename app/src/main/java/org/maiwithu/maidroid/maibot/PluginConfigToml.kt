@@ -1,7 +1,7 @@
 package org.maiwithu.maidroid.maibot
 
 /**
- * 逐行读写 MaiBot 插件 config.toml 的工具，各平台适配器的配置读写（QqOfficialAdapterConfig、NapCatAdapterConfig）共用。
+ * 逐行读写 MaiBot 插件 config.toml 的工具，各平台适配器的配置读写（QqOfficialAdapterConfig、SnowLumaAdapterConfig）共用。
  *
  * 只改目标节里的目标键，其余节、键和注释原样保留：用户可能在 MaiBot WebUI 的插件配置里改过别的项，不能被覆盖。
  * 只认 MaiBot 写回配置时用的单行写法（`key = "value"`、`key = true`），不是通用 TOML 解析器。

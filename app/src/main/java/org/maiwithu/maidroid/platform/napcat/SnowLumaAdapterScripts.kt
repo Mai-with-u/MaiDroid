@@ -6,13 +6,15 @@ import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /**
- * MaiBot 侧连 NapCat 的 QQ 适配器插件：来源、版本要求和安装脚本。
+ * MaiBot 侧连 NapCat 的 SnowLuma 适配器插件（MaiBot-SnowLuma-Adapter）：来源、版本要求和安装脚本。
  *
- * 用的是 MaiBot-SnowLuma-Adapter：它同时支持 SnowLuma 和 NapCat，连上后按对端自动切换。
+ * 名字里的 SnowLuma 是适配器的名字，不是说要在手机上跑 SnowLuma 客户端：
+ * 这个适配器同时支持 SnowLuma 客户端和 NapCat 两种 QQ 协议端，连上后按对端自动切换，MaiDroid 让它连 NapCat。
  * 原来的 MaiBot-Napcat-Adapter 已停更（清单名写着“不再更新，请使用Snowluma适配器”），
  * 安装新适配器时会把它删掉，两个适配器同时连一个 NapCat 会把每条消息收两遍。
+ * 界面和终端日志里对用户说的“QQ 适配器”就是它。
  */
-internal object NapCatAdapterScripts {
+internal object SnowLumaAdapterScripts {
     const val REPOSITORY_URL = "https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter.git"
 
     /** MaiDroid 自己安装时用的插件目录名；从插件市场装的副本目录名不同，按 PLUGIN_ID 识别。 */
