@@ -95,8 +95,8 @@ adb shell run-as org.maiwithu.maidroid
 debug 包的签名和发布版不同，查到新版本也只会给“打开下载页”。要在真机上把“下载 -> 校验 -> 系统安装”走一遍，让它查一个本机的假 Release 源：
 
 1. 用默认配置构建一个 debug 包（版本 B），算出它的 SHA-256；在电脑上起一个支持 Range 的静态服务，放这个 APK 和一份仿 `releases/latest` 的 JSON：`tag_name` 写 B 的版本号、`assets` 指向这个 APK，`body` 末尾照发布流程的格式写校验行，证书 SHA-256 填本机调试证书的（`apksigner verify --print-certs` 可以看）。
-2. `adb reverse tcp:8000 tcp:8000` 后，把 `versionName`、`versionCode` 临时改得比 B 低，加 `-PappUpdateApiUrl=http://127.0.0.1:8000/latest` 构建版本 A 装到手机上（比手机上已装的旧时用 `adb install -r -d`）。
-3. 在设置页点“应用版本”，走完下载、取消再继续、安装。非 GitHub 地址只走直连，不经镜像。
+2. `adb reverse tcp:18080 tcp:18080` 后，把 `versionName`、`versionCode` 临时改得比 B 低，加 `-PappUpdateApiUrl=http://127.0.0.1:18080/latest` 构建版本 A 装到手机上（比手机上已装的旧时用 `adb install -r -d`）。别用 8000：手机上 MaiBot 自己占着 8000，`adb reverse` 会绑不上。
+3. 在设置页点“应用版本”，走完下载、取消再继续、安装。非 GitHub 地址只走直连，不经镜像。荣耀、华为手机的系统安装器查验完还会转到应用市场的风险检查页（“应用未备案”），要在手机上手动确认才能继续安装。
 
 `-PappUpdateApiUrl` 只影响本地构建，CI 和日常构建都用默认的 GitHub 地址。
 

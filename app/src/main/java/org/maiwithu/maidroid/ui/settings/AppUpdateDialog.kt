@@ -143,7 +143,9 @@ internal fun appUpdateStatusText(state: AppUpdateState, installPermissionGranted
             !state.canInstallInApp ->
                 "当前装的是调试版或自行构建的版本，签名和发布版不同，系统不允许直接覆盖安装。" +
                     "要换成发布版，需要先卸载 MaiDroid（会清掉容器里的 MaiBot 和数据），再安装下载页里的安装包。"
-            state.partialBytes > 0 -> "上次已下载 ${formatBytes(state.partialBytes)}，继续下载会接着下。"
+            // 点安装时发现安装包已被系统清理，会退回这里并带上原因，提示用户重新下载
+            state.errorMessage != null -> state.errorMessage
+            state.partialBytes > 0 ->"上次已下载 ${formatBytes(state.partialBytes)}，继续下载会接着下。"
             else -> "发现新版本。"
         }
         AppUpdatePhase.Downloading -> state.progress?.let(::appDownloadProgressText) ?: "正在下载..."

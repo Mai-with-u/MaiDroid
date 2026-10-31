@@ -38,6 +38,14 @@ class AppUpdateDialogTest {
     }
 
     @Test
+    fun `cleared installer package explains why it has to download again`() {
+        val cleared = available.copy(errorMessage = "安装包已被系统清理，请重新下载")
+
+        assertEquals("安装包已被系统清理，请重新下载", appUpdateStatusText(cleared, true))
+        assertEquals(AppUpdateButtonAction.Download, button(cleared).action)
+    }
+
+    @Test
     fun `builds with a different signer only open the release page`() {
         val debugBuild = available.copy(canInstallInApp = false)
 
