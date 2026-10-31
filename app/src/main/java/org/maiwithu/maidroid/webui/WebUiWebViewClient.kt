@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.webui
 
+import android.graphics.Bitmap
 import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
@@ -12,6 +13,7 @@ import android.webkit.WebViewClient
  * 加载 WebUI 用的 WebViewClient，主页的 WebUI 页签和全屏 WebUiActivity 共用；全屏打开的既可能是 MaiBot WebUI，
  * 也可能是 NapCat 管理页，所以不以 MaiBot 命名。
  * 请求经 WebUiResponseRewriter 改写 -> 页面加载完后落盘 Cookie 并执行视口修补脚本 -> 主框架加载失败时回调给界面显示重试条。
+ * onPageFinishedCallback 只在主框架加载成功时回调，加载失败后报错页的“加载完成”不算。
  *
  * viewportReservedBottomCssPx 是浮在网页上方的 APP 底部导航栏的占高（CSS px，等于 dp），
  * 同时用于改写样式表里的底部安全区和视口修补时给滚动区留白；全屏打开时为 0。
@@ -33,6 +35,10 @@ internal class WebUiWebViewClient(
     // 算当前布局宽度时 WebView 的物理宽度；宽度变了才重算。
     private var layoutBasisWidthPx = 0
     private var resizeListenerAttached = false
+
+    // 这一轮主框架加载有没有出错。出错后 WebView 还会为“网页无法打开”报错页回调一次 onPageFinished，
+    // 那次不能当成加载成功，否则界面刚亮出“加载失败，重试”就被清掉，只剩一片空白。
+    private var mainFrameFailed = false
 
     /**
      * 加载页面前调用：按 WebView 当前尺寸决定这次按桌面版还是手机版排版。
@@ -96,6 +102,12 @@ internal class WebUiWebViewClient(
             )
         }
 
+    // 每轮主框架加载开始时清掉上一轮的出错记录：开始加载 -> （出错）-> 加载完成，出错只算这一轮。
+    override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+        mainFrameFailed = false
+        super.onPageStarted(view, url, favicon)
+    }
+
     override fun onPageFinished(view: WebView, url: String) {
         CookieManager.getInstance().flush()
         val desktopWidth = desktopLayoutWidthCss
@@ -109,7 +121,9 @@ internal class WebUiWebViewClient(
             // 再按最新宽度写一次 viewport：页面请求发出后、加载完成前宽度变过的话，HTML 里还是旧宽度。
             view.evaluateJavascript(WebUiDesktopViewport.updateViewportScript(desktopWidth), null)
         }
-        onPageFinishedCallback(view, url)
+        if (!mainFrameFailed) {
+            onPageFinishedCallback(view, url)
+        }
         super.onPageFinished(view, url)
     }
 
@@ -119,6 +133,7 @@ internal class WebUiWebViewClient(
         error: WebResourceError
     ) {
         if (request.isForMainFrame) {
+            mainFrameFailed = true
             onMainFrameError(request, error)
         }
         super.onReceivedError(view, request, error)

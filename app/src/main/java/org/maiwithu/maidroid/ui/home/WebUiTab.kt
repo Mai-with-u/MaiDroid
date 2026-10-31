@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -160,6 +161,15 @@ internal fun WebUiTabPage(
     val statusBarTop = statusBarTopInset()
     // 横幅右侧给刷新按钮让出位置；刷新按钮挪进导航栏时左右对称留白。
     val bannerEndPadding = if (showRefreshButton) 56.dp else 16.dp
+
+    // 麦麦重启（改时区、换装 QQ 适配器等）的那十几秒里页签刚好重新加载（比如切回应用时界面被重建），
+    // 会停在“网页无法打开”：WebUI 重新上线时，上次加载失败就自动重载一次，不用再手动点刷新或“唤醒”。
+    // 在别的标签时上线，切回 WebUI 页签的第一帧也会检查一次。只在上线的那一刻重载，WebUI 自身出错不会反复刷新。
+    LaunchedEffect(webUiOnline) {
+        if (webUiOnline && state.webViewError != null) {
+            state.reload()
+        }
+    }
 
     Box(
         modifier = modifier
