@@ -2,9 +2,9 @@ package org.maiwithu.maidroid.ui.home
 
 import android.util.Log
 import android.view.ViewGroup
-import android.webkit.ConsoleMessage
-import android.webkit.WebChromeClient
 import android.webkit.WebView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,12 +55,15 @@ import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import org.maiwithu.maidroid.webui.WebUiChromeClient
+import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
 /** WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。 */
 internal class WebUiTabState internal constructor(
-    val webView: WebView
+    val webView: WebView,
+    val fileChooser: WebUiFileChooser
 ) {
     var webViewError by mutableStateOf<String?>(null)
     var reloadToken by mutableIntStateOf(0)
@@ -75,6 +79,8 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             WebView.setWebContentsDebuggingEnabled(true)
         }
 
+        val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
+
         val webView = createWebUiWebView(context).apply {
             // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
             // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
@@ -87,20 +93,10 @@ internal fun rememberWebUiTabState(): WebUiTabState {
             overScrollMode = WebView.OVER_SCROLL_NEVER
             isFocusable = true
             isFocusableInTouchMode = true
-            // 网页 console 输出转到 logcat，排查 WebUI 显示问题时用。
-            webChromeClient = object : WebChromeClient() {
-                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                    Log.d(
-                        MaiBotWebUi.LOG_TAG,
-                        "console ${consoleMessage.messageLevel()}: ${consoleMessage.message()} " +
-                            "(${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
-                    )
-                    return super.onConsoleMessage(consoleMessage)
-                }
-            }
+            webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
         }
 
-        WebUiTabState(webView).also { tabState ->
+        WebUiTabState(webView, fileChooser).also { tabState ->
             webView.webViewClient = WebUiWebViewClient(
                 logTag = MaiBotWebUi.LOG_TAG,
                 // APP 底栏在 WebUI 页签默认收成右下角的小按钮，网页底部不用再给它留白；
@@ -115,8 +111,21 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         }
     }
 
+    // 网页点上传按钮 -> fileChooser 用这个 launcher 打开系统选文件页 -> 选完回到这里，把结果交回网页。
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        state.fileChooser.onResult(result.resultCode, result.data)
+    }
+    SideEffect {
+        state.fileChooser.launcher = fileChooserLauncher
+    }
+
     DisposableEffect(state) {
         onDispose {
+            // 先把没回复的选文件请求按取消结束，再销毁 WebView。
+            state.fileChooser.launcher = null
+            state.fileChooser.cancelPending()
             state.webView.destroy()
         }
     }
