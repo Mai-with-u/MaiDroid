@@ -1,9 +1,20 @@
 package org.maiwithu.maidroid.runtime
 
+import java.net.URI
+
+/** 一个 GitHub 下载线路：显示名和地址前缀，前缀为空表示直连 GitHub；实际地址 = 前缀 + "/" + 原始地址。 */
+internal data class GitHubMirror(val name: String, val prefix: String) {
+    val isDirect: Boolean get() = prefix.isEmpty()
+
+    fun url(originalUrl: String): String =
+        if (isDirect) originalUrl else "${prefix.trimEnd('/')}/$originalUrl"
+}
+
 /**
- * 国内访问 GitHub 不稳定，容器里所有 git clone / git fetch 都经这里的镜像列表依次重试。
+ * 国内访问 GitHub 不稳定，容器里所有 git clone / git fetch 都经这里的镜像列表依次重试；
+ * 宿主侧的应用自更新（appupdate）也用同一份列表，查版本和下载安装包时同时试所有线路，用最快的那个。
  *
- * 用法：把 shellFunctions() 拼在脚本最前面，之后脚本里调用
+ * 容器脚本的用法：把 shellFunctions() 拼在脚本最前面，之后脚本里调用
  * `maidroid_github_clone <仓库地址> <目标目录> [git clone 参数...]` 或
  * `maidroid_github_fetch <仓库地址> <refspec> [git fetch 参数...]`。
  */
@@ -11,24 +22,52 @@ internal object GitHubMirrors {
     /** 每个镜像连续尝试的次数，全部失败才换下一个镜像。 */
     const val RETRY_PER_MIRROR = 3
 
+    /** 宿主侧界面和日志里直连 GitHub 的显示名。 */
+    const val DIRECT_NAME = "直连"
+
     // git 默认不检测传输停滞：镜像连上后卡住不动，clone/fetch 会一直等下去，OOBE 就停在“正在克隆”出不来。
     // 连续 60 秒低于 1 KB/s 就判这一次失败，按下面的流程重试或换下一个镜像。
     private const val GIT_STALL_OPTIONS = "-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60"
 
-    // 每项是“显示名|地址前缀”，前缀为空表示直连 GitHub；实际地址 = 前缀 + "/" + 原始地址。
-    private val MIRROR_SPECS = listOf(
-        "gitproxy.mrhjx.cn|https://gitproxy.mrhjx.cn",
-        "ghproxy.vip|https://ghproxy.vip",
-        "raw.githubusercontent.com|",
-        "gh-proxy.com|https://gh-proxy.com",
-        "v6.gh-proxy.org|https://v6.gh-proxy.org",
-        "cdn.gh-proxy.com|https://cdn.gh-proxy.com"
+    // 容器脚本按这个顺序依次重试。ghfast.top 是 NapCat 官方安装脚本也在用的线路，
+    // 能代理 git clone 和 Release 下载，但不代理 api.github.com（实测 403），放在最后兜底。
+    val ALL: List<GitHubMirror> = listOf(
+        GitHubMirror("gitproxy.mrhjx.cn", "https://gitproxy.mrhjx.cn"),
+        GitHubMirror("ghproxy.vip", "https://ghproxy.vip"),
+        GitHubMirror("raw.githubusercontent.com", ""),
+        GitHubMirror("gh-proxy.com", "https://gh-proxy.com"),
+        GitHubMirror("v6.gh-proxy.org", "https://v6.gh-proxy.org"),
+        GitHubMirror("cdn.gh-proxy.com", "https://cdn.gh-proxy.com"),
+        GitHubMirror("ghfast.top", "https://ghfast.top")
     )
+
+    // 镜像只代理这几个 GitHub 域名；其它地址（例如本地调试用的假 Release 源）只能直连。
+    private val MIRRORED_HOSTS = setOf(
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com"
+    )
+
+    // shell 函数里每项是“显示名|地址前缀”，前缀为空表示直连。
+    private val MIRROR_SPECS = ALL.map { "${it.name}|${it.prefix}" }
 
     /** OOBE 卡片上展示的镜像说明，例如“GitHub 镜像自动重试（每源 3 次）: a -> b -> c”。 */
     val DESCRIPTION: String =
         "GitHub 镜像自动重试（每源 ${RETRY_PER_MIRROR} 次）: " +
-            MIRROR_SPECS.joinToString(" -> ") { it.substringBefore('|') }
+            ALL.joinToString(" -> ") { it.name }
+
+    /**
+     * 宿主侧下载一个地址时可以试的线路：GitHub 的地址返回直连加全部镜像，其它地址只有直连。
+     * 直连在宿主侧显示为“直连”，不沿用容器日志里的 raw.githubusercontent.com。
+     */
+    fun candidatesFor(url: String): List<GitHubMirror> {
+        val host = runCatching { URI(url).host?.lowercase() }.getOrNull()
+        val direct = GitHubMirror(DIRECT_NAME, "")
+        if (host == null || host !in MIRRORED_HOSTS) return listOf(direct)
+        return ALL.map { if (it.isDirect) direct else it }
+    }
 
     /** 定义 maidroid_github_clone、maidroid_github_fetch 两个 shell 函数（及其内部辅助函数）。 */
     fun shellFunctions(): String {
