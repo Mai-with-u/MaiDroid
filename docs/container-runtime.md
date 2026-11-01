@@ -185,11 +185,13 @@ OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新
 1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。
 2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 在终端日志里列出被改过的受版本管理文件（不备份，MaiDroid 不支持在手机上改源码；`uv.lock` 由 MaiDroid 改写成镜像源，不算用户改动）-> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
 
-被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。
+被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。拉取用带 `+` 的 refspec 强制更新 `origin/<分支>`，再硬重置过去，所以上游回退了提交（dev 分支时有发生）也能跟着退回，不会卡在快进上。
+
+**版本通道**（`MaiBotChannel`）：正式版跟随上游 `main`，测试版跟随 `dev`。当前在哪个通道不另存设置，就看仓库 HEAD 所在的分支，上面的检查和更新天然跟着它走。切换（`switchChannel`）和“更新”走同一套流程，只是 `fetchAndReset(目标分支)` 拉取的是目标分支，最后用 `git checkout --force --no-track -B <分支> origin/<分支>` 切过去：效果等同切过去后 `reset --hard`，挡路的未跟踪文件也会被覆盖。分离 HEAD 时普通更新也走这一步，回到 `main`。拉取失败时分支和源码都不动。MaiBot 的数据库迁移不支持降级（启动时发现库版本比代码新会直接报错退出），所以从测试版切回正式版之前，确认框会提醒这一点。
 
 三个入口共用上面两段脚本：
 
-- **设置页“MaiBot 更新”**：用户手动检查、点“更新并重启”。
+- **设置页“MaiBot 更新”**：用户手动检查、点“更新并重启”；弹窗底部的“版本通道”可以在正式版和测试版之间切换，确认后停麦麦、切分支、重装依赖、重启。启动时自动弹出的提醒里没有这个选择器。
 - **启动时检查**（`checkOnLaunch`）：每次打开应用进入主页时做一次“检查”，查到新版本由主页弹出 MaiBot 更新弹窗；连不上不提示。
 - **MaiDroid 更新后的自动升级**（`updateAfterAppUpgrade`）：MaiDroid 刚更新过的第一次启动，在唤醒页上先 `runWhileStopped` 拦住麦麦的启动 -> 检查 -> 有新版本或源码被改过就按“更新”的流程切到上游、重装依赖 -> 拉起麦麦。拉取失败照常启动现在的版本；升级到一半失败才弹窗。是否“刚更新过”的判断在 `shouldAutoUpdateMaiBot`，设置页“应用版本”弹窗底部可以关掉。
 

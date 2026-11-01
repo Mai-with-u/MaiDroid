@@ -279,7 +279,8 @@ internal fun SettingsPage(
         }
 
         if (showUpdateDialog) {
-            MaiBotUpdateDialogHost(onDismiss = { showUpdateDialog = false })
+            // 设置页点开的 MaiBot 更新弹窗底部带“版本通道”选择器（正式版 / 测试版）；启动时自动弹的提醒不带
+            MaiBotUpdateDialogHost(onDismiss = { showUpdateDialog = false }, showChannelSelector = true)
         }
 
         if (showAppUpdateDialog) {

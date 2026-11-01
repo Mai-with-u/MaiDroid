@@ -2,7 +2,9 @@ package org.maiwithu.maidroid.ui.settings
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.maibot.update.MaiBotChannel
 import org.maiwithu.maidroid.maibot.update.MaiBotRevision
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
@@ -82,5 +84,79 @@ class MaiBotUpdateDialogTest {
         )
 
         assertEquals("正在同步 Python 依赖", summary)
+    }
+
+    @Test
+    fun `summary puts the channel before the commit`() {
+        assertEquals(
+            "测试版 c602a27 · 2026-10-22 09:57",
+            maiBotUpdateSummaryText(MaiBotUpdateState(branch = "dev", installed = installed), zoneId = ZoneOffset.UTC)
+        )
+        assertEquals(
+            "已是最新 · 正式版 c602a27",
+            maiBotUpdateSummaryText(
+                MaiBotUpdateState(phase = MaiBotUpdatePhase.UpToDate, branch = "main", installed = installed)
+            )
+        )
+        // 经容器 SSH 手动切到的其它分支原样显示分支名
+        assertEquals(
+            "已是最新 · feature-x c602a27",
+            maiBotUpdateSummaryText(
+                MaiBotUpdateState(phase = MaiBotUpdatePhase.UpToDate, branch = "feature-x", installed = installed)
+            )
+        )
+    }
+
+    @Test
+    fun `switching shows switch wording instead of update wording`() {
+        val switching = MaiBotUpdateState(phase = MaiBotUpdatePhase.Updating, switchTarget = MaiBotChannel.Testing)
+        assertEquals("切换中...", maiBotUpdatePrimaryButton(switching).label)
+        assertFalse(maiBotUpdatePrimaryButton(switching).enabled)
+
+        val switched = MaiBotUpdateState(
+            phase = MaiBotUpdatePhase.Updated,
+            branch = "dev",
+            installed = installed,
+            switchTarget = MaiBotChannel.Testing
+        )
+        assertEquals("已切换到测试版 · c602a27", maiBotUpdateSummaryText(switched))
+        assertEquals("已切换到测试版，麦麦正在重启。", maiBotUpdateStatusText(switched))
+    }
+
+    @Test
+    fun `failed switch retries switching to the same channel`() {
+        val failed = MaiBotUpdateState(
+            phase = MaiBotUpdatePhase.Failed,
+            failedAction = MaiBotUpdateAction.Switch,
+            errorMessage = "源码更新失败：exit 1",
+            switchTarget = MaiBotChannel.Stable
+        )
+
+        val button = maiBotUpdatePrimaryButton(failed)
+        assertEquals(MaiBotUpdateButtonAction.Switch, button.action)
+        assertEquals("重试切换", button.label)
+        assertEquals("切换失败：源码更新失败：exit 1", maiBotUpdateSummaryText(failed))
+    }
+
+    @Test
+    fun `failed switch without a target falls back to checking again`() {
+        val button = maiBotUpdatePrimaryButton(
+            MaiBotUpdateState(phase = MaiBotUpdatePhase.Failed, failedAction = MaiBotUpdateAction.Switch)
+        )
+
+        assertEquals(MaiBotUpdateButtonAction.Check, button.action)
+    }
+
+    @Test
+    fun `switch prompts warn about the risk of each channel`() {
+        val testing = maiBotChannelSwitchPrompt(MaiBotChannel.Testing)
+        assertEquals("切换到测试版？", testing.title)
+        assertTrue(testing.message.contains("回退提交"))
+        assertTrue(testing.message.contains("dev"))
+
+        val stable = maiBotChannelSwitchPrompt(MaiBotChannel.Stable)
+        assertEquals("切换到正式版？", stable.title)
+        assertTrue(stable.message.contains("数据库"))
+        assertTrue(stable.message.contains("main"))
     }
 }

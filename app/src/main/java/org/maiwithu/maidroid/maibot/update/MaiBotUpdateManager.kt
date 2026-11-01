@@ -32,13 +32,18 @@ internal enum class MaiBotUpdatePhase {
     Failed
 }
 
-/** 失败发生在哪一步，决定弹窗里“重试”该重新检查还是重新更新。 */
+/** 失败发生在哪一步，决定弹窗里“重试”该重新检查、重新更新还是重新切换版本通道。 */
 internal enum class MaiBotUpdateAction {
     Check,
-    Apply
+    Apply,
+    Switch
 }
 
-/** 在线更新的界面状态：当前与上游版本、用户改过的源码文件数、进行中的步骤说明和失败原因。 */
+/**
+ * 在线更新的界面状态：当前与上游版本、用户改过的源码文件数、进行中的步骤说明和失败原因。
+ * switchTarget 是最近一次切换版本通道的目标：切换中、切换失败（重试时切回同一个通道）、刚切换完时有值，
+ * 之后再检查或更新就清空，弹窗据此把“更新”的文案换成“切换”。
+ */
 internal data class MaiBotUpdateState(
     val phase: MaiBotUpdatePhase = MaiBotUpdatePhase.Idle,
     val branch: String? = null,
@@ -47,10 +52,15 @@ internal data class MaiBotUpdateState(
     val localChangeCount: Int = 0,
     val progressText: String? = null,
     val errorMessage: String? = null,
-    val failedAction: MaiBotUpdateAction? = null
+    val failedAction: MaiBotUpdateAction? = null,
+    val switchTarget: MaiBotChannel? = null
 ) {
     val isBusy: Boolean
         get() = phase == MaiBotUpdatePhase.Checking || phase == MaiBotUpdatePhase.Updating
+
+    /** 当前所在的版本通道；还没读到分支或在别的分支上时为 null。 */
+    val channel: MaiBotChannel?
+        get() = MaiBotChannel.ofBranch(branch)
 }
 
 /**
@@ -74,6 +84,7 @@ private sealed interface AutoUpdateOutcome {
 
 /**
  * MaiBot 在线更新：检查上游 -> 停止麦麦 -> 切换源码 -> 同步依赖 -> 重启麦麦。
+ * 切换版本通道（正式版 main / 测试版 dev）也走这一套，只是拉取的是目标分支，见 [switchChannel]。
  *
  * 进程级单例，切到后台或关掉设置页后更新照常进行，回到设置页能看到最新进度。
  * 每次打开应用进入主页时主界面会调 [checkOnLaunch] 自动查一次，查到新版本就弹窗提醒；
@@ -153,7 +164,7 @@ internal class MaiBotUpdateManager(
         if (job?.isActive == true) return
         checkingOnLaunch = onLaunch
         job = scope.launch {
-            showProgress(MaiBotUpdatePhase.Checking, "正在通过 GitHub 镜像获取上游版本...")
+            beginAction(MaiBotUpdatePhase.Checking, "正在通过 GitHub 镜像获取上游版本...")
             validationError()?.let { error ->
                 failCheck(error)
                 return@launch
@@ -207,28 +218,46 @@ internal class MaiBotUpdateManager(
      * 停止期间进程管理器会拦下唤醒、开机自启等启动请求，避免更新到一半麦麦被拉起。
      * 无论成败最后都会重新拉起麦麦：拉取失败时源码没动，依赖同步失败时旧的 .venv 通常仍能运行。
      */
-    fun applyUpdate() {
+    fun applyUpdate() = startStoppedUpdate(MaiBotUpdateAction.Apply, target = null)
+
+    /**
+     * 切换版本通道：停止麦麦 -> 拉取目标分支，丢弃源码改动并把本地分支硬重置到它的最新提交 -> uv sync -> 重启麦麦。
+     * 之后的检查更新、启动提醒和 MaiDroid 更新后的自动升级都跟着新分支走（分支从仓库 HEAD 读，不另存设置）。
+     * 拉取失败时源码和分支都没动；切过去后依赖同步失败的，重试切换时拉取和切分支会很快做完，再接着装依赖。
+     */
+    fun switchChannel(channel: MaiBotChannel) = startStoppedUpdate(MaiBotUpdateAction.Switch, channel)
+
+    // 应用更新和切换通道共用：停止麦麦 -> 拉取（目标通道的分支，或当前分支）并硬重置 -> 重装依赖 -> 无论成败都重启麦麦。
+    private fun startStoppedUpdate(action: MaiBotUpdateAction, target: MaiBotChannel?) {
         if (job?.isActive == true) return
         job = scope.launch {
-            showProgress(MaiBotUpdatePhase.Updating, "正在停止麦麦...")
+            beginAction(MaiBotUpdatePhase.Updating, "正在停止麦麦...", switchTarget = target)
             validationError()?.let { error ->
-                fail(MaiBotUpdateAction.Apply, error)
+                fail(action, error)
                 return@launch
             }
 
             TerminalLog.append("")
-            TerminalLog.append("$LOG_PREFIX 停止 MaiBot，准备切换到上游最新版本")
-            val failure = maiBotProcess.runWhileStopped { updateWhileStopped() }
+            TerminalLog.append(
+                if (target == null) {
+                    "$LOG_PREFIX 停止 MaiBot，准备切换到上游最新版本"
+                } else {
+                    "$LOG_PREFIX 停止 MaiBot，准备切换到${target.label}（上游 ${target.branch} 分支）"
+                }
+            )
+            val failure = maiBotProcess.runWhileStopped { updateWhileStopped(target) }
 
             TerminalLog.append("$LOG_PREFIX 重新启动 MaiBot")
             restartMaiBot()
 
             if (failure != null) {
-                fail(MaiBotUpdateAction.Apply, failure)
+                fail(action, failure)
                 return@launch
             }
-            val installed = _state.value.installed
-            TerminalLog.append("$LOG_PREFIX 更新完成：${installed?.shortCommit.orEmpty()}")
+            val installed = _state.value.installed?.shortCommit.orEmpty()
+            TerminalLog.append(
+                if (target == null) "$LOG_PREFIX 更新完成：$installed" else "$LOG_PREFIX 已切换到${target.label}：$installed"
+            )
             _state.update {
                 it.copy(
                     phase = MaiBotUpdatePhase.Updated,
@@ -252,7 +281,7 @@ internal class MaiBotUpdateManager(
         if (job?.isActive == true) return
         checkingOnLaunch = false
         val updateJob = scope.launch {
-            showProgress(MaiBotUpdatePhase.Checking, "MaiDroid 已更新，正在检查 MaiBot 新版本...")
+            beginAction(MaiBotUpdatePhase.Checking, "MaiDroid 已更新，正在检查 MaiBot 新版本...")
             TerminalLog.append("")
             TerminalLog.append("$LOG_PREFIX MaiDroid 已更新，启动麦麦前先把 MaiBot 升级到上游最新版本")
             // 先进入维护再做任何耗时操作：这一句在启动时同步执行，唤醒页随后发来的启动请求都会被拦下
@@ -315,10 +344,17 @@ internal class MaiBotUpdateManager(
         return updateWhileStopped()?.let { AutoUpdateOutcome.Failed(it) } ?: AutoUpdateOutcome.Updated
     }
 
-    /** 返回失败原因，成功返回 null。 */
-    private suspend fun updateWhileStopped(): String? {
-        showProgress(MaiBotUpdatePhase.Updating, "正在拉取上游源码并切换版本...")
-        val updateResult = runCommand(MaiBotUpdateScripts.fetchAndReset())
+    /** target 为空时更新当前分支，否则切到该通道的分支。返回失败原因，成功返回 null。 */
+    private suspend fun updateWhileStopped(target: MaiBotChannel? = null): String? {
+        showProgress(
+            MaiBotUpdatePhase.Updating,
+            if (target == null) {
+                "正在拉取上游源码并切换版本..."
+            } else {
+                "正在拉取上游 ${target.branch} 分支并切换到${target.label}..."
+            }
+        )
+        val updateResult = runCommand(MaiBotUpdateScripts.fetchAndReset(target?.branch))
         val report = parseMaiBotUpdateReport(updateResult.output)
         applyReport(report)
         if (!updateResult.success || report.installed == null) {
@@ -371,6 +407,12 @@ internal class MaiBotUpdateManager(
                 localChangeCount = report.localChangeCount ?: it.localChangeCount
             )
         }
+    }
+
+    // 每个入口（检查、更新、切换通道、自动升级）开始时调一次：记下这次是不是切换通道，弹窗按它选文案。
+    private fun beginAction(phase: MaiBotUpdatePhase, text: String, switchTarget: MaiBotChannel? = null) {
+        _state.update { it.copy(switchTarget = switchTarget) }
+        showProgress(phase, text)
     }
 
     private fun showProgress(phase: MaiBotUpdatePhase, text: String) {
