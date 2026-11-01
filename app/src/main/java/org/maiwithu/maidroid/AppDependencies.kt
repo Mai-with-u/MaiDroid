@@ -13,6 +13,7 @@ import org.maiwithu.maidroid.diagnostics.recentSystemCrashes
 import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
+import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.platform.napcat.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
@@ -105,6 +106,11 @@ internal class AppDependencies(context: Context) {
 
     // 手机有没有网：断网失败后等网络恢复自动重试用
     val networkMonitor: NetworkMonitor by lazy { NetworkMonitor(appContext) }
+
+    // 首次引导的执行者放在进程级：界面被划掉、转屏都不打断正在装的，重新打开时接着显示进度
+    val oobeSetup: OobeSetupManager by lazy {
+        OobeSetupManager(appContext, settings, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess, networkMonitor)
+    }
 
     // ── MaiDroid 应用本体的在线更新（与容器无关） ─────────────────────────
     val appUpdater: AppUpdateManager by lazy {

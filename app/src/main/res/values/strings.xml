@@ -7,4 +7,6 @@
     <string name="notification_running">MaiBot运行中……</string>
     <string name="notification_tap_open">点击打开应用</string>
     <string name="notification_safe_exit">正在安全退出 MaiDroid</string>
+    <string name="notification_setup">正在安装 MaiBot</string>
+    <string name="notification_setup_text">切到后台也会接着装，点这里查看进度</string>
 </resources>

@@ -26,6 +26,7 @@ import org.maiwithu.maidroid.diagnostics.CrashRecord
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.ui.cleanup.LowStorageDialog
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.diagnostics.CrashPromptDialog
@@ -82,6 +83,7 @@ internal fun MaiDroidApp(
     val safeExit = remember(context) { context.appDependencies.safeExit }
     val safeExitState by safeExit.state.collectAsState()
     val pendingCrash by viewModel.pendingCrash.collectAsState()
+    val lowStorageBytes by viewModel.lowStorageBytes.collectAsState()
     // 在闪退提示里点了“反馈问题”：记下是哪次闪退，接着打开反馈弹窗；去“另存为”回来重建时也保留
     var crashToReport by rememberSaveable(stateSaver = CrashRecordSaver) { mutableStateOf<CrashRecord?>(null) }
 
@@ -208,7 +210,10 @@ internal fun MaiDroidApp(
             onDismiss = viewModel::acknowledgeCrash
         )
     } else if (setupComplete && !showStartupSplash) {
+        val freeBytes = lowStorageBytes
         when {
+            // 空间快满了先说：更新也要空间，满着去更新只会失败
+            freeBytes != null -> LowStorageDialog(freeBytes = freeBytes, onDismiss = viewModel::dismissLowStorage)
             appUpdatePrompt -> AppUpdateDialogHost(onDismiss = appUpdater::dismissLaunchPrompt)
             maiBotUpdatePrompt -> MaiBotUpdateDialogHost(onDismiss = maiBotUpdater::dismissLaunchPrompt)
         }

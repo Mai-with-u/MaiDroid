@@ -1,28 +1,32 @@
 package org.maiwithu.maidroid
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.diagnostics.CrashRecord
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.maibot.update.shouldAutoUpdateMaiBot
 import org.maiwithu.maidroid.oobe.OobeSetupManager
 import org.maiwithu.maidroid.oobe.OobeStep
+import org.maiwithu.maidroid.runtime.StorageSpace
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 
 /**
  * 主界面的流程状态：启动页 ->（首次）授权弹窗 + OOBE 三步 -> 主页。
  *
- * 跨屏幕旋转保留 OOBE 的安装进程（OobeSetupManager）；OOBE 当前步骤和“启动页是否已经播过”
- * 存进 SavedStateHandle，进程被系统回收后回来也能接着上次的位置。
+ * OOBE 的安装进程（OobeSetupManager）是进程级的，转屏、界面被划掉都不打断；OOBE 当前步骤存进设置（AppSettings.oobeStep），
+ * 闪退、强制重启、断电后重新打开也回到这一步接着装。“启动页是否已经播过”存进 SavedStateHandle，进程被系统回收后回来不再重播。
  */
 internal class MainViewModel(
     application: Application,
@@ -30,25 +34,22 @@ internal class MainViewModel(
 ) : AndroidViewModel(application) {
 
     private companion object {
-        const val KEY_OOBE_STEP = "oobe_step"
         const val KEY_SHOW_SPLASH = "show_startup_splash"
 
         // WebUI 在线时 5 秒探测一次，离线时 1.5 秒一次，好让主页尽快切到 WebUI。
         const val WEB_UI_ONLINE_POLL_MS = 5_000L
         const val WEB_UI_OFFLINE_POLL_MS = 1_500L
+
+        // 剩余空间低于这个数就提醒一次；每分钟看一次
+        const val LOW_STORAGE_WARNING_BYTES = 300L * 1024 * 1024
+        const val STORAGE_CHECK_INTERVAL_MS = 60_000L
     }
 
     private val dependencies = application.appDependencies
     private val settings = dependencies.settings
 
-    val setupManager = OobeSetupManager(
-        application,
-        settings,
-        dependencies.runtimePaths,
-        dependencies.runtimeReadiness,
-        dependencies.commandRunner,
-        dependencies.maiBotProcess
-    )
+    /** 首次引导的执行者是进程级的（见 AppDependencies.oobeSetup）：界面被划掉重开后接着显示同一份进度。 */
+    val setupManager: OobeSetupManager = dependencies.oobeSetup
 
     private val _setupComplete = MutableStateFlow(settings.setupComplete)
 
@@ -61,12 +62,23 @@ internal class MainViewModel(
     /** 启动页只在一次全新启动时播放（屏幕旋转、进程回收后恢复都不再播）。 */
     val showStartupSplash: StateFlow<Boolean> = savedState.getStateFlow(KEY_SHOW_SPLASH, true)
 
-    val oobeStep: StateFlow<OobeStep> = savedState.getStateFlow(KEY_OOBE_STEP, OobeStep.Permissions)
+    private val _oobeStep = MutableStateFlow(
+        OobeStep.entries.firstOrNull { it.name == settings.oobeStep } ?: OobeStep.Permissions
+    )
+    val oobeStep: StateFlow<OobeStep> = _oobeStep.asStateFlow()
 
     private val _webUiOnline = MutableStateFlow(false)
 
     /** MaiBot WebUI 现在能不能访问（不只是进程在跑）。 */
     val webUiOnline: StateFlow<Boolean> = _webUiOnline.asStateFlow()
+
+    private val _lowStorageBytes = MutableStateFlow<Long?>(null)
+
+    /** 麦麦跑着时手机只剩这么多空间、该提醒用户清理了；不用提醒（空间够、这次已经提醒过）时为 null。 */
+    val lowStorageBytes: StateFlow<Long?> = _lowStorageBytes.asStateFlow()
+
+    // 这次打开应用已经提醒过空间不足（用户点了以后再说或去清理了），之后不再弹
+    private var lowStorageWarned = false
 
     private val _pendingCrash = MutableStateFlow(dependencies.crashRecorder.pendingCrash())
 
@@ -86,7 +98,9 @@ internal class MainViewModel(
         lastLaunchedVersionCode = settings.lastLaunchedVersionCode,
         currentVersionCode = BuildConfig.VERSION_CODE,
         autoUpdateDisabled = settings.maiBotAutoUpdateDisabled
-    ).also { settings.lastLaunchedVersionCode = BuildConfig.VERSION_CODE }
+    ).also { settings.lastLaunchedVersionCode = BuildConfig.VERSION_CODE } ||
+        // 上次更新 MaiBot 做到一半被打断（闪退、被系统结束、断电）：同样先在唤醒页上把它做完，不受“关闭自动更新”影响
+        (settings.setupComplete && dependencies.maiBotUpdater.hasInterruptedUpdate())
 
     init {
         // OOBE 完成后：检查一次 MaiDroid 新版本 ->（MaiDroid 刚更新过时）先自动升级 MaiBot ->
@@ -105,12 +119,28 @@ internal class MainViewModel(
                     wakeMaiBot()
                     dependencies.maiBotUpdater.checkOnLaunch()
                 }
+                var lastStorageCheck = 0L
                 while (true) {
                     _webUiOnline.value = MaiBotWebUi.isReachable()
+                    // 顺带每分钟看一次空间：快满了提醒一次（见 LowStorageDialog）
+                    val now = SystemClock.elapsedRealtime()
+                    if (!lowStorageWarned && now - lastStorageCheck >= STORAGE_CHECK_INTERVAL_MS) {
+                        lastStorageCheck = now
+                        val free = withContext(Dispatchers.IO) {
+                            StorageSpace.availableBytes(dependencies.runtimePaths.appFilesDir)
+                        }
+                        _lowStorageBytes.value = free.takeIf { it < LOW_STORAGE_WARNING_BYTES }
+                    }
                     delay(if (_webUiOnline.value) WEB_UI_ONLINE_POLL_MS else WEB_UI_OFFLINE_POLL_MS)
                 }
             }
         }
+    }
+
+    /** 空间不足的提醒关掉了（以后再说，或清理完关掉了清理弹窗）：这次打开应用期间不再提醒。 */
+    fun dismissLowStorage() {
+        lowStorageWarned = true
+        _lowStorageBytes.value = null
     }
 
     /** 用户看过闪退提示（点了反馈或知道了），这次闪退之后不再问。 */
@@ -137,19 +167,25 @@ internal class MainViewModel(
         }
     }
 
-    // 进入或重试“安装 MaiBot”：容器没配好（例如进程被回收后恢复到这一步、容器文件被清掉一部分）
+    // 换到 OOBE 的某一步，同时记进设置，重新打开应用时回到这一步
+    private fun moveToOobeStep(step: OobeStep) {
+        _oobeStep.value = step
+        settings.oobeStep = step.name
+    }
+
+    // 进入或重试“安装 MaiBot”：容器没配好（例如重新打开时回到这一步、容器文件被清掉一部分）
     // 就退回“配置容器”一步，由它补齐后再进来，而不是在安装页上报一个只能返回才能解决的错误。
     private fun startInstallOrReturnToContainer() {
         if (dependencies.runtimeReadiness.containerProblem() == null) {
             setupManager.startInstall()
         } else {
-            savedState[KEY_OOBE_STEP] = OobeStep.Container
+            moveToOobeStep(OobeStep.Container)
         }
     }
 
     /** 系统返回键：退回 OOBE 的上一步（第一步时界面不拦截返回键，不会调到这里）。 */
     fun goBackOobeStep() {
-        OobeStep.entries.getOrNull(oobeStep.value.ordinal - 1)?.let { savedState[KEY_OOBE_STEP] = it }
+        OobeStep.entries.getOrNull(oobeStep.value.ordinal - 1)?.let(::moveToOobeStep)
     }
 
     /**
@@ -163,11 +199,11 @@ internal class MainViewModel(
         when (oobeStep.value) {
             OobeStep.Permissions -> {
                 if (!storageGranted) return false
-                savedState[KEY_OOBE_STEP] = OobeStep.Container
+                moveToOobeStep(OobeStep.Container)
             }
             OobeStep.Container -> {
                 if (state.canInstall) {
-                    savedState[KEY_OOBE_STEP] = OobeStep.Install
+                    moveToOobeStep(OobeStep.Install)
                 } else {
                     setupManager.prepareContainer()
                 }
@@ -201,8 +237,4 @@ internal class MainViewModel(
             .onFailure { dependencies.maiBotProcess.start() }
     }
 
-    override fun onCleared() {
-        setupManager.close()
-        super.onCleared()
-    }
 }
