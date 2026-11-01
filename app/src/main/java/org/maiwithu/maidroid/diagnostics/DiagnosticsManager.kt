@@ -53,7 +53,6 @@ internal class DiagnosticsManager(
         const val MAX_TERMINAL_LOG_FILES = 4
         const val MAIBOT_LOG_TAIL_BYTES = 1024L * 1024
         const val MAX_CRASH_FILES = 5
-        const val MAX_EXIT_REASONS = 5
 
         val generatedAtFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss xxx")
         val fileNameFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
@@ -292,6 +291,27 @@ private fun readGitHead(gitDir: File): Pair<String?, String?> {
             File(gitDir, "packed-refs").readLines().firstOrNull { it.endsWith(" $ref") }?.substringBefore(' ')
         }.getOrNull()
     return branch to commit
+}
+
+// 诊断报告列出、以及找原生闪退时看的进程结束记录条数
+private const val MAX_EXIT_REASONS = 5
+
+/**
+ * 系统记下的最近几次原生代码闪退和应用无响应（Android 11 起才有），给 CrashRecorder 补上它自己记不到的闪退。
+ * 普通的 Java 闪退不在这里：CrashRecorder 自己记了，还带着调用栈和闪退前的终端输出。
+ */
+internal fun recentSystemCrashes(context: Context): List<SystemCrash> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptyList()
+    return runCatching {
+        context.getSystemService(ActivityManager::class.java)
+            .getHistoricalProcessExitReasons(null, 0, MAX_EXIT_REASONS)
+            .filter { it.reason == ApplicationExitInfo.REASON_CRASH_NATIVE || it.reason == ApplicationExitInfo.REASON_ANR }
+            .map { info ->
+                // 例如“原生代码闪退（crash）”，提示里是“MaiDroid 上次闪退：原生代码闪退（crash）”
+                val detail = info.description?.takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()
+                SystemCrash(info.timestamp, exitReasonLabel(info.reason) + detail)
+            }
+    }.getOrDefault(emptyList())
 }
 
 /** 系统记录的进程结束原因（ApplicationExitInfo.REASON_*）换成中文。 */

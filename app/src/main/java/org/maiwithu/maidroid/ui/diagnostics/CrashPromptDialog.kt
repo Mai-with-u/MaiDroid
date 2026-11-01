@@ -45,8 +45,13 @@ internal fun CrashPromptDialog(crash: CrashRecord, onFeedback: () -> Unit, onDis
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FailureCodeLine(failure)
+                // 自己记下的闪退有调用栈和闪退前的终端输出；系统记的（原生代码闪退、无响应）只有系统的退出记录
                 Text(
-                    text = "当时的报错已经记下来了。反馈给我们能帮忙更快修好，诊断包会带上这份闪退记录。",
+                    text = if (crash.fromSystem) {
+                        "系统记下了这次退出。反馈给我们能帮忙更快修好，诊断包会带上系统的退出记录和之前的终端输出。"
+                    } else {
+                        "当时的报错已经记下来了。反馈给我们能帮忙更快修好，诊断包会带上这份闪退记录。"
+                    },
                     color = TextMuted,
                     fontSize = TextSizes.Body,
                     lineHeight = 19.sp

@@ -206,7 +206,7 @@ flowchart TB
 - QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionErrors`。
 - WebView 相关日志在 `MaiDroidWebUi` 标签（`MaiBotWebUi.LOG_TAG`）。
 - `TerminalLogRecorder` 把终端输出同时写进 `files/diagnostics/logs/terminal-<启动时间>.log`：每行带时间，每个进程一份，单个文件满 2 MB 接着写 `.2.log`，所有文件合计超过 12 MB 删最旧的。反馈问题时带上最近几份，用户不用自己翻终端。
-- MaiDroid 自己闪退时 `CrashRecorder` 把调用栈和最后 80 行终端输出写进 `files/diagnostics/crashes/`（保留 10 份），下次打开主界面时问一次要不要反馈。
+- MaiDroid 自己闪退时 `CrashRecorder` 把调用栈和最后 80 行终端输出写进 `files/diagnostics/crashes/`（保留 10 份），下次打开主界面时问一次要不要反馈。原生代码闪退（例如 WebView 渲染进程崩溃把应用一起带走）和应用无响应走不到 Java 的异常处理，由 `recentSystemCrashes` 从系统的进程结束记录（Android 11 起）补上，最近三天内的一样会问。
 - 失败时各处往终端写一行 `[MaiDroid] 错误码 <错误码> <说明>`（`Failure.logLine`），诊断报告靠它列出最近几次失败；容器脚本自己换源、重建重试时打一行 `[自动修复] …`。
 
 ## 错误码与反馈

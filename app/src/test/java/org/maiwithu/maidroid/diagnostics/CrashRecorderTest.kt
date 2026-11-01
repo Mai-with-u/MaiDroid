@@ -14,10 +14,13 @@ class CrashRecorderTest {
 
     private var clock = 1_793_536_200_250L
 
+    private var systemCrashes = emptyList<SystemCrash>()
+
     private fun recorder() = CrashRecorder(
         dir = temp.root,
         header = { "MaiDroid 0.2.0（5，debug）" },
         recentLines = { listOf("[MaiBot] 最后一行") },
+        systemCrashes = { systemCrashes },
         now = { clock },
         zoneId = ZoneOffset.UTC
     )
@@ -39,7 +42,10 @@ class CrashRecorderTest {
 
         recorder.record("main", IllegalStateException("first"))
         val pending = recorder.pendingCrash()
-        assertEquals(CrashRecord("crash-20261101-123000-250.txt", "java.lang.IllegalStateException: first"), pending)
+        assertEquals(
+            CrashRecord("crash-20261101-123000-250.txt", 1_793_536_200_250L, "java.lang.IllegalStateException: first"),
+            pending
+        )
 
         recorder.acknowledge(pending!!)
         assertNull(recorder.pendingCrash())
@@ -48,6 +54,28 @@ class CrashRecorderTest {
         clock += 60_000
         recorder.record("worker", RuntimeException("second"))
         assertEquals("java.lang.RuntimeException: second", recorder.pendingCrash()?.summary)
+    }
+
+    @Test
+    fun nativeCrashesAndAnrsFromTheSystemAreAskedToo() {
+        val recorder = recorder()
+        recorder.record("main", IllegalStateException("java"))
+        // 之后又被 WebView 带着原生闪退了一次：问的是更新的这次
+        systemCrashes = listOf(SystemCrash(clock + 5_000, "原生代码闪退（Trap）"))
+        clock += 10_000
+        val pending = recorder.pendingCrash()
+        assertEquals("原生代码闪退（Trap）", pending?.summary)
+        assertTrue(pending!!.fromSystem)
+
+        // 看过之后，这次和更早的 Java 闪退都不再问
+        recorder.acknowledge(pending)
+        assertNull(recorder.pendingCrash())
+
+        // 三天前的系统记录不翻旧账
+        systemCrashes = listOf(SystemCrash(clock - 4L * 24 * 60 * 60 * 1000, "应用无响应"))
+        temp.root.resolve(".acknowledged").delete()
+        temp.root.listFiles { file -> file.name.startsWith("crash-") }.orEmpty().forEach { it.delete() }
+        assertNull(recorder.pendingCrash())
     }
 
     @Test

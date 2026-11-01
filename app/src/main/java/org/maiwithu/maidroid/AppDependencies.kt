@@ -9,6 +9,7 @@ import org.maiwithu.maidroid.diagnostics.CrashRecorder
 import org.maiwithu.maidroid.diagnostics.DiagnosticsFiles
 import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
+import org.maiwithu.maidroid.diagnostics.recentSystemCrashes
 import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
@@ -51,7 +52,8 @@ internal class AppDependencies(context: Context) {
             "MaiDroid ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}，${BuildConfig.BUILD_TYPE}）· " +
                 "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}（API ${Build.VERSION.SDK_INT}）"
         },
-        recentLines = { TerminalLog.logs.value.map(AnsiText::plain) }
+        recentLines = { TerminalLog.logs.value.map(AnsiText::plain) },
+        systemCrashes = { recentSystemCrashes(appContext) }
     )
 
     // ── 容器运行时：路径、就绪检查、命令执行 ─────────────────────────────

@@ -217,6 +217,8 @@ internal fun MaiDroidApp(
 
 // 闪退记录只有文件名和异常一行，存成两段字符串跨 Activity 重建保留。
 private val CrashRecordSaver = listSaver<CrashRecord?, String>(
-    save = { record -> if (record == null) emptyList() else listOf(record.fileName, record.summary) },
-    restore = { values -> if (values.size == 2) CrashRecord(values[0], values[1]) else null }
+    save = { record -> if (record == null) emptyList() else listOf(record.id, record.timeMillis.toString(), record.summary) },
+    restore = { values ->
+        values.getOrNull(1)?.toLongOrNull()?.takeIf { values.size == 3 }?.let { CrashRecord(values[0], it, values[2]) }
+    }
 )
