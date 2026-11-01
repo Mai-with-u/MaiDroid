@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
+import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -83,13 +84,14 @@ internal fun QqOfficialConfigDialog(
                     )
                 }
 
-                state.errorMessage?.let { error ->
+                state.failure?.let { failure ->
                     Text(
-                        text = "安装失败：$error",
+                        text = "安装失败：${failure.message}",
                         color = StatusDanger,
                         fontSize = TextSizes.Caption,
                         lineHeight = 15.sp
                     )
+                    FailureNotice(failure = failure)
                 }
 
                 OutlinedTextField(

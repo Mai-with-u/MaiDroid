@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -91,7 +94,7 @@ internal class QqOfficialPlatformManager(
                     ?: if (!readiness.isMaiBotSourceReady()) "MaiBot 源码尚未安装，无法安装 QQ 官方机器人适配器" else null
             }
             if (validationError != null) {
-                fail(validationError)
+                fail(Failure(FailureStep.QqOfficialPrecheck, validationError))
                 return@launch
             }
 
@@ -108,7 +111,7 @@ internal class QqOfficialPlatformManager(
                 )
                 val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
                 if (!result.success || !installed) {
-                    fail(result.summary())
+                    fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
                     return@launch
                 }
             }
@@ -116,7 +119,7 @@ internal class QqOfficialPlatformManager(
             updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
             val writeError = writeCredentials(appId, appSecret)
             if (writeError != null) {
-                fail("写入配置失败：$writeError")
+                fail(Failure(FailureStep.QqOfficialConfig, "写入配置失败：$writeError"))
                 return@launch
             }
 
@@ -125,7 +128,7 @@ internal class QqOfficialPlatformManager(
                     phase = QqOfficialInstallPhase.Installed,
                     progress = 1f,
                     progressDescription = "QQ 官方机器人适配器已安装",
-                    errorMessage = null
+                    failure = null
                 )
             }
             refreshFileState()
@@ -145,7 +148,7 @@ internal class QqOfficialPlatformManager(
         }
         writeCredentials(appId, appSecret)?.let { return QqOfficialSaveResult.Failed(it) }
         // 上次安装时写配置失败留下的提示，这次写成功了就不再显示。
-        _state.update { it.copy(errorMessage = null) }
+        _state.update { it.copy(failure = null) }
         refreshFileState()
         TerminalLog.append("[QQ 官方机器人] 已更新 AppID 和 AppSecret，正在重启 MaiBot 让适配器重新连接")
         restartMaiBot()
@@ -225,12 +228,13 @@ internal class QqOfficialPlatformManager(
                 phase = QqOfficialInstallPhase.Installing,
                 progress = progress,
                 progressDescription = description,
-                errorMessage = null
+                failure = null
             )
         }
     }
 
-    private suspend fun fail(message: String) {
+    // 安装失败：配置弹窗显示说明、错误码和“反馈问题”，错误码同时写进终端日志
+    private suspend fun fail(failure: Failure) {
         val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
         _state.update {
             it.copy(
@@ -238,9 +242,10 @@ internal class QqOfficialPlatformManager(
                 installed = installed,
                 progress = 0f,
                 progressDescription = "QQ 官方机器人适配器安装失败",
-                errorMessage = message
+                failure = failure
             )
         }
-        TerminalLog.append("[QQ 官方机器人] 安装失败: $message")
+        TerminalLog.append("[QQ 官方机器人] 安装失败: ${failure.message}")
+        TerminalLog.append(failure.logLine())
     }
 }

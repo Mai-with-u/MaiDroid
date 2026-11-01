@@ -115,4 +115,23 @@ class FailureCodesTest {
         assertNull(diagnoseFailureCause(output))
         assertNull(diagnoseFailureCause(""))
     }
+
+    @Test
+    fun okHttpExceptionsAreRecognized() {
+        // 应用自更新下载失败时记的是“异常类名: 说明”
+        assertEquals(
+            FailureCause.Dns,
+            diagnoseFailureCause("UnknownHostException: Unable to resolve host \"github.com\": No address associated with hostname")
+        )
+        assertEquals(FailureCause.Timeout, diagnoseFailureCause("SocketTimeoutException: timeout"))
+        assertEquals(
+            FailureCause.Tls,
+            diagnoseFailureCause("SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor not found")
+        )
+        assertEquals(
+            FailureCause.ClockSkew,
+            diagnoseFailureCause("SSLHandshakeException: CertificateNotYetValidException: Certificate not valid until 2027")
+        )
+        assertEquals(FailureCause.ConnectionLost, diagnoseFailureCause("ConnectException: Failed to connect to /1.2.3.4:443"))
+    }
 }

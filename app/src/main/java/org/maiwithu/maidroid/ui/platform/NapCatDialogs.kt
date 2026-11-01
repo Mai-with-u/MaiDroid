@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.platform.napcat.NapCatLoginPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
+import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -287,6 +288,14 @@ private fun QrLoginHints(state: NapCatPlatformState) {
             fontSize = TextSizes.Caption,
             lineHeight = 15.sp
         )
+    }
+
+    // 安装失败时再给错误码、建议和“反馈问题”
+    if (state.qrRefreshError == null) {
+        state.failure?.let { failure ->
+            Spacer(modifier = Modifier.height(8.dp))
+            FailureNotice(failure = failure)
+        }
     }
 }
 

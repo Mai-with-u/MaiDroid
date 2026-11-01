@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.platform.qqofficial
 
+import org.maiwithu.maidroid.diagnostics.Failure
+
 /** 适配器的安装进度阶段。 */
 internal enum class QqOfficialInstallPhase {
     Idle,
@@ -17,14 +19,15 @@ internal data class QqOfficialPlatformState(
     val installed: Boolean = false,
     val progress: Float = 0f,
     val progressDescription: String = "",
-    // 安装失败的原因；连接失败另记在 connectionError。
-    val errorMessage: String? = null,
+    // 安装失败时带错误码的原因；连接失败另记在 connectionError。
+    val failure: Failure? = null,
     val credentials: QqOfficialCredentials = QqOfficialCredentials(),
     val maiBotRunning: Boolean = false,
     // 最近一段时间内适配器报的连接错误，过期或 MaiBot 重启后清空。
     val connectionError: String? = null
 ) {
     val isInstalling: Boolean = phase == QqOfficialInstallPhase.Installing
+    val errorMessage: String? get() = failure?.message
     val configured: Boolean = installed && credentials.configured
     // 适配器连上网关时不打日志，只能这样近似：已启用、MaiBot 在跑、近期没有连接报错。
     val presumedOnline: Boolean = configured && maiBotRunning && connectionError == null

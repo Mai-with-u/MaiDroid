@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -183,7 +186,7 @@ internal class NapCatPlatformManager(
                     installed = false,
                     progress = 0.02f,
                     progressDescription = "准备安装 NapCat",
-                    errorMessage = null
+                    failure = null
                 )
             }
 
@@ -196,7 +199,7 @@ internal class NapCatPlatformManager(
                     }
             }
             if (validationError != null) {
-                fail(validationError)
+                fail(Failure(FailureStep.NapCatPrecheck, validationError))
                 return@launch
             }
 
@@ -210,16 +213,21 @@ internal class NapCatPlatformManager(
                 progressJob?.cancel()
                 progressJob = null
                 if (!result.success) {
-                    fail(result.summary())
+                    fail(failureOf(FailureStep.NapCatInstall, result.summary(), result.output))
                     return@launch
                 }
             }
 
             if (withContext(Dispatchers.IO) { adapterInstaller.needsInstall() }) {
                 _state.update { it.copy(progress = 0.92f, progressDescription = "下载 MaiBot 的 QQ 适配器") }
-                val adapterError = adapterInstaller.install(onLine = TerminalLog::append)
+                // 安装输出照常进终端，同时留一份用来认失败原因
+                val adapterOutput = StringBuilder()
+                val adapterError = adapterInstaller.install(onLine = { line ->
+                    TerminalLog.append(line)
+                    adapterOutput.appendLine(line)
+                })
                 if (adapterError != null) {
-                    fail(adapterError)
+                    fail(failureOf(FailureStep.NapCatAdapter, adapterError, adapterOutput.toString() + adapterError))
                     return@launch
                 }
             }
@@ -230,7 +238,7 @@ internal class NapCatPlatformManager(
             restartRuntime()
             val migrationError = adapterInstaller.migrateConfigWhenReady()
             if (migrationError != null) {
-                fail(migrationError)
+                fail(Failure(FailureStep.NapCatAdapterConfig, migrationError))
                 return@launch
             }
 
@@ -242,14 +250,14 @@ internal class NapCatPlatformManager(
                         installed = true,
                         progress = 1f,
                         progressDescription = "NapCat 安装和自动配置完成",
-                        errorMessage = null,
+                        failure = null,
                         qrCodePath = snapshot.qrCodePath,
                         qrCodeLastModified = snapshot.qrCodeLastModified
                     )
                 }
                 TerminalLog.append("[NapCat] 安装完成，麦麦会按迁移好的配置自动启用 QQ 适配器")
             } else {
-                fail("NapCat 或 QQ 适配器的文件不完整，请重试")
+                fail(Failure(FailureStep.NapCatFilesCheck, "NapCat 或 QQ 适配器的文件不完整，请重试"))
             }
         }
     }
@@ -339,17 +347,19 @@ internal class NapCatPlatformManager(
         )
     }
 
-    private fun fail(message: String) {
+    // 安装失败：消息平台页显示说明、错误码和“反馈问题”，错误码同时写进终端日志
+    private fun fail(failure: Failure) {
         _state.update {
             it.copy(
                 phase = NapCatInstallPhase.Failed,
                 installed = files.isInstalled(),
                 progress = 0f,
                 progressDescription = "NapCat 安装失败",
-                errorMessage = message
+                failure = failure
             )
         }
-        TerminalLog.append("[NapCat] 安装失败: $message")
+        TerminalLog.append("[NapCat] 安装失败: ${failure.message}")
+        TerminalLog.append(failure.logLine())
     }
 
     // OneBot WebSocket 的访问 token：32 字节随机数的十六进制，只在第一次安装时使用。

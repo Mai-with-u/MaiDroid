@@ -138,13 +138,13 @@ private fun containerSshStatusText(state: ContainerSshState): String =
         else -> "已关闭 · 端口 ${state.port}"
     }
 
-/** 状态一行文案；启动失败时第二行附上失败原因。 */
+/** 状态一行文案；启动失败时第二行附上失败原因和错误码。 */
 internal fun containerSshSummaryText(state: ContainerSshState): String {
     val status = containerSshStatusText(state)
-    val error = state.errorMessage?.takeIf {
-        state.phase == ContainerSshPhase.Failed && it.isNotBlank()
+    val failure = state.failure?.takeIf {
+        state.phase == ContainerSshPhase.Failed && it.message.isNotBlank()
     }
-    return if (error == null) status else "$status\n$error"
+    return if (failure == null) status else "$status\n${failure.message}（${failure.code}）"
 }
 
 // 经前台服务按设置同步 sshd，保证切到后台后 SSH 仍由常驻服务托管。
