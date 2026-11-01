@@ -237,7 +237,8 @@ internal class OobeSetupManager(
             return
         }
 
-        if (!readiness.isSystemDependencyReady()) {
+        // 上次装 Git、curl 时被打断留下 dpkg 半装状态也算没就绪，重跑下面几步：装依赖的脚本会先 dpkg --configure -a 修好
+        if (!withContext(Dispatchers.IO) { readiness.isSystemDependencyReady() }) {
             showContainerProgress(SYSTEM_DEPENDENCY_TASKS, "正在修复容器文件权限...")
             withContext(Dispatchers.IO) {
                 RuntimeFileModes.makeRootfsWritable(paths)

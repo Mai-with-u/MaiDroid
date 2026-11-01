@@ -11,6 +11,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.terminal.AnsiText
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URL
 
 /**
@@ -18,12 +20,15 @@ import java.net.URL
  * 容器与宿主共用网络，宿主直接访问回环地址即可。
  */
 internal object MaiBotWebUi {
-    const val URL = "http://127.0.0.1:8001/"
+    private const val HOST = "127.0.0.1"
+    const val PORT = 8001
+    const val URL = "http://$HOST:$PORT/"
 
     /** WebView 加载、console 输出、视口修补结果都打到这个 logcat 标签。 */
     const val LOG_TAG = "MaiDroidWebUi"
 
     private const val PROBE_TIMEOUT_MS = 1_000
+    private const val PORT_PROBE_TIMEOUT_MS = 500
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -51,6 +56,16 @@ internal object MaiBotWebUi {
             }
         }.getOrDefault(false)
     }
+
+    /**
+     * WebUI 端口上有没有程序在监听。阻塞调用，只在 IO 线程里用。
+     * 监管器在自己的 MaiBot 没跑时调用：连得上就说明端口被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot……）。
+     */
+    fun isPortTaken(): Boolean =
+        runCatching {
+            Socket().use { socket -> socket.connect(InetSocketAddress(HOST, PORT), PORT_PROBE_TIMEOUT_MS) }
+            true
+        }.getOrDefault(false)
 
     /** url 是否指向 MaiBot WebUI（而不是 NapCat 管理页等其他页面），只有它需要带令牌打开。 */
     fun isMaiBotWebUiUrl(url: String): Boolean {

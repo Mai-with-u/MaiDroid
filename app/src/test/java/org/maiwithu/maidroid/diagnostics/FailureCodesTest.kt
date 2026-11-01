@@ -7,6 +7,15 @@ import org.junit.Test
 
 class FailureCodesTest {
     @Test
+    fun maiBotOwnPortCheckCountsAsPortBusy() {
+        // MaiBot 先自己查端口，不再抛系统的 EADDRINUSE
+        assertEquals(
+            FailureCause.PortInUse,
+            diagnoseFailureCause("OSError: HTTP 服务器 启动失败: 端口 8001 已被占用 (host=127.0.0.1)")
+        )
+    }
+
+    @Test
     fun codesAreShortUniqueAndUppercase() {
         val codes = FailureStep.entries.map { it.code } + FailureCause.entries.map { it.code }
         assertEquals("错误码不能重复", codes.size, codes.toSet().size)

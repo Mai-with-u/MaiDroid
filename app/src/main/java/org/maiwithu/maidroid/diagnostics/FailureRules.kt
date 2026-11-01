@@ -67,7 +67,8 @@ private val FAILURE_RULES = listOf(
     ),
     rule(FailureCause.MissingModule, "ModuleNotFoundError", "No module named", "ImportError"),
     rule(FailureCause.ConfigSyntax, "TOMLDecodeError", "tomlkit.exceptions", "Invalid TOML"),
-    rule(FailureCause.PortInUse, "Address already in use", "[Errno 98]", "EADDRINUSE"),
+    // MaiBot 自己先查端口，被占时报“HTTP 服务器 启动失败: 端口 8001 已被占用”，不再是系统的 EADDRINUSE
+    rule(FailureCause.PortInUse, "Address already in use", "[Errno 98]", "EADDRINUSE", "已被占用"),
     rule(FailureCause.DatabaseLocked, "database is locked")
 )
 

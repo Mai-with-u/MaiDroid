@@ -121,7 +121,9 @@ internal class MainViewModel(
                 }
                 var lastStorageCheck = 0L
                 while (true) {
-                    _webUiOnline.value = MaiBotWebUi.isReachable()
+                    // 自己的 MaiBot 在跑、端口又能连上才算在线：8001 被别的程序占着时（另一个 MaiDroid、Termux 里的 MaiBot），
+                    // 只看端口会把那个程序的页面当成麦麦打开，页面里只剩一句“Token 无效或已过期”
+                    _webUiOnline.value = maiBotStatus.value.running && MaiBotWebUi.isReachable()
                     // 顺带每分钟看一次空间：快满了提醒一次（见 LowStorageDialog）
                     val now = SystemClock.elapsedRealtime()
                     if (!lowStorageWarned && now - lastStorageCheck >= STORAGE_CHECK_INTERVAL_MS) {

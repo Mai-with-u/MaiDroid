@@ -26,6 +26,7 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.runtime.killProot
 import org.maiwithu.maidroid.runtime.requestedExitOf
 import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.webui.MaiBotWebUi
 import java.util.concurrent.TimeUnit
 
 /**
@@ -43,7 +44,8 @@ import java.util.concurrent.TimeUnit
 internal class MaiBotProcessSupervisor(
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
-    private val commandRunner: ContainerCommandRunner
+    private val commandRunner: ContainerCommandRunner,
+    private val webUiPortTaken: () -> Boolean = MaiBotWebUi::isPortTaken
 ) {
 
     companion object {
@@ -65,6 +67,9 @@ internal class MaiBotProcessSupervisor(
         // 安全退出时：等在线更新做完的轮询间隔；Runner 退出后等 proot 跟着结束的上限。
         private const val MAINTENANCE_POLL_MS = 500L
         private const val PROOT_EXIT_WAIT_MS = 5_000L
+
+        // WebUI 端口被别的程序占着时，隔多久再看一次空出来没有。
+        private const val PORT_RECHECK_MS = 5_000L
     }
 
     private val scope = backgroundScope("MaiBot 进程监管", Dispatchers.IO)
@@ -247,6 +252,8 @@ internal class MaiBotProcessSupervisor(
         var restartDelayMs = INITIAL_RESTART_DELAY_MS
         cleanupStaleProcesses()
         while (currentCoroutineContext().isActive && !shouldStayStopped(ownGeneration)) {
+            // 每次拉起前（含意外退出后重启前）都看一眼 WebUI 端口，等的时候被停止就不再拉起
+            if (!awaitFreeWebUiPort(ownGeneration)) break
             runProcessOnce(ownGeneration)
             if (shouldStayStopped(ownGeneration)) break
 
@@ -260,6 +267,33 @@ internal class MaiBotProcessSupervisor(
 
     private fun shouldStayStopped(ownGeneration: Int): Boolean =
         ownGeneration != generation || maintenanceInProgress
+
+    /**
+     * 拉起前看一眼 WebUI 端口：自己的 MaiBot 这时没在跑，端口上却有程序在听，就是被别人占着
+     * （另一个 MaiDroid、Termux 里的 MaiBot 或别的服务）。这时拉起来也绑不上端口、只会反复重启，
+     * 探测 WebUI 还会连到那个程序上，被当成麦麦已经上线（2026-11 真机上装了两个 MaiDroid 时实测如此）。
+     * 所以先不拉起：在状态里标出端口被占（OOBE、唤醒页据此报 PORT-BUSY）-> 每 5 秒再看一次 -> 空出来就接着启动。
+     * 返回 false 表示等的时候被停止了。
+     */
+    private suspend fun awaitFreeWebUiPort(ownGeneration: Int): Boolean {
+        if (!webUiPortTaken()) return true
+        appendLog(
+            "[MaiDroid] 端口 ${MaiBotWebUi.PORT} 被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot 或别的服务），" +
+                "麦麦先不启动，端口空出来后自动启动"
+        )
+        _status.update { it.copy(webUiPortTaken = true) }
+        try {
+            while (webUiPortTaken()) {
+                if (shouldStayStopped(ownGeneration)) return false
+                delay(PORT_RECHECK_MS)
+            }
+        } finally {
+            _status.update { it.copy(webUiPortTaken = false) }
+        }
+        if (shouldStayStopped(ownGeneration)) return false
+        appendLog("[MaiDroid] 端口 ${MaiBotWebUi.PORT} 空出来了，启动麦麦")
+        return true
+    }
 
     // 跑一轮 MaiBot：启动 -> 把输出逐行写进终端日志 -> 等它退出。阻塞调用，只在监管协程（IO 线程）里执行。
     private fun runProcessOnce(ownGeneration: Int) {
@@ -347,10 +381,12 @@ internal class MaiBotProcessSupervisor(
  * exitCount 是进程启动后意外退出（含没能启动起来）的累计次数，主动停止、重启不算；
  * 等 WebUI 的一方先记下当前值，之后看它涨了几次就知道 MaiBot 是不是起来就崩。
  * launchBlockedReason 是最近一次启动请求因启动前检查没通过而被拦下的原因，成功拉起后清空。
+ * webUiPortTaken 表示 WebUI 端口被别的程序占着、正等它空出来才拉起 MaiBot。
  */
 internal data class MaiBotProcessStatus(
     val running: Boolean = false,
     val exitCount: Int = 0,
     val lastExitCode: Int? = null,
-    val launchBlockedReason: String? = null
+    val launchBlockedReason: String? = null,
+    val webUiPortTaken: Boolean = false
 )

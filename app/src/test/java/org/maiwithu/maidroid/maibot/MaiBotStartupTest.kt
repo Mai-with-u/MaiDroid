@@ -37,6 +37,18 @@ class MaiBotStartupTest {
     }
 
     @Test
+    fun `port held by another program is reported right away`() {
+        // 2026-11 真机装了两个 MaiDroid：8001 上是另一个的 WebUI，探测通了也不能当成自己的麦麦起来了
+        val waitingForPort = MaiBotProcessStatus(webUiPortTaken = true)
+
+        assertEquals(
+            MaiBotStartupResult.PortTaken,
+            maiBotStartupVerdict(waitingForPort, 0, webUiReachable = true, elapsedMs = 1_000)
+        )
+        assertEquals("MB-BLOCKED/PORT-BUSY", MaiBotStartupResult.PortTaken.failure("")?.code)
+    }
+
+    @Test
     fun `process that never starts is reported after the grace period`() {
         val idle = MaiBotProcessStatus()
 

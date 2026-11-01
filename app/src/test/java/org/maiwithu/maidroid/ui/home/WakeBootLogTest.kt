@@ -21,6 +21,14 @@ class WakeBootLogTest {
     }
 
     @Test
+    fun `port held by another program shows on the maibot line`() {
+        val lines = bootLines(webUiOnline = false, status = MaiBotProcessStatus(webUiPortTaken = true), exits = 0)
+
+        assertEquals(BootLine("maibot process", "port 8001 busy", BootCheck.Warning), lines[1])
+        assertEquals("MB-BLOCKED/PORT-BUSY", wakeFailure(MaiBotProcessStatus(webUiPortTaken = true), 0) { "" }?.code)
+    }
+
+    @Test
     fun `auto update line sits between container and maibot process`() {
         val lines = bootLines(false, starting, 0, update = updateLine(MaiBotUpdatePhase.Updating))
 
