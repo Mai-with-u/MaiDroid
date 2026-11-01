@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
@@ -155,6 +156,11 @@ internal class AppUpdateManager(
             _state.update {
                 it.copy(phase = AppUpdatePhase.Checking, failure = null, failedAction = null)
             }
+            // 没连网时 OkHttp 会立刻报解析不了域名，按“没连网”说更准
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.AppUpdateCheck)?.let { failure ->
+                failCheck(failure)
+                return@launch
+            }
             val sourceCount = GitHubMirrors.candidatesFor(apiUrl).size
             TerminalLog.append("")
             TerminalLog.append("$LOG_PREFIX 检查新版本，同时尝试 $sourceCount 条线路，当前 v$currentVersionName")
@@ -235,6 +241,10 @@ internal class AppUpdateManager(
             val (existing, usable) = withContext(Dispatchers.IO) {
                 files.dir.mkdirs()
                 part.length() to files.dir.usableSpace
+            }
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.AppUpdateDownload)?.let { failure ->
+                fail(AppUpdateAction.Download, failure)
+                return@launch
             }
             val needed = (asset.size - existing).coerceAtLeast(0L) + FREE_SPACE_MARGIN_BYTES
             if (asset.size > 0 && usable < needed) {

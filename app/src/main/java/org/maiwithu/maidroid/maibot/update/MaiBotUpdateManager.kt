@@ -20,6 +20,7 @@ import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
@@ -176,6 +177,11 @@ internal class MaiBotUpdateManager(
                 failCheck(Failure(FailureStep.UpdatePrecheck, error))
                 return@launch
             }
+            // 没连网时直接说，不用等各条 GitHub 线路都超时；启动时的自动检查照旧只记日志
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch)?.let { failure ->
+                failCheck(failure)
+                return@launch
+            }
 
             TerminalLog.append("")
             TerminalLog.append("$LOG_PREFIX 检查上游版本")
@@ -254,6 +260,11 @@ internal class MaiBotUpdateManager(
             )
             validationError()?.let { error ->
                 fail(action, Failure(FailureStep.UpdatePrecheck, error))
+                return@launch
+            }
+            // 先看网再停麦麦：没网时更新必然失败，不必让麦麦白停一次
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch)?.let { failure ->
+                fail(action, failure)
                 return@launch
             }
             if (target != null) {
@@ -368,6 +379,9 @@ internal class MaiBotUpdateManager(
     // 自动升级在维护期间做的事：检查 -> （需要时）还原并切到上游、重装依赖。拉取失败、已是最新且没改过源码时不动源码。
     private suspend fun autoUpdateWhileStopped(): AutoUpdateOutcome {
         validationError()?.let { return AutoUpdateOutcome.Skipped(it) }
+        NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch)?.let {
+            return AutoUpdateOutcome.Skipped(it.message)
+        }
         val result = runCommand(MaiBotUpdateScripts.fetchLatest())
         val report = parseMaiBotUpdateReport(result.output)
         applyReport(report)

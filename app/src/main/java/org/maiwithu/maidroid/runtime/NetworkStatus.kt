@@ -3,6 +3,9 @@ package org.maiwithu.maidroid.runtime
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureCause
+import org.maiwithu.maidroid.diagnostics.FailureStep
 
 /**
  * 手机当前的默认网络：有没有连上、走的是 Wi-Fi 还是移动数据（开着 VPN 也标出来）、系统有没有验证过能上网。
@@ -14,6 +17,13 @@ internal data class NetworkStatus(
     val transports: List<String> = emptyList(),
     val validated: Boolean = false
 ) {
+    /**
+     * 联网步骤开始前看一眼：根本没连网时直接给出“这一步/NET-OFFLINE”的失败，
+     * 不用等各个镜像都试一遍超时（apt 四个源、GitHub 七条线路，全超时要好几分钟）；连着网返回 null。
+     */
+    fun offlineFailure(step: FailureStep): Failure? =
+        if (connected) null else Failure(step, "手机没有连上网络", FailureCause.NoNetwork)
+
     fun describe(): String = when {
         !connected -> "没有连接网络"
         else -> transports.ifEmpty { listOf("未知类型") }.joinToString(" + ") +

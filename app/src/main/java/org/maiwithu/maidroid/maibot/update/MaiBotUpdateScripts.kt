@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.maibot.update
 
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
@@ -39,6 +40,7 @@ internal object MaiBotUpdateScripts {
     fun fetchLatest(targetBranch: String? = null): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
         repositoryPrelude(targetBranch),
+        staleGitLockScript(),
         fetchScript(),
         schemaVersionScript(),
         reportScript(includeLatest = true)
@@ -52,6 +54,7 @@ internal object MaiBotUpdateScripts {
     fun fetchAndReset(targetBranch: String? = null): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
         repositoryPrelude(targetBranch),
+        staleGitLockScript(),
         fetchScript(),
         schemaVersionScript(),
         refuseDatabaseDowngradeScript(),
@@ -93,6 +96,23 @@ internal object MaiBotUpdateScripts {
         }
         """.trimIndent()
     }
+
+    // 拉取之前：上次 git 被打断（应用被系统结束、proot 被强杀）会在 .git 里留下 .lock 文件，
+    // 之后每次 git 都报 “File exists / Another git process seems to be running”，点多少次更新都过不去。
+    // 容器里没有正在跑的 git 时才删（MaiBot 自己检查更新时也会跑 git），删了哪些打在终端里。
+    private fun staleGitLockScript(): String =
+        """
+        maidroid_git_running() {
+            ps -eo args= | awk '{ name = ${'$'}1; sub(/.*\//, "", name); if (name == "git" || name ~ /^git-/) found = 1 } END { exit !found }'
+        }
+        if ! maidroid_git_running; then
+            stale_locks="${'$'}(find .git -name '*.lock' -type f 2>/dev/null || true)"
+            if [ -n "${'$'}stale_locks" ]; then
+                printf "$AUTO_FIX_LOG_PREFIX 清掉上次 git 被打断留下的锁文件：\n%s\n" "${'$'}stale_locks"
+                printf '%s\n' "${'$'}stale_locks" | while IFS= read -r stale_lock; do rm -f "${'$'}stale_lock"; done
+            fi
+        fi
+        """.trimIndent()
 
     // 浅拉取只下载最新一个提交，手机流量和存储都更友好。
     private fun fetchScript(): String =

@@ -33,6 +33,7 @@ import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.runtime.ContainerRequirement
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ContainerSetupScripts
+import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimeInstallStage
@@ -163,6 +164,11 @@ internal class OobeSetupManager(
                     ContainerSetupScripts.installSystemDependencies()
                 )
             )
+            // 最后一步要从软件源下载 Git、curl：手机根本没连网时先说，不用等四个源都超时
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.AptInstall)?.let { failure ->
+                failContainer(failure)
+                return
+            }
             for ((statusText, step, script) in setupSteps) {
                 showContainerProgress(SYSTEM_DEPENDENCY_TASKS, statusText)
                 val result = runCommand(script)
@@ -198,6 +204,14 @@ internal class OobeSetupManager(
             OobeTaskKind.PythonDependencies
         } else {
             OobeTaskKind.MaiBotSource
+        }
+        // 还要克隆源码或装依赖时先看手机连没连网；都装好了只是核对一遍，没网也能走完，不拦
+        if (!readiness.isMaiBotSourceReady() || !readiness.isMaiBotDependencyReady()) {
+            val networkStep = if (readiness.isMaiBotSourceReady()) FailureStep.UvSync else FailureStep.MaiBotClone
+            NetworkStatus.read(appContext).offlineFailure(networkStep)?.let { failure ->
+                failInstall(dnsTaskKind, failure)
+                return
+            }
         }
         val dnsScript = ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext))
         if (!runInstallCommand(dnsTaskKind, FailureStep.ContainerDns, "正在配置容器 DNS...", dnsScript)) return

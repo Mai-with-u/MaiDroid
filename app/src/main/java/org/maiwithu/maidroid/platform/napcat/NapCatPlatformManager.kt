@@ -20,6 +20,7 @@ import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
@@ -200,6 +201,11 @@ internal class NapCatPlatformManager(
             }
             if (validationError != null) {
                 fail(Failure(FailureStep.NapCatPrecheck, validationError))
+                return@launch
+            }
+            // NapCat 安装器、LinuxQQ 和 QQ 适配器都要从网上下载，没连网时直接说
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.NapCatInstall)?.let { failure ->
+                fail(failure)
                 return@launch
             }
 
