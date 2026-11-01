@@ -7,10 +7,8 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,12 +17,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.VersionNumber
-import org.maiwithu.maidroid.runtime.GitHubMirrors
-import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
+import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
 import java.io.IOException
@@ -110,7 +109,7 @@ internal class AppUpdateManager(
         val FILE_PROVIDER_AUTHORITY = "${BuildConfig.APPLICATION_ID}.appupdate"
     }
 
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("MaiDroid 自更新", Dispatchers.Main.immediate)
     private var job: Job? = null
     private val currentVersion = VersionNumber.parse(currentVersionName)
     private val files = AppUpdateFiles(appContext.cacheDir)

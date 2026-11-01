@@ -33,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,19 +68,37 @@ import org.maiwithu.maidroid.webui.WebUiChromeClient
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiPageBackground
+import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
+import org.maiwithu.maidroid.webui.discardWebView
 
-/** WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。 */
+/**
+ * WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。
+ * 网页的渲染进程没了时（见 WebUiWebViewClient.onRenderProcessGone）用 createWebView 换一个新的 WebView：
+ * 旧的拿下来销毁 -> 建新的 -> 页签按新 WebView 重新挂上并加载；短时间内反复崩溃就停下，等用户点“重试”。
+ */
 internal class WebUiTabState internal constructor(
-    val webView: WebView,
     val fileChooser: WebUiFileChooser,
     val downloads: WebUiDownloads,
-    val webViewClient: WebUiWebViewClient
+    private val createWebView: (WebUiTabState) -> Pair<WebView, WebUiWebViewClient>
 ) {
+    private val renderCrashGuard = WebUiRenderCrashGuard()
+    private val created = createWebView(this)
+
+    /** 现在挂在页签上的 WebView；渲染进程没了之后换成新建的那个，页签据此重新挂上。 */
+    var webView by mutableStateOf(created.first)
+        private set
+    var webViewClient: WebUiWebViewClient = created.second
+        private set
+
     var webViewError by mutableStateOf<String?>(null)
     var reloadToken by mutableIntStateOf(0)
     var webViewHasSize by mutableStateOf(false)
+
+    /** 渲染进程反复崩溃、暂停了自动加载；点“重试”后恢复。 */
+    var autoLoadPaused by mutableStateOf(false)
+        private set
 
     /** 网页自己的底色（见 WebUiPageBackground）；还没报上来或加载失败时为 null。横屏时涂在侧栏底下让出的那一条。 */
     var pageBackground by mutableStateOf<Color?>(null)
@@ -87,7 +106,26 @@ internal class WebUiTabState internal constructor(
     /** 清掉错误提示并重新加载：换一个加载令牌，页签的 update 看到令牌变了就按当前尺寸重新 loadUrl。 */
     fun reload() {
         webViewError = null
+        autoLoadPaused = false
         reloadToken += 1
+    }
+
+    // 渲染进程没了：这个 WebView 已经不能用，换一个新的。两分钟里崩了三次以上就不自动加载，显示“重试”。
+    internal fun replaceDeadWebView(dead: WebView) {
+        if (dead !== webView) return
+        discardWebView(dead)
+        val (newWebView, newClient) = createWebView(this)
+        webViewClient = newClient
+        // 新 WebView 还没排版、尺寸是 0：等它挂上去量出尺寸再加载（和第一次加载一样），不按 0x0 决定排版
+        webViewHasSize = false
+        webView = newWebView
+        pageBackground = null
+        if (renderCrashGuard.shouldAutoReopen()) {
+            webViewError = null
+        } else {
+            autoLoadPaused = true
+            webViewError = "网页进程反复崩溃，已暂停自动加载"
+        }
     }
 }
 
@@ -103,44 +141,45 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
         val downloads = WebUiDownloads(context, MaiBotWebUi.LOG_TAG)
 
-        // 回调里要改页签状态，状态里又要持有 WebView 和 client：先建它们，回调经 holder 找到稍后建好的状态。
-        var tabState: WebUiTabState? = null
-
-        val webView = createWebUiWebView(context, downloads).apply {
-            // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
-            // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
-            // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
-            // 让 WebView 按固定高度排版，vh 才等于真实视口高度。
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            overScrollMode = WebView.OVER_SCROLL_NEVER
-            isFocusable = true
-            isFocusableInTouchMode = true
-            webChromeClient = WebUiChromeClient(
-                logTag = MaiBotWebUi.LOG_TAG,
-                fileChooser = fileChooser,
-                onPageBackgroundColor = { argb -> tabState?.pageBackground = Color(argb) }
-            )
-        }
-
-        val webViewClient = WebUiWebViewClient(
-            logTag = MaiBotWebUi.LOG_TAG,
-            // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时是左侧悬浮的侧栏，网页已让出它的宽度），
-            // 网页底部不用再给它留白；展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
-            // 加载成功 -> 清掉错误提示，注入底色脚本，网页随即报上底色（之后换主题再报）；加载失败 -> 底色作废。
-            onPageFinishedCallback = { view, _ ->
-                tabState?.webViewError = null
-                view.evaluateJavascript(WebUiPageBackground.watchScript, null)
-            },
-            onMainFrameError = { _, error ->
-                tabState?.webViewError = "${error.errorCode}: ${error.description}"
-                tabState?.pageBackground = null
+        // 第一次和渲染进程没了之后换新的都用这一段建 WebView 和它的 client；回调里经 tabState 改页签状态。
+        WebUiTabState(fileChooser, downloads) { tabState ->
+            val webView = createWebUiWebView(context, downloads).apply {
+                // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
+                // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
+                // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
+                // 让 WebView 按固定高度排版，vh 才等于真实视口高度。
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                overScrollMode = WebView.OVER_SCROLL_NEVER
+                isFocusable = true
+                isFocusableInTouchMode = true
+                webChromeClient = WebUiChromeClient(
+                    logTag = MaiBotWebUi.LOG_TAG,
+                    fileChooser = fileChooser,
+                    onPageBackgroundColor = { argb -> tabState.pageBackground = Color(argb) }
+                )
             }
-        )
-        webView.webViewClient = webViewClient
-        WebUiTabState(webView, fileChooser, downloads, webViewClient).also { tabState = it }
+
+            val webViewClient = WebUiWebViewClient(
+                logTag = MaiBotWebUi.LOG_TAG,
+                // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时是左侧悬浮的侧栏，网页已让出它的宽度），
+                // 网页底部不用再给它留白；展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
+                // 加载成功 -> 清掉错误提示，注入底色脚本，网页随即报上底色（之后换主题再报）；加载失败 -> 底色作废。
+                onPageFinishedCallback = { view, _ ->
+                    tabState.webViewError = null
+                    view.evaluateJavascript(WebUiPageBackground.watchScript, null)
+                },
+                onMainFrameError = { _, error ->
+                    tabState.webViewError = "${error.errorCode}: ${error.description}"
+                    tabState.pageBackground = null
+                },
+                onRenderProcessGoneCallback = tabState::replaceDeadWebView
+            )
+            webView.webViewClient = webViewClient
+            webView to webViewClient
+        }
     }
 
     // 网页点上传按钮 -> fileChooser 用这个 launcher 打开系统选文件页 -> 选完回到这里，把结果交回网页。
@@ -221,41 +260,44 @@ internal fun WebUiTabPage(
             .padding(start = startClearance)
             .background(PageBackground)
     ) {
-        AndroidView(
-            factory = {
-                (state.webView.parent as? ViewGroup)?.removeView(state.webView)
-                state.webView
-            },
-            update = { webView ->
-                val launchUrl = MaiBotWebUi.launchUrl(
-                    paths = webView.context.appDependencies.runtimePaths,
-                    terminalLogs = terminalLogs,
-                    baseUrl = url
-                )
-                val loadRequest = "$launchUrl#${state.reloadToken}"
-                if (state.webViewHasSize && webView.tag != loadRequest) {
-                    webView.tag = loadRequest
-                    state.webViewError = null
-                    // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
-                    // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
-                    state.webViewClient.applyDesktopViewport(webView)
-                    Log.d(
-                        MaiBotWebUi.LOG_TAG,
-                        "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                            "${webView.width}x${webView.height}, " +
-                            "desktop width=${state.webViewClient.desktopLayoutWidthCss}"
+        // 换了新 WebView（渲染进程没了）时 key 变了，旧的 AndroidView 撤掉、按新的重新挂上并加载。
+        key(state.webView) {
+            AndroidView(
+                factory = {
+                    (state.webView.parent as? ViewGroup)?.removeView(state.webView)
+                    state.webView
+                },
+                update = { webView ->
+                    val launchUrl = MaiBotWebUi.launchUrl(
+                        paths = webView.context.appDependencies.runtimePaths,
+                        terminalLogs = terminalLogs,
+                        baseUrl = url
                     )
-                    webView.loadUrl(launchUrl)
-                }
-            },
-            modifier = Modifier
-                .padding(top = statusBarTop)
-                .windowInsetsPadding(imeClearance)
-                .fillMaxSize()
-                .onSizeChanged { size ->
-                    state.webViewHasSize = size.width > 0 && size.height > 0
-                }
-        )
+                    val loadRequest = "$launchUrl#${state.reloadToken}"
+                    if (state.webViewHasSize && !state.autoLoadPaused && webView.tag != loadRequest) {
+                        webView.tag = loadRequest
+                        state.webViewError = null
+                        // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                        // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
+                        state.webViewClient.applyDesktopViewport(webView)
+                        Log.d(
+                            MaiBotWebUi.LOG_TAG,
+                            "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
+                                "${webView.width}x${webView.height}, " +
+                                "desktop width=${state.webViewClient.desktopLayoutWidthCss}"
+                        )
+                        webView.loadUrl(launchUrl)
+                    }
+                },
+                modifier = Modifier
+                    .padding(top = statusBarTop)
+                    .windowInsetsPadding(imeClearance)
+                    .fillMaxSize()
+                    .onSizeChanged { size ->
+                        state.webViewHasSize = size.width > 0 && size.height > 0
+                    }
+            )
+        }
 
         if (state.webViewError != null) {
             WebUiStatusBanner(

@@ -2,10 +2,8 @@ package org.maiwithu.maidroid.maibot
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RequestedExit
@@ -68,7 +67,7 @@ internal class MaiBotProcessSupervisor(
         private const val PROOT_EXIT_WAIT_MS = 5_000L
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = backgroundScope("MaiBot 进程监管", Dispatchers.IO)
     private val lifecycleMutex = Mutex()
 
     @Volatile

@@ -3,9 +3,11 @@ package org.maiwithu.maidroid
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +19,7 @@ import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiChromeClient
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
+import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 
@@ -24,11 +27,15 @@ import org.maiwithu.maidroid.webui.createWebUiWebView
  * 全屏打开一个 WebUI 页面：主页唤醒按钮打开 MaiBot WebUI，NapCat 设置按钮打开 NapCat 管理页。
  * MaiBot WebUI 会换成带访问令牌的自动登录地址；返回键先在网页内后退，退到底再关闭页面；
  * 网页里的上传按钮经 WebUiFileChooser 打开系统选文件页，导出、下载按钮经 WebUiDownloads 弹“另存为”。
+ * 网页的渲染进程没了（系统回收内存、网页崩溃）时整页重建一次重新打开，反复崩溃就关掉这一页回到主页。
  */
 class WebUiActivity : ComponentActivity() {
     companion object {
         /** 要打开的地址；不传时打开 MaiBot WebUI。 */
         const val EXTRA_URL = "org.maiwithu.maidroid.extra.WEB_UI_URL"
+
+        // 放在伴生对象里：整页重建后还是同一份计数，才认得出“反复崩溃”
+        private val renderCrashGuard = WebUiRenderCrashGuard()
     }
 
     private lateinit var webView: WebView
@@ -64,7 +71,21 @@ class WebUiActivity : ComponentActivity() {
 
         fileChooser.launcher = fileChooserLauncher
         downloads = WebUiDownloads(this, MaiBotWebUi.LOG_TAG).apply { launcher = downloadLauncher }
-        val webViewClient = WebUiWebViewClient(logTag = MaiBotWebUi.LOG_TAG)
+        // 渲染进程没了：这个 WebView 不能再用。整页重建一次就是换一个新 WebView 重新打开同一个地址；
+        // 两分钟里已经重建过三次就不再试，提示一句并关掉这一页，回到主页（主页的 WebUI 页签有自己的“重试”）。
+        val webViewClient = WebUiWebViewClient(
+            logTag = MaiBotWebUi.LOG_TAG,
+            onRenderProcessGoneCallback = { dead ->
+                // 先从界面上拿下来，之后不再画它；销毁留给 onDestroy
+                (dead.parent as? ViewGroup)?.removeView(dead)
+                if (renderCrashGuard.shouldAutoReopen()) {
+                    recreate()
+                } else {
+                    Toast.makeText(this, "网页反复崩溃，已关闭这个页面", Toast.LENGTH_LONG).show()
+                    finish()
+                }
+            }
+        )
         webView = createWebUiWebView(this, downloads).apply {
             this.webViewClient = webViewClient
             webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)

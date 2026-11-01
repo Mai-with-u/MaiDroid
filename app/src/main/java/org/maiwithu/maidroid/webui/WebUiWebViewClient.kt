@@ -1,24 +1,31 @@
 package org.maiwithu.maidroid.webui
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import org.maiwithu.maidroid.terminal.TerminalLog
 
 /**
  * 加载 WebUI 用的 WebViewClient，主页的 WebUI 页签和全屏 WebUiActivity 共用；全屏打开的既可能是 MaiBot WebUI，
  * 也可能是 NapCat 管理页，所以不以 MaiBot 命名。
  * 请求经 WebUiResponseRewriter 改写 -> 页面加载完后落盘 Cookie 并执行视口修补脚本 -> 主框架加载失败时回调给界面显示重试条。
  * onPageFinishedCallback 只在主框架加载成功时回调，加载失败后报错页的“加载完成”不算。
+ * 网页的渲染进程没了（系统回收内存时杀掉、网页把它弄崩）时调 onRenderProcessGoneCallback，由宿主换一个新的 WebView，
+ * 默认只是把这个 WebView 拿下来销毁；不管怎样都不让它把整个 MaiDroid 带走，见 onRenderProcessGone。
  */
 internal class WebUiWebViewClient(
     private val logTag: String,
     private val onPageFinishedCallback: (WebView, String) -> Unit = { _, _ -> },
-    private val onMainFrameError: (WebResourceRequest, WebResourceError) -> Unit = { _, _ -> }
+    private val onMainFrameError: (WebResourceRequest, WebResourceError) -> Unit = { _, _ -> },
+    private val onRenderProcessGoneCallback: (WebView) -> Unit = ::discardWebView
 ) : WebViewClient() {
     /**
      * 横屏桌面版的布局宽度（CSS px），竖屏为 null。由宿主在 loadUrl 前按 WebView 尺寸设好（见 applyDesktopViewport），
@@ -136,5 +143,47 @@ internal class WebUiWebViewClient(
             onMainFrameError(request, error)
         }
         super.onReceivedError(view, request, error)
+    }
+
+    /**
+     * 网页的渲染进程没了：系统内存紧张时会先杀它，网页自己也可能把它弄崩（主页 WebUI 和全屏页共用同一个渲染进程，
+     * 两边的 WebView 都会收到这个回调）。不处理（返回 false）时系统会把整个 MaiDroid 当成闪退结束掉，
+     * 前台服务、MaiBot、NapCat 全部跟着停，QQ 还要重新扫码。
+     * 这里记一行终端日志 -> 交给宿主换掉这个 WebView（它已经不能再用了）-> 返回 true 表示已经处理，应用照常运行。
+     */
+    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        val reason = if (detail.didCrash()) "崩溃了" else "被系统回收了（内存不足）"
+        Log.w(logTag, "render process gone, didCrash=${detail.didCrash()}")
+        TerminalLog.append("[MaiDroid] 网页的渲染进程$reason，MaiDroid 换一个新的网页窗口重新打开")
+        onRenderProcessGoneCallback(view)
+        return true
+    }
+}
+
+/** 把渲染进程已经没了的 WebView 从界面上拿下来并销毁；它不能再加载任何东西。 */
+internal fun discardWebView(webView: WebView) {
+    (webView.parent as? ViewGroup)?.removeView(webView)
+    webView.destroy()
+}
+
+/**
+ * 渲染进程没了之后要不要自动重新打开网页：两分钟内已经自动重开过 MAX_AUTO_REOPENS 次就不再自动开，
+ * 改为让用户点“重试”，免得网页一加载就把渲染进程弄崩时陷进“崩溃 -> 重开 -> 又崩溃”的死循环。
+ * 主页 WebUI 页签和全屏页各用一份（同一次崩溃两边都会收到回调，共用一份会被算成两次）。
+ */
+internal class WebUiRenderCrashGuard {
+    private companion object {
+        const val WINDOW_MS = 2 * 60_000L
+        const val MAX_AUTO_REOPENS = 3
+    }
+
+    private val recent = ArrayDeque<Long>()
+
+    @Synchronized
+    fun shouldAutoReopen(now: Long = SystemClock.elapsedRealtime()): Boolean {
+        while (recent.isNotEmpty() && now - recent.first() > WINDOW_MS) recent.removeFirst()
+        if (recent.size >= MAX_AUTO_REOPENS) return false
+        recent.addLast(now)
+        return true
     }
 }

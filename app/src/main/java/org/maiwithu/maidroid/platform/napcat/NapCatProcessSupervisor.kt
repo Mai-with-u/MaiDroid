@@ -1,16 +1,15 @@
 package org.maiwithu.maidroid.platform.napcat
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -48,7 +47,7 @@ internal class NapCatProcessSupervisor(
     // 等 MaiBot 生成适配器配置再迁移的后台任务；不跟 NapCat 进程一起取消，重启 NapCat 也不会重复起一个。
     @Volatile
     private var configMigrationJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = backgroundScope("NapCat 进程监管", Dispatchers.IO)
     private val lock = Any()
 
     // 停止、重启、安全退出依次执行，免得两次停止同时去请 QQ 退出、清理残留（比如连点两次退出 QQ 登录）。

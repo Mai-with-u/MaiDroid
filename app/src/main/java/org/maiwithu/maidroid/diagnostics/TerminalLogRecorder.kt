@@ -1,9 +1,7 @@
 package org.maiwithu.maidroid.diagnostics
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.terminal.TerminalLog
 
@@ -18,7 +16,7 @@ internal class TerminalLogRecorder(
     private val files: TerminalLogFiles,
     startBanner: String
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(1) + SupervisorJob())
+    private val scope = backgroundScope("日志文件", Dispatchers.IO.limitedParallelism(1))
 
     init {
         scope.launch { files.append(startBanner) }

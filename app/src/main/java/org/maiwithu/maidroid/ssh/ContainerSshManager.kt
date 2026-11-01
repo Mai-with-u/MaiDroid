@@ -1,9 +1,7 @@
 package org.maiwithu.maidroid.ssh
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
@@ -53,7 +52,7 @@ internal class ContainerSshManager(
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("容器 SSH", Dispatchers.Main.immediate)
 
     private var process: Process? = null
     private var job: Job? = null

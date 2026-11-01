@@ -16,10 +16,9 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -47,7 +46,7 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // 写文件不跟页面一起取消：用户点完保存马上关掉全屏 WebUI 时，大文件还要接着写完。
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = backgroundScope("WebUI 下载", Dispatchers.IO)
     private val blobReceiver = WebUiBlobReceiver(File(appContext.cacheDir, TEMP_DIRECTORY))
 
     // 以下状态只在主线程读写。

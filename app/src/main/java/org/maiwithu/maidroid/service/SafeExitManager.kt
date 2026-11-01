@@ -4,10 +4,8 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Process
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
@@ -63,7 +62,7 @@ internal class SafeExitManager(
     private val napCatProcess: NapCatProcessSupervisor,
     private val containerSsh: ContainerSshManager
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = backgroundScope("安全退出", Dispatchers.IO)
     private val lock = Any()
 
     // 唯一的一轮退出；只在 lock 内读写。
