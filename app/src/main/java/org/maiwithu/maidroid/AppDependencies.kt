@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
+import org.maiwithu.maidroid.cleanup.StorageCleanupManager
 import org.maiwithu.maidroid.diagnostics.CrashRecorder
 import org.maiwithu.maidroid.diagnostics.DiagnosticsFiles
 import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
@@ -88,6 +89,10 @@ internal class AppDependencies(context: Context) {
         DiagnosticsManager(
             appContext, settings, runtimePaths, runtimeReadiness, diagnosticsFiles, terminalLogRecorder, maiBotProcess
         )
+    }
+    // 设置页和“空间不足”提示里的“清理空间”：量各类缓存的大小，删掉勾选的。
+    val storageCleanup: StorageCleanupManager by lazy {
+        StorageCleanupManager(runtimePaths, runtimeReadiness, commandRunner)
     }
     // 设置页的“安全退出”：让上面三个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
