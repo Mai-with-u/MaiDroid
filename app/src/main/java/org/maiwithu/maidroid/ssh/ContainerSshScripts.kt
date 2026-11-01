@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.ssh
 
+import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -21,8 +22,7 @@ internal object ContainerSshScripts {
      */
     fun configure(port: Int, rootPassword: String): ContainerScript {
         val safePort = port.coerceIn(ContainerSshPortRange)
-        return ContainerScript(
-            """
+        val script = """
             set -e
             export DEBIAN_FRONTEND=noninteractive
             root_password=${shellQuote(rootPassword)}
@@ -54,8 +54,8 @@ internal object ContainerSshScripts {
 
             maidroid_dpkg_preflight
             if [ ! -x /usr/sbin/sshd ]; then
-                apt-get -o Acquire::http::Pipeline-Depth=0 update
-                apt-get install -y --no-install-recommends openssh-server || {
+                # 下载失败时按 AptMirrors 的顺序自动换源重试；装到一半失败（dpkg 半装）再修复后重装
+                maidroid_apt_install openssh-server || {
                     echo "apt install openssh-server failed, repairing dpkg state"
                     maidroid_dpkg_repair
                     if [ ! -x /usr/sbin/sshd ]; then
@@ -107,7 +107,8 @@ internal object ContainerSshScripts {
             /usr/sbin/sshd -t
             echo "sshd configured on port $safePort"
             """.trimIndent()
-        )
+        // 换源重试的函数拼在最前面，安装 openssh-server 时用
+        return ContainerScript(listOf(AptMirrors.shellFunctions(), script).joinToString("\n"))
     }
 
     /** 以前台模式（-D）运行 sshd，进程生命周期由 ContainerSshManager 持有，日志经 -e 打到标准错误。 */
