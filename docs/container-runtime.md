@@ -90,9 +90,9 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ## OOBE：配置容器（`OobeSetupManager.prepareContainer`）
 
-1. **解包资源**（`RuntimeAssetInstaller`，已解包就跳过）：rootfs 解到 `debian.tmp` -> bootstrap 和 deb 包合并解到 `termux.tmp` -> 写完成标记 -> 删旧目录、改名为正式目录 -> 修权限。中途被杀不会留下半成品；旧版本升级上来只缺 proot 依赖库时只补库。tar 里的硬链接、zip 里 `SYMLINKS.txt` 描述的符号链接都会还原（硬链接建不了就复制），还原不了直接报错，路径越界的条目也直接报错。删旧目录时不跟随符号链接：rootfs 里的 `/root/storage/shared -> /sdcard` 在宿主上指向手机共享存储，跟进去会删掉用户文件。
+1. **解包资源**（`RuntimeAssetInstaller`，已解包就跳过）：先删掉上次解到一半留下的 `debian.tmp`、`termux.tmp` 并检查剩余空间 -> rootfs 解到 `debian.tmp` -> bootstrap 和 deb 包合并解到 `termux.tmp` -> 写完成标记 -> 落盘 -> 删旧目录（先删完成标记）、改名为正式目录 -> 再落盘 -> 修权限。中途被杀、断电不会留下半成品，解包失败也会删掉临时目录；旧版本升级上来只缺 proot 依赖库时只补库。tar 里的硬链接、zip 里 `SYMLINKS.txt` 描述的符号链接都会还原（硬链接建不了就复制），还原不了直接报错，路径越界的条目也直接报错。删旧目录时不跟随符号链接：rootfs 里的 `/root/storage/shared -> /sdcard` 在宿主上指向手机共享存储，跟进去会删掉用户文件。
 2. **确认 proot 可执行**。
-3. **系统依赖**（缺 git/curl 时才做，见 `ContainerSetupScripts`）：修复 rootfs 权限 -> 在 `/root/storage` 下建到 `/sdcard` 各目录的链接 -> 写 DNS（见下文“容器 DNS”）-> apt 换清华源并停用其他源 -> 安装 git、ca-certificates、curl。每段脚本可重复执行，第一次会把原文件备份成 `*.maidroid.bak`。安装前先 `dpkg --configure -a`：OOBE 期间没有前台服务，装到一半切到后台或划掉应用都会让进程被杀，留下 dpkg 半装状态，不收拾的话之后每次都报 `dpkg was interrupted`。`apt-get update` 有源下载失败时默认只警告、返回 0，这里加 `--error-on=any` 让它如实失败。
+3. **系统依赖**（缺 git/curl，或 dpkg 上次没做完时才做，见 `ContainerSetupScripts`、`DpkgState`）：修复 rootfs 权限 -> 在 `/root/storage` 下建到 `/sdcard` 各目录的链接 -> 写 DNS（见下文“容器 DNS”）-> apt 换清华源并停用其他源 -> 安装 git、ca-certificates、curl（下载失败时自动换源，见下文“软件源镜像”）。每段脚本可重复执行，第一次会把原文件备份成 `*.maidroid.bak`。安装前先 `dpkg --configure -a`：装到一半闪退、被强行停止或断电都会留下 dpkg 半装状态，不收拾的话之后每次都报 `dpkg was interrupted`。这时 git、curl 往往已经解包在位，所以就绪检查还要看 `DpkgState`：`/var/lib/dpkg/updates` 里有没并进 status 的记录，或 status 里有解包了没配置完的包，就回到这一步重跑。apt 的网络设置（`maidroid_apt_write_network_conf`）让连接或下载 30 秒没动静就算失败，默认要等 120 秒还重试三次，断网时会卡很久。`apt-get update` 有源下载失败时默认只警告、返回 0，这里加 `--error-on=any` 让它如实失败。
 
 ## OOBE：安装 MaiBot（`OobeSetupManager.startInstall`）
 
@@ -117,6 +117,10 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 git 默认不检测传输停滞，镜像连上后卡住会一直等。两个函数都带 `-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60`：连续 60 秒低于 1 KB/s 就判这一次失败，接着重试或换镜像。
 
+### 软件源镜像
+
+`AptMirrors` 列着清华、中科大、阿里云镜像和 Debian 官方源，都用 http：rootfs 刚解包时还没有 CA 证书，软件包本身有 apt 的签名校验。OOBE 先写入清华；`maidroid_apt_install` 更新索引、安装软件包，下载失败（连不上、超时、`Hash Sum mismatch`、镜像正在同步）就按顺序换下一个源、清掉旧索引重来，终端里打一行 `[自动修复]`。换成功的源留在 `sources.list` 里，之后的 apt（例如容器 SSH 装 sshd）都用它。空间满、手机时间不对（`is not valid yet`）时换源也一样失败，不换，直接报错。
+
 ### 容器 DNS
 
 proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resolv.conf` 里的服务器查询。`ContainerDns` 在宿主侧读出手机当前网络的 DNS（`ConnectivityManager` 的 `LinkProperties.dnsServers`）放在最前，阿里、114、Google、Cloudflare 作兜底；有些网络会拦截公共 DNS，只写公共 DNS 时容器里所有下载都会失败。glibc 只用前三个 nameserver、按顺序尝试，所以不加 `rotate`；带网卡后缀的 IPv6 链路本地地址会被丢掉。配置容器和每次开始安装时都会重写一次。
@@ -139,24 +143,24 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 
 1. **装 uv**：先把官方安装脚本下载成文件（`astral.sh/uv/install.sh`，拿不到就经 GitHub 镜像取发布页上的同一份 `uv-installer.sh`），确认是 shell 脚本（以 `#!` 开头、提到 `astral-sh/uv`，不依赖安装脚本内部写法）再执行。安装先走官方下载源（releases.astral.sh、github.com），失败后把 `UV_INSTALLER_GITHUB_BASE_URL` 依次换成各 GitHub 镜像重试；安装脚本里带着安装包的 sha256，经镜像下载的包也会校验。每次装完都跑 `uv --version`，能运行才算成功。
 2. **准备 Python**：在 `/tmp` 下 `uv python find` 找到符合 `UV_PYTHON` 的解释器就跳过（避开 MaiBot 目录里装到一半的 `.venv`）；否则 `uv python install`，官方源失败后用 `UV_PYTHON_INSTALL_MIRROR` 依次换成各 GitHub 镜像（含直连）。
-3. **装依赖包**：`uv sync`。
+3. **装依赖包**：`uv sync`。下载失败（连不上、超时、镜像缺包）时删掉记着旧源地址的 `uv.lock`，用 `UV_INDEX` 依次换清华、腾讯云、中科大 PyPI 镜像重试，换成功的源写进 `/root/.maidroid/pypi-index`（换回 MaiBot 自带的源就删掉它）；不是下载问题、也不是依赖冲突或编译失败时，`.venv` 可能坏了（装到一半被打断、Python 换了版本），删掉重建一次。
 
 几点约定：
 
 - 不能写成 `curl … | sh`：管道的退出码只看 `sh`，curl 下载失败时 `sh` 读到空脚本照样返回 0，安装被当成成功，到 `uv sync` 才报 `uv: not found`。
 - uv 安装脚本自己调 curl 时不设超时，镜像卡住会一直等。装 uv 的脚本用临时 `.curlrc`（`CURL_HOME`）给其中所有 curl 加上：20 秒连不上、或连续 30 秒低于 1 KB/s 就换下一个来源。uv 自己下载 Python 和包时有内置的超时和重试。
 - 后两步开头先确认 uv 能运行，不能运行就打印中文原因、以 127 退出，不会只留下一句 `uv: not found`。
-- 失败文案：前两步的脚本退出前会自己打印中文原因（最后一行）；`uv sync` 的原因由 `uvErrorSummary` 从 uv 输出里挑第一条 `error:`/`×` 行和最后一条 `cause:`/`╰─▶` 行拼成。uv 报错后面常跟着 `hint:`，只取最后一行会丢掉真正的错误。
+- 失败文案：前两步的脚本退出前会自己打印中文原因（最后一行）；`uv sync` 的原因由 `uvErrorSummary` 从 uv 输出里挑第一条 `error:`/`×` 行和最后一条 `cause:`/`╰─▶` 行拼成。uv 报错后面常跟着 `hint:`，只取最后一行会丢掉真正的错误。换源、重建重试过时只看最后一行 `[自动修复]` 之后，那才是最后一次尝试。
 
 ### uv 的参数
 
-`MaiBotScripts` 里所有 uv 命令共用一段前缀：`UV_PYTHON` 限定 Python 的版本范围，具体范围见 `MaiBotScripts.UV_PYTHON_REQUEST`（不放开上限，因为新版 Python 刚出时 aarch64 上很多包没有预编译轮子，容器里又没有编译器）、`UV_NO_DEV=1`（跳过测试依赖）、`UV_LINK_MODE=copy`。安装依赖和启动时 `uv run` 的自动同步用同一套参数，否则会反复重建 `.venv`。
+`MaiBotScripts` 里所有 uv 命令共用一段前缀：`UV_PYTHON` 限定 Python 的版本范围，具体范围见 `MaiBotScripts.UV_PYTHON_REQUEST`（不放开上限，因为新版 Python 刚出时 aarch64 上很多包没有预编译轮子，容器里又没有编译器）、`UV_NO_DEV=1`（跳过测试依赖）、`UV_LINK_MODE=copy`，以及装依赖时换过 PyPI 源的 `UV_INDEX`（从 `/root/.maidroid/pypi-index` 读）。安装依赖和启动时 `uv run` 的自动同步用同一套参数，否则会反复重建 `.venv`，或者按 MaiBot 自带的源重新解析。
 
 容器里 `uv sync` 后 `uv.lock` 必然被改写（源地址换成镜像），`git status` 会一直显示它被修改，这不是用户改动。
 
 ## MaiBot 的启动
 
-`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程。
+`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程，每次拉起前再看一眼 8001 端口：被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot）时拉起来也绑不上端口，只会反复重启，所以先不拉起，等端口空出来。
 
 ### 等 WebUI 的判断
 
@@ -166,6 +170,7 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 | --- | --- |
 | WebUI 有响应且进程在跑 | 完成（只看端口会把占着 8001 的别的程序当成 MaiBot） |
 | 启动前检查没过 | 立刻失败，报被拦下的原因 |
+| 8001 被别的程序占着，监管器在等它空出来 | 立刻失败：`MB-BLOCKED/PORT-BUSY`；端口空出来后监管器自己拉起，点重试就能接上 |
 | 拉起后意外退出满 2 次 | 立刻失败，报退出次数和最后退出码；允许一次是因为 MaiBot 可能自己退出请求重启 |
 | 60 秒内进程没起来也没退出过 | 失败：进程一直没有启动 |
 | 进程活着满 10 分钟 WebUI 仍不通 | 失败：超时 |
@@ -182,14 +187,28 @@ hash 要按 MaiBot 的算法算（`agreementHash`）：它用 Python 文本模�
 
 OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新不用 `git pull`：
 
-1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。
+1. **检查**（`fetchLatest`，MaiBot 照常运行）：经镜像把上游当前分支拉到 `origin/<分支>`，比较提交。拉取前，容器里没有 git 在跑时删掉 `.git` 里上次被打断（应用被系统结束、proot 被强杀）留下的 `.lock` 文件，否则之后每次都报“另一个 git 进程正在运行”。下面的更新也一样。
 2. **更新**（`fetchAndReset`）：`MaiBotProcessSupervisor.runWhileStopped` 停住 MaiBot -> 再拉一次 -> 在终端日志里列出被改过的受版本管理文件（不备份，MaiDroid 不支持在手机上改源码；`uv.lock` 由 MaiDroid 改写成镜像源，不算用户改动）-> `git reset --hard origin/<分支>` -> 按上文“依赖安装”的三步重装依赖（uv、Python 已就绪时立刻跳过，上游改了 Python 版本要求时也能补装）-> 无论成败都重新拉起 MaiBot。
 
-被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。
+被 git 忽略的配置、数据、插件和 `.venv` 不受影响。脚本把版本信息按 `MAIDROID_UPDATE_*=…` 打印出来，`MaiBotUpdateReport` 从输出里挑这些行解析。拉取用带 `+` 的 refspec 强制更新 `origin/<分支>`，再硬重置过去，所以上游回退了提交（dev 分支时有发生）也能跟着退回，不会卡在快进上。
+
+**版本通道**（`MaiBotChannel`）：正式版跟随上游 `main`，测试版跟随 `dev`。当前在哪个通道不另存设置，就看仓库 HEAD 所在的分支，上面的检查和更新天然跟着它走。切换（`switchChannel`）和“更新”走同一套流程，只是 `fetchAndReset(目标分支)` 拉取的是目标分支，最后用 `git checkout --force --no-track -B <分支> origin/<分支>` 切过去：效果等同切过去后 `reset --hard`，挡路的未跟踪文件也会被覆盖。分离 HEAD 时普通更新也走这一步，回到 `main`。拉取失败时分支和源码都不动。
+
+**数据库不能降级**：MaiBot 的数据库迁移只能升级，库的版本（SQLite `user_version`）比代码支持的新时，启动直接报错退出。从测试版切回正式版、上游 dev 回退提交都可能撞上。所以检查和更新脚本拉取之后都会读两个数，报成 `MAIDROID_UPDATE_TARGET_SCHEMA` / `MAIDROID_UPDATE_DATABASE_SCHEMA`：
+
+- 目标代码支持到的版本：拉下来的提交里 `src/common/database/migrations/builtin.py` 的 `LATEST_SCHEMA_VERSION` 字面值。
+- 库的版本：用 MaiBot `.venv` 里的 Python 读 `data/MaiBot.db`。库是 WAL 模式，新写的版本号可能还在 `-wal` 里没落盘，直接读文件头不可靠。
+
+任一边读不到（上游改了写法、还没装依赖、还没有库）就不拦。会降级时：
+
+- **检查**：不提示有新版本，说明原因。
+- **切换通道**：先在麦麦照常运行时用 `fetchLatest(目标分支)` 预检，会降级就取消，麦麦不停。
+- **MaiDroid 更新后的自动升级**：跳过这次升级，照常启动。
+- **`fetchAndReset`**：在动源码之前以退出码 4 结束，兜住预检之后上游又变了的情况。
 
 三个入口共用上面两段脚本：
 
-- **设置页“MaiBot 更新”**：用户手动检查、点“更新并重启”。
+- **设置页“MaiBot 更新”**：用户手动检查、点“更新并重启”；弹窗底部的“版本通道”可以在正式版和测试版之间切换，确认后先预检数据库版本，再停麦麦、切分支、重装依赖、重启。启动时自动弹出的提醒里没有这个选择器。
 - **启动时检查**（`checkOnLaunch`）：每次打开应用进入主页时做一次“检查”，查到新版本由主页弹出 MaiBot 更新弹窗；连不上不提示。
 - **MaiDroid 更新后的自动升级**（`updateAfterAppUpgrade`）：MaiDroid 刚更新过的第一次启动，在唤醒页上先 `runWhileStopped` 拦住麦麦的启动 -> 检查 -> 有新版本或源码被改过就按“更新”的流程切到上游、重装依赖 -> 拉起麦麦。拉取失败照常启动现在的版本；升级到一半失败才弹窗。是否“刚更新过”的判断在 `shouldAutoUpdateMaiBot`，设置页“应用版本”弹窗底部可以关掉。
 

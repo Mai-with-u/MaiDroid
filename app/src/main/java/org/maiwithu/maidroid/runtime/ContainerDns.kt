@@ -2,12 +2,16 @@ package org.maiwithu.maidroid.runtime
 
 import android.content.Context
 import android.net.ConnectivityManager
+import java.io.File
+import java.nio.file.Files
 
 /**
  * 容器的 DNS 配置。proot 里没有 Android 的 DNS 解析服务，容器里的 apt、git、uv 都直接向 resolv.conf 里的服务器查询。
  *
  * 手机当前网络下发的 DNS（运营商、路由器、校园网）排在最前，公共 DNS 只作兜底：
  * 有些网络会拦截公共 DNS，以前只写公共 DNS 时，这类网络下容器里的下载全部失败，重试也没用。
+ * 首次引导时写一次；之后前台服务在拉起麦麦前、手机换网络时用 refresh 按当时的网络重写，
+ * 免得从家里 Wi-Fi 换到移动数据后，每次解析都先等旧路由器的 DNS 超时；文件被断电写空了也顺带修好。
  */
 internal object ContainerDns {
     /** 阿里、114、Google、Cloudflare。 */
@@ -28,6 +32,20 @@ internal object ContainerDns {
      * 带网卡后缀的 IPv6 链路本地地址（fe80::1%wlan0）glibc 不一定认，直接丢掉。
      * glibc 只用前三个 nameserver，且按顺序尝试（不加 rotate），系统 DNS 能用时就不会去碰公共 DNS。
      */
+    /**
+     * 按手机现在的网络重写容器的 /etc/resolv.conf（整个原子替换），内容没变就不写；rootfs 还没装好时什么也不做。
+     * 返回是否改写了。读写失败（存储满）时返回 false，旧文件原样留着。阻塞调用，放在 IO 线程。
+     */
+    fun refresh(context: Context, rootfsDir: File): Boolean = runCatching {
+        val etcDir = File(rootfsDir, "etc")
+        if (!etcDir.isDirectory) return false
+        val target = File(etcDir, "resolv.conf")
+        val content = resolvConf(systemServers(context))
+        if (!Files.isSymbolicLink(target.toPath()) && target.isFile && target.readText() == content) return false
+        target.writeTextAtomically(content)
+        true
+    }.getOrDefault(false)
+
     fun resolvConf(systemServers: List<String>): String {
         val usableSystemServers = systemServers
             .map { it.trim() }

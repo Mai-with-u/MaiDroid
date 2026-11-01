@@ -1,22 +1,25 @@
 package org.maiwithu.maidroid.ssh
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.killProot
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
-import java.util.concurrent.TimeUnit
 
 /** 容器 sshd 的运行阶段。 */
 internal enum class ContainerSshPhase {
@@ -32,8 +35,10 @@ internal data class ContainerSshState(
     val configured: Boolean,
     val port: Int,
     val phase: ContainerSshPhase,
-    val errorMessage: String?
+    /** 启动失败时带错误码的原因。 */
+    val failure: Failure?
 ) {
+    val errorMessage: String? get() = failure?.message
     val isStarting: Boolean = phase == ContainerSshPhase.Starting
     val isRunning: Boolean = phase == ContainerSshPhase.Running
 }
@@ -47,11 +52,14 @@ internal class ContainerSshManager(
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("容器 SSH", Dispatchers.Main.immediate)
 
     private var process: Process? = null
     private var job: Job? = null
     private var intentionallyStopped = false
+
+    // 安全退出开始后永久拦下启动请求；退出完成时整个应用进程都会结束，不需要复位。和上面几个字段一样只在主线程读写。
+    private var shuttingDown = false
 
     private val _state = MutableStateFlow(readState(ContainerSshPhase.Idle))
     val state: StateFlow<ContainerSshState> = _state.asStateFlow()
@@ -66,7 +74,7 @@ internal class ContainerSshManager(
                     it.isStarting -> ContainerSshPhase.Starting
                     else -> ContainerSshPhase.Idle
                 },
-                errorMessage = null
+                failure = null
             )
         }
         if (settings.containerSshEnabled) {
@@ -93,24 +101,24 @@ internal class ContainerSshManager(
     }
 
     fun start() {
-        if (job?.isActive == true || process?.isAlive == true) return
+        if (shuttingDown || job?.isActive == true || process?.isAlive == true) return
 
         val port = settings.containerSshPort
         val password = settings.containerSshRootPassword
         if (!settings.containerSshConfigured || password.isBlank()) {
-            fail("Container SSH is not configured")
+            fail(Failure(FailureStep.SshConfig, "还没有设置端口和 root 密码"))
             return
         }
 
         intentionallyStopped = false
         job = scope.launch {
             _state.update {
-                readState(phase = ContainerSshPhase.Starting, errorMessage = null)
+                readState(phase = ContainerSshPhase.Starting, failure = null)
             }
 
             val validationError = withContext(Dispatchers.IO) { readiness.containerProblem() }
             if (validationError != null) {
-                fail(validationError)
+                fail(Failure(FailureStep.SshSetup, validationError))
                 return@launch
             }
 
@@ -118,7 +126,7 @@ internal class ContainerSshManager(
             TerminalLog.append("[ContainerSSH] configuring sshd on port $port")
             val setupResult = runCommand(ContainerSshScripts.configure(port, password))
             if (!setupResult.success) {
-                fail(setupResult.summary())
+                fail(failureOf(FailureStep.SshSetup, setupResult.summary(), setupResult.output))
                 return@launch
             }
 
@@ -130,7 +138,7 @@ internal class ContainerSshManager(
                     val currentProcess = commandRunner.start(ContainerSshScripts.launch(port))
                     process = currentProcess
                     _state.update {
-                        readState(phase = ContainerSshPhase.Running, errorMessage = null)
+                        readState(phase = ContainerSshPhase.Running, failure = null)
                     }
 
                     currentProcess.inputStream.bufferedReader().useLines { lines ->
@@ -152,8 +160,10 @@ internal class ContainerSshManager(
                     _state.update {
                         readState(
                             phase = nextPhase,
-                            errorMessage = if (nextPhase == ContainerSshPhase.Failed) {
-                                "sshd exited with code: $exitCode"
+                            failure = if (nextPhase == ContainerSshPhase.Failed) {
+                                Failure(FailureStep.SshStart, "sshd 意外退出，退出码 $exitCode").also {
+                                    TerminalLog.append(it.logLine())
+                                }
                             } else {
                                 null
                             }
@@ -162,7 +172,7 @@ internal class ContainerSshManager(
                 } catch (e: Exception) {
                     process = null
                     if (!intentionallyStopped) {
-                        fail(e.message.orEmpty().ifBlank { "Failed to start sshd" })
+                        fail(failureOf(FailureStep.SshStart, e.message.orEmpty().ifBlank { "sshd 没能启动" }))
                     }
                 }
             }
@@ -175,8 +185,23 @@ internal class ContainerSshManager(
         job = null
         scope.launch {
             stopRunningProcess()
-            _state.update { readState(ContainerSshPhase.Idle, errorMessage = null) }
+            _state.update { readState(ContainerSshPhase.Idle, failure = null) }
         }
+    }
+
+    /**
+     * 安全退出：拦下之后的启动 -> 停掉 sshd 并清理残留，挂起到停完。
+     * sshd 没有要保存的数据，照常结束即可；SSH 开关的设置不动，下次打开 MaiDroid 照旧按设置启动。
+     */
+    suspend fun stopForExit(): ProcessExitOutcome = withContext(Dispatchers.Main.immediate) {
+        shuttingDown = true
+        val wasRunning = job?.isActive == true || process?.isAlive == true
+        intentionallyStopped = true
+        job?.cancel()
+        job = null
+        stopRunningProcess()
+        _state.update { readState(ContainerSshPhase.Idle, failure = null) }
+        if (wasRunning) ProcessExitOutcome.Exited else ProcessExitOutcome.NotRunning
     }
 
     private fun restart() {
@@ -190,17 +215,11 @@ internal class ContainerSshManager(
         }
     }
 
+    // 强杀 sshd 的 proot，再按进程名清掉脱离出来的 sshd：sshd 没有要保存的数据，不用先请它退出。
+    // 以前先给 proot 发 SIGTERM 再等 3 秒，但 proot 会忽略 SIGTERM，只是白等。
     private suspend fun stopRunningProcess() {
         withContext(Dispatchers.IO) {
-            process?.let { currentProcess ->
-                runCatching {
-                    currentProcess.destroy()
-                    currentProcess.waitFor(3, TimeUnit.SECONDS)
-                    if (currentProcess.isAlive) {
-                        currentProcess.destroyForcibly()
-                    }
-                }
-            }
+            process?.killProot()
             process = null
             runCommand(ContainerSshScripts.cleanup())
         }
@@ -214,25 +233,26 @@ internal class ContainerSshManager(
             }
         }
 
-    private fun fail(message: String) {
-        TerminalLog.append("[ContainerSSH] failed: $message")
+    private fun fail(failure: Failure) {
+        TerminalLog.append("[ContainerSSH] failed: ${failure.message}")
+        TerminalLog.append(failure.logLine())
         _state.update {
             readState(
                 phase = ContainerSshPhase.Failed,
-                errorMessage = message
+                failure = failure
             )
         }
     }
 
     private fun readState(
         phase: ContainerSshPhase,
-        errorMessage: String? = null
+        failure: Failure? = null
     ): ContainerSshState =
         ContainerSshState(
             enabled = settings.containerSshEnabled,
             configured = settings.containerSshConfigured,
             port = settings.containerSshPort,
             phase = phase,
-            errorMessage = errorMessage
+            failure = failure
         )
 }

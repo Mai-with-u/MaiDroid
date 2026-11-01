@@ -1,9 +1,12 @@
 package org.maiwithu.maidroid.maibot
 
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.ExitTarget
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
+import org.maiwithu.maidroid.runtime.requestExitScript
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /**
@@ -19,6 +22,10 @@ internal object MaiBotScripts {
     // 这里把范围压在 3.12~3.13：全新安装时 uv 选其中最新的 3.13（与上游 Dockerfile 一致），
     // 已经装好 3.12 的旧环境也不会被重建。
     const val UV_PYTHON_REQUEST = ">=3.12,<3.14"
+
+    // 停止时等 Runner 退出的上限：Runner 最多等 Worker 关闭 60 秒，超时强杀 Worker 后再等 5 秒回收
+    // （MaiBot 的 WORKER_SHUTDOWN_TIMEOUT），所以 Runner 最晚约 65 秒退出，这里再留一些余量。
+    private const val EXIT_TIMEOUT_SECONDS = 80
 
     private const val MAIBOT_DIR = InContainerPaths.MAIBOT_DIR
 
@@ -163,15 +170,100 @@ internal object MaiBotScripts {
         ).joinToString("\n")
     )
 
-    /** 在 MaiBot 目录执行 uv sync，按 uv.lock 建好 .venv。 */
+    /**
+     * 在 MaiBot 目录执行 uv sync 建好 .venv，失败时自己修一次：
+     * 下载失败（连不上、超时、镜像缺包）-> 删掉记着旧源地址的 uv.lock，按 PYPI_INDEXES 换源重试，
+     * 换成功的源记进 PYPI_INDEX_FILE，之后装依赖和启动（uv run 也会同步）都走它，免得又按旧源重新解析；
+     * 不是下载问题、也不是依赖冲突或编译失败 -> .venv 可能坏了（装到一半被打断、Python 换了版本），删掉重建一次。
+     * 空间满、手机时间不对这类换源和重建都没用的失败直接报错。uv.lock 上游已不再跟踪，删掉它不算改源码。
+     */
     fun syncDependencies(): ContainerScript = ContainerScript(
         body = listOf(
             uvPrelude(),
             requireUvScript(),
-            "cd ${shellQuote(MAIBOT_DIR)} && uv sync"
+            """
+            cd ${shellQuote(MAIBOT_DIR)} || exit 1
+
+            # 跑一次 uv sync：输出照常打到终端，同时留一份，失败后据此判断怎么修。
+            maidroid_uv_sync() {
+                { uv sync; echo "${'$'}?" > /tmp/maidroid-uv.status; } 2>&1 | tee /tmp/maidroid-uv.log
+                return "${'$'}(cat /tmp/maidroid-uv.status 2>/dev/null || echo 1)"
+            }
+            maidroid_uv_output_has() {
+                grep -qiE "${'$'}1" /tmp/maidroid-uv.log 2>/dev/null
+            }
+            maidroid_uv_download_failed() {
+                maidroid_uv_output_has '$UV_DOWNLOAD_FAILED_PATTERN' && ! maidroid_uv_output_has '$UV_NOT_FIXABLE_PATTERN'
+            }
+
+            maidroid_uv_sync && exit 0
+
+            if maidroid_uv_download_failed; then
+                pypi_tried="|${'$'}{UV_INDEX:-}|"
+                for pypi_spec in ${PYPI_INDEXES.joinToString(" ") { shellQuote("${it.first}|${it.second}") }}; do
+                    pypi_name="${'$'}{pypi_spec%%|*}"
+                    pypi_url="${'$'}{pypi_spec#*|}"
+                    case "${'$'}pypi_tried" in
+                        *"|${'$'}pypi_url|"*) continue ;;
+                    esac
+                    pypi_tried="${'$'}pypi_tried${'$'}pypi_url|"
+                    printf "$AUTO_FIX_LOG_PREFIX 依赖包下载失败，换成%s重试\n" "${'$'}pypi_name"
+                    rm -f uv.lock
+                    if [ -n "${'$'}pypi_url" ]; then export UV_INDEX="${'$'}pypi_url"; else unset UV_INDEX; fi
+                    if maidroid_uv_sync; then
+                        if [ -n "${'$'}pypi_url" ]; then
+                            mkdir -p ${shellQuote(PYPI_INDEX_FILE.substringBeforeLast('/'))}
+                            printf '%s\n' "${'$'}pypi_url" > ${shellQuote(PYPI_INDEX_FILE)}
+                        else
+                            rm -f ${shellQuote(PYPI_INDEX_FILE)}
+                        fi
+                        printf "$AUTO_FIX_LOG_PREFIX 已改用%s，之后装依赖和启动都走这个源\n" "${'$'}pypi_name"
+                        exit 0
+                    fi
+                    # 换了源之后不再是下载问题（例如依赖冲突），再换也没用
+                    maidroid_uv_download_failed || break
+                done
+                if maidroid_uv_download_failed; then
+                    printf "依赖包下载失败（各个 PyPI 镜像都试过了），请检查网络后重试\n"
+                    exit 1
+                fi
+            fi
+
+            if [ -d .venv ] && ! maidroid_uv_output_has '$UV_NOT_REBUILDABLE_PATTERN'; then
+                printf "$AUTO_FIX_LOG_PREFIX uv sync 失败，虚拟环境可能已损坏，删掉 .venv 重建一次\n"
+                rm -rf .venv
+                maidroid_uv_sync && exit 0
+            fi
+            exit 1
+            """.trimIndent()
         ).joinToString("\n"),
         workingDirectory = MAIBOT_DIR
     )
+
+    // 装依赖包时依次可用的源。第一项地址为空，表示不加 UV_INDEX，用 MaiBot pyproject 里自己配的源（阿里云，缺包再 PyPI 官方）。
+    // UV_INDEX 的优先级高于 pyproject 里的源，MaiBot 又配了 unsafe-first-match，所以加上后包都从它下。
+    private val PYPI_INDEXES = listOf(
+        "MaiBot 自带的源" to "",
+        "清华 PyPI 镜像" to "https://pypi.tuna.tsinghua.edu.cn/simple",
+        "腾讯云 PyPI 镜像" to "https://mirrors.cloud.tencent.com/pypi/simple",
+        "中科大 PyPI 镜像" to "https://mirrors.ustc.edu.cn/pypi/simple"
+    )
+
+    /** 换源成功后记下来的 PyPI 源地址，uvPrelude 读它设 UV_INDEX；文件不在表示用 MaiBot 自带的源。 */
+    const val PYPI_INDEX_FILE = "/root/.maidroid/pypi-index"
+
+    // uv 输出里出现这些，说明是下载出了问题，换个源有希望（镜像缺包时是 404）。
+    private const val UV_DOWNLOAD_FAILED_PATTERN =
+        "Failed to fetch|Failed to download|error sending request|dns error|failed to lookup address|" +
+            "timed out|Connection reset|Connection refused|Network is unreachable|Request failed after|" +
+            "HTTP status (client|server) error|connection closed|unexpected EOF"
+
+    // 空间满、手机时间不对（证书还没生效）：换源、重建都一样失败。
+    private const val UV_NOT_FIXABLE_PATTERN = "No space left on device|NotValidYet|not yet valid"
+
+    // 依赖冲突、源码编译失败：问题在依赖本身，重建 .venv 也没用。
+    private const val UV_NOT_REBUILDABLE_PATTERN =
+        "$UV_NOT_FIXABLE_PATTERN|No solution found|unsatisfiable|Failed to build|Build backend failed"
 
     /**
      * 前台运行 MaiBot。有 script 命令时套一层伪终端，让 MaiBot 的彩色日志按行刷新到终端页；
@@ -185,12 +277,32 @@ internal object MaiBotScripts {
         workingDirectory = MAIBOT_DIR
     )
 
-    /** 结束上次异常退出留下的 MaiBot 及其插件运行器进程，避免 WebUI 端口被占。 */
+    /**
+     * 停止、重启和安全退出时，请 MaiBot 的 Runner（uv 拉起的 python bot.py）自己退出，最多等 EXIT_TIMEOUT_SECONDS 秒。
+     * Runner 收到 SIGTERM 后转给 Worker（python -m src.runtime）并等它走完优雅关闭
+     * （停插件运行时、持久化 A_Memorix 记忆、关数据库），Worker 退出后 Runner 跟着退出，
+     * uv、script、sh 随之依次退出，proot 也就结束了。2026-11 真机实测 MaiBot 1.3.19 空闲时约 3 秒关完。
+     * 只给 Runner 发，这是 MaiBot 自己的停止入口；外面几层 sh、script、uv 的命令行里也带着 bot.py，用 uv run 排除掉。
+     */
+    fun requestExit(): ContainerScript = ContainerScript(
+        listOf(
+            "set +e",
+            requestExitScript(EXIT_TARGET, timeoutSeconds = EXIT_TIMEOUT_SECONDS, logPrefix = "[MaiBot] ")
+        ).joinToString("\n")
+    )
+
+    /** requestExit 要请其退出的进程：Runner（python bot.py），排除外面几层命令行带 uv run 的 sh、script、uv。 */
+    val EXIT_TARGET = ExitTarget(pattern = "python[0-9.]* bot[.]py", exclude = "uv run", processName = "MaiBot")
+
+    /**
+     * 结束上次异常退出留下的 MaiBot 进程（启动前），以及强杀 proot 后脱离出来的 MaiBot 进程（停止后），避免 WebUI 端口被占。
+     * 每一层都要认得出：外面的 sh、script、uv（命令行带 bot.py）、Runner、Worker 和插件运行器。
+     */
     fun cleanupStaleProcesses(): ContainerScript = ContainerScript(
         listOf(
             "set +e",
             killMatchingProcessesScript(
-                pattern = "uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main",
+                pattern = STALE_PROCESS_PATTERN,
                 processName = "stale MaiBot process",
                 logPrefix = "[MaiBot] "
             ),
@@ -198,13 +310,20 @@ internal object MaiBotScripts {
         ).joinToString("\n")
     )
 
+    // cleanupStaleProcesses 按命令行匹配的 awk 正则。Runner 的命令行是 python bot.py（以前写成 python3 bot.py，
+    // 匹配不上），Worker 是 python -m src.runtime；Runner 忽略 SIGHUP，伪终端关掉也不会自己退出，必须点名清掉。
+    const val STALE_PROCESS_PATTERN =
+        "python[0-9.]* bot[.]py|python[0-9.]* -m src[.]runtime|src[.]plugin_runtime[.]runner[.]runner_main"
+
     // 同一份环境变量同时作用于 uv sync、uv run 和在线更新：先限定 Python 版本，再跳过 dev 依赖，
     // 保证“安装依赖”和“启动时 uv run 自动同步”用同一套参数，不会因为参数不一致反复重建 .venv。
     // dev 组里的 zstandard 等测试依赖在运行时用不到，却可能触发源码编译。
+    // 装依赖时换过 PyPI 源的，这里接着用那个源（见 syncDependencies），否则 uv 会按 MaiBot 自带的源重新解析。
     private fun uvPrelude(): String =
         "export UV_PYTHON=${shellQuote(UV_PYTHON_REQUEST)}; " +
             "export UV_NO_DEV=1; " +
             "export UV_LINK_MODE=copy; " +
+            "if [ -s ${shellQuote(PYPI_INDEX_FILE)} ]; then export UV_INDEX=\"\$(cat ${shellQuote(PYPI_INDEX_FILE)})\"; fi; " +
             "export PATH=\"\$HOME/.local/bin:\$PATH\"; " +
             "if [ -f \"\$HOME/.local/bin/env\" ]; then . \"\$HOME/.local/bin/env\"; fi"
 

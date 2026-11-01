@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.appupdate.AppDownloadProgress
 import org.maiwithu.maidroid.appupdate.AppRelease
@@ -39,7 +41,7 @@ class AppUpdateDialogTest {
 
     @Test
     fun `cleared installer package explains why it has to download again`() {
-        val cleared = available.copy(errorMessage = "安装包已被系统清理，请重新下载")
+        val cleared = available.copy(failure = Failure(FailureStep.AppUpdateInstall, "安装包已被系统清理，请重新下载"))
 
         assertEquals("安装包已被系统清理，请重新下载", appUpdateStatusText(cleared, true))
         assertEquals(AppUpdateButtonAction.Download, button(cleared).action)
@@ -74,7 +76,7 @@ class AppUpdateDialogTest {
 
     @Test
     fun `failures retry the step that failed`() {
-        val failed = available.copy(phase = AppUpdatePhase.Failed, errorMessage = "下载失败")
+        val failed = available.copy(phase = AppUpdatePhase.Failed, failure = Failure(FailureStep.AppUpdateDownload, "下载失败"))
 
         assertEquals(AppUpdateButtonAction.Download, button(failed.copy(failedAction = AppUpdateAction.Download)).action)
         assertEquals(AppUpdateButtonAction.Install, button(failed.copy(failedAction = AppUpdateAction.Install)).action)

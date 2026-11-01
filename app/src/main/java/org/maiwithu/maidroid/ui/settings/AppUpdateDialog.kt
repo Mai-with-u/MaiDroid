@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.appupdate.AppUpdateState
 import org.maiwithu.maidroid.appupdate.ReleaseNoteKind
 import org.maiwithu.maidroid.appupdate.formatBytes
 import org.maiwithu.maidroid.appupdate.releaseNoteLines
+import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -160,7 +161,7 @@ internal fun appUpdateStatusText(state: AppUpdateState, installPermissionGranted
                 "当前装的是调试版或自行构建的版本，签名和发布版不同，系统不允许直接覆盖安装。" +
                     "要换成发布版，需要先卸载 MaiDroid（会清掉容器里的 MaiBot 和数据），再安装下载页里的安装包。"
             // 点安装时发现安装包已被系统清理，会退回这里并带上原因，提示用户重新下载
-            state.errorMessage != null -> state.errorMessage
+            state.failure != null -> state.failure.message
             state.partialBytes > 0 ->"上次已下载 ${formatBytes(state.partialBytes)}，继续下载会接着下。"
             else -> "发现新版本。"
         }
@@ -294,6 +295,12 @@ internal fun AppUpdateDialog(
                 }
 
                 UpdateStatus(state, installPermissionGranted)
+
+                // 失败时：错误码、认出的原因和建议、“反馈问题”
+                val failure = state.failure
+                if (state.phase == AppUpdatePhase.Failed && failure != null) {
+                    FailureNotice(failure = failure)
+                }
 
                 if (showInstallNote) {
                     Text(text = INSTALL_NOTE, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)

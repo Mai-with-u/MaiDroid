@@ -7,7 +7,7 @@ import android.util.Log
 import org.maiwithu.maidroid.appDependencies
 
 /**
- * 开机广播：OOBE 已完成且开机自启没关时，拉起 MaiBotRuntimeService。
+ * 开机广播：OOBE 已完成、开机自启没关、用户上次没有安全退出时，拉起 MaiBotRuntimeService。
  *
  * Android 8+ 要求应用安装后被用户手动打开过一次，这个广播才会送达。
  */
@@ -28,6 +28,12 @@ class BootCompletedReceiver : BroadcastReceiver() {
 
         if (!settings.setupComplete) {
             Log.d(TAG, "Boot completed, but OOBE setup is not complete")
+            return
+        }
+
+        // 用户上次是在设置页安全退出的：和强行停止应用后一样，开机不自己拉起，等用户打开 MaiDroid。
+        if (settings.userExited) {
+            Log.d(TAG, "Boot completed, but the user exited MaiDroid last time")
             return
         }
 

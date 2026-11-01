@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.maibot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 
 class MaiBotDependencyStepTest {
@@ -104,5 +105,40 @@ class MaiBotDependencyStepTest {
             "安装 uv 失败：下载不到 uv 安装脚本（astral.sh 和所有 GitHub 镜像都失败），请检查网络后重试",
             MaiBotDependencyStep.Uv.failureMessage(result)
         )
+    }
+
+
+    // 失败时错误码的前半段是这一步，后半段从完整输出里认（这里是真机断网时 uv 的原样输出）
+    @Test
+    fun `failure carries step code and recognized cause`() {
+        val result = ContainerCommandResult(
+            exitCode = 2,
+            output = """
+            error: Request failed after 3 retries in 8.9s
+              cause: tcp connect error
+              cause: Connection refused (os error 111)
+            """.trimIndent()
+        )
+        val failure = MaiBotDependencyStep.Packages.failure(result)
+        assertEquals("UV-SYNC/NET-CONN", failure.code)
+        assertEquals(FailureCause.ConnectionLost, failure.cause)
+        assertEquals("UV-INSTALL", MaiBotDependencyStep.Uv.failure(ContainerCommandResult(1, "找不到")).code)
+        assertEquals("PY-INSTALL", MaiBotDependencyStep.Python.failureStep.code)
+    }
+
+    @Test
+    fun `only the last attempt counts after automatic retries`() {
+        val summary = uvErrorSummary(
+            """
+            error: Failed to fetch: `https://mirrors.aliyun.com/pypi/simple/aiohttp/`
+              Caused by: dns error: failed to lookup address information
+            [自动修复] 依赖包下载失败，换成清华 PyPI 镜像重试
+            error: Failed to download `pyarrow==21.0.0`
+              cause: HTTP status client error (404 Not Found)
+            依赖包下载失败（各个 PyPI 镜像都试过了），请检查网络后重试
+            """.trimIndent()
+        )
+
+        assertEquals("Failed to download `pyarrow==21.0.0`（HTTP status client error (404 Not Found)）", summary)
     }
 }

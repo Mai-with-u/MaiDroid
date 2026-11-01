@@ -16,7 +16,11 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.MaiBotStartup
+import org.maiwithu.maidroid.maibot.MaiBotStartupResult
+import org.maiwithu.maidroid.maibot.failure
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.ui.theme.BootAccent
@@ -62,7 +66,8 @@ internal data class BootLine(val label: String, val status: String, val check: B
 
 /**
  * 启动阶段，从 MaiBot 进程状态和 WebUI 探测结果拼出来；exits 只算唤醒页出现之后的意外退出。
- * 容器：启动前检查没通过就是 blocked；MaiBot：进程在跑或 WebUI 已通就是 running，退出过就显示重启次数；WebUI：探测通了就是 online。
+ * 容器：启动前检查没通过就是 blocked；MaiBot：进程在跑或 WebUI 已通就是 running，WebUI 端口被别的程序占着就显示 port busy
+ * （监管器在等端口空出来，见 MaiBotProcessSupervisor.awaitFreeWebUiPort），退出过就显示重启次数；WebUI：探测通了就是 online。
  * update 是 MaiDroid 更新后首次启动时自动升级 MaiBot 那一行（见 maiBotUpdateBootLine），排在容器之后、MaiBot 进程之前。
  */
 internal fun bootLines(
@@ -81,6 +86,7 @@ internal fun bootLines(
         update,
         when {
             processUp -> BootLine("maibot process", "running", BootCheck.Done)
+            status.webUiPortTaken -> BootLine("maibot process", "port ${MaiBotWebUi.PORT} busy", BootCheck.Warning)
             exits > 0 -> BootLine("maibot process", "restart ×$exits", BootCheck.Warning)
             else -> BootLine("maibot process", "starting", BootCheck.Pending)
         },
@@ -90,6 +96,18 @@ internal fun bootLines(
             BootLine("webui endpoint", "waiting", BootCheck.Pending)
         }
     )
+}
+
+/**
+ * 唤醒页上 MaiBot 起不来时给的错误码：启动前检查没过（MB-BLOCKED），或唤醒页出现后又意外退出了
+ * MaiBotStartup.MAX_EXITS 次以上（MB-CRASH，从最近两次运行的输出里认原因）；还在正常启动、只退出过一次时返回 null。
+ * recentOutput 只在需要认原因时才读。
+ */
+internal fun wakeFailure(status: MaiBotProcessStatus, exits: Int, recentOutput: () -> String): Failure? = when {
+    status.launchBlockedReason != null -> MaiBotStartupResult.Blocked(status.launchBlockedReason).failure("")
+    status.webUiPortTaken -> MaiBotStartupResult.PortTaken.failure("")
+    exits >= MaiBotStartup.MAX_EXITS -> MaiBotStartupResult.Crashed(exits, status.lastExitCode).failure(recentOutput())
+    else -> null
 }
 
 /**

@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.maiwithu.maidroid.diagnostics.Failure
+
 /** NapCat 的安装进度阶段。 */
 internal enum class NapCatInstallPhase {
     Idle,
@@ -17,7 +19,8 @@ internal data class NapCatPlatformState(
     val installed: Boolean,
     val progress: Float,
     val progressDescription: String,
-    val errorMessage: String?,
+    /** 安装失败时带错误码的原因。 */
+    val failure: Failure?,
     val qrCodePath: String?,
     val qrCodeLastModified: Long,
     val oneBotReachable: Boolean,
@@ -32,6 +35,7 @@ internal data class NapCatPlatformState(
     val qqLoggingOut: Boolean = false
 ) {
     val isInstalling: Boolean = phase == NapCatInstallPhase.Installing
+    val errorMessage: String? get() = failure?.message
     val hasQrCode: Boolean = qrCodePath != null && qrCodeLastModified > 0L
 
     /** 装好了、或者已经出过登录二维码，卡片上的按钮就从“下载”变成“设置”。 */
@@ -48,7 +52,7 @@ internal data class NapCatPlatformState(
                 installed = installed,
                 progress = if (installed) 1f else 0f,
                 progressDescription = if (installed) "NapCat 已安装" else "等待安装",
-                errorMessage = null,
+                failure = null,
                 qrCodePath = qrCodePath,
                 qrCodeLastModified = qrCodeLastModified,
                 oneBotReachable = false,

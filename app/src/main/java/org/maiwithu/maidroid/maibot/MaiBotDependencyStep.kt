@@ -1,5 +1,9 @@
 package org.maiwithu.maidroid.maibot
 
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerScript
 
@@ -11,11 +15,13 @@ import org.maiwithu.maidroid.runtime.ContainerScript
 internal enum class MaiBotDependencyStep(
     /** 这一步进行中时界面上的说明。 */
     val progressText: String,
-    private val failureLabel: String
+    private val failureLabel: String,
+    /** 这一步失败时错误码的前半段。 */
+    val failureStep: FailureStep
 ) {
-    Uv("正在安装 uv...", "安装 uv 失败"),
-    Python("正在准备 Python 解释器...", "准备 Python 解释器失败"),
-    Packages("正在安装 Python 依赖包（uv sync），可能需要几分钟...", "安装 Python 依赖包失败");
+    Uv("正在安装 uv...", "安装 uv 失败", FailureStep.UvInstall),
+    Python("正在准备 Python 解释器...", "准备 Python 解释器失败", FailureStep.PythonInstall),
+    Packages("正在安装 Python 依赖包（uv sync），可能需要几分钟...", "安装 Python 依赖包失败", FailureStep.UvSync);
 
     fun script(): ContainerScript = when (this) {
         Uv -> MaiBotScripts.installUv()
@@ -31,15 +37,20 @@ internal enum class MaiBotDependencyStep(
         val reason = if (this == Packages) uvErrorSummary(result.output) else null
         return "$failureLabel：${reason ?: result.summary()}"
     }
+
+    /** 失败说明加上错误码：前半段是这一步，后半段从完整输出里认原因。 */
+    fun failure(result: ContainerCommandResult): Failure = failureOf(failureStep, failureMessage(result), result.output)
 }
 
 /**
  * 从 uv 的输出里提炼失败原因：第一条 `error:` 或 `×` 开头的行说明哪里失败，
  * 最后一条 `cause:` 或 `╰─▶` 开头的行是根本原因，两者拼成“标题（原因）”。
  * uv 报错后常跟着 hint: 之类的提示，只取最后一行会丢掉真正的错误。没有报错行时返回 null。
+ * 脚本自己换源、重建重试过时输出里有好几次的报错，只看最后一行 AUTO_FIX_LOG_PREFIX 之后的最后一次。
  */
 internal fun uvErrorSummary(output: String): String? {
     val lines = output.lineSequence().map { it.trim() }.toList()
+        .let { all -> all.drop(all.indexOfLast { it.startsWith(AUTO_FIX_LOG_PREFIX) } + 1) }
     val headline = lines.firstNotNullOfOrNull { it.afterAnyPrefix(UV_ERROR_PREFIXES) }
         ?.trimEnd(':', '：')
         ?.takeIf { it.isNotEmpty() }

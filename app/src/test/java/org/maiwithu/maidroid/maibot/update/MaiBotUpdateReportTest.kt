@@ -74,4 +74,50 @@ class MaiBotUpdateReportTest {
         assertNull(parseMaiBotRevision("c602a27\tnot-a-time\tsubject"))
         assertNull(parseMaiBotRevision("xyz1234567\t1792600000\tsubject"))
     }
+
+    @Test
+    fun `schema versions are parsed and blank values stay unknown`() {
+        val report = parseMaiBotUpdateReport(
+            "MAIDROID_UPDATE_TARGET_SCHEMA=46\nMAIDROID_UPDATE_DATABASE_SCHEMA=47\n"
+        )
+        assertEquals(46, report.targetSchemaVersion)
+        assertEquals(47, report.databaseSchemaVersion)
+        assertTrue(report.wouldDowngradeDatabase)
+
+        // 脚本读不到时打印空值：不当成 0，也不拦
+        val unknown = parseMaiBotUpdateReport("MAIDROID_UPDATE_TARGET_SCHEMA=46\nMAIDROID_UPDATE_DATABASE_SCHEMA=\n")
+        assertNull(unknown.databaseSchemaVersion)
+        assertFalse(unknown.wouldDowngradeDatabase)
+    }
+
+    @Test
+    fun `same or older database schema is not a downgrade`() {
+        val base = MaiBotUpdateReport(branch = "main", installed = null, latest = null, localChangeCount = 0)
+        assertFalse(base.copy(targetSchemaVersion = 46, databaseSchemaVersion = 46).wouldDowngradeDatabase)
+        assertFalse(base.copy(targetSchemaVersion = 47, databaseSchemaVersion = 46).wouldDowngradeDatabase)
+        assertNull(maiBotDatabaseDowngradeMessage(base.copy(targetSchemaVersion = 46), MaiBotChannel.Stable))
+    }
+
+    @Test
+    fun `downgrade message names the versions and what happens`() {
+        val report = MaiBotUpdateReport(
+            branch = "main",
+            installed = null,
+            latest = null,
+            localChangeCount = 0,
+            targetSchemaVersion = 46,
+            databaseSchemaVersion = 47
+        )
+
+        assertEquals(
+            "麦麦的数据库已是第 47 版，正式版只支持到第 46 版，MaiBot 不支持数据库降级。" +
+                "切过去麦麦会启动失败，已取消切换，等正式版跟上后再切。",
+            maiBotDatabaseDowngradeMessage(report, MaiBotChannel.Stable)
+        )
+        assertEquals(
+            "麦麦的数据库已是第 47 版，上游最新版本只支持到第 46 版，MaiBot 不支持数据库降级。" +
+                "上游可能回退了提交，更新后麦麦会启动失败，暂不更新，等上游跟上后再更新。",
+            maiBotDatabaseDowngradeMessage(report, target = null)
+        )
+    }
 }

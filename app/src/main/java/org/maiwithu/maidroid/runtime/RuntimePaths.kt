@@ -15,7 +15,8 @@ import java.io.File
  * NapCat、QQ 官方机器人等平台各自的文件位置见各自包里的 NapCatFiles、QqOfficialAdapterFiles。
  */
 internal class RuntimePaths private constructor(
-    appFilesDir: File,
+    /** 应用私有的 files 目录；容器和 MaiDroid 自己的文件都在这个分区上，看剩余空间就看它。 */
+    val appFilesDir: File,
     val nativeLibraryDir: File
 ) {
     companion object {
@@ -75,6 +76,10 @@ internal class RuntimePaths private constructor(
     /** MaiBot WebUI 的配置，里面有登录用的 access_token。 */
     val maiBotWebUiConfig: File = File(maiBotDir, "data/webui.json")
     val venvDir: File = File(maiBotDir, ".venv")
+
+    /** uv 的下载缓存和 uv 管理的 Python 解释器（容器 /root 下）；装依赖到一半时它们已经占了不少空间。 */
+    val uvCacheDir: File = File(rootfsDir, "root/.cache/uv")
+    val uvPythonDir: File = File(rootfsDir, "root/.local/share/uv/python")
     val venvConfig: File = File(venvDir, "pyvenv.cfg")
     val venvPythonExecutable: File = File(venvDir, "bin/python")
 }

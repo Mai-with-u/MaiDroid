@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.maibot.update
 
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
@@ -11,7 +12,9 @@ import org.maiwithu.maidroid.runtime.shellQuote
  *
  * OOBE 以 `--depth=1` 经镜像克隆 MaiBot，origin 指向的可能是早已失效的镜像地址，
  * 所以这里不直接 `git pull`，而是每次都按镜像列表重新拉取上游分支到 origin/<分支>，
- * 再把工作区硬重置过去。被 Git 忽略的配置、数据、插件和 .venv 不受影响；
+ * 再把工作区硬重置过去。上游 dev 分支有时会回退提交，强制拉取加硬重置也能跟着退回去，不会卡在快进失败上。
+ * 切换版本通道（main / dev）走同一段脚本，只是拉取目标分支，最后把本地分支切过去。
+ * 被 Git 忽略的配置、数据、插件和 .venv 不受影响；
  * 被改过的受版本管理文件直接还原为上游版本，不做备份：MaiDroid 不支持在手机上改 MaiBot 源码，
  * 用户在“文件”应用里误改的源码随更新自动恢复。
  */
@@ -20,27 +23,72 @@ internal object MaiBotUpdateScripts {
     // 这是 MaiDroid 自己改的，不算用户改动；重置时它照样还原，随后重装依赖时再次改写。
     private const val USER_CHANGES_PATHSPEC = "-- . ':(exclude)uv.lock'"
 
+    // 上游登记数据库结构版本的文件和 MaiBot 的数据库，都是相对 MaiBot 仓库根目录的路径，见 schemaVersionScript。
+    private const val SCHEMA_SOURCE_PATH = "src/common/database/migrations/builtin.py"
+    private const val DATABASE_PATH = "data/MaiBot.db"
+
+    /**
+     * 动源码之前记下要切到的分支和提交（一行“分支 提交”）。在线更新、切换通道、自动升级一路做完（不论成败）由宿主侧删掉；
+     * 做到一半应用闪退、被系统结束或断电时它还在，下次打开时 resumeInterrupted 照着它把源码切完、依赖装完。
+     */
+    const val UPDATE_PENDING_FILE = "/root/.maidroid/maibot-update-pending"
+
     /** 只读当前安装的版本，不联网，MaiBot 运行中也能执行。 */
     fun installedRevision(): ContainerScript = script(
         repositoryPrelude(),
         reportScript(includeLatest = false)
     )
 
-    /** 拉取上游最新提交但不动工作区，MaiBot 运行中也能执行。 */
-    fun fetchLatest(): ContainerScript = script(
+    /**
+     * 拉取上游最新提交但不动工作区，MaiBot 运行中也能执行；顺带报出数据库结构版本，判断换过去会不会降级。
+     * targetBranch 不为空时拉取的是那个分支（切换通道前的预检），打印的 BRANCH、LATEST 也是它的，不是当前分支的。
+     */
+    fun fetchLatest(targetBranch: String? = null): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
-        repositoryPrelude(),
+        repositoryPrelude(targetBranch),
+        staleGitLockScript(),
         fetchScript(),
+        schemaVersionScript(),
         reportScript(includeLatest = true)
     )
 
-    /** 拉取 -> 丢弃本地改动并硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。 */
-    fun fetchAndReset(): ContainerScript = script(
+    /**
+     * 拉取 -> 确认数据库不会降级 -> 丢弃本地改动并硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。
+     * targetBranch 为空时跟随当前分支（在线更新）；不为空时拉取这个分支并切过去（切换版本通道）。
+     * 会降级时以退出码 4 结束，源码和分支都不动。
+     */
+    fun fetchAndReset(targetBranch: String? = null): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
-        repositoryPrelude(),
+        repositoryPrelude(targetBranch),
+        staleGitLockScript(),
         fetchScript(),
+        schemaVersionScript(),
+        refuseDatabaseDowngradeScript(),
         resetScript(),
         reportScript(includeLatest = true)
+    )
+
+    /**
+     * 接着做完上次被打断的更新，不联网：读 UPDATE_PENDING_FILE -> 清掉打断时留下的 git 锁 ->
+     * 确认那个提交已经拉到本地 -> 切过去（丢弃切到一半的工作区）-> 报出版本。依赖由调用方随后照常重装。
+     * 记录读不出、提交不在本地时以退出码 5 结束，源码不动，交给用户在设置页重新更新。
+     */
+    fun resumeInterrupted(): ContainerScript = script(
+        repositoryPrelude(),
+        staleGitLockScript(),
+        """
+        pending_branch=""
+        pending_commit=""
+        read -r pending_branch pending_commit < ${shellQuote(UPDATE_PENDING_FILE)} || true
+        if [ -z "${'$'}pending_branch" ] || [ -z "${'$'}pending_commit" ] || ! git cat-file -e "${'$'}pending_commit^{commit}" 2>/dev/null; then
+            printf "上次被打断的更新记录不完整，请在设置页“MaiBot 更新”里重新更新\n"
+            exit 5
+        fi
+        branch="${'$'}pending_branch"
+        printf "$AUTO_FIX_LOG_PREFIX 上次更新 MaiBot 时被打断了，接着切到 %s 分支的 %s\n" "${'$'}branch" "${'$'}(git rev-parse --short "${'$'}pending_commit")"
+        git checkout --force --no-track -B "${'$'}branch" "${'$'}pending_commit"
+        """.trimIndent(),
+        reportScript(includeLatest = false)
     )
 
     private fun script(vararg parts: String): ContainerScript =
@@ -49,9 +97,10 @@ internal object MaiBotUpdateScripts {
             workingDirectory = InContainerPaths.MAIBOT_DIR
         )
 
-    // 进入 MaiBot 仓库并确定要跟随的分支；分离 HEAD 时退回上游默认分支 main。
-    private fun repositoryPrelude(): String {
+    // 进入 MaiBot 仓库并确定要跟随的分支：切换通道时用目标分支，否则用当前分支，分离 HEAD 时退回上游默认分支 main。
+    private fun repositoryPrelude(targetBranch: String? = null): String {
         val installDir = shellQuote(InContainerPaths.MAIBOT_DIR)
+        val branchValue = targetBranch?.let(::shellQuote) ?: "\"${'$'}current_branch\""
         return """
         set -e
         install_dir=$installDir
@@ -64,7 +113,8 @@ internal object MaiBotUpdateScripts {
             printf "[MaiBotUpdate] %s is not a git repository, online update is unavailable\n" "${'$'}install_dir"
             exit 3
         fi
-        branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+        current_branch="${'$'}(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+        branch=$branchValue
         if [ -z "${'$'}branch" ]; then
             branch=main
         fi
@@ -76,6 +126,23 @@ internal object MaiBotUpdateScripts {
         """.trimIndent()
     }
 
+    // 拉取之前：上次 git 被打断（应用被系统结束、proot 被强杀）会在 .git 里留下 .lock 文件，
+    // 之后每次 git 都报 “File exists / Another git process seems to be running”，点多少次更新都过不去。
+    // 容器里没有正在跑的 git 时才删（MaiBot 自己检查更新时也会跑 git），删了哪些打在终端里。
+    private fun staleGitLockScript(): String =
+        """
+        maidroid_git_running() {
+            ps -eo args= | awk '{ name = ${'$'}1; sub(/.*\//, "", name); if (name == "git" || name ~ /^git-/) found = 1 } END { exit !found }'
+        }
+        if ! maidroid_git_running; then
+            stale_locks="${'$'}(find .git -name '*.lock' -type f 2>/dev/null || true)"
+            if [ -n "${'$'}stale_locks" ]; then
+                printf "$AUTO_FIX_LOG_PREFIX 清掉上次 git 被打断留下的锁文件：\n%s\n" "${'$'}stale_locks"
+                printf '%s\n' "${'$'}stale_locks" | while IFS= read -r stale_lock; do rm -f "${'$'}stale_lock"; done
+            fi
+        fi
+        """.trimIndent()
+
     // 浅拉取只下载最新一个提交，手机流量和存储都更友好。
     private fun fetchScript(): String =
         """
@@ -83,15 +150,61 @@ internal object MaiBotUpdateScripts {
         maidroid_github_fetch ${shellQuote(MaiBotScripts.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
         """.trimIndent()
 
+    // MaiBot 的数据库迁移只能升级：库的版本（SQLite user_version）比代码支持的最新版本新时，启动直接报错退出
+    // （上游 src/common/database/migrations/bootstrap.py）。这里读出两边，换代码之前先比一比：
+    // - 目标代码支持到的版本：拉下来的提交里 migrations/builtin.py 的 LATEST_SCHEMA_VERSION 字面值；
+    // - 库的版本：用 MaiBot 自己 .venv 里的 Python 读 data/MaiBot.db。库是 WAL 模式，新写的版本号可能还在 -wal 里，
+    //   直接读文件头不可靠。先只读打开（MaiBot 运行中也不干扰它），打不开（例如缺 -shm）再普通打开读一次。
+    // 任一边读不到（上游改了写法、还没装依赖、还没有数据库）就留空，不拦，照旧更新。
+    private fun schemaVersionScript(): String {
+        val readUserVersion = { uri: String ->
+            "import sqlite3; print(sqlite3.connect(\"$uri\", uri=True).execute(\"PRAGMA user_version\").fetchone()[0])"
+        }
+        return """
+        target_schema="${'$'}(git show "${'$'}remote_ref:$SCHEMA_SOURCE_PATH" 2>/dev/null | sed -n 's/^LATEST_SCHEMA_VERSION *= *\([0-9][0-9]*\) *${'$'}/\1/p' | head -n 1)"
+        database_schema=""
+        if [ -f $DATABASE_PATH ] && [ -x .venv/bin/python ]; then
+            database_schema="${'$'}(.venv/bin/python -c ${shellQuote(readUserVersion("file:$DATABASE_PATH?mode=ro"))} 2>/dev/null ||
+                .venv/bin/python -c ${shellQuote(readUserVersion("file:$DATABASE_PATH"))} 2>/dev/null || true)"
+        fi
+        case "${'$'}database_schema" in
+            *[!0-9]*) database_schema="" ;;
+        esac
+        printf "%s=%s\n" ${MaiBotUpdateReportKeys.TARGET_SCHEMA} "${'$'}target_schema"
+        printf "%s=%s\n" ${MaiBotUpdateReportKeys.DATABASE_SCHEMA} "${'$'}database_schema"
+        """.trimIndent()
+    }
+
+    // 接在 schemaVersionScript 后面：两边都读到且库比目标代码新，就在动源码之前退出（退出码 4），麦麦照旧用现在的代码。
+    private fun refuseDatabaseDowngradeScript(): String =
+        """
+        if [ -n "${'$'}target_schema" ] && [ -n "${'$'}database_schema" ] && [ "${'$'}database_schema" -gt "${'$'}target_schema" ]; then
+            printf "[MaiBotUpdate] database schema %s is newer than %s supports (%s); MaiBot cannot downgrade it, keeping the current source\n" "${'$'}database_schema" "${'$'}branch" "${'$'}target_schema"
+            exit 4
+        fi
+        """.trimIndent()
+
     // 用户改过的源码文件先在终端日志里列一遍（知道还原了什么），再硬重置到上游；被忽略的文件不受影响。
+    // 要跟随的分支和当前分支不同（切换通道，或从分离 HEAD 回到 main）时，在上游提交上新建或重置本地分支并切过去：
+    // checkout --force 丢弃受版本管理文件的改动、覆盖挡路的未跟踪文件，效果等同切过去后再 reset --hard。
+    // --no-track：浅克隆的 origin 只登记了 main，跟踪信息本来也设不上，显式关掉，不随 git 版本和配置变化。
+    // 动源码前先把“要切到哪”写进 UPDATE_PENDING_FILE（写临时文件再改名，不会留下半截记录），见 resumeInterrupted。
     private fun resetScript(): String =
         """
         changed="${'$'}(git status --porcelain --untracked-files=no $USER_CHANGES_PATHSPEC)"
         if [ -n "${'$'}changed" ]; then
             printf "[MaiBotUpdate] discarding local changes to tracked files:\n%s\n" "${'$'}changed"
         fi
-        printf "[MaiBotUpdate] resetting to %s\n" "${'$'}(git rev-parse --short "${'$'}remote_ref")"
-        git reset --hard "${'$'}remote_ref"
+        mkdir -p ${shellQuote(UPDATE_PENDING_FILE.substringBeforeLast('/'))}
+        printf '%s %s\n' "${'$'}branch" "${'$'}(git rev-parse "${'$'}remote_ref")" > ${shellQuote("$UPDATE_PENDING_FILE.tmp")}
+        mv ${shellQuote("$UPDATE_PENDING_FILE.tmp")} ${shellQuote(UPDATE_PENDING_FILE)}
+        if [ "${'$'}current_branch" != "${'$'}branch" ]; then
+            printf "[MaiBotUpdate] switching from %s to %s at %s\n" "${'$'}{current_branch:-detached HEAD}" "${'$'}branch" "${'$'}(git rev-parse --short "${'$'}remote_ref")"
+            git checkout --force --no-track -B "${'$'}branch" "${'$'}remote_ref"
+        else
+            printf "[MaiBotUpdate] resetting to %s\n" "${'$'}(git rev-parse --short "${'$'}remote_ref")"
+            git reset --hard "${'$'}remote_ref"
+        fi
         """.trimIndent()
 
     private fun reportScript(includeLatest: Boolean): String {

@@ -70,7 +70,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平�
 1. 检查容器、MaiBot 源码和 MaiBot 版本：SnowLuma 适配器对 MaiBot 有最低版本要求（`SnowLumaAdapterScripts.MIN_MAIBOT_VERSION`），MaiBot 会直接拒绝加载版本范围外的插件，所以版本不够时提示先去设置页更新 MaiBot。版本号读自 `pyproject.toml` 的 `[project].version`。
 2. NapCat 本体还没装（`napcat_ready` 标记或 `onebot11.json` 缺一个）才运行安装脚本，进度通过容器 `$TMPDIR/progress`、`progress_des` 两个文件汇报，每 500 毫秒读一次显示在卡片的进度环上：
    - 生成 OneBot 访问 token（只在第一次安装时生成，存在 `/root/.maidroid/napcat_token`，重装沿用）；
-   - 下载并运行 NapCat 官方的 Linux 安装器；
+   - 按 `GitHubMirrors` 的线路依次下载 NapCat 官方的 Linux 安装器，下到的必须是提到 napcat 的 shell 脚本（镜像限流、拉黑时会返回 200 的网页或报错文字），再运行它；
    - 写 `/root/napcat/config/onebot11.json`：在 `127.0.0.1:8095` 开 WebSocket 服务端，带上 token；
    - 写 `/root/.maidroid/napcat_ready` 标记，生成 `/root/launcher.sh`。
 3. 装 MaiBot 侧的 SnowLuma 适配器（`SnowLumaAdapterScripts.install`）：没装过（按清单 ID `maibot-team.snowluma-adapter` 找，插件市场装的副本也算）就经 GitHub 镜像把 MaiBot-SnowLuma-Adapter 克隆到 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-SnowLuma-Adapter`；然后删掉清单 ID 为 `maibot-team.napcat-adapter` 的旧适配器（两个适配器同时连 NapCat 会把每条消息收两遍）。删之前先把旧适配器的 `config.toml` 读进内存，留给第 5 步搬设置。
@@ -79,7 +79,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平�
 
 MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `plugin.config_version`，版本号和各段默认值都以适配器当前版本为准，由 MaiBot 生成最稳。“迁移过没有”只看 `[client]` 是否指向本机 NapCat（`SnowLumaAdapterConfig.isMigrated`），不看 `enabled`：用户之后在 WebUI 里关掉适配器，MaiDroid 不会每次启动都给打开。
 
-注意：NapCat 安装器本身仍直连 GitHub 下载，没有走镜像。
+安装器自己下载 NapCat 和 LinuxQQ 时用它自带的镜像列表，MaiDroid 只管拿到安装器本身。
 
 ### 旧适配器迁移
 
@@ -92,7 +92,7 @@ MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `pl
 
 ### 运行（`NapCatProcessSupervisor`）
 
-每次启动：需要时换装 SnowLuma 适配器（见上）-> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。只要 NapCat 本体装好就启动，不看适配器装没装。
+每次启动：需要时换装 SnowLuma 适配器（见上）-> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。显示号不写死：手机上各个应用共用抽象 Unix 套接字，别的应用（另一个 MaiDroid、Termux 里的 VNC）占着 `:1` 时这边的 Xvfb 起不来，QQ 还会连到别人的显示上、一直出不了二维码。所以用 `Xvfb -displayfd` 让它自己挑第一个空着的号，记在 `/tmp/.maidroid-display`，`cleanup` 时一起删掉。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。只要 NapCat 本体装好就启动，不看适配器装没装。
 
 ### 状态怎么来的（`NapCatStatusReader`、`NapCatWebUiClient`）
 
@@ -129,7 +129,7 @@ NapCat 没有注销 QQ 的接口，QQ 只随进程结束下线。所以“退出
    - `XxxFiles`：宿主侧的文件位置和“是否已装好”；
    - `XxxPlatformState`：界面状态；
    - `XxxPlatformManager`：安装、配置、状态汇总，构造函数注入 `RuntimeReadiness`、`ContainerCommandRunner` 等。
-2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停。
+2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停；再在 `SafeExitManager` 里加一项，让设置页的“安全退出”也停掉它（进程能自己保存数据的，用 `requestExitScript` 在容器里请它退出，见架构总览的“安全退出”）。
 3. 在 `AppDependencies` 里加一个 `lazy` 属性。
 4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `AccessMethod` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platform/` 的独立文件里。
 5. 装好或改了配置后经 `ACTION_RESTART_RUNTIME` 重启 MaiBot。

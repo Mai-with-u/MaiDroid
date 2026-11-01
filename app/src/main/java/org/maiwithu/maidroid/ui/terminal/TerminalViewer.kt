@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.WrapText
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Pause
@@ -55,7 +56,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +83,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -162,6 +166,8 @@ private fun TerminalViewer(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val viewer = rememberTerminalViewerState()
+    // 顶栏的“反馈问题”：看着日志发现不对劲时，直接从这里生成诊断包去反馈
+    var showFeedback by rememberSaveable { mutableStateOf(false) }
     // 实时 -> 显示最新日志；暂停 -> 显示冻结的快照。解析颜色、按关键字筛选都基于当前显示的这份。
     val shownLogs = viewer.shownLogs(logs)
     val lines = rememberParsedLines(shownLogs)
@@ -183,6 +189,10 @@ private fun TerminalViewer(
     BackHandler(enabled = !viewer.selecting && viewer.searchOpen, onBack = closeSearch)
     BackHandler(enabled = !embedded && !viewer.selecting && !viewer.searchOpen, onBack = onDismiss)
 
+    if (showFeedback) {
+        FeedbackDialog(failure = null, onDismiss = { showFeedback = false })
+    }
+
     BoxWithConstraints(modifier = modifier) {
         val compact = embedded || maxHeight < 480.dp
         val wide = maxWidth >= 600.dp
@@ -197,6 +207,7 @@ private fun TerminalViewer(
                 onDismiss = onDismiss,
                 onCloseSearch = closeSearch,
                 onTogglePause = { viewer.togglePause(logs) },
+                onFeedback = { showFeedback = true },
                 onCopyAll = {
                     copyTerminalText(
                         context = context,
@@ -241,7 +252,7 @@ private val SelectionBarColor = BrandOrange.copy(alpha = 0.18f).compositeOver(Ca
 
 /**
  * 终端顶栏，三种状态：
- * - 平时：返回（全屏页）、标题和实时/暂停状态、搜索、暂停/继续、自动换行、复制全部、收起（嵌入面板）；
+ * - 平时：返回（全屏页）、标题和实时/暂停状态、搜索、暂停/继续、自动换行、复制全部、反馈问题、收起（嵌入面板）；
  * - 搜索：输入框占满顶栏，右边显示匹配行数；
  * - 选择：已选几行、全选、复制。
  */
@@ -256,6 +267,7 @@ private fun TerminalTopBar(
     onDismiss: () -> Unit,
     onCloseSearch: () -> Unit,
     onTogglePause: () -> Unit,
+    onFeedback: () -> Unit,
     onCopyAll: () -> Unit,
     onSelectAll: () -> Unit,
     onCopySelection: () -> Unit
@@ -314,6 +326,7 @@ private fun TerminalTopBar(
                     active = viewer.wrapLines
                 )
                 BarIconButton(Icons.Outlined.ContentCopy, "复制全部输出", onCopyAll, enabled = rowCount > 0)
+                BarIconButton(Icons.Outlined.BugReport, "反馈问题", onFeedback)
                 if (embedded) {
                     BarIconButton(Icons.Outlined.Close, "收起终端输出", onDismiss)
                 }

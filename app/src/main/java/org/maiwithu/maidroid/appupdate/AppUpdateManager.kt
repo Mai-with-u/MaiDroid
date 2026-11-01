@@ -7,10 +7,8 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +17,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.VersionNumber
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureCause
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
 import java.io.IOException
@@ -69,9 +73,12 @@ internal data class AppUpdateState(
     val partialBytes: Long = 0,
     val progress: AppDownloadProgress? = null,
     val checkSource: String? = null,
-    val errorMessage: String? = null,
+    /** 失败时带错误码的原因；“安装包已被系统清理”这种提示也放在这里，不进入失败阶段。 */
+    val failure: Failure? = null,
     val failedAction: AppUpdateAction? = null
 ) {
+    val errorMessage: String? get() = failure?.message
+
     val isBusy: Boolean
         get() = phase == AppUpdatePhase.Checking ||
             phase == AppUpdatePhase.Downloading ||
@@ -102,7 +109,7 @@ internal class AppUpdateManager(
         val FILE_PROVIDER_AUTHORITY = "${BuildConfig.APPLICATION_ID}.appupdate"
     }
 
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("MaiDroid 自更新", Dispatchers.Main.immediate)
     private var job: Job? = null
     private val currentVersion = VersionNumber.parse(currentVersionName)
     private val files = AppUpdateFiles(appContext.cacheDir)
@@ -146,7 +153,12 @@ internal class AppUpdateManager(
         checkingOnLaunch = onLaunch
         job = scope.launch {
             _state.update {
-                it.copy(phase = AppUpdatePhase.Checking, errorMessage = null, failedAction = null)
+                it.copy(phase = AppUpdatePhase.Checking, failure = null, failedAction = null)
+            }
+            // 没连网时 OkHttp 会立刻报解析不了域名，按“没连网”说更准
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.AppUpdateCheck)?.let { failure ->
+                failCheck(failure)
+                return@launch
             }
             val sourceCount = GitHubMirrors.candidatesFor(apiUrl).size
             TerminalLog.append("")
@@ -154,7 +166,7 @@ internal class AppUpdateManager(
 
             val win = client.fetchLatestRelease(apiUrl)
             if (win == null) {
-                failCheck("连不上 GitHub 和所有镜像，请检查网络后重试")
+                failCheck(Failure(FailureStep.AppUpdateCheck, "连不上 GitHub 和所有镜像，请检查网络后重试"))
                 return@launch
             }
             val release = win.value
@@ -169,7 +181,7 @@ internal class AppUpdateManager(
             }
             if (release.apk == null) {
                 _state.update { it.copy(release = release, checkSource = win.mirror.name) }
-                failCheck("最新版本 ${release.tag} 里没有找到安装包")
+                failCheck(Failure(FailureStep.AppUpdateCheck, "最新版本 ${release.tag} 里没有找到安装包"))
                 return@launch
             }
 
@@ -204,12 +216,13 @@ internal class AppUpdateManager(
     }
 
     // 检查这一步失败：用户自己点的检查照常报错；启动时的自动检查只记日志、退回空闲，不在设置页挂一条没人问过的失败。
-    private fun failCheck(message: String) {
+    private fun failCheck(failure: Failure) {
         if (!checkingOnLaunch) {
-            fail(AppUpdateAction.Check, message)
+            fail(AppUpdateAction.Check, failure)
             return
         }
-        TerminalLog.append("$LOG_PREFIX 启动时检查更新没有成功：$message")
+        TerminalLog.append("$LOG_PREFIX 启动时检查更新没有成功：${failure.message}")
+        TerminalLog.append(failure.logLine())
         _state.update { it.copy(phase = AppUpdatePhase.Idle, progress = null) }
     }
 
@@ -228,9 +241,20 @@ internal class AppUpdateManager(
                 files.dir.mkdirs()
                 part.length() to files.dir.usableSpace
             }
+            NetworkStatus.read(appContext).offlineFailure(FailureStep.AppUpdateDownload)?.let { failure ->
+                fail(AppUpdateAction.Download, failure)
+                return@launch
+            }
             val needed = (asset.size - existing).coerceAtLeast(0L) + FREE_SPACE_MARGIN_BYTES
             if (asset.size > 0 && usable < needed) {
-                fail(AppUpdateAction.Download, "手机存储空间不足，还需要约 ${formatBytes(needed - usable)}")
+                fail(
+                    AppUpdateAction.Download,
+                    Failure(
+                        FailureStep.AppUpdateDownload,
+                        "手机存储空间不足，还需要约 ${formatBytes(needed - usable)}",
+                        FailureCause.DiskFull
+                    )
+                )
                 return@launch
             }
 
@@ -238,7 +262,7 @@ internal class AppUpdateManager(
                 it.copy(
                     phase = AppUpdatePhase.Downloading,
                     progress = AppDownloadProgress(existing, asset.size, 0, null),
-                    errorMessage = null,
+                    failure = null,
                     failedAction = null
                 )
             }
@@ -259,7 +283,15 @@ internal class AppUpdateManager(
                 throw e
             } catch (e: IOException) {
                 _state.update { it.copy(partialBytes = part.length()) }
-                fail(AppUpdateAction.Download, "下载失败：${e.message ?: e.javaClass.simpleName}")
+                // 异常类名也拿去认原因：OkHttp 的 UnknownHostException、SocketTimeoutException 说明了是哪种网络问题
+                fail(
+                    AppUpdateAction.Download,
+                    failureOf(
+                        FailureStep.AppUpdateDownload,
+                        "下载失败：${e.message ?: e.javaClass.simpleName}",
+                        "${e.javaClass.simpleName}: ${e.message}"
+                    )
+                )
                 return@launch
             }
 
@@ -301,7 +333,7 @@ internal class AppUpdateManager(
                     it.copy(
                         phase = AppUpdatePhase.Available,
                         partialBytes = 0,
-                        errorMessage = "安装包已被系统清理，请重新下载"
+                        failure = Failure(FailureStep.AppUpdateInstall, "安装包已被系统清理，请重新下载")
                     )
                 }
                 return@launch
@@ -313,7 +345,7 @@ internal class AppUpdateManager(
             }
             if (problem != null) {
                 withContext(Dispatchers.IO) { apk.delete() }
-                fail(AppUpdateAction.Download, "$problem，已删除安装包")
+                fail(AppUpdateAction.Download, Failure(FailureStep.AppUpdateVerify, "$problem，已删除安装包"))
                 return@launch
             }
 
@@ -324,7 +356,7 @@ internal class AppUpdateManager(
             if (startActivity(intent)) {
                 TerminalLog.append("$LOG_PREFIX 已打开系统安装器：${release.tag}")
             } else {
-                fail(AppUpdateAction.Install, "没有找到系统安装器")
+                fail(AppUpdateAction.Install, Failure(FailureStep.AppUpdateInstall, "没有找到系统安装器"))
             }
         }
     }
@@ -349,7 +381,7 @@ internal class AppUpdateManager(
                 apk.delete()
             }
             _state.update { it.copy(partialBytes = 0) }
-            fail(AppUpdateAction.Download, "$problem，已删除，请重新下载")
+            fail(AppUpdateAction.Download, Failure(FailureStep.AppUpdateVerify, "$problem，已删除，请重新下载"))
             return
         }
         TerminalLog.append("$LOG_PREFIX 安装包校验通过：${apk.name}")
@@ -377,13 +409,15 @@ internal class AppUpdateManager(
             false
         }
 
-    private fun fail(action: AppUpdateAction, message: String) {
-        TerminalLog.append("$LOG_PREFIX 失败：$message")
+    // 失败说明和错误码都写进终端日志，弹窗显示错误码和建议
+    private fun fail(action: AppUpdateAction, failure: Failure) {
+        TerminalLog.append("$LOG_PREFIX 失败：${failure.message}")
+        TerminalLog.append(failure.logLine())
         _state.update {
             it.copy(
                 phase = AppUpdatePhase.Failed,
                 progress = null,
-                errorMessage = message,
+                failure = failure,
                 failedAction = action
             )
         }

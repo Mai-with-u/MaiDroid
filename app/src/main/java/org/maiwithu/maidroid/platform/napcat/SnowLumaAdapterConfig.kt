@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.platform.napcat
 
 import org.maiwithu.maidroid.maibot.PluginConfigToml
+import org.maiwithu.maidroid.runtime.writeTextAtomically
 import java.io.File
 
 /**
@@ -85,21 +86,13 @@ internal object SnowLumaAdapterConfig {
 }
 
 /**
- * 改写适配器配置文件：内容没变就不写；变了先写同目录临时文件再改名替换，
- * 避免 MaiBot 的配置热重载读到写了一半的文件。返回是否真的写了。
+ * 改写适配器配置文件：内容没变就不写；变了整个原子替换（writeTextAtomically），
+ * MaiBot 的配置热重载读不到写了一半的文件，断电、存储满也不会把配置写成空的。返回是否真的写了。
  */
 internal fun rewriteAdapterConfig(file: File, transform: (String?) -> String): Boolean {
     val existing = file.takeIf { it.isFile }?.readText()
     val updated = transform(existing)
     if (updated == existing) return false
-
-    file.parentFile?.mkdirs()
-    // MaiBot 只在 .py 和 _manifest.json 变化时重载插件，临时文件不会触发重载。
-    val staging = File(file.parentFile, "${file.name}.maidroid.tmp")
-    staging.writeText(updated)
-    if (!staging.renameTo(file)) {
-        staging.delete()
-        error("无法写入 ${file.name}")
-    }
+    file.writeTextAtomically(updated)
     return true
 }

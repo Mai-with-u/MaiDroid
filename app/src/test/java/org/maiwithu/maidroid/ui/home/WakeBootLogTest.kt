@@ -21,6 +21,14 @@ class WakeBootLogTest {
     }
 
     @Test
+    fun `port held by another program shows on the maibot line`() {
+        val lines = bootLines(webUiOnline = false, status = MaiBotProcessStatus(webUiPortTaken = true), exits = 0)
+
+        assertEquals(BootLine("maibot process", "port 8001 busy", BootCheck.Warning), lines[1])
+        assertEquals("MB-BLOCKED/PORT-BUSY", wakeFailure(MaiBotProcessStatus(webUiPortTaken = true), 0) { "" }?.code)
+    }
+
+    @Test
     fun `auto update line sits between container and maibot process`() {
         val lines = bootLines(false, starting, 0, update = updateLine(MaiBotUpdatePhase.Updating))
 
@@ -72,5 +80,26 @@ class WakeBootLogTest {
         val blocked = bootLines(false, starting.copy(launchBlockedReason = "容器未就绪"), 0)
 
         assertNull(bootProgressTarget(1, blocked, 0f))
+    }
+
+    @Test
+    fun wakePageShowsCodeOnlyWhenMaiBotCannotStart() {
+        var outputRead = false
+        val output = {
+            outputRead = true
+            "Traceback (most recent call last):\nModuleNotFoundError: No module named 'aiohttp'"
+        }
+        // 只退出过一次还在正常重启：不报错，也不去读输出
+        assertNull(wakeFailure(MaiBotProcessStatus(exitCount = 1), exits = 1, recentOutput = output))
+        assertEquals(false, outputRead)
+
+        assertEquals(
+            "MB-CRASH/PY-MODULE",
+            wakeFailure(MaiBotProcessStatus(exitCount = 3, lastExitCode = 1), exits = 2, recentOutput = output)?.code
+        )
+        assertEquals(
+            "MB-BLOCKED",
+            wakeFailure(MaiBotProcessStatus(launchBlockedReason = "proot 未就绪"), exits = 0, recentOutput = output)?.code
+        )
     }
 }

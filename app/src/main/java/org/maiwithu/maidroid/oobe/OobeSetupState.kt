@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.oobe
 
+import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.runtime.RuntimeComponent
 
 /** OOBE 的三步，顺序就是界面上步骤指示器的顺序。 */
@@ -48,7 +49,8 @@ internal data class OobeTask(
  * OOBE“配置容器”和“安装 MaiBot”两步的界面状态，由 OobeSetupManager 维护。
  *
  * canInstall：容器五件套都就绪，可以进入安装步骤（安装失败后也为 true，表示允许重试）；
- * isComplete：MaiBot 装好且 WebUI 已经能访问，可以进入主页。
+ * isComplete：MaiBot 装好且 WebUI 已经能访问，可以进入主页；
+ * failure：这一步失败时带错误码的原因，页脚据此显示错误码、建议和“反馈问题”；进行中、完成时为 null。
  */
 internal data class OobeSetupState(
     val containerTasks: List<OobeTask>,
@@ -56,7 +58,8 @@ internal data class OobeSetupState(
     val footerText: String,
     val canInstall: Boolean,
     val isComplete: Boolean,
-    val commandLogs: List<String> = emptyList()
+    val commandLogs: List<String> = emptyList(),
+    val failure: Failure? = null
 ) {
     companion object {
         /** 第一次检查容器之前的占位状态：三张容器卡片都在等待，安装卡片都在等容器。 */

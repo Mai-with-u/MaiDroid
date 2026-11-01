@@ -103,10 +103,13 @@ internal class RuntimeReadiness(private val paths: RuntimePaths) {
         paths.rootfsMarker.isFile && paths.bootstrapMarker.isFile &&
             areTermuxProotDependenciesReady() && isProotRuntimeReady()
 
+    // 文件都在还不够：apt 被打断时文件解包在位、配置没跑完，这时要回到“配置容器”先修好 dpkg（见 DpkgState）。
+    // 要读 dpkg 的 status 文件（装过 NapCat 后有几 MB），只在 IO 线程调用。
     fun isSystemDependencyReady(): Boolean =
         paths.gitExecutable.isExecutableFile() &&
             paths.curlExecutable.isExecutableFile() &&
-            paths.caCertificateBundle.isFile
+            paths.caCertificateBundle.isFile &&
+            !DpkgState.isInterrupted(paths.rootfsDir)
 
     fun isProotRuntimeReady(): Boolean =
         paths.prootExecutable.isExecutableFile() &&

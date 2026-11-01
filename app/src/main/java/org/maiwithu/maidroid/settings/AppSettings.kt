@@ -1,11 +1,16 @@
 package org.maiwithu.maidroid.settings
 
+import android.util.Log
 import com.tencent.mmkv.MMKV
+import com.tencent.mmkv.MMKVHandler
+import com.tencent.mmkv.MMKVLogLevel
+import com.tencent.mmkv.MMKVRecoverStrategic
+import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
 
 /**
  * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置、
- * 上次打开时的 MaiDroid 版本号、是否关闭 MaiDroid 更新后的 MaiBot 自动升级。
+ * 上次打开时的 MaiDroid 版本号、是否关闭 MaiDroid 更新后的 MaiBot 自动升级、用户是否安全退出了。
  * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。键名已在用户设备上存在，不能改。
  */
 internal class AppSettings(
@@ -22,6 +27,8 @@ internal class AppSettings(
         const val KEY_CONTAINER_SSH_ROOT_PASSWORD = "container_ssh_root_password"
         const val KEY_LAST_LAUNCHED_VERSION_CODE = "last_launched_version_code"
         const val KEY_MAIBOT_AUTO_UPDATE_DISABLED = "maibot_auto_update_disabled"
+        const val KEY_USER_EXITED = "user_exited"
+        const val KEY_OOBE_STEP = "oobe_step"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
     }
@@ -80,9 +87,50 @@ internal class AppSettings(
             kv.encode(KEY_MAIBOT_AUTO_UPDATE_DISABLED, value)
         }
 
+    /**
+     * 用户在设置页点了“安全退出”，之后还没再用过 MaiDroid。为 true 时开机不自动拉起麦麦（和强行停止应用后一样，
+     * 等用户自己打开）；前台服务收到应用里发来的任何启动请求时清掉。
+     */
+    var userExited: Boolean
+        get() = kv.decodeBool(KEY_USER_EXITED, false)
+        set(value) {
+            kv.encode(KEY_USER_EXITED, value)
+        }
+
+    /**
+     * 首次引导走到了哪一步（OobeStep 的名字），没走过时为 null。应用被划掉、闪退、强制重启、断电后重新打开，
+     * 直接回到这一步接着装，不用再从权限页点过来；以前只存在界面的保存状态里，这些情况下都会丢。
+     */
+    var oobeStep: String?
+        get() = kv.decodeString(KEY_OOBE_STEP, null)
+        set(value) {
+            kv.encode(KEY_OOBE_STEP, value)
+        }
+
     fun saveContainerSsh(port: Int, rootPassword: String) {
         kv.encode(KEY_CONTAINER_SSH_PORT, port.coerceIn(ContainerSshPortRange))
         kv.encode(KEY_CONTAINER_SSH_ROOT_PASSWORD, rootPassword)
         kv.encode(KEY_CONTAINER_SSH_CONFIGURED, true)
+    }
+}
+
+/**
+ * MMKV 的文件校验不过时怎么办。断电、存储满时设置文件可能只写进去一半，MMKV 默认的做法是整个丢掉，
+ * 用户就得重新同意协议、重走一遍首次引导；改成尽量恢复：能读出来的设置都留下，读不出的那几项才丢。
+ * 要在第一次读设置之前注册（MaiDroidApplication 里紧跟 MMKV.initialize）。
+ */
+internal object AppSettingsRecovery : MMKVHandler {
+    override fun onMMKVCRCCheckFail(mmapID: String): MMKVRecoverStrategic = recover(mmapID, "校验")
+
+    override fun onMMKVFileLengthError(mmapID: String): MMKVRecoverStrategic = recover(mmapID, "长度")
+
+    override fun wantLogRedirecting(): Boolean = false
+
+    override fun mmkvLog(level: MMKVLogLevel, file: String, line: Int, function: String, message: String) = Unit
+
+    private fun recover(mmapID: String, what: String): MMKVRecoverStrategic {
+        Log.w("MaiDroid", "MMKV $mmapID $what check failed, recovering")
+        TerminalLog.append("[MaiDroid] 设置文件（$mmapID）${what}没通过，可能是上次断电或存储满了，已尽量恢复")
+        return MMKVRecoverStrategic.OnErrorRecover
     }
 }
