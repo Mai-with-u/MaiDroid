@@ -14,7 +14,8 @@ import kotlinx.coroutines.flow.update
  * 全应用共享的“终端输出”：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里。
  *
  * 主页右下角的终端按钮展示最近的 MAX_LOG_LINES 行；每行同时打到 logcat 的 TerminalLog 标签，
- * 真机排查时 `adb logcat -s TerminalLog` 就能拿到完整输出。
+ * 真机排查时 `adb logcat -s TerminalLog` 就能拿到完整输出。TerminalLogRecorder 订阅 lines 把每行写进日志文件，
+ * 应用重启、闪退之后诊断包里还有之前的输出。
  *
  * 进程输出里的 ANSI 转义序列在入库前由 AnsiText 处理：光标移动、擦除这类序列按终端语义执行掉，
  * 只把 SGR 颜色留在 logs 里给终端面板上色；logcat 和 lines 拿到的是去掉全部转义序列的纯文本。

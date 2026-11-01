@@ -1,7 +1,11 @@
 package org.maiwithu.maidroid
 
 import android.content.Context
+import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
+import org.maiwithu.maidroid.diagnostics.DiagnosticsFiles
+import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
+import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.platform.napcat.SnowLumaAdapterInstaller
@@ -27,6 +31,13 @@ internal class AppDependencies(context: Context) {
     private val appContext = context.applicationContext
 
     val settings = AppSettings()
+
+    // ── 出错诊断：终端输出从进程一启动就落盘，最先创建，免得漏掉早期的日志 ─────
+    val diagnosticsFiles = DiagnosticsFiles(appContext.filesDir)
+    val terminalLogRecorder = TerminalLogRecorder(
+        TerminalLogFiles(diagnosticsFiles.logsDir),
+        startBanner = "===== MaiDroid ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) 启动，进程 ${Process.myPid()} ====="
+    )
 
     // ── 容器运行时：路径、就绪检查、命令执行 ─────────────────────────────
     val runtimePaths = RuntimePaths.from(appContext)
