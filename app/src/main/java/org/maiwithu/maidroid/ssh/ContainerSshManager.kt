@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
@@ -52,6 +53,9 @@ internal class ContainerSshManager(
     private var process: Process? = null
     private var job: Job? = null
     private var intentionallyStopped = false
+
+    // 安全退出开始后永久拦下启动请求；退出完成时整个应用进程都会结束，不需要复位。和上面几个字段一样只在主线程读写。
+    private var shuttingDown = false
 
     private val _state = MutableStateFlow(readState(ContainerSshPhase.Idle))
     val state: StateFlow<ContainerSshState> = _state.asStateFlow()
@@ -93,7 +97,7 @@ internal class ContainerSshManager(
     }
 
     fun start() {
-        if (job?.isActive == true || process?.isAlive == true) return
+        if (shuttingDown || job?.isActive == true || process?.isAlive == true) return
 
         val port = settings.containerSshPort
         val password = settings.containerSshRootPassword
@@ -177,6 +181,21 @@ internal class ContainerSshManager(
             stopRunningProcess()
             _state.update { readState(ContainerSshPhase.Idle, errorMessage = null) }
         }
+    }
+
+    /**
+     * 安全退出：拦下之后的启动 -> 停掉 sshd 并清理残留，挂起到停完。
+     * sshd 没有要保存的数据，照常结束即可；SSH 开关的设置不动，下次打开 MaiDroid 照旧按设置启动。
+     */
+    suspend fun stopForExit(): ProcessExitOutcome = withContext(Dispatchers.Main.immediate) {
+        shuttingDown = true
+        val wasRunning = job?.isActive == true || process?.isAlive == true
+        intentionallyStopped = true
+        job?.cancel()
+        job = null
+        stopRunningProcess()
+        _state.update { readState(ContainerSshPhase.Idle, errorMessage = null) }
+        if (wasRunning) ProcessExitOutcome.Exited else ProcessExitOutcome.NotRunning
     }
 
     private fun restart() {

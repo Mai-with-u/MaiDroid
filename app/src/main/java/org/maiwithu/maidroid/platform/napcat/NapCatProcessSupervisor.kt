@@ -11,10 +11,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.ProcessExitOutcome
+import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.requestedExitOf
 import org.maiwithu.maidroid.runtime.terminateGracefully
 import org.maiwithu.maidroid.terminal.TerminalLog
+import java.util.concurrent.TimeUnit
 
 /**
  * 容器里的 NapCat 进程（Xvfb + 注入了 NapCat 的 LinuxQQ）。由 AppDependencies 持有唯一实例，
@@ -31,6 +35,9 @@ internal class NapCatProcessSupervisor(
     private companion object {
         // 重启时等旧一轮读日志协程收尾的上限。
         const val RESTART_JOIN_TIMEOUT_MS = 5_000L
+
+        // 安全退出时清掉 Xvfb 后等 proot 跟着结束的上限。
+        const val PROOT_EXIT_WAIT_MS = 5_000L
     }
 
     private val files = NapCatFiles(paths)
@@ -47,19 +54,23 @@ internal class NapCatProcessSupervisor(
     @Volatile
     private var job: Job? = null
 
+    // 安全退出开始后永久拦下启动请求；退出完成时整个应用进程都会结束，不需要复位。只在 lock 内修改。
+    @Volatile
+    private var shuttingDown = false
+
     /** 进程在跑，或者正在启动（清理残留、生成 launcher 的阶段）。 */
     val isRunning: Boolean
         get() = process?.isAlive == true || job?.isActive == true
 
     /**
-     * 没装 NapCat 或已在运行时什么也不做。否则在后台：
+     * 没装 NapCat、已在运行或 MaiDroid 正在安全退出时什么也不做。否则在后台：
      * 需要时换装新版 SnowLuma 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
      * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
      * 只看 NapCat 本体装没装好：MaiBot 太旧、暂时换不了适配器的老用户，QQ 照样能登录。
      */
     fun start() {
         synchronized(lock) {
-            if (isRunning) return
+            if (shuttingDown || isRunning) return
             if (!files.isNapCatReady()) return
 
             RuntimeFileModes.ensureExecutableBits(paths)
@@ -71,6 +82,43 @@ internal class NapCatProcessSupervisor(
     fun stop() {
         terminateProcess()
         scope.launch { runMaintenance(NapCatScripts.cleanup()) }
+    }
+
+    /**
+     * 安全退出：之后的启动请求一律拦下 -> 在容器里请 QQ 自己下线退出 -> 清掉剩下的 Xvfb 等进程，proot 随之结束 ->
+     * 兜底结束还没退的 proot。QQ 没找到或等到超时就按原来的方式强制清理。挂起到 NapCat 完全停下。
+     * 还在启动阶段（换装适配器、清理残留、生成 launcher）时 QQ 还没起来，直接取消启动。
+     */
+    suspend fun shutdownForExit(): ProcessExitOutcome = withContext(Dispatchers.IO) {
+        val currentProcess = synchronized(lock) {
+            shuttingDown = true
+            process
+        }
+        if (currentProcess?.isAlive != true) {
+            // 还在启动阶段就取消启动，并清掉可能已经起来的残留（启动途中被结束的 proot 留下的 Xvfb、qq）。
+            val wasStarting = job?.isActive == true
+            terminateProcess()
+            if (wasStarting) runMaintenance(NapCatScripts.cleanup())
+            return@withContext ProcessExitOutcome.NotRunning
+        }
+
+        TerminalLog.append("[NapCat] 安全退出：请 QQ 正常下线退出")
+        val result = commandRunner.run(NapCatScripts.requestQqExit()) { line ->
+            if (line.isNotBlank()) TerminalLog.append(line)
+        }
+        // 没找到 QQ：QQ 早已退出（崩溃或启动失败），只剩 Xvfb 撑着 proot，下面清理掉即可。
+        val outcome = when (requestedExitOf(result)) {
+            RequestedExit.Exited -> ProcessExitOutcome.Exited
+            RequestedExit.NotFound -> ProcessExitOutcome.NotRunning
+            RequestedExit.StillRunning -> {
+                TerminalLog.append("[NapCat] QQ 没有自己退出，强制清理")
+                ProcessExitOutcome.ForceStopped
+            }
+        }
+        runMaintenance(NapCatScripts.cleanup())
+        currentProcess.waitFor(PROOT_EXIT_WAIT_MS, TimeUnit.MILLISECONDS)
+        terminateProcess()
+        outcome
     }
 
     /**
@@ -99,7 +147,16 @@ internal class NapCatProcessSupervisor(
         TerminalLog.append("[NapCat] 启动: bash /root/launcher.sh")
         try {
             val currentProcess = commandRunner.start(NapCatScripts.launch())
-            process = currentProcess
+            // 安全退出可能恰好在启动途中开始：它读 process 和这里写 process 在同一把锁里，
+            // 要么它看得到这个进程、请 QQ 退出，要么这里看到正在退出，自己把刚起的进程结束掉。
+            val exiting = synchronized(lock) {
+                if (!shuttingDown) process = currentProcess
+                shuttingDown
+            }
+            if (exiting) {
+                currentProcess.terminateGracefully()
+                return
+            }
             currentProcess.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { rawLine ->
                     TerminalLog.append("[NapCat] ${rawLine.trimEnd('\r')}")
@@ -168,7 +225,7 @@ internal class NapCatProcessSupervisor(
         }
     }
 
-    // 取消启动协程并结束当前进程（先 SIGTERM，3 秒后强杀）。
+    // 取消启动协程并结束当前进程（给 proot 发 SIGTERM，3 秒后强杀；proot 会忽略 SIGTERM，实际总是强杀）。
     private fun terminateProcess() {
         synchronized(lock) {
             job?.cancel()

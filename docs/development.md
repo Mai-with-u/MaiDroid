@@ -56,6 +56,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
 | `runtime/GitHubMirrorsTest` | 宿主侧可用的下载线路、容器脚本里的镜像列表 |
+| `runtime/RequestExitScriptTest` | 安全退出在容器里通知谁退出：MaiBot 只通知 Runner、QQ 只通知主进程（用真机抓到的进程命令行验证），不会选中脚本自己；退出码的含义 |
 | `terminal/AnsiTextTest` | 终端输出的 ANSI 解析：颜色和加粗、回车退格覆盖、擦除行、丢掉光标等控制序列、截断的序列不漏进正文 |
 | `VersionNumberTest` | 版本号比较（数字逐位比、正式版新于同号预发布）和解析 |
 | `appupdate/AppReleaseTest` | 应用自更新：Release 解析与挑选 APK、校验行、更新说明排版 |

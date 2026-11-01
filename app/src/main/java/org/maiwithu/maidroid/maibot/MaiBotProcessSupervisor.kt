@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.maibot
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,18 +19,23 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.ProcessExitOutcome
+import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.requestedExitOf
 import org.maiwithu.maidroid.runtime.terminateGracefully
 import org.maiwithu.maidroid.terminal.TerminalLog
+import java.util.concurrent.TimeUnit
 
 /**
  * 管理容器里 MaiBot 进程的生命周期。由 AppDependencies 持有唯一实例，前台服务和在线更新共用同一份运行状态。
  *
  * - 用 MaiBotScripts.launch（installation.md 里的 uv 命令）启动 MaiBot，输出逐行写进终端日志
  * - 进程意外退出时按指数退避自动重启
- * - 停止时先 SIGTERM 再强杀，并清理容器里的残留进程
+ * - 停止、重启时结束 proot（proot 忽略 SIGTERM，实际是等 3 秒后强杀），并清理容器里的残留进程
+ * - 安全退出时改为在容器里请 MaiBot 自己退出，让它保存好数据（shutdownForExit）
  * - 维护期间（如在线更新）拦截所有启动请求
  *
  * 启动、停止、重启都在同一把生命周期锁里依次执行，
@@ -56,6 +62,10 @@ internal class MaiBotProcessSupervisor(
 
         // 停止时等待监管协程退出的上限；读日志是阻塞调用，进程已被杀掉后通常会立即返回。
         private const val STOP_JOIN_TIMEOUT_MS = 10_000L
+
+        // 安全退出时：等在线更新做完的轮询间隔；Runner 退出后等 proot 跟着结束的上限。
+        private const val MAINTENANCE_POLL_MS = 500L
+        private const val PROOT_EXIT_WAIT_MS = 5_000L
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -74,6 +84,10 @@ internal class MaiBotProcessSupervisor(
 
     @Volatile
     private var maintenanceInProgress = false
+
+    // 安全退出开始后永久拦下所有启动请求；退出完成时整个应用进程都会结束，不需要复位。
+    @Volatile
+    private var shuttingDown = false
 
     private val _status = MutableStateFlow(MaiBotProcessStatus())
 
@@ -132,6 +146,9 @@ internal class MaiBotProcessSupervisor(
     suspend fun <T> runWhileStopped(block: suspend () -> T): T {
         maintenanceInProgress = true
         try {
+            // 安全退出已经开始：不再开始新的维护（退出只等已经在做的维护），免得更新做到一半应用就被关掉。
+            // 先挂维护标记再看退出标记，和 shutdownForExit 的顺序相反，两边同时发生时至少有一边能看到对方。
+            if (shuttingDown) throw CancellationException("MaiDroid is exiting")
             lifecycleMutex.withLock { stopLocked() }
             return block()
         } finally {
@@ -139,7 +156,62 @@ internal class MaiBotProcessSupervisor(
         }
     }
 
+    /**
+     * 安全退出：之后的启动请求一律拦下 -> 在线更新还在做就等它做完 -> 在容器里给 MaiBot 的 Runner 发 SIGTERM，
+     * 等它走完自己的关闭流程（停插件、持久化记忆、关数据库）后退出 -> 没找到 Runner 或等到超时才强杀，
+     * 最后照常按进程名清理残留。挂起到 MaiBot 完全停下。
+     * onProgress 报告当前在做什么：true 表示在等维护做完，false 表示已经在请 MaiBot 退出，供退出进度显示。
+     */
+    suspend fun shutdownForExit(onProgress: (waitingForMaintenance: Boolean) -> Unit): ProcessExitOutcome {
+        shuttingDown = true
+        if (maintenanceInProgress) {
+            onProgress(true)
+            appendLog("$LOG_PREFIX Waiting for the running update to finish before exiting")
+            while (maintenanceInProgress) delay(MAINTENANCE_POLL_MS)
+        }
+        onProgress(false)
+        return lifecycleMutex.withLock {
+            // 先作废当前一轮，MaiBot 退出后监管协程就不会再把它拉起来。
+            generation++
+            val runningJob = superviseJob
+            superviseJob = null
+            val currentProcess = process
+            val outcome = if (currentProcess?.isAlive == true) {
+                requestExit(currentProcess)
+            } else {
+                ProcessExitOutcome.NotRunning
+            }
+            // MaiBot 自己退出后 proot 通常已经结束，下面只是兜底：结束还没退的 proot、收掉监管协程、清理残留。
+            killProcess()
+            if (runningJob != null) {
+                runningJob.cancel()
+                withTimeoutOrNull(STOP_JOIN_TIMEOUT_MS) { runningJob.join() }
+            }
+            cleanupStaleProcesses()
+            _status.update { it.copy(running = false) }
+            outcome
+        }
+    }
+
+    // 请 Runner 自己退出；确认退出后再等一会儿 proot 结束，让 MaiBot 最后几行关闭日志读完再往下走。
+    private suspend fun requestExit(currentProcess: Process): ProcessExitOutcome {
+        appendLog("$LOG_PREFIX Asking MaiBot to shut down and save its data")
+        val result = commandRunner.run(MaiBotScripts.requestExit()) { line ->
+            if (line.isNotBlank()) appendLog(line)
+        }
+        if (requestedExitOf(result) != RequestedExit.Exited) {
+            appendLog("$LOG_PREFIX MaiBot did not exit by itself, force stopping")
+            return ProcessExitOutcome.ForceStopped
+        }
+        withContext(Dispatchers.IO) { currentProcess.waitFor(PROOT_EXIT_WAIT_MS, TimeUnit.MILLISECONDS) }
+        return ProcessExitOutcome.Exited
+    }
+
     private fun startLocked() {
+        if (shuttingDown) {
+            appendLog("$LOG_PREFIX MaiDroid is exiting, start request ignored")
+            return
+        }
         if (maintenanceInProgress) {
             appendLog("$LOG_PREFIX Under maintenance, start request ignored")
             return
@@ -250,7 +322,8 @@ internal class MaiBotProcessSupervisor(
         process = null
     }
 
-    // 先 SIGTERM 给 MaiBot 3 秒收尾，仍未退出再强杀，强杀时在终端里记一笔。
+    // 给 proot 发 SIGTERM，3 秒后仍未退出再强杀，强杀时在终端里记一笔。proot 会忽略 SIGTERM，MaiBot 收不到，
+    // 所以这里实际总是强杀；要让 MaiBot 保存好数据再退出，走 shutdownForExit。
     private fun terminate(target: Process) {
         if (target.terminateGracefully()) {
             appendLog("$LOG_PREFIX Force-killed process that ignored SIGTERM")

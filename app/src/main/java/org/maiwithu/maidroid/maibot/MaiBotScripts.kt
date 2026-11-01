@@ -1,9 +1,11 @@
 package org.maiwithu.maidroid.maibot
 
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.ExitTarget
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
+import org.maiwithu.maidroid.runtime.requestExitScript
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /**
@@ -19,6 +21,10 @@ internal object MaiBotScripts {
     // 这里把范围压在 3.12~3.13：全新安装时 uv 选其中最新的 3.13（与上游 Dockerfile 一致），
     // 已经装好 3.12 的旧环境也不会被重建。
     const val UV_PYTHON_REQUEST = ">=3.12,<3.14"
+
+    // 安全退出时等 Runner 退出的上限：Runner 最多等 Worker 关闭 60 秒，超时强杀 Worker 后再等 5 秒回收
+    // （MaiBot 的 WORKER_SHUTDOWN_TIMEOUT），所以 Runner 最晚约 65 秒退出，这里再留一些余量。
+    private const val EXIT_TIMEOUT_SECONDS = 80
 
     private const val MAIBOT_DIR = InContainerPaths.MAIBOT_DIR
 
@@ -184,6 +190,23 @@ internal object MaiBotScripts {
             "else uv run python bot.py; fi",
         workingDirectory = MAIBOT_DIR
     )
+
+    /**
+     * 安全退出：请 MaiBot 的 Runner（uv 拉起的 python bot.py）自己退出，最多等 EXIT_TIMEOUT_SECONDS 秒。
+     * Runner 收到 SIGTERM 后转给 Worker（python -m src.runtime）并等它走完优雅关闭
+     * （停插件运行时、持久化 A_Memorix 记忆、关数据库），Worker 退出后 Runner 跟着退出，
+     * uv、script、sh 随之依次退出，proot 也就结束了。2026-11 真机实测 MaiBot 1.3.19 空闲时约 3 秒关完。
+     * 只给 Runner 发，这是 MaiBot 自己的停止入口；外面几层 sh、script、uv 的命令行里也带着 bot.py，用 uv run 排除掉。
+     */
+    fun requestExit(): ContainerScript = ContainerScript(
+        listOf(
+            "set +e",
+            requestExitScript(EXIT_TARGET, timeoutSeconds = EXIT_TIMEOUT_SECONDS, logPrefix = "[MaiBot] ")
+        ).joinToString("\n")
+    )
+
+    /** requestExit 要请其退出的进程：Runner（python bot.py），排除外面几层命令行带 uv run 的 sh、script、uv。 */
+    val EXIT_TARGET = ExitTarget(pattern = "python[0-9.]* bot[.]py", exclude = "uv run", processName = "MaiBot")
 
     /** 结束上次异常退出留下的 MaiBot 及其插件运行器进程，避免 WebUI 端口被占。 */
     fun cleanupStaleProcesses(): ContainerScript = ContainerScript(
