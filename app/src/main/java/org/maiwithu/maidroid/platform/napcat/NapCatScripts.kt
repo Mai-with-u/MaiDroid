@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
 import org.maiwithu.maidroid.runtime.GitHubMirrors
@@ -32,6 +33,7 @@ internal object NapCatScripts {
     fun install(token: String): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
+            AptMirrors.shellFunctions(),
             GitHubMirrors.shellFunctions(),
             installBody(token),
             prepareRuntimeBody(),
@@ -72,17 +74,16 @@ internal object NapCatScripts {
     /** requestQqExit 要请其退出的进程：QQ 主进程，排除命令行带 --type= 的 zygote、utility 子进程。 */
     val QQ_EXIT_TARGET = ExitTarget(pattern = "qq --no-sandbox --disable-gpu", exclude = "--type=", processName = "QQ")
 
-    /** 结束残留的 Xvfb、qq、launcher 进程并删除 X11 锁，避免新一轮启动时显示号 :1 被占。 */
+    /** 结束残留的 Xvfb、qq、launcher 进程，删掉 X11 锁、套接字和记下的显示号，新一轮启动重新挑号。 */
     fun cleanup(): ContainerScript = ContainerScript(
         body = listOf(
             "set +e",
             killMatchingProcessesScript(
-                pattern = "Xvfb :1|qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so",
+                pattern = "Xvfb |qq --no-sandbox|launcher[.]sh|libnapcat_launcher[.]so",
                 processName = "stale process",
                 logPrefix = "[NapCat] "
             ),
-            "rm -f /tmp/.X1-lock",
-            "rm -f /tmp/.X11-unix/X1",
+            "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* $DISPLAY_FILE",
             "exit 0"
         ).joinToString("\n"),
         workingDirectory = "/root"
@@ -111,6 +112,13 @@ internal object NapCatScripts {
 
         if [ -d "${'$'}HOME/napcat" ] && [ ! -f "${'$'}HOME/.maidroid/napcat_ready" ]; then
             if find "${'$'}HOME/napcat" -mindepth 1 -type f | grep -q .; then
+                # 只留最新一份备份：装一次被打断一次就多一份上百 MB 的备份，反复几次会把空间占满。
+                # 备份的都是没装完的 NapCat 目录，QQ 的登录数据在 ~/.config/QQ，不在这里面。
+                for old_backup in "${'$'}HOME"/napcat.maidroid-bak.*; do
+                    [ -e "${'$'}old_backup" ] || continue
+                    printf "[NapCat] Remove older unfinished NapCat backup: %s\n" "${'$'}old_backup"
+                    rm -rf "${'$'}old_backup"
+                done
                 backup_dir="${'$'}HOME/napcat.maidroid-bak.${'$'}(date +%Y%m%d%H%M%S)"
                 printf "[NapCat] Found unfinished NapCat directory, moving to backup: %s\n" "${'$'}backup_dir"
                 mv "${'$'}HOME/napcat" "${'$'}backup_dir"
@@ -128,6 +136,20 @@ internal object NapCatScripts {
         exec "$@"
         EOF
             chmod +x /usr/local/bin/sudo
+        fi
+
+        # NapCat 安装器自己用 apt-get 装 QQ 和依赖：上次装到一半被打断（闪退、断电）留下的 dpkg 半装状态先收拾掉，
+        # 否则安装器一上来就报 dpkg was interrupted；再写好 apt 的超时设置，并用会自动换源的 maidroid_apt_install
+        # 先把安装器要的常用依赖装上（换成功的源留在 sources.list 里，安装器随后的 apt-get 也走它）。
+        # 预装失败不算失败，交给安装器自己装，真装不上时由它报错。
+        maidroid_progress 0.10 "Prepare system packages"
+        export DEBIAN_FRONTEND=noninteractive
+        if ! dpkg --configure -a; then
+            printf "[NapCat] dpkg --configure -a failed, apt-get -f install will try to repair\n"
+        fi
+        maidroid_apt_write_network_conf
+        if ! maidroid_apt_install zip unzip jq curl xvfb screen xauth procps g++; then
+            printf "[NapCat] pre-installing packages failed (%s), leaving it to the NapCat installer\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
         fi
 
         maidroid_progress 0.15 "Download NapCat installer"
@@ -189,6 +211,9 @@ internal object NapCatScripts {
         printf "ready\n" > "${'$'}HOME/.maidroid/napcat_ready"
         """.trimIndent()
 
+    // Xvfb 挑中的显示号记在这里，launcher.sh 写、cleanup 删
+    private const val DISPLAY_FILE = "/tmp/.maidroid-display"
+
     private fun prepareRuntimeBody(): String =
         """
         set -e
@@ -200,7 +225,6 @@ internal object NapCatScripts {
         cd /root
         mkdir -p /root/napcat/cache /tmp /tmp/.X11-unix /tmp/runtime-root
         chmod 700 /tmp/runtime-root 2>/dev/null || true
-        export DISPLAY=:1
         export XDG_RUNTIME_DIR=/tmp/runtime-root
         export HOME=/root
         export QQNT_PROFILE_DIR=/root/.config/QQ
@@ -211,15 +235,32 @@ internal object NapCatScripts {
             exit 127
         fi
 
-        if ! ps -eo args= | grep -F "Xvfb :1" | grep -v grep >/dev/null 2>&1; then
-            rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
-            Xvfb :1 -screen 0 1x1x8 +extension GLX +render 2>&1 &
-            xvfb_pid=$!
-            echo "[NapCat] Xvfb started, pid=${'$'}xvfb_pid"
-            sleep 1
+        # 显示号不写死：手机上各个应用共用一套抽象 Unix 套接字，别的应用（另一个 MaiDroid、Termux 里开的 VNC）
+        # 占着同一个号时，这边的 Xvfb 起不来，QQ 还会连到别人的显示上、一直出不了二维码（2026-11 真机实测）。
+        # 让 Xvfb 用 -displayfd 自己挑第一个空着的号，挑中的号记下来，同一个 Xvfb 还在就接着用。
+        display_file=$DISPLAY_FILE
+        if [ -s "${'$'}display_file" ] && ps -eo args= | grep -F "Xvfb -displayfd" | grep -v grep >/dev/null 2>&1; then
+            display="${'$'}(cat "${'$'}display_file")"
+            echo "[NapCat] Reusing existing Xvfb :${'$'}display"
         else
-            echo "[NapCat] Reusing existing Xvfb :1"
+            # 没有自己的 Xvfb 在跑：上次被强杀、断电留下的锁和套接字都是死的，先删掉
+            rm -f /tmp/.X*-lock /tmp/.X11-unix/X* "${'$'}display_file"
+            Xvfb -displayfd 3 -screen 0 1x1x8 +extension GLX +render 3>"${'$'}display_file" 2>&1 &
+            xvfb_pid=$!
+            # Xvfb 挑好号、能接受连接后才把号写到 3 号描述符，最多等 10 秒
+            for _ in ${'$'}(seq 1 50); do
+                [ -s "${'$'}display_file" ] && break
+                kill -0 "${'$'}xvfb_pid" 2>/dev/null || break
+                sleep 0.2
+            done
+            display="${'$'}(tr -cd '0-9' < "${'$'}display_file" 2>/dev/null)"
+            if [ -z "${'$'}display" ]; then
+                echo "[NapCat] Xvfb failed to start"
+                exit 1
+            fi
+            echo "[NapCat] Xvfb started on :${'$'}display, pid=${'$'}xvfb_pid"
         fi
+        export DISPLAY=":${'$'}display"
 
         echo "[NapCat] Launching LinuxQQ with NapCat preload"
         LD_PRELOAD=/root/libnapcat_launcher.so qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1

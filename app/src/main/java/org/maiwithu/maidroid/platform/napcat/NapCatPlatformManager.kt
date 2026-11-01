@@ -1,30 +1,38 @@
 package org.maiwithu.maidroid.platform.napcat
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
 import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.StorageSpace
+import org.maiwithu.maidroid.runtime.flushFileSystems
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.terminal.TerminalLog
+import java.io.File
 import java.security.SecureRandom
 
 /**
@@ -37,22 +45,33 @@ import java.security.SecureRandom
  */
 internal class NapCatPlatformManager(
     private val appContext: Context,
-    paths: RuntimePaths,
+    private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
     private val napCatProcess: NapCatProcessSupervisor,
-    private val adapterInstaller: SnowLumaAdapterInstaller
+    private val adapterInstaller: SnowLumaAdapterInstaller,
+    private val network: NetworkMonitor
 ) {
     private companion object {
         const val STATUS_REFRESH_INTERVAL_MS = 2_000L
         const val LOGIN_STATUS_POLL_INTERVAL_MS = 3_000L
         const val INSTALL_PROGRESS_POLL_INTERVAL_MS = 500L
+
+        // 断网失败后最多等网络恢复这么久再自动重装；网络刚恢复时先等几秒让 DNS 就绪
+        const val OFFLINE_RETRY_WAIT_MS = 30 * 60_000L
+        const val NETWORK_SETTLE_MS = 3_000L
+
+        // 要从网上下载的两步：NapCat 本体（安装器、LinuxQQ）和 MaiBot 侧的 QQ 适配器
+        val DOWNLOAD_STEPS = setOf(FailureStep.NapCatInstall, FailureStep.NapCatAdapter)
     }
+
+    // 断网失败后排着的自动重装；用户自己点安装时取消
+    private var autoRetryJob: Job? = null
 
     private val files = NapCatFiles(paths)
     private val statusReader = NapCatStatusReader(files)
     private val webUiClient = NapCatWebUiClient(files.webUiConfig)
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("QQ（NapCat）", Dispatchers.Main.immediate)
     private val random = SecureRandom()
     private var installJob: Job? = null
     private var progressJob: Job? = null
@@ -180,92 +199,129 @@ internal class NapCatPlatformManager(
             return
         }
 
+        cancelAutoRetry()
         installJob = scope.launch {
-            _state.update {
-                it.copy(
-                    phase = NapCatInstallPhase.Installing,
-                    installed = false,
-                    progress = 0.02f,
-                    progressDescription = "准备安装 NapCat",
-                    failure = null
-                )
-            }
-
-            val validationError = withContext(Dispatchers.IO) {
-                readiness.containerProblem()
-                    ?: if (!readiness.isMaiBotSourceReady()) {
-                        "MaiBot 源码尚未安装，无法配置 QQ 适配器"
-                    } else {
-                        adapterInstaller.maiBotVersionProblem()
-                    }
-            }
-            if (validationError != null) {
-                fail(Failure(FailureStep.NapCatPrecheck, validationError))
-                return@launch
-            }
-            // NapCat 安装器、LinuxQQ 和 QQ 适配器都要从网上下载，没连网时直接说
-            NetworkStatus.read(appContext).offlineFailure(FailureStep.NapCatInstall)?.let { failure ->
-                fail(failure)
-                return@launch
-            }
-
-            TerminalLog.append("")
-            TerminalLog.append("[NapCat] 启动安装流程")
-
-            if (!withContext(Dispatchers.IO) { files.isNapCatReady() }) {
-                statusReader.clearInstallProgress()
-                startProgressWatcher()
-                val result = runInstallScript(NapCatScripts.install(token = generateToken()))
-                progressJob?.cancel()
-                progressJob = null
-                if (!result.success) {
-                    fail(failureOf(FailureStep.NapCatInstall, result.summary(), result.output))
-                    return@launch
-                }
-            }
-
-            if (withContext(Dispatchers.IO) { adapterInstaller.needsInstall() }) {
-                _state.update { it.copy(progress = 0.92f, progressDescription = "下载 MaiBot 的 QQ 适配器") }
-                // 安装输出照常进终端，同时留一份用来认失败原因
-                val adapterOutput = StringBuilder()
-                val adapterError = adapterInstaller.install(onLine = { line ->
-                    TerminalLog.append(line)
-                    adapterOutput.appendLine(line)
-                })
-                if (adapterError != null) {
-                    fail(failureOf(FailureStep.NapCatAdapter, adapterError, adapterOutput.toString() + adapterError))
-                    return@launch
-                }
-            }
-
-            // 重启 MaiBot 让它加载新适配器、按适配器默认值生成配置（同时拉起 NapCat），生成后再迁移连接设置。
-            _state.update { it.copy(progress = 0.95f, progressDescription = "等麦麦生成 QQ 适配器配置") }
-            TerminalLog.append("[NapCat] 重启麦麦加载 QQ 适配器，等它生成配置后迁移连接设置")
-            restartRuntime()
-            val migrationError = adapterInstaller.migrateConfigWhenReady()
-            if (migrationError != null) {
-                fail(Failure(FailureStep.NapCatAdapterConfig, migrationError))
-                return@launch
-            }
-
-            if (withContext(Dispatchers.IO) { files.isInstalled() }) {
-                val snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = false) }
-                _state.update {
-                    it.copy(
-                        phase = NapCatInstallPhase.Installed,
-                        installed = true,
-                        progress = 1f,
-                        progressDescription = "NapCat 安装和自动配置完成",
-                        failure = null,
-                        qrCodePath = snapshot.qrCodePath,
-                        qrCodeLastModified = snapshot.qrCodeLastModified
-                    )
-                }
-                TerminalLog.append("[NapCat] 安装完成，麦麦会按迁移好的配置自动启用 QQ 适配器")
-            } else {
-                fail(Failure(FailureStep.NapCatFilesCheck, "NapCat 或 QQ 适配器的文件不完整，请重试"))
+            // 意外异常（读写文件出错、系统拒绝启动服务……）也落到失败提示上，不让进度环一直转、按钮点不了
+            try {
+                runInstall()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                fail(Failure(FailureStep.NapCatInstall, "安装时出了意外错误：${e.message ?: e.javaClass.simpleName}"))
             }
         }
+    }
+
+    private suspend fun runInstall() {
+        _state.update {
+            it.copy(
+                phase = NapCatInstallPhase.Installing,
+                installed = false,
+                progress = 0.02f,
+                progressDescription = "准备安装 NapCat",
+                failure = null
+            )
+        }
+
+        val validationError = withContext(Dispatchers.IO) {
+            readiness.containerProblem()
+                ?: if (!readiness.isMaiBotSourceReady()) {
+                    "MaiBot 源码尚未安装，无法配置 QQ 适配器"
+                } else {
+                    adapterInstaller.maiBotVersionProblem()
+                }
+        }
+        if (validationError != null) {
+            fail(Failure(FailureStep.NapCatPrecheck, validationError))
+            return
+        }
+        // NapCat 安装器、LinuxQQ 和 QQ 适配器都要从网上下载，没连网、空间明摆着不够时直接说
+        val precheck = NetworkStatus.read(appContext).offlineFailure(FailureStep.NapCatInstall)
+            ?: installSpaceShortage()
+        if (precheck != null) {
+            fail(precheck)
+            return
+        }
+
+        TerminalLog.append("")
+        TerminalLog.append("[NapCat] 启动安装流程")
+
+        if (!withContext(Dispatchers.IO) { files.isNapCatReady() }) {
+            statusReader.clearInstallProgress()
+            startProgressWatcher()
+            val result = runInstallScript(NapCatScripts.install(token = generateToken()))
+            progressJob?.cancel()
+            progressJob = null
+            if (!result.success) {
+                fail(failureOf(FailureStep.NapCatInstall, result.summary(), result.output))
+                return
+            }
+            // 刚装下的几百 MB（QQ、NapCat）落到存储上再往下走，这时断电也不会留下“标记在、文件空”的 QQ
+            withContext(Dispatchers.IO) { flushFileSystems() }
+        }
+
+        if (withContext(Dispatchers.IO) { adapterInstaller.needsInstall() }) {
+            _state.update { it.copy(progress = 0.92f, progressDescription = "下载 MaiBot 的 QQ 适配器") }
+            // 安装输出照常进终端，同时留一份用来认失败原因
+            val adapterOutput = StringBuilder()
+            val adapterError = adapterInstaller.install(onLine = { line ->
+                TerminalLog.append(line)
+                adapterOutput.appendLine(line)
+            })
+            if (adapterError != null) {
+                fail(failureOf(FailureStep.NapCatAdapter, adapterError, adapterOutput.toString() + adapterError))
+                return
+            }
+            withContext(Dispatchers.IO) { flushFileSystems() }
+        }
+
+        // 重启 MaiBot 让它加载新适配器、按适配器默认值生成配置（同时拉起 NapCat），生成后再迁移连接设置。
+        _state.update { it.copy(progress = 0.95f, progressDescription = "等麦麦生成 QQ 适配器配置") }
+        TerminalLog.append("[NapCat] 重启麦麦加载 QQ 适配器，等它生成配置后迁移连接设置")
+        restartRuntime()
+        val migrationError = adapterInstaller.migrateConfigWhenReady()
+        if (migrationError != null) {
+            fail(Failure(FailureStep.NapCatAdapterConfig, migrationError))
+            return
+        }
+
+        if (withContext(Dispatchers.IO) { files.isInstalled() }) {
+            val snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = false) }
+            _state.update {
+                it.copy(
+                    phase = NapCatInstallPhase.Installed,
+                    installed = true,
+                    progress = 1f,
+                    progressDescription = "NapCat 安装和自动配置完成",
+                    failure = null,
+                    qrCodePath = snapshot.qrCodePath,
+                    qrCodeLastModified = snapshot.qrCodeLastModified
+                )
+            }
+            TerminalLog.append("[NapCat] 安装完成，麦麦会按迁移好的配置自动启用 QQ 适配器")
+        } else {
+            fail(Failure(FailureStep.NapCatFilesCheck, "NapCat 或 QQ 适配器的文件不完整，请重试"))
+        }
+    }
+
+    /**
+     * NapCat 本体还没装时看空间：LinuxQQ 加 NapCat 再加安装包下载约 1 GB。
+     * 不够时扣掉上次装到一半已经装上的 QQ 和 NapCat（它们这次不用再占新空间），这两个目录只在空间看着不够时才去量。
+     */
+    private suspend fun installSpaceShortage(): Failure? = withContext(Dispatchers.IO) {
+        if (files.isNapCatReady()) return@withContext null
+        val what = "安装 NapCat 和 QQ"
+        StorageSpace.shortageFailure(FailureStep.NapCatInstall, paths.appFilesDir, StorageSpace.NAPCAT_INSTALL_BYTES, what)
+            ?: return@withContext null
+        val installed = StorageSpace.sizeOf(File(paths.rootfsDir, "opt/QQ")) + StorageSpace.sizeOf(files.napCatDir)
+        StorageSpace.shortageFailure(
+            FailureStep.NapCatInstall, paths.appFilesDir, StorageSpace.NAPCAT_INSTALL_BYTES - installed, what
+        )
+    }
+
+    private fun cancelAutoRetry() {
+        autoRetryJob?.cancel()
+        autoRetryJob = null
     }
 
     // NapCat 装好或已存在时，经前台服务重启运行时：NapCat 若未运行会被拉起，MaiBot 重启后加载适配器。
@@ -353,19 +409,39 @@ internal class NapCatPlatformManager(
         )
     }
 
-    // 安装失败：消息平台页显示说明、错误码和“反馈问题”，错误码同时写进终端日志
-    private fun fail(failure: Failure) {
+    /**
+     * 安装失败：消息平台页显示说明、错误码和“反馈问题”，错误码同时写进终端日志。
+     * 要下载的两步失败时手机已经断网，就按断网（NET-OFFLINE）报，不让镜像超时这些表象把人带偏；
+     * 断网的失败排一次自动重装：等手机重新连上网（最多 30 分钟）再从头装，装过的部分安装脚本会自己跳过。
+     */
+    private fun fail(reported: Failure) {
+        // 进度环的轮询停下来，不然它会把阶段又改回“安装中”
+        progressJob?.cancel()
+        progressJob = null
+        val offline = reported.step in DOWNLOAD_STEPS && reported.cause != FailureCause.NoNetwork &&
+            !NetworkStatus.read(appContext).connected
+        val failure = if (offline) reported.copy(cause = FailureCause.NoNetwork) else reported
+        val waitForNetwork = failure.cause == FailureCause.NoNetwork
         _state.update {
             it.copy(
                 phase = NapCatInstallPhase.Failed,
                 installed = files.isInstalled(),
                 progress = 0f,
-                progressDescription = "NapCat 安装失败",
+                progressDescription = if (waitForNetwork) "NapCat 安装失败，连上网后会自动重试" else "NapCat 安装失败",
                 failure = failure
             )
         }
         TerminalLog.append("[NapCat] 安装失败: ${failure.message}")
         TerminalLog.append(failure.logLine())
+        if (waitForNetwork) {
+            autoRetryJob = scope.launch {
+                withTimeoutOrNull(OFFLINE_RETRY_WAIT_MS) { network.connected.first { it } } ?: return@launch
+                delay(NETWORK_SETTLE_MS)
+                TerminalLog.append("$AUTO_FIX_LOG_PREFIX 网络恢复了，自动重新安装 NapCat")
+                autoRetryJob = null
+                installNapCat()
+            }
+        }
     }
 
     // OneBot WebSocket 的访问 token：32 字节随机数的十六进制，只在第一次安装时使用。

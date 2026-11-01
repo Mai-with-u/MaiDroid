@@ -19,6 +19,7 @@ import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.SafeExitManager
@@ -77,7 +78,8 @@ internal class AppDependencies(context: Context) {
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
-            appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller
+            appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller,
+            networkMonitor
         )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {
@@ -100,6 +102,9 @@ internal class AppDependencies(context: Context) {
     val safeExit: SafeExitManager by lazy {
         SafeExitManager(settings, maiBotProcess, napCatProcess, containerSsh)
     }
+
+    // 手机有没有网：断网失败后等网络恢复自动重试用
+    val networkMonitor: NetworkMonitor by lazy { NetworkMonitor(appContext) }
 
     // ── MaiDroid 应用本体的在线更新（与容器无关） ─────────────────────────
     val appUpdater: AppUpdateManager by lazy {

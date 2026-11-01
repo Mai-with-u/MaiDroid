@@ -15,4 +15,30 @@ class NapCatScriptsTest {
         assertTrue(install.contains("grep -qi 'napcat' napcat.sh"))
         assertFalse(install.contains("curl -fL --connect-timeout 20 -o napcat.sh https://"))
     }
+
+    @Test
+    fun `xvfb picks a free display instead of a fixed one`() {
+        val launcher = NapCatScripts.prepareRuntime().body
+
+        // 别的应用占着同一个显示号时不能撞上：让 Xvfb 自己挑，挑中的号再给 QQ 用
+        assertTrue(launcher.contains("Xvfb -displayfd 3 -screen 0 1x1x8 +extension GLX +render 3>\"${'$'}display_file\""))
+        assertTrue(launcher.contains("export DISPLAY=\":${'$'}display\""))
+        assertFalse(launcher.contains("DISPLAY=:1"))
+        // 被强杀、断电留下的锁和套接字在起 Xvfb 前删掉，cleanup 也把记下的号一起删
+        assertTrue(launcher.indexOf("rm -f /tmp/.X*-lock /tmp/.X11-unix/X*") < launcher.indexOf("Xvfb -displayfd 3"))
+        assertTrue(NapCatScripts.cleanup().body.contains("rm -f /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/.maidroid-display"))
+    }
+
+    @Test
+    fun `interrupted installs are repaired before running the installer`() {
+        val install = NapCatScripts.install("token").body
+        val installer = install.indexOf("bash napcat.sh")
+
+        // 上次被打断留下的 dpkg 半装状态先收拾，apt 带超时并会自动换源
+        assertTrue(install.indexOf("dpkg --configure -a") in 0 until installer)
+        assertTrue(install.indexOf("maidroid_apt_write_network_conf\n") in 0 until installer)
+        assertTrue(install.indexOf("maidroid_apt_install zip unzip jq curl xvfb screen xauth procps g++") in 0 until installer)
+        // 没装完的目录只留最新一份备份，反复打断也不会占满空间
+        assertTrue(install.indexOf("rm -rf \"${'$'}old_backup\"") < install.indexOf("mv \"${'$'}HOME/napcat\" \"${'$'}backup_dir\""))
+    }
 }

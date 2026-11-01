@@ -2,10 +2,9 @@ package org.maiwithu.maidroid.platform.qqofficial
 
 import android.content.Context
 import android.os.SystemClock
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,17 +16,20 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.flushFileSystems
+import org.maiwithu.maidroid.runtime.writeTextAtomically
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
-import java.io.File
 
 /**
  * 管理 QQ 官方机器人适配器：安装、写凭据、汇总状态。
@@ -43,7 +45,7 @@ internal class QqOfficialPlatformManager(
     private val maiBotProcess: MaiBotProcessSupervisor
 ) {
     private val adapterFiles = QqOfficialAdapterFiles(paths)
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("QQ 官方机器人", Dispatchers.Main.immediate)
     private var installJob: Job? = null
     // 最近一次连接报错的时间（开机时钟），只在主线程读写。
     private var connectionErrorAt = 0L
@@ -89,58 +91,71 @@ internal class QqOfficialPlatformManager(
     fun installAndConfigure(appId: String, appSecret: String) {
         if (installJob?.isActive == true) return
         installJob = scope.launch {
-            updateInstallProgress(0.05f, "准备安装 QQ 官方机器人适配器")
-            val validationError = withContext(Dispatchers.IO) {
-                readiness.containerProblem()
-                    ?: if (!readiness.isMaiBotSourceReady()) "MaiBot 源码尚未安装，无法安装 QQ 官方机器人适配器" else null
+            // 意外异常（读写文件出错、系统拒绝启动服务……）也落到失败提示上，不让进度一直转、按钮点不了
+            try {
+                runInstall(appId, appSecret)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                fail(Failure(FailureStep.QqOfficialInstall, "安装时出了意外错误：${e.message ?: e.javaClass.simpleName}"))
             }
-            if (validationError != null) {
-                fail(Failure(FailureStep.QqOfficialPrecheck, validationError))
-                return@launch
-            }
-            // 适配器要从 GitHub 下载，没连网时直接说
-            NetworkStatus.read(appContext).offlineFailure(FailureStep.QqOfficialInstall)?.let { failure ->
-                fail(failure)
-                return@launch
-            }
-
-            TerminalLog.append("")
-            val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir() }
-            if (existingDir != null) {
-                TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
-            } else {
-                updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
-                TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
-                val result = commandRunner.run(
-                    script = QqOfficialAdapterScripts.install(),
-                    onLine = TerminalLog::append
-                )
-                val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
-                if (!result.success || !installed) {
-                    fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
-                    return@launch
-                }
-            }
-
-            updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
-            val writeError = writeCredentials(appId, appSecret)
-            if (writeError != null) {
-                fail(Failure(FailureStep.QqOfficialConfig, "写入配置失败：$writeError"))
-                return@launch
-            }
-
-            _state.update {
-                it.copy(
-                    phase = QqOfficialInstallPhase.Installed,
-                    progress = 1f,
-                    progressDescription = "QQ 官方机器人适配器已安装",
-                    failure = null
-                )
-            }
-            refreshFileState()
-            TerminalLog.append("[QQ 官方机器人] 安装完成，正在重启 MaiBot 以加载适配器")
-            restartMaiBot()
         }
+    }
+
+    private suspend fun runInstall(appId: String, appSecret: String) {
+        updateInstallProgress(0.05f, "准备安装 QQ 官方机器人适配器")
+        val validationError = withContext(Dispatchers.IO) {
+            readiness.containerProblem()
+                ?: if (!readiness.isMaiBotSourceReady()) "MaiBot 源码尚未安装，无法安装 QQ 官方机器人适配器" else null
+        }
+        if (validationError != null) {
+            fail(Failure(FailureStep.QqOfficialPrecheck, validationError))
+            return
+        }
+        // 适配器要从 GitHub 下载，没连网时直接说
+        NetworkStatus.read(appContext).offlineFailure(FailureStep.QqOfficialInstall)?.let { failure ->
+            fail(failure)
+            return
+        }
+
+        TerminalLog.append("")
+        val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir() }
+        if (existingDir != null) {
+            TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+        } else {
+            updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
+            TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
+            val result = commandRunner.run(
+                script = QqOfficialAdapterScripts.install(),
+                onLine = TerminalLog::append
+            )
+            val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
+            if (!result.success || !installed) {
+                fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
+                return
+            }
+            // 刚克隆下的适配器落到存储上，这时断电也不会留下“目录在、文件空”的插件
+            withContext(Dispatchers.IO) { flushFileSystems() }
+        }
+
+        updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
+        val writeError = writeCredentials(appId, appSecret)
+        if (writeError != null) {
+            fail(Failure(FailureStep.QqOfficialConfig, "写入配置失败：$writeError"))
+            return
+        }
+
+        _state.update {
+            it.copy(
+                phase = QqOfficialInstallPhase.Installed,
+                progress = 1f,
+                progressDescription = "QQ 官方机器人适配器已安装",
+                failure = null
+            )
+        }
+        refreshFileState()
+        TerminalLog.append("[QQ 官方机器人] 安装完成，正在重启 MaiBot 以加载适配器")
+        restartMaiBot()
     }
 
     /**
@@ -161,19 +176,14 @@ internal class QqOfficialPlatformManager(
         return QqOfficialSaveResult.Restarting
     }
 
-    // 凭据由宿主侧直接写进容器里的 config.toml：先写同目录临时文件再改名，MaiBot 不会读到写了一半的配置。
+    // 凭据由宿主侧直接写进容器里的 config.toml：整个原子替换，MaiBot 不会读到写了一半的配置，
+    // 断电、存储满时也不会留下空配置（写不成时旧配置原样留着，界面报失败）。
     private suspend fun writeCredentials(appId: String, appSecret: String): String? =
         withContext(Dispatchers.IO) {
             runCatching {
                 val target = adapterFiles.configFile()
                 val existing = target.takeIf { it.isFile }?.readText()
-                val content = QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim())
-                val staging = File(target.parentFile, "${target.name}.maidroid.tmp")
-                staging.writeText(content)
-                if (!staging.renameTo(target)) {
-                    staging.delete()
-                    error("无法替换 ${target.name}")
-                }
+                target.writeTextAtomically(QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim()))
             }.exceptionOrNull()?.let { it.message.orEmpty().ifBlank { it.javaClass.simpleName } }
         }
 
@@ -239,8 +249,12 @@ internal class QqOfficialPlatformManager(
         }
     }
 
-    // 安装失败：配置弹窗显示说明、错误码和“反馈问题”，错误码同时写进终端日志
-    private suspend fun fail(failure: Failure) {
+    // 安装失败：配置弹窗显示说明、错误码和“反馈问题”，错误码同时写进终端日志。
+    // 下载适配器失败时手机已经断网，就按断网（NET-OFFLINE）报，不让镜像超时这些表象把人带偏。
+    private suspend fun fail(reported: Failure) {
+        val offline = reported.step == FailureStep.QqOfficialInstall && reported.cause != FailureCause.NoNetwork &&
+            !NetworkStatus.read(appContext).connected
+        val failure = if (offline) reported.copy(cause = FailureCause.NoNetwork) else reported
         val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
         _state.update {
             it.copy(

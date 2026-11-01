@@ -96,6 +96,10 @@ internal class NapCatWebUiClient(private val webUiConfigFile: File) {
     /** 成功时 NapCat 已把新码写进 qrcode.png；失败时返回可直接展示给用户的原因。 */
     suspend fun refreshQrCode(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            // webui.json 是 NapCat 第一次跑起来时才写的：还没有就是 NapCat 没起来过，别把 ENOENT 原文甩给用户
+            if (!webUiConfigFile.isFile) {
+                error("NapCat 还没启动起来，等它起来后再刷新；一直这样的话看终端里 [NapCat] 开头的输出")
+            }
             val response = try {
                 callAuthorized("/api/QQLogin/RefreshQRcode")
             } catch (e: ConnectException) {
