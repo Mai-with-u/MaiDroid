@@ -24,8 +24,8 @@ import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.killProot
 import org.maiwithu.maidroid.runtime.requestedExitOf
-import org.maiwithu.maidroid.runtime.terminateGracefully
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.util.concurrent.TimeUnit
 
@@ -34,8 +34,8 @@ import java.util.concurrent.TimeUnit
  *
  * - 用 MaiBotScripts.launch（installation.md 里的 uv 命令）启动 MaiBot，输出逐行写进终端日志
  * - 进程意外退出时按指数退避自动重启
- * - 停止、重启时结束 proot（proot 忽略 SIGTERM，实际是等 3 秒后强杀），并清理容器里的残留进程
- * - 安全退出时改为在容器里请 MaiBot 自己退出，让它保存好数据（shutdownForExit）
+ * - 停止、重启时在容器里请 MaiBot 自己退出、保存好数据，超时才强杀，再清理容器里的残留进程（stopLocked）
+ * - 安全退出时先等进行中的维护做完，之后永久拦下启动请求（shutdownForExit）
  * - 维护期间（如在线更新）拦截所有启动请求
  *
  * 启动、停止、重启都在同一把生命周期锁里依次执行，
@@ -103,14 +103,14 @@ internal class MaiBotProcessSupervisor(
         }
     }
 
-    /** 主动停止 MaiBot，停止后不会自动重启。 */
+    /** 主动停止 MaiBot（先请它保存好数据再退出），停止后不会自动重启。 */
     fun stop() {
         scope.launch {
             lifecycleMutex.withLock { stopLocked() }
         }
     }
 
-    /** 先停再启，用于装好平台适配器后让 MaiBot 重新加载插件等场景。 */
+    /** 先停再启（停的时候同样请 MaiBot 保存好数据再退出），用于装好平台适配器后让 MaiBot 重新加载插件等场景。 */
     fun restart() {
         scope.launch {
             lifecycleMutex.withLock {
@@ -157,9 +157,8 @@ internal class MaiBotProcessSupervisor(
     }
 
     /**
-     * 安全退出：之后的启动请求一律拦下 -> 在线更新还在做就等它做完 -> 在容器里给 MaiBot 的 Runner 发 SIGTERM，
-     * 等它走完自己的关闭流程（停插件、持久化记忆、关数据库）后退出 -> 没找到 Runner 或等到超时才强杀，
-     * 最后照常按进程名清理残留。挂起到 MaiBot 完全停下。
+     * 安全退出：之后的启动请求一律拦下 -> 在线更新还在做就等它做完 -> 照常停止（请 MaiBot 自己退出、保存好数据）。
+     * 挂起到 MaiBot 完全停下。
      * onProgress 报告当前在做什么：true 表示在等维护做完，false 表示已经在请 MaiBot 退出，供退出进度显示。
      */
     suspend fun shutdownForExit(onProgress: (waitingForMaintenance: Boolean) -> Unit): ProcessExitOutcome {
@@ -170,27 +169,7 @@ internal class MaiBotProcessSupervisor(
             while (maintenanceInProgress) delay(MAINTENANCE_POLL_MS)
         }
         onProgress(false)
-        return lifecycleMutex.withLock {
-            // 先作废当前一轮，MaiBot 退出后监管协程就不会再把它拉起来。
-            generation++
-            val runningJob = superviseJob
-            superviseJob = null
-            val currentProcess = process
-            val outcome = if (currentProcess?.isAlive == true) {
-                requestExit(currentProcess)
-            } else {
-                ProcessExitOutcome.NotRunning
-            }
-            // MaiBot 自己退出后 proot 通常已经结束，下面只是兜底：结束还没退的 proot、收掉监管协程、清理残留。
-            killProcess()
-            if (runningJob != null) {
-                runningJob.cancel()
-                withTimeoutOrNull(STOP_JOIN_TIMEOUT_MS) { runningJob.join() }
-            }
-            cleanupStaleProcesses()
-            _status.update { it.copy(running = false) }
-            outcome
-        }
+        return lifecycleMutex.withLock { stopLocked() }
     }
 
     // 请 Runner 自己退出；确认退出后再等一会儿 proot 结束，让 MaiBot 最后几行关闭日志读完再往下走。
@@ -235,11 +214,22 @@ internal class MaiBotProcessSupervisor(
         superviseJob = scope.launch { superviseProcess(currentGeneration) }
     }
 
-    private suspend fun stopLocked() {
+    /**
+     * 停止、重启、维护前和安全退出共用的停止流程：
+     * 作废当前一轮（MaiBot 退出后监管协程不会再把它拉起来）-> 在跑就在容器里请 Runner 自己退出，
+     * 等它保存好数据（空闲时约 3 秒，最多 80 秒）-> 兜底：强杀还没退的 proot（超时、Runner 还没起来时），
+     * 等监管协程收尾 -> 按进程名清理容器里的残留（强杀 proot 后脱离出来的进程也在这一步结束）。
+     */
+    private suspend fun stopLocked(): ProcessExitOutcome {
         generation++
         val runningJob = superviseJob
         superviseJob = null
-        // 先杀进程让阻塞的日志读取返回，再等监管协程收尾，最后按进程名清理容器里的残留。
+        val currentProcess = process
+        val outcome = if (currentProcess?.isAlive == true) {
+            requestExit(currentProcess)
+        } else {
+            ProcessExitOutcome.NotRunning
+        }
         killProcess()
         if (runningJob != null) {
             runningJob.cancel()
@@ -247,6 +237,7 @@ internal class MaiBotProcessSupervisor(
         }
         cleanupStaleProcesses()
         _status.update { it.copy(running = false) }
+        return outcome
     }
 
     /**
@@ -281,9 +272,9 @@ internal class MaiBotProcessSupervisor(
             val currentProcess = commandRunner.start(script, MaiBotAgreement.environment(paths))
             startedProcess = currentProcess
             process = currentProcess
-            // 进程刚起来时若恰好收到停止请求，stopLocked 可能还没看到这个进程，这里自行结束它。
+            // 进程刚起来时若恰好收到停止请求，stopLocked 可能还没看到这个进程，这里自行结束它（MaiBot 还没起来，没有要保存的）。
             if (shouldStayStopped(ownGeneration)) {
-                terminate(currentProcess)
+                forceKill(currentProcess)
                 return
             }
 
@@ -318,15 +309,14 @@ internal class MaiBotProcessSupervisor(
 
     private suspend fun killProcess() {
         val currentProcess = process ?: return
-        withContext(Dispatchers.IO) { terminate(currentProcess) }
+        withContext(Dispatchers.IO) { forceKill(currentProcess) }
         process = null
     }
 
-    // 给 proot 发 SIGTERM，3 秒后仍未退出再强杀，强杀时在终端里记一笔。proot 会忽略 SIGTERM，MaiBot 收不到，
-    // 所以这里实际总是强杀；要让 MaiBot 保存好数据再退出，走 shutdownForExit。
-    private fun terminate(target: Process) {
-        if (target.terminateGracefully()) {
-            appendLog("$LOG_PREFIX Force-killed process that ignored SIGTERM")
+    // 兜底强杀 proot，真杀了才在终端里记一笔；MaiBot 自己退出后 proot 已经结束，不会走到这一行。
+    private fun forceKill(target: Process) {
+        if (target.killProot()) {
+            appendLog("$LOG_PREFIX Force-killed proot")
         }
     }
 

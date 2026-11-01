@@ -22,7 +22,7 @@ internal object MaiBotScripts {
     // 已经装好 3.12 的旧环境也不会被重建。
     const val UV_PYTHON_REQUEST = ">=3.12,<3.14"
 
-    // 安全退出时等 Runner 退出的上限：Runner 最多等 Worker 关闭 60 秒，超时强杀 Worker 后再等 5 秒回收
+    // 停止时等 Runner 退出的上限：Runner 最多等 Worker 关闭 60 秒，超时强杀 Worker 后再等 5 秒回收
     // （MaiBot 的 WORKER_SHUTDOWN_TIMEOUT），所以 Runner 最晚约 65 秒退出，这里再留一些余量。
     private const val EXIT_TIMEOUT_SECONDS = 80
 
@@ -192,7 +192,7 @@ internal object MaiBotScripts {
     )
 
     /**
-     * 安全退出：请 MaiBot 的 Runner（uv 拉起的 python bot.py）自己退出，最多等 EXIT_TIMEOUT_SECONDS 秒。
+     * 停止、重启和安全退出时，请 MaiBot 的 Runner（uv 拉起的 python bot.py）自己退出，最多等 EXIT_TIMEOUT_SECONDS 秒。
      * Runner 收到 SIGTERM 后转给 Worker（python -m src.runtime）并等它走完优雅关闭
      * （停插件运行时、持久化 A_Memorix 记忆、关数据库），Worker 退出后 Runner 跟着退出，
      * uv、script、sh 随之依次退出，proot 也就结束了。2026-11 真机实测 MaiBot 1.3.19 空闲时约 3 秒关完。
@@ -208,18 +208,26 @@ internal object MaiBotScripts {
     /** requestExit 要请其退出的进程：Runner（python bot.py），排除外面几层命令行带 uv run 的 sh、script、uv。 */
     val EXIT_TARGET = ExitTarget(pattern = "python[0-9.]* bot[.]py", exclude = "uv run", processName = "MaiBot")
 
-    /** 结束上次异常退出留下的 MaiBot 及其插件运行器进程，避免 WebUI 端口被占。 */
+    /**
+     * 结束上次异常退出留下的 MaiBot 进程（启动前），以及强杀 proot 后脱离出来的 MaiBot 进程（停止后），避免 WebUI 端口被占。
+     * 每一层都要认得出：外面的 sh、script、uv（命令行带 bot.py）、Runner、Worker 和插件运行器。
+     */
     fun cleanupStaleProcesses(): ContainerScript = ContainerScript(
         listOf(
             "set +e",
             killMatchingProcessesScript(
-                pattern = "uv run python bot.py|python3 bot.py|src[.]plugin_runtime[.]runner[.]runner_main",
+                pattern = STALE_PROCESS_PATTERN,
                 processName = "stale MaiBot process",
                 logPrefix = "[MaiBot] "
             ),
             "exit 0"
         ).joinToString("\n")
     )
+
+    // cleanupStaleProcesses 按命令行匹配的 awk 正则。Runner 的命令行是 python bot.py（以前写成 python3 bot.py，
+    // 匹配不上），Worker 是 python -m src.runtime；Runner 忽略 SIGHUP，伪终端关掉也不会自己退出，必须点名清掉。
+    const val STALE_PROCESS_PATTERN =
+        "python[0-9.]* bot[.]py|python[0-9.]* -m src[.]runtime|src[.]plugin_runtime[.]runner[.]runner_main"
 
     // 同一份环境变量同时作用于 uv sync、uv run 和在线更新：先限定 Python 版本，再跳过 dev 依赖，
     // 保证“安装依赖”和“启动时 uv run 自动同步”用同一套参数，不会因为参数不一致反复重建 .venv。

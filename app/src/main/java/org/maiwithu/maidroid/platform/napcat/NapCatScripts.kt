@@ -14,7 +14,7 @@ import org.maiwithu.maidroid.runtime.shellQuote
  */
 internal object NapCatScripts {
 
-    // 安全退出时等 QQ 自己退出的上限；实测 1~2 秒，留足余量，超时就照常强制清理。
+    // 停止时等 QQ 自己退出的上限；实测 1~2 秒，留足余量，超时就照常强制清理。
     private const val QQ_EXIT_TIMEOUT_SECONDS = 20
 
     /**
@@ -50,7 +50,7 @@ internal object NapCatScripts {
     )
 
     /**
-     * 安全退出：请 LinuxQQ 的主进程（launcher.sh 里那条 qq --no-sandbox --disable-gpu ...）自己下线退出，
+     * 停止、重启和安全退出时，请 LinuxQQ 的主进程（launcher.sh 里那条 qq --no-sandbox --disable-gpu ...）自己下线退出，
      * 最多等 QQ_EXIT_TIMEOUT_SECONDS 秒。2026-11 真机实测 QQ 收到 SIGTERM 后 1~2 秒退出、退出码 0，
      * zygote、utility 等子进程（命令行带 --type=）由主进程自己收掉，所以只发给主进程。
      * QQ 退出后 launcher.sh 跟着退出，但它放到后台的 Xvfb 还在，proot 要等 Xvfb 也退出才结束，之后要再跑一次 cleanup。

@@ -15,9 +15,9 @@ import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.killProot
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
-import java.util.concurrent.TimeUnit
 
 /** 容器 sshd 的运行阶段。 */
 internal enum class ContainerSshPhase {
@@ -209,17 +209,11 @@ internal class ContainerSshManager(
         }
     }
 
+    // 强杀 sshd 的 proot，再按进程名清掉脱离出来的 sshd：sshd 没有要保存的数据，不用先请它退出。
+    // 以前先给 proot 发 SIGTERM 再等 3 秒，但 proot 会忽略 SIGTERM，只是白等。
     private suspend fun stopRunningProcess() {
         withContext(Dispatchers.IO) {
-            process?.let { currentProcess ->
-                runCatching {
-                    currentProcess.destroy()
-                    currentProcess.waitFor(3, TimeUnit.SECONDS)
-                    if (currentProcess.isAlive) {
-                        currentProcess.destroyForcibly()
-                    }
-                }
-            }
+            process?.killProot()
             process = null
             runCommand(ContainerSshScripts.cleanup())
         }

@@ -53,6 +53,14 @@ class RequestExitScriptTest {
     }
 
     @Test
+    fun `stale maibot cleanup catches every maibot layer and leaves napcat alone`() {
+        val stale = Regex(MaiBotScripts.STALE_PROCESS_PATTERN)
+
+        assertEquals(maiBotProcesses, maiBotProcesses.filter { stale.containsMatchIn(it) })
+        assertEquals(emptyList<String>(), napCatProcesses.filter { stale.containsMatchIn(it) })
+    }
+
+    @Test
     fun `the exit script never selects its own command line`() {
         listOf(MaiBotScripts.requestExit(), NapCatScripts.requestQqExit()).forEach { script ->
             val ownCommandLine = "sh -c ${script.body}"

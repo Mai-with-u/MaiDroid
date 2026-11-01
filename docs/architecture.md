@@ -151,7 +151,11 @@ flowchart TB
 - **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 
-三者平时停止（停止、重启、服务销毁）都用 `Process.terminateGracefully()`：给宿主侧的 proot 发 SIGTERM，3 秒后还活着再强杀，之后用脚本按进程名清理残留；启动前也会先清一遍上次异常退出留下的残留。注意 proot 会忽略 SIGTERM，信号到不了容器里的进程，proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测），所以这条路实际是 3 秒后强杀、再按名字清理，MaiBot 来不及走自己的关闭流程。要让进程保存好数据再退出，只能在容器里直接给它发信号，安全退出就是这么做的。
+停止长驻进程（停止、重启、在线更新前、安全退出、服务销毁）时要在容器里直接给进程发信号：宿主侧 `Process.destroy()` 只能给 proot 发 SIGTERM，而 proot 会忽略它，信号到不了容器里的进程；proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测）。所以停止流程是：用 `requestExitScript` 在容器里请进程自己退出 -> 等它保存好数据 -> 兜底用 `Process.killProot()` 强杀还没退的 proot -> 用脚本按进程名清理残留。启动前也会先清一遍上次异常退出留下的残留。
+
+- **MaiBot**（`MaiBotProcessSupervisor.stopLocked`）：用 `MaiBotScripts.requestExit()` 给 Runner（`python bot.py`）发 SIGTERM，Runner 转给 Worker（`python -m src.runtime`）并等它走完优雅关闭（停插件运行时、持久化 A_Memorix 记忆、关数据库），之后 uv、script、sh 依次退出，proot 也就结束了。空闲时约 3 秒；最多等 80 秒（MaiBot 自己给 Worker 留 60 秒）。外面几层 sh、script、uv 的命令行里也带着 bot.py，靠 `MaiBotScripts.EXIT_TARGET` 排除。Runner 还没起来（uv 还在同步依赖）或超时就强杀。清理残留按 `MaiBotScripts.STALE_PROCESS_PATTERN` 认出每一层进程；Runner 忽略 SIGHUP，伪终端关掉它也不会退出，必须点名清掉。
+- **NapCat**（`NapCatProcessSupervisor.stopLocked`）：用 `NapCatScripts.requestQqExit()` 给 QQ 主进程发 SIGTERM，QQ 正常下线退出（实测 1~2 秒、退出码 0）；launcher.sh 放到后台的 Xvfb 还撑着 proot，再跑一次 `NapCatScripts.cleanup()` 清掉。退出 QQ 登录（只重启 NapCat）也走这条路。
+- **sshd**：没有要保存的数据，直接强杀 proot 再按名字清理。
 
 ### 安全退出
 
@@ -159,10 +163,9 @@ flowchart TB
 
 1. 确认后 `SafeExitManager.request` 记下 `AppSettings.userExited`，再以 `ACTION_SAFE_EXIT` 拉起前台服务。根界面（`MaiDroidApp`）按 `SafeExitManager.state` 弹出不可取消的进度弹窗（`SafeExitProgressDialog`），只有“切到后台”一个按钮。
 2. 服务把常驻通知换成“正在安全退出 MaiDroid”和当前进度，三项服务同时退出：
-   - **MaiBot**（`shutdownForExit`）：在线更新还在做就先等它做完 -> 用 `MaiBotScripts.requestExit()` 在容器里给 Runner（`python bot.py`）发 SIGTERM，Runner 转给 Worker（`python -m src.runtime`）并等它走完优雅关闭（停插件运行时、持久化 A_Memorix 记忆、关数据库），之后 uv、script、sh 依次退出，proot 也就结束了。空闲时约 3 秒；最多等 80 秒（MaiBot 自己给 Worker 留 60 秒）。外面几层 sh、script、uv 的命令行里也带着 bot.py，靠 `MaiBotScripts.EXIT_TARGET` 排除。
-   - **NapCat**（`shutdownForExit`）：用 `NapCatScripts.requestQqExit()` 给 QQ 主进程发 SIGTERM，QQ 正常下线退出（实测 1~2 秒、退出码 0）；launcher.sh 放到后台的 Xvfb 还撑着 proot，再跑一次 `NapCatScripts.cleanup()` 清掉。
-   - **sshd**（`stopForExit`）：没有要保存的数据，照常停止。
-   - 某项找不到要通知的进程、等到超时或出错，就照平时的方式强制停止，进度里标成“已强制停止”。
+   - **MaiBot**（`shutdownForExit`）：在线更新还在做就先等它做完，再照上面的方式停止（请 Runner 自己退出、保存好数据）。
+   - **NapCat**（`shutdownForExit`）、**sshd**（`stopForExit`）：照上面的方式停止。
+   - 某项没有自己退出（等到超时、找不到要通知的进程）或出错，就强制停止，进度里标成“已强制停止”。
 3. 全部停下后服务撤掉通知、停掉自己，在 `onDestroy` 之后调用 `closeMaiDroid`：从最近任务里移除 MaiDroid 的界面，结束进程。
    一定要结束进程：退出一开始，三个监管器就永久拦下所有启动请求（唤醒、更新完成后的重启、改时区重启……），进程留着的话，下次打开会复用它，麦麦就拉不起来了。
 

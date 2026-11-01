@@ -58,7 +58,7 @@ internal fun requestedExitOf(result: ContainerCommandResult): RequestedExit =
     }
 
 /**
- * 安全退出时要请其自己退出的容器进程：命令行（ps 的 args）匹配 awk 正则 pattern、且不匹配 exclude 的那些。
+ * 停止时要请其自己退出的容器进程：命令行（ps 的 args）匹配 awk 正则 pattern、且不匹配 exclude 的那些。
  * processName 只用于日志。正则里的点写成 [.]，免得匹配到脚本自己的命令行里那份正则原文。
  */
 internal data class ExitTarget(
@@ -71,7 +71,7 @@ internal data class ExitTarget(
  * 请容器里的 target 进程自己退出：发 SIGTERM -> 每秒查一次 -> 都退出了就返回 0，
  * 一个也没找到返回 3，等满 timeoutSeconds 秒还有没退出的返回 4（结果用 requestedExitOf 读）。
  *
- * 安全退出要让 MaiBot、QQ 走完各自的关闭流程（保存数据），只能这样在容器里直接给它们发信号：
+ * 停止、重启和安全退出都要让 MaiBot、QQ 走完各自的关闭流程（保存数据），只能这样在容器里直接给它们发信号：
  * 宿主侧的 Process.destroy() 只能给 proot 发 SIGTERM，而 proot 会忽略它，信号到不了容器里的进程；
  * proot 被 SIGKILL 后，容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测）。
  * awk 条件里排除 awk 自身，免得匹配到本脚本的命令行。
