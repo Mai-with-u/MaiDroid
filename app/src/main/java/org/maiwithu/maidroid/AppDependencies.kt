@@ -1,8 +1,10 @@
 package org.maiwithu.maidroid
 
 import android.content.Context
+import android.os.Build
 import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
+import org.maiwithu.maidroid.diagnostics.CrashRecorder
 import org.maiwithu.maidroid.diagnostics.DiagnosticsFiles
 import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
@@ -20,6 +22,8 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.SafeExitManager
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.ssh.ContainerSshManager
+import org.maiwithu.maidroid.terminal.AnsiText
+import org.maiwithu.maidroid.terminal.TerminalLog
 
 /**
  * 进程内所有长生命周期组件的唯一创建处（手动依赖注入）。
@@ -38,6 +42,15 @@ internal class AppDependencies(context: Context) {
     val terminalLogRecorder = TerminalLogRecorder(
         TerminalLogFiles(diagnosticsFiles.logsDir),
         startBanner = "===== MaiDroid ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) 启动，进程 ${Process.myPid()} ====="
+    )
+    // MaiDroid 自己闪退时记下堆栈和闪退前的终端输出，MaiDroidApplication 创建完依赖就接管未捕获异常
+    val crashRecorder = CrashRecorder(
+        diagnosticsFiles.crashesDir,
+        header = {
+            "MaiDroid ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}，${BuildConfig.BUILD_TYPE}）· " +
+                "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}（API ${Build.VERSION.SDK_INT}）"
+        },
+        recentLines = { TerminalLog.logs.value.map(AnsiText::plain) }
     )
 
     // ── 容器运行时：路径、就绪检查、命令执行 ─────────────────────────────

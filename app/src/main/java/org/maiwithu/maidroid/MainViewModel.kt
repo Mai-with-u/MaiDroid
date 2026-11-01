@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.diagnostics.CrashRecord
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.maibot.update.shouldAutoUpdateMaiBot
 import org.maiwithu.maidroid.oobe.OobeSetupManager
@@ -67,6 +68,11 @@ internal class MainViewModel(
     /** MaiBot WebUI 现在能不能访问（不只是进程在跑）。 */
     val webUiOnline: StateFlow<Boolean> = _webUiOnline.asStateFlow()
 
+    private val _pendingCrash = MutableStateFlow(dependencies.crashRecorder.pendingCrash())
+
+    /** 上次 MaiDroid 闪退过、用户还没看过提示：主界面据此问要不要反馈。 */
+    val pendingCrash: StateFlow<CrashRecord?> = _pendingCrash.asStateFlow()
+
     /** MaiBot 进程是否在跑、意外退出过几次、为什么没拉起来；唤醒页的自检行据此显示启动进度。 */
     val maiBotStatus: StateFlow<MaiBotProcessStatus> = dependencies.maiBotProcess.status
 
@@ -105,6 +111,12 @@ internal class MainViewModel(
                 }
             }
         }
+    }
+
+    /** 用户看过闪退提示（点了反馈或知道了），这次闪退之后不再问。 */
+    fun acknowledgeCrash() {
+        _pendingCrash.value?.let(dependencies.crashRecorder::acknowledge)
+        _pendingCrash.value = null
     }
 
     fun finishStartupSplash() {

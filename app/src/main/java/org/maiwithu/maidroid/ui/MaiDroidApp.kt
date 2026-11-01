@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -21,11 +22,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.MainViewModel
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.diagnostics.CrashRecord
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.diagnostics.CrashPromptDialog
+import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
+import org.maiwithu.maidroid.ui.diagnostics.crashFailure
 import org.maiwithu.maidroid.ui.home.HomeScreen
 import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
@@ -76,6 +81,9 @@ internal fun MaiDroidApp(
     val maiBotUpdateState by maiBotUpdater.state.collectAsState()
     val safeExit = remember(context) { context.appDependencies.safeExit }
     val safeExitState by safeExit.state.collectAsState()
+    val pendingCrash by viewModel.pendingCrash.collectAsState()
+    // 在闪退提示里点了“反馈问题”：记下是哪次闪退，接着打开反馈弹窗；去“另存为”回来重建时也保留
+    var crashToReport by rememberSaveable(stateSaver = CrashRecordSaver) { mutableStateOf<CrashRecord?>(null) }
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -182,8 +190,23 @@ internal fun MaiDroidApp(
     // MaiDroid 本体和 MaiBot 都有新版本时不叠着弹：先弹 MaiDroid，关掉后再弹 MaiBot。
     // 安全退出开始后盖在所有页面上显示进度，不再弹更新提醒；退出途中从通知点回来、转屏重建也照样显示。
     // 全部停下后前台服务会关掉界面并结束进程，这个弹窗不需要自己关闭。
+    // 上次闪退过时，启动页播完（首次引导时还要等同意完协议）先问要不要反馈，问完再弹更新提醒。
+    val crashPromptAllowed = !showStartupSplash && (setupComplete || authorizationAccepted)
+    val crash = pendingCrash
+    val reporting = crashToReport
     if (safeExitState.started) {
         SafeExitProgressDialog(state = safeExitState, onMoveToBackground = onMoveToBackground)
+    } else if (reporting != null) {
+        FeedbackDialog(failure = crashFailure(reporting), onDismiss = { crashToReport = null })
+    } else if (crash != null && crashPromptAllowed) {
+        CrashPromptDialog(
+            crash = crash,
+            onFeedback = {
+                crashToReport = crash
+                viewModel.acknowledgeCrash()
+            },
+            onDismiss = viewModel::acknowledgeCrash
+        )
     } else if (setupComplete && !showStartupSplash) {
         when {
             appUpdatePrompt -> AppUpdateDialogHost(onDismiss = appUpdater::dismissLaunchPrompt)
@@ -191,3 +214,9 @@ internal fun MaiDroidApp(
         }
     }
 }
+
+// 闪退记录只有文件名和异常一行，存成两段字符串跨 Activity 重建保留。
+private val CrashRecordSaver = listSaver<CrashRecord?, String>(
+    save = { record -> if (record == null) emptyList() else listOf(record.fileName, record.summary) },
+    restore = { values -> if (values.size == 2) CrashRecord(values[0], values[1]) else null }
+)
