@@ -46,4 +46,28 @@ class MaiBotChannelTest {
         assertFalse(body.contains("branch='"))
         assertTrue(body.contains("git reset --hard \"\$remote_ref\""))
     }
+
+    @Test
+    fun `reset refuses a database downgrade before touching the source`() {
+        val body = MaiBotUpdateScripts.fetchAndReset(MaiBotChannel.Stable.branch).body
+
+        // 先读两边的版本、比较、会降级就 exit 4，之后才是 checkout / reset
+        val schema = body.indexOf("MAIDROID_UPDATE_DATABASE_SCHEMA")
+        val refuse = body.indexOf("exit 4")
+        val checkout = body.indexOf("git checkout --force")
+        assertTrue(schema in 0 until refuse)
+        assertTrue(refuse < checkout)
+        assertTrue(body.contains("src/common/database/migrations/builtin.py"))
+        assertTrue(body.contains("PRAGMA user_version"))
+    }
+
+    @Test
+    fun `fetching for a precheck reports schema versions but never resets`() {
+        val body = MaiBotUpdateScripts.fetchLatest(MaiBotChannel.Stable.branch).body
+
+        assertTrue(body.contains("branch='main'"))
+        assertTrue(body.contains("MAIDROID_UPDATE_TARGET_SCHEMA"))
+        assertFalse(body.contains("git reset"))
+        assertFalse(body.contains("git checkout"))
+    }
 }

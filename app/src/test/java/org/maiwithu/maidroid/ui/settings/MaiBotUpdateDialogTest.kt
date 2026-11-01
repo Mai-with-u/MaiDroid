@@ -156,7 +156,7 @@ class MaiBotUpdateDialogTest {
 
         val stable = maiBotChannelSwitchPrompt(MaiBotChannel.Stable)
         assertEquals("切换到正式版？", stable.title)
-        assertTrue(stable.message.contains("数据库"))
+        assertTrue(stable.message.contains("取消切换"))
         assertTrue(stable.message.contains("main"))
     }
 }

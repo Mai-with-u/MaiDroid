@@ -179,6 +179,13 @@ internal class MaiBotUpdateManager(
                 failCheck("获取上游版本失败：${result.summary()}")
                 return@launch
             }
+            // 上游有新提交、但它支持的数据库版本比麦麦现在的库旧（dev 回退提交时会这样）：不提供更新，说明原因
+            if (report.hasUpdate) {
+                maiBotDatabaseDowngradeMessage(report, target = null)?.let { message ->
+                    failCheck(message)
+                    return@launch
+                }
+            }
 
             val phase = if (report.hasUpdate) {
                 MaiBotUpdatePhase.Available
@@ -221,20 +228,32 @@ internal class MaiBotUpdateManager(
     fun applyUpdate() = startStoppedUpdate(MaiBotUpdateAction.Apply, target = null)
 
     /**
-     * 切换版本通道：停止麦麦 -> 拉取目标分支，丢弃源码改动并把本地分支硬重置到它的最新提交 -> uv sync -> 重启麦麦。
+     * 切换版本通道：预检 -> 停止麦麦 -> 拉取目标分支，丢弃源码改动并把本地分支硬重置到它的最新提交 -> uv sync -> 重启麦麦。
+     * 预检在麦麦照常运行时先拉一次目标分支，确认它支持麦麦现在的数据库版本；会降级就直接取消，麦麦不停。
      * 之后的检查更新、启动提醒和 MaiDroid 更新后的自动升级都跟着新分支走（分支从仓库 HEAD 读，不另存设置）。
      * 拉取失败时源码和分支都没动；切过去后依赖同步失败的，重试切换时拉取和切分支会很快做完，再接着装依赖。
      */
     fun switchChannel(channel: MaiBotChannel) = startStoppedUpdate(MaiBotUpdateAction.Switch, channel)
 
-    // 应用更新和切换通道共用：停止麦麦 -> 拉取（目标通道的分支，或当前分支）并硬重置 -> 重装依赖 -> 无论成败都重启麦麦。
+    // 应用更新和切换通道共用：（切换时先预检）停止麦麦 -> 拉取（目标通道的分支，或当前分支）并硬重置 -> 重装依赖 -> 无论成败都重启麦麦。
     private fun startStoppedUpdate(action: MaiBotUpdateAction, target: MaiBotChannel?) {
         if (job?.isActive == true) return
         job = scope.launch {
-            beginAction(MaiBotUpdatePhase.Updating, "正在停止麦麦...", switchTarget = target)
+            beginAction(
+                MaiBotUpdatePhase.Updating,
+                if (target == null) "正在停止麦麦..." else "正在获取上游 ${target.branch} 分支，确认能否切换...",
+                switchTarget = target
+            )
             validationError()?.let { error ->
                 fail(action, error)
                 return@launch
+            }
+            if (target != null) {
+                precheckSwitch(target)?.let { error ->
+                    fail(action, error)
+                    return@launch
+                }
+                showProgress(MaiBotUpdatePhase.Updating, "正在停止麦麦...")
             }
 
             TerminalLog.append("")
@@ -267,6 +286,18 @@ internal class MaiBotUpdateManager(
                 )
             }
         }
+    }
+
+    /**
+     * 切换前的预检，麦麦照常运行：拉取目标分支（不动工作区）-> 比较它支持的数据库版本和麦麦现在的库。
+     * 返回取消切换的原因，可以切换时返回 null。结果不写进状态：报告里的分支和最新提交是目标分支的，还没切过去。
+     */
+    private suspend fun precheckSwitch(target: MaiBotChannel): String? {
+        TerminalLog.append("")
+        TerminalLog.append("$LOG_PREFIX 切换到${target.label}前先拉取上游 ${target.branch} 分支，确认数据库不会降级")
+        val result = runCommand(MaiBotUpdateScripts.fetchLatest(target.branch))
+        if (!result.success) return "获取上游 ${target.branch} 分支失败：${result.summary()}"
+        return maiBotDatabaseDowngradeMessage(parseMaiBotUpdateReport(result.output), target)
     }
 
     /**
@@ -332,6 +363,10 @@ internal class MaiBotUpdateManager(
         if (!result.success || report.installed == null || report.latest == null) {
             return AutoUpdateOutcome.Skipped("获取上游版本失败：${result.summary()}")
         }
+        // 上游新提交会让数据库降级（dev 回退了提交）：这次不升级，照常拉起现在的版本，不弹失败
+        if (report.hasUpdate) {
+            maiBotDatabaseDowngradeMessage(report, target = null)?.let { return AutoUpdateOutcome.Skipped(it) }
+        }
         // 已是最新但源码被改过时也还原一次：MaiDroid 不支持在手机上改源码，误改的文件趁这次恢复
         if (!report.hasUpdate && (report.localChangeCount ?: 0) == 0) return AutoUpdateOutcome.UpToDate
         TerminalLog.append(
@@ -357,6 +392,8 @@ internal class MaiBotUpdateManager(
         val updateResult = runCommand(MaiBotUpdateScripts.fetchAndReset(target?.branch))
         val report = parseMaiBotUpdateReport(updateResult.output)
         applyReport(report)
+        // 脚本在动源码之前发现数据库会降级、退出了：源码和分支都没变，说明原因（预检之后上游又变了才会走到这里）
+        maiBotDatabaseDowngradeMessage(report, target)?.let { return it }
         if (!updateResult.success || report.installed == null) {
             return "源码更新失败：${updateResult.summary()}"
         }

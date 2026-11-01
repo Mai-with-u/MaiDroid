@@ -153,9 +153,10 @@ internal fun formatRevisionTime(
 /** 切换版本通道前确认框的标题和说明。 */
 internal data class MaiBotChannelSwitchPrompt(val title: String, val message: String)
 
-// 切换的做法两边一样：停麦麦 -> 拉取目标分支 -> 源码硬重置过去 -> 重装依赖 -> 重启。
-// 切到测试版提醒它不稳定、上游会回退提交；切到正式版提醒数据库不能降级：
-// MaiBot 启动时发现数据库版本比代码支持的新，会直接报错退出（src/common/database/migrations/bootstrap.py）。
+// 切换的做法两边一样：先确认数据库不会降级 -> 停麦麦 -> 拉取目标分支 -> 源码硬重置过去 -> 重装依赖 -> 重启。
+// 切到测试版提醒它不稳定、上游会回退提交；切到正式版说明数据库不能降级、切换前会先检查：
+// MaiBot 启动时发现数据库版本比代码支持的新，会直接报错退出（src/common/database/migrations/bootstrap.py），
+// 所以测试版先升级过数据库时，MaiBotUpdateManager 的预检会在停麦麦之前取消切换。
 internal fun maiBotChannelSwitchPrompt(target: MaiBotChannel): MaiBotChannelSwitchPrompt {
     val procedure = "切换会停止麦麦，拉取上游 ${target.branch} 分支的最新提交，把 MaiBot 源码硬重置过去并重装依赖，" +
         "完成后自动重启；之后检查更新也跟随 ${target.branch}。配置、数据和插件不受影响，改动过的 MaiBot 源码文件会被还原。"
@@ -166,8 +167,8 @@ internal fun maiBotChannelSwitchPrompt(target: MaiBotChannel): MaiBotChannelSwit
         )
         MaiBotChannel.Stable -> MaiBotChannelSwitchPrompt(
             title = "切换到正式版？",
-            message = "$procedure\n\n如果测试版已经升级过数据库结构，正式版不支持降级，麦麦会启动失败，" +
-                "要等正式版跟上，或者再切回测试版。"
+            message = "$procedure\n\nMaiBot 的数据库不能降级。如果测试版已经升级过数据库结构、正式版还读不了，" +
+                "会在停止麦麦之前取消切换，麦麦照常运行。"
         )
     }
 }

@@ -22,28 +22,39 @@ internal object MaiBotUpdateScripts {
     // 这是 MaiDroid 自己改的，不算用户改动；重置时它照样还原，随后重装依赖时再次改写。
     private const val USER_CHANGES_PATHSPEC = "-- . ':(exclude)uv.lock'"
 
+    // 上游登记数据库结构版本的文件和 MaiBot 的数据库，都是相对 MaiBot 仓库根目录的路径，见 schemaVersionScript。
+    private const val SCHEMA_SOURCE_PATH = "src/common/database/migrations/builtin.py"
+    private const val DATABASE_PATH = "data/MaiBot.db"
+
     /** 只读当前安装的版本，不联网，MaiBot 运行中也能执行。 */
     fun installedRevision(): ContainerScript = script(
         repositoryPrelude(),
         reportScript(includeLatest = false)
     )
 
-    /** 拉取上游最新提交但不动工作区，MaiBot 运行中也能执行。 */
-    fun fetchLatest(): ContainerScript = script(
+    /**
+     * 拉取上游最新提交但不动工作区，MaiBot 运行中也能执行；顺带报出数据库结构版本，判断换过去会不会降级。
+     * targetBranch 不为空时拉取的是那个分支（切换通道前的预检），打印的 BRANCH、LATEST 也是它的，不是当前分支的。
+     */
+    fun fetchLatest(targetBranch: String? = null): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
-        repositoryPrelude(),
+        repositoryPrelude(targetBranch),
         fetchScript(),
+        schemaVersionScript(),
         reportScript(includeLatest = true)
     )
 
     /**
-     * 拉取 -> 丢弃本地改动并硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。
+     * 拉取 -> 确认数据库不会降级 -> 丢弃本地改动并硬重置到上游。调用前必须先停掉 MaiBot，避免运行中源码被替换。
      * targetBranch 为空时跟随当前分支（在线更新）；不为空时拉取这个分支并切过去（切换版本通道）。
+     * 会降级时以退出码 4 结束，源码和分支都不动。
      */
     fun fetchAndReset(targetBranch: String? = null): ContainerScript = script(
         GitHubMirrors.shellFunctions(),
         repositoryPrelude(targetBranch),
         fetchScript(),
+        schemaVersionScript(),
+        refuseDatabaseDowngradeScript(),
         resetScript(),
         reportScript(includeLatest = true)
     )
@@ -88,6 +99,40 @@ internal object MaiBotUpdateScripts {
         """
         printf "[MaiBotUpdate] fetching %s from upstream\n" "${'$'}branch"
         maidroid_github_fetch ${shellQuote(MaiBotScripts.REPOSITORY_URL)} "+refs/heads/${'$'}branch:${'$'}remote_ref" --depth=1 --no-tags
+        """.trimIndent()
+
+    // MaiBot 的数据库迁移只能升级：库的版本（SQLite user_version）比代码支持的最新版本新时，启动直接报错退出
+    // （上游 src/common/database/migrations/bootstrap.py）。这里读出两边，换代码之前先比一比：
+    // - 目标代码支持到的版本：拉下来的提交里 migrations/builtin.py 的 LATEST_SCHEMA_VERSION 字面值；
+    // - 库的版本：用 MaiBot 自己 .venv 里的 Python 读 data/MaiBot.db。库是 WAL 模式，新写的版本号可能还在 -wal 里，
+    //   直接读文件头不可靠。先只读打开（MaiBot 运行中也不干扰它），打不开（例如缺 -shm）再普通打开读一次。
+    // 任一边读不到（上游改了写法、还没装依赖、还没有数据库）就留空，不拦，照旧更新。
+    private fun schemaVersionScript(): String {
+        val readUserVersion = { uri: String ->
+            "import sqlite3; print(sqlite3.connect(\"$uri\", uri=True).execute(\"PRAGMA user_version\").fetchone()[0])"
+        }
+        return """
+        target_schema="${'$'}(git show "${'$'}remote_ref:$SCHEMA_SOURCE_PATH" 2>/dev/null | sed -n 's/^LATEST_SCHEMA_VERSION *= *\([0-9][0-9]*\) *${'$'}/\1/p' | head -n 1)"
+        database_schema=""
+        if [ -f $DATABASE_PATH ] && [ -x .venv/bin/python ]; then
+            database_schema="${'$'}(.venv/bin/python -c ${shellQuote(readUserVersion("file:$DATABASE_PATH?mode=ro"))} 2>/dev/null ||
+                .venv/bin/python -c ${shellQuote(readUserVersion("file:$DATABASE_PATH"))} 2>/dev/null || true)"
+        fi
+        case "${'$'}database_schema" in
+            *[!0-9]*) database_schema="" ;;
+        esac
+        printf "%s=%s\n" ${MaiBotUpdateReportKeys.TARGET_SCHEMA} "${'$'}target_schema"
+        printf "%s=%s\n" ${MaiBotUpdateReportKeys.DATABASE_SCHEMA} "${'$'}database_schema"
+        """.trimIndent()
+    }
+
+    // 接在 schemaVersionScript 后面：两边都读到且库比目标代码新，就在动源码之前退出（退出码 4），麦麦照旧用现在的代码。
+    private fun refuseDatabaseDowngradeScript(): String =
+        """
+        if [ -n "${'$'}target_schema" ] && [ -n "${'$'}database_schema" ] && [ "${'$'}database_schema" -gt "${'$'}target_schema" ]; then
+            printf "[MaiBotUpdate] database schema %s is newer than %s supports (%s); MaiBot cannot downgrade it, keeping the current source\n" "${'$'}database_schema" "${'$'}branch" "${'$'}target_schema"
+            exit 4
+        fi
         """.trimIndent()
 
     // 用户改过的源码文件先在终端日志里列一遍（知道还原了什么），再硬重置到上游；被忽略的文件不受影响。
