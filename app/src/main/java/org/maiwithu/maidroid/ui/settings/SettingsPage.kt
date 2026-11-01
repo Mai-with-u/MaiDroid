@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
@@ -72,6 +73,7 @@ import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -88,7 +90,7 @@ private const val PermissionSettingsDetail = "permissions"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
- * 应用（消息平台、应用版本与 MaiDroid 自身的更新），最底下是“安全退出”按钮。
+ * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题），最底下是“安全退出”按钮。
  * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
@@ -118,6 +120,8 @@ internal fun SettingsPage(
     // 安全退出的二次确认；转屏重建时保留，免得用户刚点开就没了
     var showSafeExitConfirm by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    // 反馈弹窗里要去系统“另存为”选位置，回来时 Activity 可能被重建，开关要能保存下来
+    var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
     var selectedDetail by rememberSaveable { mutableStateOf<String?>(null) }
@@ -215,6 +219,7 @@ internal fun SettingsPage(
                     appUpdateState = appUpdateState,
                     onAppUpdateClick = { openAppUpdateDialog() },
                     onSafeExitClick = { showSafeExitConfirm = true },
+                    onFeedbackClick = { showFeedbackDialog = true },
                     modifier = Modifier
                         .width(navigationWidth)
                         .fillMaxHeight()
@@ -276,6 +281,7 @@ internal fun SettingsPage(
                         appUpdateState = appUpdateState,
                         onAppUpdateClick = { openAppUpdateDialog() },
                         onSafeExitClick = { showSafeExitConfirm = true },
+                    onFeedbackClick = { showFeedbackDialog = true },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -290,6 +296,10 @@ internal fun SettingsPage(
         if (showAppUpdateDialog) {
             // 设置页点开的更新弹窗底部带“关闭 MaiBot 自动更新”开关；启动时自动弹的提醒不带
             AppUpdateDialogHost(onDismiss = { showAppUpdateDialog = false }, showMaiBotAutoUpdateSwitch = true)
+        }
+
+        if (showFeedbackDialog) {
+            FeedbackDialog(failure = null, onDismiss = { showFeedbackDialog = false })
         }
 
         if (showSafeExitConfirm) {
@@ -349,6 +359,7 @@ private fun SettingsNavigationPane(
     appUpdateState: AppUpdateState,
     onAppUpdateClick: () -> Unit,
     onSafeExitClick: () -> Unit,
+    onFeedbackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
@@ -541,6 +552,29 @@ private fun SettingsNavigationPane(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = "检查 MaiDroid 更新",
+                                tint = TextMuted,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        // 出了问题时的入口：收集诊断信息（打过码）后去 GitHub 反馈，或者保存成诊断包
+        item {
+            SettingsSection(title = "帮助") {
+                SettingsNavigationRow(
+                    icon = Icons.Outlined.BugReport,
+                    title = "反馈问题",
+                    supportingText = "自动收集诊断信息，一键去 GitHub 提交问题",
+                    accent = BrandOrange,
+                    onClick = onFeedbackClick,
+                    trailing = if (compact) null else {
+                        {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "反馈问题",
                                 tint = TextMuted,
                                 modifier = Modifier.size(24.dp)
                             )

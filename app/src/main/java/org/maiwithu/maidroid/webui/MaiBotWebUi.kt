@@ -109,7 +109,8 @@ internal object MaiBotWebUi {
             url.replace(Regex("""token=[^&#]+"""), "token=<redacted>")
         }
 
-    private fun readAccessTokenFromConfig(paths: RuntimePaths): String? {
+    /** 读 MaiBot data/webui.json 里的访问令牌；诊断包打码时也要用它认出日志里的令牌。 */
+    fun readAccessTokenFromConfig(paths: RuntimePaths): String? {
         val tokenFile = paths.maiBotWebUiConfig
         if (!tokenFile.isFile) return null
 

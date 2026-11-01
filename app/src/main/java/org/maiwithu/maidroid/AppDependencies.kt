@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
 import org.maiwithu.maidroid.diagnostics.DiagnosticsFiles
+import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
 import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
@@ -68,6 +69,12 @@ internal class AppDependencies(context: Context) {
     }
     val maiBotUpdater: MaiBotUpdateManager by lazy {
         MaiBotUpdateManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess)
+    }
+    // “反馈问题”：收集版本、设备、容器和进程状态，打码后生成诊断包；只读文件，不创建平台管理器。
+    val diagnostics: DiagnosticsManager by lazy {
+        DiagnosticsManager(
+            appContext, settings, runtimePaths, runtimeReadiness, diagnosticsFiles, terminalLogRecorder, maiBotProcess
+        )
     }
     // 设置页的“安全退出”：让上面三个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
