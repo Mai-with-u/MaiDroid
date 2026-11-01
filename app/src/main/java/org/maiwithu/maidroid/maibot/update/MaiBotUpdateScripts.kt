@@ -27,6 +27,12 @@ internal object MaiBotUpdateScripts {
     private const val SCHEMA_SOURCE_PATH = "src/common/database/migrations/builtin.py"
     private const val DATABASE_PATH = "data/MaiBot.db"
 
+    /**
+     * 动源码之前记下要切到的分支和提交（一行“分支 提交”）。在线更新、切换通道、自动升级一路做完（不论成败）由宿主侧删掉；
+     * 做到一半应用闪退、被系统结束或断电时它还在，下次打开时 resumeInterrupted 照着它把源码切完、依赖装完。
+     */
+    const val UPDATE_PENDING_FILE = "/root/.maidroid/maibot-update-pending"
+
     /** 只读当前安装的版本，不联网，MaiBot 运行中也能执行。 */
     fun installedRevision(): ContainerScript = script(
         repositoryPrelude(),
@@ -60,6 +66,29 @@ internal object MaiBotUpdateScripts {
         refuseDatabaseDowngradeScript(),
         resetScript(),
         reportScript(includeLatest = true)
+    )
+
+    /**
+     * 接着做完上次被打断的更新，不联网：读 UPDATE_PENDING_FILE -> 清掉打断时留下的 git 锁 ->
+     * 确认那个提交已经拉到本地 -> 切过去（丢弃切到一半的工作区）-> 报出版本。依赖由调用方随后照常重装。
+     * 记录读不出、提交不在本地时以退出码 5 结束，源码不动，交给用户在设置页重新更新。
+     */
+    fun resumeInterrupted(): ContainerScript = script(
+        repositoryPrelude(),
+        staleGitLockScript(),
+        """
+        pending_branch=""
+        pending_commit=""
+        read -r pending_branch pending_commit < ${shellQuote(UPDATE_PENDING_FILE)} || true
+        if [ -z "${'$'}pending_branch" ] || [ -z "${'$'}pending_commit" ] || ! git cat-file -e "${'$'}pending_commit^{commit}" 2>/dev/null; then
+            printf "上次被打断的更新记录不完整，请在设置页“MaiBot 更新”里重新更新\n"
+            exit 5
+        fi
+        branch="${'$'}pending_branch"
+        printf "$AUTO_FIX_LOG_PREFIX 上次更新 MaiBot 时被打断了，接着切到 %s 分支的 %s\n" "${'$'}branch" "${'$'}(git rev-parse --short "${'$'}pending_commit")"
+        git checkout --force --no-track -B "${'$'}branch" "${'$'}pending_commit"
+        """.trimIndent(),
+        reportScript(includeLatest = false)
     )
 
     private fun script(vararg parts: String): ContainerScript =
@@ -159,12 +188,16 @@ internal object MaiBotUpdateScripts {
     // 要跟随的分支和当前分支不同（切换通道，或从分离 HEAD 回到 main）时，在上游提交上新建或重置本地分支并切过去：
     // checkout --force 丢弃受版本管理文件的改动、覆盖挡路的未跟踪文件，效果等同切过去后再 reset --hard。
     // --no-track：浅克隆的 origin 只登记了 main，跟踪信息本来也设不上，显式关掉，不随 git 版本和配置变化。
+    // 动源码前先把“要切到哪”写进 UPDATE_PENDING_FILE（写临时文件再改名，不会留下半截记录），见 resumeInterrupted。
     private fun resetScript(): String =
         """
         changed="${'$'}(git status --porcelain --untracked-files=no $USER_CHANGES_PATHSPEC)"
         if [ -n "${'$'}changed" ]; then
             printf "[MaiBotUpdate] discarding local changes to tracked files:\n%s\n" "${'$'}changed"
         fi
+        mkdir -p ${shellQuote(UPDATE_PENDING_FILE.substringBeforeLast('/'))}
+        printf '%s %s\n' "${'$'}branch" "${'$'}(git rev-parse "${'$'}remote_ref")" > ${shellQuote("$UPDATE_PENDING_FILE.tmp")}
+        mv ${shellQuote("$UPDATE_PENDING_FILE.tmp")} ${shellQuote(UPDATE_PENDING_FILE)}
         if [ "${'$'}current_branch" != "${'$'}branch" ]; then
             printf "[MaiBotUpdate] switching from %s to %s at %s\n" "${'$'}{current_branch:-detached HEAD}" "${'$'}branch" "${'$'}(git rev-parse --short "${'$'}remote_ref")"
             git checkout --force --no-track -B "${'$'}branch" "${'$'}remote_ref"

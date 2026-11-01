@@ -1,10 +1,9 @@
 package org.maiwithu.maidroid.maibot.update
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +13,7 @@ import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.maibot.MaiBotDependencyStep
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
@@ -23,8 +23,11 @@ import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.StorageSpace
+import org.maiwithu.maidroid.runtime.flushFileSystems
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.terminal.TerminalLog
+import java.io.File
 
 /** 在线更新弹窗所处的阶段：空闲 -> 检查中 -> 已是最新 / 有新版本 -> 更新中 -> 已更新，任一步出错进入失败。 */
 internal enum class MaiBotUpdatePhase {
@@ -111,12 +114,21 @@ internal class MaiBotUpdateManager(
         private const val LOG_PREFIX = "[MaiBot 更新]"
     }
 
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val scope = backgroundScope("MaiBot 在线更新", Dispatchers.Main.immediate)
     private var job: Job? = null
+
+    // 宿主侧看到的“更新做到一半”记录，见 MaiBotUpdateScripts.UPDATE_PENDING_FILE
+    private val pendingFile = File(paths.rootfsDir, MaiBotUpdateScripts.UPDATE_PENDING_FILE.removePrefix("/"))
     private var revisionJob: Job? = null
 
     private val _state = MutableStateFlow(MaiBotUpdateState())
     val state: StateFlow<MaiBotUpdateState> = _state.asStateFlow()
+
+    /**
+     * 上次在线更新、切换通道或自动升级做到一半被打断了（应用闪退、被系统结束、断电）：源码可能只切了一半、依赖可能没装完。
+     * 主界面打开时据此先调 updateAfterAppUpgrade 把它做完，再拉起麦麦。
+     */
+    fun hasInterruptedUpdate(): Boolean = pendingFile.isFile
 
     private val _launchPrompt = MutableStateFlow(false)
 
@@ -262,9 +274,10 @@ internal class MaiBotUpdateManager(
                 fail(action, Failure(FailureStep.UpdatePrecheck, error))
                 return@launch
             }
-            // 先看网再停麦麦：没网时更新必然失败，不必让麦麦白停一次
-            NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch)?.let { failure ->
-                fail(action, failure)
+            // 先看网和空间再停麦麦：没网、空间明摆着不够时更新必然失败，不必让麦麦白停一次
+            val precheck = NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch) ?: updateSpaceShortage()
+            if (precheck != null) {
+                fail(action, precheck)
                 return@launch
             }
             if (target != null) {
@@ -283,10 +296,17 @@ internal class MaiBotUpdateManager(
                     "$LOG_PREFIX 停止 MaiBot，准备切换到${target.label}（上游 ${target.branch} 分支）"
                 }
             )
-            val failure = maiBotProcess.runWhileStopped { updateWhileStopped(target) }
-
-            TerminalLog.append("$LOG_PREFIX 重新启动 MaiBot")
-            restartMaiBot()
+            // 无论更新成败、哪怕中途出了意外异常，都要把麦麦重新拉起来，不能让它一直停着
+            val failure = try {
+                maiBotProcess.runWhileStopped { updateWhileStopped(target) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Failure(FailureStep.UpdateReset, "更新时出了意外错误：${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                TerminalLog.append("$LOG_PREFIX 重新启动 MaiBot")
+                restartMaiBot()
+            }
 
             if (failure != null) {
                 fail(action, failure)
@@ -329,19 +349,36 @@ internal class MaiBotUpdateManager(
      * 拉取上游 -> 有新版本或源码被改过就还原改动、切到上游、重装依赖 -> 放开并拉起麦麦。
      * 已是最新就直接拉起；拉取失败不打扰，照常拉起现在的版本，之后的启动检查和设置页里都还能更新；
      * 更新失败时弹出 MaiBot 更新弹窗说明原因，可以重试。
+     * 上次更新做到一半被打断了（hasInterruptedUpdate）时不联网检查，而是照着记录把那次更新做完（resumeWhileStopped）。
      */
     suspend fun updateAfterAppUpgrade() {
         if (job?.isActive == true) return
         checkingOnLaunch = false
+        val resuming = hasInterruptedUpdate()
         val updateJob = scope.launch {
-            beginAction(MaiBotUpdatePhase.Checking, "MaiDroid 已更新，正在检查 MaiBot 新版本...")
-            TerminalLog.append("")
-            TerminalLog.append("$LOG_PREFIX MaiDroid 已更新，启动麦麦前先把 MaiBot 升级到上游最新版本")
-            // 先进入维护再做任何耗时操作：这一句在启动时同步执行，唤醒页随后发来的启动请求都会被拦下
-            val outcome = maiBotProcess.runWhileStopped { autoUpdateWhileStopped() }
-
-            TerminalLog.append("$LOG_PREFIX 启动 MaiBot")
-            restartMaiBot()
+            if (resuming) {
+                beginAction(MaiBotUpdatePhase.Updating, "上次更新 MaiBot 时被打断了，正在接着做完...")
+                TerminalLog.append("")
+                TerminalLog.append("$LOG_PREFIX 上次更新做到一半被打断了，启动麦麦前先把它做完")
+            } else {
+                beginAction(MaiBotUpdatePhase.Checking, "MaiDroid 已更新，正在检查 MaiBot 新版本...")
+                TerminalLog.append("")
+                TerminalLog.append("$LOG_PREFIX MaiDroid 已更新，启动麦麦前先把 MaiBot 升级到上游最新版本")
+            }
+            // 先进入维护再做任何耗时操作：这一句在启动时同步执行，唤醒页随后发来的启动请求都会被拦下。
+            // 不论结果如何（包括意外异常）最后都拉起麦麦
+            val outcome = try {
+                maiBotProcess.runWhileStopped { if (resuming) resumeWhileStopped() else autoUpdateWhileStopped() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AutoUpdateOutcome.Failed(
+                    Failure(FailureStep.UpdateReset, "更新时出了意外错误：${e.message ?: e.javaClass.simpleName}")
+                )
+            } finally {
+                TerminalLog.append("$LOG_PREFIX 启动 MaiBot")
+                restartMaiBot()
+            }
 
             when (outcome) {
                 is AutoUpdateOutcome.Skipped -> {
@@ -379,7 +416,7 @@ internal class MaiBotUpdateManager(
     // 自动升级在维护期间做的事：检查 -> （需要时）还原并切到上游、重装依赖。拉取失败、已是最新且没改过源码时不动源码。
     private suspend fun autoUpdateWhileStopped(): AutoUpdateOutcome {
         validationError()?.let { return AutoUpdateOutcome.Skipped(it) }
-        NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch)?.let {
+        (NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch) ?: updateSpaceShortage())?.let {
             return AutoUpdateOutcome.Skipped(it.message)
         }
         val result = runCommand(MaiBotUpdateScripts.fetchLatest())
@@ -404,8 +441,34 @@ internal class MaiBotUpdateManager(
         return updateWhileStopped()?.let { AutoUpdateOutcome.Failed(it) } ?: AutoUpdateOutcome.Updated
     }
 
-    /** target 为空时更新当前分支，否则切到该通道的分支。返回带错误码的失败原因，成功返回 null。 */
-    private suspend fun updateWhileStopped(target: MaiBotChannel? = null): Failure? {
+    /**
+     * 接着做完上次被打断的更新：照记录切源码（不联网）-> 重装依赖。做完不论成败都删掉记录，
+     * 失败时由调用方弹出更新弹窗说明原因，用户可以在里面重新更新。
+     */
+    private suspend fun resumeWhileStopped(): AutoUpdateOutcome = try {
+        val result = runCommand(MaiBotUpdateScripts.resumeInterrupted())
+        applyReport(parseMaiBotUpdateReport(result.output))
+        val failure = if (result.success) {
+            installDependencies()
+        } else {
+            failureOf(FailureStep.UpdateReset, "接着做完上次的更新失败：${result.summary()}", result.output)
+        }
+        failure?.let { AutoUpdateOutcome.Failed(it) } ?: AutoUpdateOutcome.Updated
+    } finally {
+        withContext(Dispatchers.IO) { pendingFile.delete() }
+    }
+
+    /**
+     * target 为空时更新当前分支，否则切到该通道的分支。返回带错误码的失败原因，成功返回 null。
+     * 一路做完（不论成败）删掉脚本写下的“更新做到一半”记录；只有进程中途死掉时它才会留下来。
+     */
+    private suspend fun updateWhileStopped(target: MaiBotChannel? = null): Failure? = try {
+        switchSourceAndInstall(target)
+    } finally {
+        withContext(Dispatchers.IO) { pendingFile.delete() }
+    }
+
+    private suspend fun switchSourceAndInstall(target: MaiBotChannel?): Failure? {
         showProgress(
             MaiBotUpdatePhase.Updating,
             if (target == null) {
@@ -425,8 +488,12 @@ internal class MaiBotUpdateManager(
             return failureOf(FailureStep.UpdateReset, "源码更新失败：${updateResult.summary()}", updateResult.output)
         }
 
-        // 源码切换后按 OOBE 同样的三步重装依赖：uv 和 Python 已就绪时脚本会立刻跳过，
-        // 兜底处理 uv 被误删、上游改了 Python 版本要求的情况；最后 uv sync 按新的 uv.lock 同步。
+        return installDependencies()
+    }
+
+    // 源码切换后按 OOBE 同样的三步重装依赖：uv 和 Python 已就绪时脚本会立刻跳过，
+    // 兜底处理 uv 被误删、上游改了 Python 版本要求的情况；最后 uv sync 按新的依赖同步。
+    private suspend fun installDependencies(): Failure? {
         for (step in MaiBotDependencyStep.entries) {
             showProgress(MaiBotUpdatePhase.Updating, step.progressText)
             val result = runCommand(step.script())
@@ -443,6 +510,10 @@ internal class MaiBotUpdateManager(
         }
     }
 
+    // 新源码加上可能新增的依赖包要几百 MB；装到一半空间满了，源码和依赖会对不上
+    private fun updateSpaceShortage(): Failure? =
+        StorageSpace.shortageFailure(FailureStep.UpdatePrecheck, paths.appFilesDir, StorageSpace.MAIBOT_UPDATE_BYTES, "更新 MaiBot")
+
     private suspend fun validationError(): String? = withContext(Dispatchers.IO) {
         val containerProblem = readiness.containerProblem()
         when {
@@ -453,13 +524,17 @@ internal class MaiBotUpdateManager(
         }
     }
 
+    // 成功后刷一次盘：git 刚写下的源码、uv 刚装的依赖落到存储上，这时断电也不会留下空文件
     private suspend fun runCommand(
         script: ContainerScript,
         logOutput: Boolean = true
-    ): ContainerCommandResult =
-        commandRunner.run(script) { line ->
+    ): ContainerCommandResult {
+        val result = commandRunner.run(script) { line ->
             if (logOutput && line.isNotBlank()) TerminalLog.append(line)
         }
+        if (result.success) withContext(Dispatchers.IO) { flushFileSystems() }
+        return result
+    }
 
     // 脚本即使中途失败也可能已经打印了部分结果（如当前版本），有值的字段都同步进状态。
     private fun applyReport(report: MaiBotUpdateReport) {
