@@ -92,7 +92,7 @@ MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `pl
 
 ### 运行（`NapCatProcessSupervisor`）
 
-每次启动：需要时换装 SnowLuma 适配器（见上）-> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。只要 NapCat 本体装好就启动，不看适配器装没装。
+每次启动：需要时换装 SnowLuma 适配器（见上）-> 清掉残留的 Xvfb、qq、launcher 进程和 X11 锁 -> 重新生成 `launcher.sh` -> 前台运行它（起一个 1x1 的 Xvfb，再用 `LD_PRELOAD` 注入 NapCat 启动 LinuxQQ）。显示号不写死：手机上各个应用共用抽象 Unix 套接字，别的应用（另一个 MaiDroid、Termux 里的 VNC）占着 `:1` 时这边的 Xvfb 起不来，QQ 还会连到别人的显示上、一直出不了二维码。所以用 `Xvfb -displayfd` 让它自己挑第一个空着的号，记在 `/tmp/.maidroid-display`，`cleanup` 时一起删掉。输出加 `[NapCat]` 前缀写进终端日志。NapCat 退出后不自动重启。只要 NapCat 本体装好就启动，不看适配器装没装。
 
 ### 状态怎么来的（`NapCatStatusReader`、`NapCatWebUiClient`）
 

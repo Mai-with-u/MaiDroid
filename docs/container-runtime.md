@@ -90,9 +90,9 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ## OOBE：配置容器（`OobeSetupManager.prepareContainer`）
 
-1. **解包资源**（`RuntimeAssetInstaller`，已解包就跳过）：rootfs 解到 `debian.tmp` -> bootstrap 和 deb 包合并解到 `termux.tmp` -> 写完成标记 -> 删旧目录、改名为正式目录 -> 修权限。中途被杀不会留下半成品；旧版本升级上来只缺 proot 依赖库时只补库。tar 里的硬链接、zip 里 `SYMLINKS.txt` 描述的符号链接都会还原（硬链接建不了就复制），还原不了直接报错，路径越界的条目也直接报错。删旧目录时不跟随符号链接：rootfs 里的 `/root/storage/shared -> /sdcard` 在宿主上指向手机共享存储，跟进去会删掉用户文件。
+1. **解包资源**（`RuntimeAssetInstaller`，已解包就跳过）：先删掉上次解到一半留下的 `debian.tmp`、`termux.tmp` 并检查剩余空间 -> rootfs 解到 `debian.tmp` -> bootstrap 和 deb 包合并解到 `termux.tmp` -> 写完成标记 -> 落盘 -> 删旧目录（先删完成标记）、改名为正式目录 -> 再落盘 -> 修权限。中途被杀、断电不会留下半成品，解包失败也会删掉临时目录；旧版本升级上来只缺 proot 依赖库时只补库。tar 里的硬链接、zip 里 `SYMLINKS.txt` 描述的符号链接都会还原（硬链接建不了就复制），还原不了直接报错，路径越界的条目也直接报错。删旧目录时不跟随符号链接：rootfs 里的 `/root/storage/shared -> /sdcard` 在宿主上指向手机共享存储，跟进去会删掉用户文件。
 2. **确认 proot 可执行**。
-3. **系统依赖**（缺 git/curl 时才做，见 `ContainerSetupScripts`）：修复 rootfs 权限 -> 在 `/root/storage` 下建到 `/sdcard` 各目录的链接 -> 写 DNS（见下文“容器 DNS”）-> apt 换清华源并停用其他源 -> 安装 git、ca-certificates、curl（下载失败时自动换源，见下文“软件源镜像”）。每段脚本可重复执行，第一次会把原文件备份成 `*.maidroid.bak`。安装前先 `dpkg --configure -a`：OOBE 期间没有前台服务，装到一半切到后台或划掉应用都会让进程被杀，留下 dpkg 半装状态，不收拾的话之后每次都报 `dpkg was interrupted`。`apt-get update` 有源下载失败时默认只警告、返回 0，这里加 `--error-on=any` 让它如实失败。
+3. **系统依赖**（缺 git/curl，或 dpkg 上次没做完时才做，见 `ContainerSetupScripts`、`DpkgState`）：修复 rootfs 权限 -> 在 `/root/storage` 下建到 `/sdcard` 各目录的链接 -> 写 DNS（见下文“容器 DNS”）-> apt 换清华源并停用其他源 -> 安装 git、ca-certificates、curl（下载失败时自动换源，见下文“软件源镜像”）。每段脚本可重复执行，第一次会把原文件备份成 `*.maidroid.bak`。安装前先 `dpkg --configure -a`：装到一半闪退、被强行停止或断电都会留下 dpkg 半装状态，不收拾的话之后每次都报 `dpkg was interrupted`。这时 git、curl 往往已经解包在位，所以就绪检查还要看 `DpkgState`：`/var/lib/dpkg/updates` 里有没并进 status 的记录，或 status 里有解包了没配置完的包，就回到这一步重跑。apt 的网络设置（`maidroid_apt_write_network_conf`）让连接或下载 30 秒没动静就算失败，默认要等 120 秒还重试三次，断网时会卡很久。`apt-get update` 有源下载失败时默认只警告、返回 0，这里加 `--error-on=any` 让它如实失败。
 
 ## OOBE：安装 MaiBot（`OobeSetupManager.startInstall`）
 
@@ -160,7 +160,7 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 
 ## MaiBot 的启动
 
-`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程。
+`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程，每次拉起前再看一眼 8001 端口：被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot）时拉起来也绑不上端口，只会反复重启，所以先不拉起，等端口空出来。
 
 ### 等 WebUI 的判断
 
@@ -170,6 +170,7 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 | --- | --- |
 | WebUI 有响应且进程在跑 | 完成（只看端口会把占着 8001 的别的程序当成 MaiBot） |
 | 启动前检查没过 | 立刻失败，报被拦下的原因 |
+| 8001 被别的程序占着，监管器在等它空出来 | 立刻失败：`MB-BLOCKED/PORT-BUSY`；端口空出来后监管器自己拉起，点重试就能接上 |
 | 拉起后意外退出满 2 次 | 立刻失败，报退出次数和最后退出码；允许一次是因为 MaiBot 可能自己退出请求重启 |
 | 60 秒内进程没起来也没退出过 | 失败：进程一直没有启动 |
 | 进程活着满 10 分钟 WebUI 仍不通 | 失败：超时 |
