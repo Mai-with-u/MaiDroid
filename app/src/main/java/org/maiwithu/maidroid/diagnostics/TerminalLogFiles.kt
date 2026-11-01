@@ -30,6 +30,9 @@ internal class TerminalLogFiles(
         const val FILE_PREFIX = "terminal-"
         const val FILE_SUFFIX = ".log"
 
+        // 写不进去（存储满了、目录被删）之后隔这么久再试一次：清出空间后日志能自己接着写
+        const val RETRY_AFTER_FAILURE_MS = 60_000L
+
         private val sessionFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
         private val lineFormat = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss.SSS")
     }
@@ -39,14 +42,16 @@ internal class TerminalLogFiles(
     private var current: File? = null
     private var writer: BufferedWriter? = null
     private var writtenBytes = 0L
-    private var disabled = false
+
+    // 写失败后到这个时间之前不再尝试，免得存储满时每来一行都重试、开出一串空分段；终端输出和 logcat 照常
+    private var pausedUntil = 0L
 
     /** 正在写的文件；还没写过任何一行时为 null。 */
     val currentFile: File? get() = current
 
     /** 写一行：加时间前缀 -> 当前分段写满就换下一个 -> 立刻落盘（闪退前的最后几行也不会丢）。 */
     fun append(line: String) {
-        if (disabled) return
+        if (now() < pausedUntil) return
         val timestamp = lineFormat.withZone(zoneId).format(Instant.ofEpochMilli(now()))
         val text = "$timestamp $line\n"
         val bytes = text.toByteArray(Charsets.UTF_8).size
@@ -57,7 +62,12 @@ internal class TerminalLogFiles(
         runCatching {
             out.write(text)
             out.flush()
-        }.onFailure { disabled = true }
+        }.onFailure {
+            // 写不进去：关掉这个文件，过一会儿再开下一个分段重试
+            close()
+            pausedUntil = now() + RETRY_AFTER_FAILURE_MS
+            return
+        }
         writtenBytes += bytes
     }
 
@@ -82,8 +92,8 @@ internal class TerminalLogFiles(
         current = file
         writtenBytes = if (file.isFile) file.length() else 0L
         writer = runCatching { FileOutputStream(file, true).bufferedWriter() }.getOrNull()
-        // 打不开（存储满了、目录被删）就不再写，免得每来一行都重试、开出一串空分段；终端输出和 logcat 照常。
-        if (writer == null) disabled = true
+        // 打不开（存储满了、目录被删）就先停一会儿再试
+        if (writer == null) pausedUntil = now() + RETRY_AFTER_FAILURE_MS
         pruneOldFiles()
     }
 

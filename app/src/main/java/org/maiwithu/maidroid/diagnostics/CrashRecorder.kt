@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.diagnostics
 
+import org.maiwithu.maidroid.runtime.writeTextAtomically
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -97,7 +98,7 @@ internal class CrashRecorder(
     fun acknowledge(record: CrashRecord) {
         runCatching {
             dir.mkdirs()
-            File(dir, ACKNOWLEDGED_FILE).writeText(record.timeMillis.toString())
+            File(dir, ACKNOWLEDGED_FILE).writeTextAtomically(record.timeMillis.toString())
         }
     }
 

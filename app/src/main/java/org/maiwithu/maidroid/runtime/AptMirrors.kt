@@ -72,6 +72,14 @@ internal object AptMirrors {
                     > /etc/apt/sources.list
             }
 
+            # apt 的网络设置：失败重试三次、不用管线（有些镜像不支持）、连接或下载 30 秒没动静就算失败。
+            # 默认要等 120 秒，下载到一半断网时会卡很久；NapCat 安装器自己调的 apt-get 也读这份配置。
+            maidroid_apt_write_network_conf() {
+                mkdir -p /etc/apt/apt.conf.d
+                printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Pipeline-Depth "0";' 'Acquire::http::Timeout "30";' \
+                    > /etc/apt/apt.conf.d/99maidroid-network
+            }
+
             # 换源后清掉旧源的索引和半下载的文件，免得混着用。
             maidroid_apt_reset_lists() {
                 apt-get clean
@@ -98,13 +106,15 @@ internal object AptMirrors {
             }
 
             # 更新索引 -> 安装；下载失败就换下一个源、清掉旧索引重来，直到成功或所有源都试过。
+            # 连接或下载 30 秒没动静就算失败（apt 默认等 120 秒、还要重试三次）：下载到一半断网时，
+            # 四个源挨个等满要半个多小时，界面一直停在“正在安装”；改成 30 秒，断网几分钟内就报出来、可以自动重试。
             maidroid_apt_install() {
                 apt_current="${'$'}(maidroid_apt_current_base)"
                 apt_tried=" ${'$'}apt_current "
                 while :; do
-                    if ! maidroid_apt_run apt-get -o Acquire::http::Pipeline-Depth=0 --error-on=any update; then
+                    if ! maidroid_apt_run apt-get -o Acquire::http::Pipeline-Depth=0 -o Acquire::http::Timeout=30 --error-on=any update; then
                         maidroid_apt_failed_step=update
-                    elif ! maidroid_apt_run apt-get install -y -f --no-install-recommends "${'$'}@"; then
+                    elif ! maidroid_apt_run apt-get -o Acquire::http::Timeout=30 install -y -f --no-install-recommends "${'$'}@"; then
                         maidroid_apt_failed_step=install
                     else
                         return 0

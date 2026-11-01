@@ -45,6 +45,9 @@ internal data class RuntimeInstallProgress(
  *
  * 先解到 *.tmp 临时目录，全部成功才删旧目录、改名为正式目录，中途被杀不会留下半成品；
  * rootfs 和 bootstrap 都已解好、只缺 proot 依赖库时（旧版本升级上来）只补依赖库。
+ * 抗打断的几处：改名前先刷盘（刚解开的几百 MB 落到存储上，改名后马上断电也不会是一堆空文件）->
+ * 删旧目录前先删它的完成标记（删到一半被杀，剩下的半个目录不会被当成解好的）->
+ * 解包失败（多半是存储满了）就删掉临时目录，把占掉的空间还回去。
  */
 internal class RuntimeAssetInstaller(
     context: Context,
@@ -85,6 +88,7 @@ internal class RuntimeAssetInstaller(
                 )
                 extractProotDependencyPackages(paths.termuxDir)
                 RuntimeFileModes.ensureExecutableBits(paths)
+                flushFileSystems()
                 onProgress(
                     RuntimeInstallProgress(
                         stage = RuntimeInstallStage.WholeRuntime,
@@ -94,55 +98,74 @@ internal class RuntimeAssetInstaller(
                 return@runCatching
             }
 
-            deleteRecursively(paths.stagingRootfsDir)
-            deleteRecursively(paths.stagingTermuxDir)
-            paths.stagingRootfsDir.mkdirs()
-            paths.stagingTermuxDir.mkdirs()
-
-            onProgress(
-                RuntimeInstallProgress(
-                    stage = RuntimeInstallStage.DebianRootfs,
-                    statusText = "正在解包 debian-rootfs.tar.xz"
-                )
-            )
-            extractRootfs(paths.stagingRootfsDir)
-            File(paths.stagingRootfsDir, paths.rootfsMarker.name).writeText("ok")
-
-            onProgress(
-                RuntimeInstallProgress(
-                    stage = RuntimeInstallStage.TermuxBootstrap,
-                    statusText = "正在合并 bootstrap-aarch64.zip 和 proot 包"
-                )
-            )
-            extractBootstrap(paths.stagingTermuxDir)
-            extractProotDependencyPackages(paths.stagingTermuxDir)
-            extractTermuxDebPackage(paths.stagingTermuxDir, RuntimeAssets.PROOT_DEB)
-            File(paths.stagingTermuxDir, paths.bootstrapMarker.name).writeText("ok")
-
-            onProgress(
-                RuntimeInstallProgress(
-                    stage = RuntimeInstallStage.WholeRuntime,
-                    statusText = "正在切换到正式目录"
-                )
-            )
-            deleteRecursively(paths.rootfsDir)
-            deleteRecursively(paths.termuxDir)
-            check(paths.stagingRootfsDir.renameTo(paths.rootfsDir)) {
-                "无法将 ${paths.stagingRootfsDir.absolutePath} 切换为 ${paths.rootfsDir.absolutePath}"
+            discardStaging()
+            try {
+                extractToStagingAndSwitch(onProgress)
+            } catch (e: Exception) {
+                discardStaging()
+                throw e
             }
-            check(paths.stagingTermuxDir.renameTo(paths.termuxDir)) {
-                "无法将 ${paths.stagingTermuxDir.absolutePath} 切换为 ${paths.termuxDir.absolutePath}"
-            }
-            RuntimeFileModes.makeRootfsWritable(paths)
-            RuntimeFileModes.ensureExecutableBits(paths)
-
-            onProgress(
-                RuntimeInstallProgress(
-                    stage = RuntimeInstallStage.WholeRuntime,
-                    statusText = "解包完成，proot runtime 已就绪"
-                )
-            )
         }
+    }
+
+    /** 删掉上次解到一半留下的临时目录（可能有几百 MB）；开工前和解包失败后调用。阻塞调用，放在 IO 线程。 */
+    fun discardStaging() {
+        deleteRecursively(paths.stagingRootfsDir)
+        deleteRecursively(paths.stagingTermuxDir)
+    }
+
+    // 从头解包：解到临时目录、写完成标记 -> 刷盘 -> 删旧目录（先删标记）-> 改名为正式目录 -> 再刷一次盘。
+    private suspend fun extractToStagingAndSwitch(onProgress: suspend (RuntimeInstallProgress) -> Unit) {
+        paths.stagingRootfsDir.mkdirs()
+        paths.stagingTermuxDir.mkdirs()
+
+        onProgress(
+            RuntimeInstallProgress(
+                stage = RuntimeInstallStage.DebianRootfs,
+                statusText = "正在解包 debian-rootfs.tar.xz"
+            )
+        )
+        extractRootfs(paths.stagingRootfsDir)
+        File(paths.stagingRootfsDir, paths.rootfsMarker.name).writeText("ok")
+
+        onProgress(
+            RuntimeInstallProgress(
+                stage = RuntimeInstallStage.TermuxBootstrap,
+                statusText = "正在合并 bootstrap-aarch64.zip 和 proot 包"
+            )
+        )
+        extractBootstrap(paths.stagingTermuxDir)
+        extractProotDependencyPackages(paths.stagingTermuxDir)
+        extractTermuxDebPackage(paths.stagingTermuxDir, RuntimeAssets.PROOT_DEB)
+        File(paths.stagingTermuxDir, paths.bootstrapMarker.name).writeText("ok")
+
+        onProgress(
+            RuntimeInstallProgress(
+                stage = RuntimeInstallStage.WholeRuntime,
+                statusText = "正在切换到正式目录"
+            )
+        )
+        flushFileSystems()
+        paths.rootfsMarker.delete()
+        paths.bootstrapMarker.delete()
+        deleteRecursively(paths.rootfsDir)
+        deleteRecursively(paths.termuxDir)
+        check(paths.stagingRootfsDir.renameTo(paths.rootfsDir)) {
+            "无法将 ${paths.stagingRootfsDir.absolutePath} 切换为 ${paths.rootfsDir.absolutePath}"
+        }
+        check(paths.stagingTermuxDir.renameTo(paths.termuxDir)) {
+            "无法将 ${paths.stagingTermuxDir.absolutePath} 切换为 ${paths.termuxDir.absolutePath}"
+        }
+        RuntimeFileModes.makeRootfsWritable(paths)
+        RuntimeFileModes.ensureExecutableBits(paths)
+        flushFileSystems()
+
+        onProgress(
+            RuntimeInstallProgress(
+                stage = RuntimeInstallStage.WholeRuntime,
+                statusText = "解包完成，proot runtime 已就绪"
+            )
+        )
     }
 
     private fun requireAsset(assetPath: String) {

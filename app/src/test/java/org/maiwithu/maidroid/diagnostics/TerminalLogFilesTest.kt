@@ -24,6 +24,26 @@ class TerminalLogFilesTest {
     )
 
     @Test
+    fun writingResumesAMinuteAfterStorageFailed() {
+        // 日志目录的位置被一个普通文件占着，打不开：相当于存储满了写不进去
+        val dir = File(temp.root, "logs")
+        dir.writeText("not a directory")
+        var clock = fixedTime
+        val files = TerminalLogFiles(dir = dir, now = { clock }, zoneId = ZoneOffset.UTC)
+
+        files.append("写不进去的一行")
+        assertEquals(null, files.currentFile?.takeIf { it.isFile })
+
+        // 清出空间后（这里是把占位的文件删掉）过一分钟自己接着写，不用重启应用
+        dir.delete()
+        clock += TerminalLogFiles.RETRY_AFTER_FAILURE_MS
+        files.append("清理之后的一行")
+        files.close()
+
+        assertTrue(files.currentFile!!.readText().endsWith("清理之后的一行\n"))
+    }
+
+    @Test
     fun linesGetTimestampAndSessionFileName() {
         val dir = temp.newFolder("logs")
         val files = logFiles(dir)

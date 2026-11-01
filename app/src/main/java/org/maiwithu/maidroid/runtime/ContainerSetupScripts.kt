@@ -69,10 +69,7 @@ internal object ContainerSetupScripts {
                 esac
             done
             maidroid_apt_write_sources ${shellQuote(AptMirrors.DEFAULT.baseUrl)}
-            cat > /etc/apt/apt.conf.d/99maidroid-network <<'EOF'
-            Acquire::Retries "3";
-            Acquire::http::Pipeline-Depth "0";
-            EOF
+            maidroid_apt_write_network_conf
             maidroid_apt_reset_lists
             """.trimIndent()
         ).joinToString("\n")

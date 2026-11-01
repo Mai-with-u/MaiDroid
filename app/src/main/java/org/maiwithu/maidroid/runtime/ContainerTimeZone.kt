@@ -40,7 +40,7 @@ internal object ContainerTimeZone {
         pointLocaltimeAt(etcDir, "/$ZONEINFO_DIR/$zoneId")
         val timezoneFile = File(etcDir, "timezone")
         if (!timezoneFile.isFile || timezoneFile.readText().trim() != zoneId) {
-            timezoneFile.writeText("$zoneId\n")
+            timezoneFile.writeTextAtomically("$zoneId\n")
         }
         return zoneId
     }
