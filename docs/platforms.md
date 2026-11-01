@@ -70,7 +70,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平�
 1. 检查容器、MaiBot 源码和 MaiBot 版本：SnowLuma 适配器对 MaiBot 有最低版本要求（`SnowLumaAdapterScripts.MIN_MAIBOT_VERSION`），MaiBot 会直接拒绝加载版本范围外的插件，所以版本不够时提示先去设置页更新 MaiBot。版本号读自 `pyproject.toml` 的 `[project].version`。
 2. NapCat 本体还没装（`napcat_ready` 标记或 `onebot11.json` 缺一个）才运行安装脚本，进度通过容器 `$TMPDIR/progress`、`progress_des` 两个文件汇报，每 500 毫秒读一次显示在卡片的进度环上：
    - 生成 OneBot 访问 token（只在第一次安装时生成，存在 `/root/.maidroid/napcat_token`，重装沿用）；
-   - 下载并运行 NapCat 官方的 Linux 安装器；
+   - 按 `GitHubMirrors` 的线路依次下载 NapCat 官方的 Linux 安装器，下到的必须是提到 napcat 的 shell 脚本（镜像限流、拉黑时会返回 200 的网页或报错文字），再运行它；
    - 写 `/root/napcat/config/onebot11.json`：在 `127.0.0.1:8095` 开 WebSocket 服务端，带上 token；
    - 写 `/root/.maidroid/napcat_ready` 标记，生成 `/root/launcher.sh`。
 3. 装 MaiBot 侧的 SnowLuma 适配器（`SnowLumaAdapterScripts.install`）：没装过（按清单 ID `maibot-team.snowluma-adapter` 找，插件市场装的副本也算）就经 GitHub 镜像把 MaiBot-SnowLuma-Adapter 克隆到 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-SnowLuma-Adapter`；然后删掉清单 ID 为 `maibot-team.napcat-adapter` 的旧适配器（两个适配器同时连 NapCat 会把每条消息收两遍）。删之前先把旧适配器的 `config.toml` 读进内存，留给第 5 步搬设置。
@@ -79,7 +79,7 @@ Discord、WhatsApp、Signal 和 QQ 的 SnowLuma 选项目前只是展示：平�
 
 MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `plugin.config_version`，版本号和各段默认值都以适配器当前版本为准，由 MaiBot 生成最稳。“迁移过没有”只看 `[client]` 是否指向本机 NapCat（`SnowLumaAdapterConfig.isMigrated`），不看 `enabled`：用户之后在 WebUI 里关掉适配器，MaiDroid 不会每次启动都给打开。
 
-注意：NapCat 安装器本身仍直连 GitHub 下载，没有走镜像。
+安装器自己下载 NapCat 和 LinuxQQ 时用它自带的镜像列表，MaiDroid 只管拿到安装器本身。
 
 ### 旧适配器迁移
 

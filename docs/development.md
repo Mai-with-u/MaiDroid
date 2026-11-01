@@ -40,22 +40,32 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | 测试 | 覆盖 |
 | --- | --- |
 | `files/ContainerDocumentsTest` | 容器文件共享：documentId 与路径互转、拒绝越界 id、按容器语义解析符号链接（l2s 替身、绝对路径链接、链接成环）、MIME 推断、新建时避开重名 |
-| `maibot/MaiBotDependencyStepTest` | 依赖安装失败文案、从 uv 输出里提炼失败原因 |
+| `cleanup/StorageCleanupScriptsTest` | 清理空间：读出各类大小和被跳过的类、只删勾选的、装依赖装软件时跳过缓存、日志默认不勾 |
+| `diagnostics/FailureCodesTest` | 错误码的格式和拼法、从 apt、uv、git、OkHttp 等输出认原因（规则顺序、只看尾部、MaiBot 运行时只认几类） |
+| `diagnostics/LogRedactorTest` | 诊断信息打码：已知密钥原样替换、常见密钥格式、QQ 号和手机号、公网 IP（局域网和 DNS 地址保留）、不重复打码 |
+| `diagnostics/DiagnosticReportTest` | 诊断报告排版、从日志里读最近的失败、复制内容只留最新的日志、诊断包、预填的 Issue 链接 |
+| `diagnostics/TerminalLogFilesTest`、`diagnostics/CrashRecorderTest` | 终端输出落盘（时间戳、分文件、总量上限、读尾部）、闪退记录（内容、只问一次、保留份数） |
+| `maibot/MaiBotDependencyStepTest` | 依赖安装失败文案、从 uv 输出里提炼失败原因（换源重试过时只看最后一次） |
+| `maibot/MaiBotScriptsTest` | 装依赖下载失败时换 PyPI 源并记住、不是下载问题时重建 `.venv`、所有 uv 命令都读记下的源 |
 | `maibot/MaiBotStartupTest` | 等 WebUI 时的判断：就绪、反复退出、没拉起、超时 |
 | `maibot/MaiBotAgreementTest` | 协议 hash 与 MaiBot 的算法一致（换行归一） |
 | `maibot/PluginDirLookupTest` | 按清单 ID 找插件目录（插件市场副本、临时目录、保留目录） |
 | `maibot/MaiBotProjectVersionTest` | 从 pyproject.toml 读 MaiBot 版本 |
 | `maibot/PluginConfigTomlTest` | 判断配置值是否在一行内写完 |
 | `maibot/update/MaiBotUpdateReportTest` | 在线更新脚本输出的解析 |
+| `maibot/update/MaiBotUpdateScriptsTest` | 在线更新拉取前、确认没有 git 在跑时清掉残留的 git 锁 |
 | `maibot/update/MaiBotAutoUpdateTest` | MaiDroid 更新后要不要自动升级 MaiBot：刚更新过才升级，同版本、降级、还在 OOBE、设置里关掉时不升级 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
 | `platform/napcat/SnowLumaAdapterConfigTest` | SnowLuma 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 NapCat、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
+| `platform/napcat/NapCatScriptsTest` | NapCat 安装器经 GitHub 镜像下载并确认是安装脚本 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
 | `runtime/GitHubMirrorsTest` | 宿主侧可用的下载线路、容器脚本里的镜像列表 |
+| `runtime/AptMirrorsTest` | apt 换源：默认清华、都用 http、只在下载失败时换、容器 SSH 装 sshd 也用 |
+| `runtime/NetworkStatusTest` | 没连网时给出 NET-OFFLINE，系统没验证过能上网照常放行 |
 | `runtime/RequestExitScriptTest` | 停止时在容器里通知谁退出：MaiBot 只通知 Runner、QQ 只通知主进程（用真机抓到的进程命令行验证），不会选中脚本自己；退出码的含义；清理残留时认得出 MaiBot 的每一层进程、不碰 NapCat |
 | `service/SafeExitStateTest` | 安全退出进度：什么时候算全部停下、常驻通知显示哪一项 |
 | `terminal/AnsiTextTest` | 终端输出的 ANSI 解析：颜色和加粗、回车退格覆盖、擦除行、丢掉光标等控制序列、截断的序列不漏进正文 |
@@ -66,6 +76,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/home/WakeBootLogTest` | 唤醒页开机自检：正常三阶段、自动升级 MaiBot 时多出的一行和进度分段、容器出问题时进度条停住 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
+| `ui/diagnostics/FeedbackDialogTest` | 反馈弹窗里“诊断包包括什么”只列实际带上的 |
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
@@ -92,6 +103,12 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 
 ```bash
 adb logcat -s TerminalLog
+```
+
+NapCat 刷屏时 logcat 缓冲区很快被冲掉。终端输出同时存在应用私有目录里（每次启动一份，见 [architecture.md](architecture.md) 的“日志”），debug 包可以直接读：
+
+```bash
+adb shell run-as org.maiwithu.maidroid ls files/diagnostics/logs files/diagnostics/crashes
 ```
 
 ### 调试 WebUI 页面
