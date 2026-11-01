@@ -22,6 +22,12 @@ internal data class Failure(
 /** 终端日志里失败记录的行首前缀，后面紧跟错误码、一个空格和失败说明。 */
 internal const val FAILURE_LOG_PREFIX = "[MaiDroid] 错误码 "
 
+/**
+ * 容器脚本自己换源、重建重试时打的那一行的行首前缀（例如“[自动修复] 清华镜像下载失败，换成中科大镜像重试”）。
+ * 失败说明只看最后一个这种行之后的输出，那才是最后一次尝试。
+ */
+internal const val AUTO_FIX_LOG_PREFIX = "[自动修复]"
+
 /** 一步失败了：按这一步的输出认原因，拼成带错误码的失败。output 默认用失败说明本身（没有命令输出的失败）。 */
 internal fun failureOf(step: FailureStep, message: String, output: String = message): Failure =
     Failure(step, message, diagnoseFailureCause(output))

@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid.runtime
 
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
+
 /** 一个 Debian 软件源：显示名和 http 根地址，根地址下有 debian 和 debian-security 两个目录。 */
 internal data class AptMirror(val name: String, val baseUrl: String)
 
@@ -119,7 +121,7 @@ internal object AptMirrors {
                         maidroid_apt_failed_step=mirrors
                         return 1
                     fi
-                    printf "[自动修复] %s下载失败，换成%s重试\n" \
+                    printf "$AUTO_FIX_LOG_PREFIX %s下载失败，换成%s重试\n" \
                         "${'$'}(maidroid_apt_mirror_name "${'$'}apt_current")" "${'$'}(maidroid_apt_mirror_name "${'$'}apt_next")"
                     maidroid_apt_write_sources "${'$'}apt_next"
                     maidroid_apt_reset_lists

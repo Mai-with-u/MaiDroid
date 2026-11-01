@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.platform.napcat
 
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
+import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
 import org.maiwithu.maidroid.runtime.requestExitScript
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -17,6 +18,10 @@ internal object NapCatScripts {
     // 停止时等 QQ 自己退出的上限；实测 1~2 秒，留足余量，超时就照常强制清理。
     private const val QQ_EXIT_TIMEOUT_SECONDS = 20
 
+    // NapCat 官方的 Linux 安装器。
+    private const val INSTALLER_URL =
+        "https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh"
+
     /**
      * 首次安装 NapCat 本体：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
      * 打 napcat_ready 标记 -> 生成 launcher.sh。
@@ -27,6 +32,7 @@ internal object NapCatScripts {
     fun install(token: String): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
+            GitHubMirrors.shellFunctions(),
             installBody(token),
             prepareRuntimeBody(),
             "maidroid_progress 0.9 ${shellQuote("NapCat install completed")}"
@@ -125,7 +131,26 @@ internal object NapCatScripts {
         fi
 
         maidroid_progress 0.15 "Download NapCat installer"
-        curl -fL --connect-timeout 20 -o napcat.sh https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh
+        # raw.githubusercontent.com 国内常连不上：按 GitHubMirrors 的线路依次下载，下到的必须是提到 napcat 的 shell 脚本，
+        # 镜像限流、拉黑时可能返回 200 的网页或报错文字（2026-11 实测 ghfast.top 回“Forbidden by black list.”）。
+        # 安装器自己下载 NapCat 和 LinuxQQ 时有它自己的镜像列表，这里只管拿到安装器本身。
+        napcat_installer_ready=0
+        for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
+            mirror_name="${'$'}{mirror_spec%%|*}"
+            mirror_prefix="${'$'}{mirror_spec#*|}"
+            printf "[NapCat] downloading installer via %s\n" "${'$'}mirror_name"
+            rm -f napcat.sh
+            if curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 30 -o napcat.sh \
+                "${'$'}(maidroid_github_candidate_url "${'$'}mirror_prefix" ${shellQuote(INSTALLER_URL)})" &&
+                head -n 1 napcat.sh | grep -q '^#!' && grep -qi 'napcat' napcat.sh; then
+                napcat_installer_ready=1
+                break
+            fi
+        done
+        if [ "${'$'}napcat_installer_ready" != 1 ]; then
+            printf "下载不到 NapCat 安装脚本（直连和所有 GitHub 镜像都失败），请检查网络后重试\n"
+            exit 1
+        fi
 
         maidroid_progress 0.35 "Make NapCat installer executable"
         chmod +x napcat.sh

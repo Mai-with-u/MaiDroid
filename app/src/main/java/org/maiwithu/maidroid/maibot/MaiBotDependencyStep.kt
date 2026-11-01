@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.maibot
 
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.failureOf
@@ -45,9 +46,11 @@ internal enum class MaiBotDependencyStep(
  * 从 uv 的输出里提炼失败原因：第一条 `error:` 或 `×` 开头的行说明哪里失败，
  * 最后一条 `cause:` 或 `╰─▶` 开头的行是根本原因，两者拼成“标题（原因）”。
  * uv 报错后常跟着 hint: 之类的提示，只取最后一行会丢掉真正的错误。没有报错行时返回 null。
+ * 脚本自己换源、重建重试过时输出里有好几次的报错，只看最后一行 AUTO_FIX_LOG_PREFIX 之后的最后一次。
  */
 internal fun uvErrorSummary(output: String): String? {
     val lines = output.lineSequence().map { it.trim() }.toList()
+        .let { all -> all.drop(all.indexOfLast { it.startsWith(AUTO_FIX_LOG_PREFIX) } + 1) }
     val headline = lines.firstNotNullOfOrNull { it.afterAnyPrefix(UV_ERROR_PREFIXES) }
         ?.trimEnd(':', '：')
         ?.takeIf { it.isNotEmpty() }

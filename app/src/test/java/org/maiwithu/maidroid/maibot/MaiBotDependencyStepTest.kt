@@ -125,4 +125,20 @@ class MaiBotDependencyStepTest {
         assertEquals("UV-INSTALL", MaiBotDependencyStep.Uv.failure(ContainerCommandResult(1, "找不到")).code)
         assertEquals("PY-INSTALL", MaiBotDependencyStep.Python.failureStep.code)
     }
+
+    @Test
+    fun `only the last attempt counts after automatic retries`() {
+        val summary = uvErrorSummary(
+            """
+            error: Failed to fetch: `https://mirrors.aliyun.com/pypi/simple/aiohttp/`
+              Caused by: dns error: failed to lookup address information
+            [自动修复] 依赖包下载失败，换成清华 PyPI 镜像重试
+            error: Failed to download `pyarrow==21.0.0`
+              cause: HTTP status client error (404 Not Found)
+            依赖包下载失败（各个 PyPI 镜像都试过了），请检查网络后重试
+            """.trimIndent()
+        )
+
+        assertEquals("Failed to download `pyarrow==21.0.0`（HTTP status client error (404 Not Found)）", summary)
+    }
 }
