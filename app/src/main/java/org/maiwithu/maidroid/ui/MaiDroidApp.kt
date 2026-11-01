@@ -31,6 +31,7 @@ import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
 import org.maiwithu.maidroid.ui.settings.AppUpdateDialogHost
 import org.maiwithu.maidroid.ui.settings.MaiBotUpdateDialogHost
+import org.maiwithu.maidroid.ui.settings.SafeExitProgressDialog
 import org.maiwithu.maidroid.ui.splash.StartupSplashPage
 
 // 启动页停留时长；之后若还没同意过协议，再等一小会儿弹出授权弹窗，让页面切换动画先走完。
@@ -45,7 +46,7 @@ private const val EXIT_ANIMATION_MS = 260L
  * 主页上启动时查到 MaiDroid 或 MaiBot 的新版本会弹更新提醒。
  *
  * 流程状态在 MainViewModel 里，权限状态和跳转在 SystemPermissionController 里；
- * 这里只负责按状态切换页面，以及处理需要 Activity 的动作（打开 WebUI、退出应用）。
+ * 这里只负责按状态切换页面，以及处理需要 Activity 的动作（打开 WebUI、退出应用、安全退出时切到后台）。
  */
 @Composable
 internal fun MaiDroidApp(
@@ -53,7 +54,8 @@ internal fun MaiDroidApp(
     permissions: SystemPermissionController,
     versionName: String,
     onOpenWebUi: () -> Unit,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    onMoveToBackground: () -> Unit
 ) {
     val context = LocalContext.current
     val uiScope = rememberCoroutineScope()
@@ -72,6 +74,8 @@ internal fun MaiDroidApp(
     val maiBotUpdater = remember(context) { context.appDependencies.maiBotUpdater }
     val maiBotUpdatePrompt by maiBotUpdater.launchPrompt.collectAsState()
     val maiBotUpdateState by maiBotUpdater.state.collectAsState()
+    val safeExit = remember(context) { context.appDependencies.safeExit }
+    val safeExitState by safeExit.state.collectAsState()
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -176,7 +180,11 @@ internal fun MaiDroidApp(
     // 启动时自动检查查到新版本：启动页播完、进了主页再弹更新弹窗提醒，用户可以直接下载安装或更新麦麦；
     // 关掉后本次不再弹，下次打开应用重新检查、重新提醒。结果出来时人在全屏 WebUI 里的话，回到主页再弹。
     // MaiDroid 本体和 MaiBot 都有新版本时不叠着弹：先弹 MaiDroid，关掉后再弹 MaiBot。
-    if (setupComplete && !showStartupSplash) {
+    // 安全退出开始后盖在所有页面上显示进度，不再弹更新提醒；退出途中从通知点回来、转屏重建也照样显示。
+    // 全部停下后前台服务会关掉界面并结束进程，这个弹窗不需要自己关闭。
+    if (safeExitState.started) {
+        SafeExitProgressDialog(state = safeExitState, onMoveToBackground = onMoveToBackground)
+    } else if (setupComplete && !showStartupSplash) {
         when {
             appUpdatePrompt -> AppUpdateDialogHost(onDismiss = appUpdater::dismissLaunchPrompt)
             maiBotUpdatePrompt -> MaiBotUpdateDialogHost(onDismiss = maiBotUpdater::dismissLaunchPrompt)

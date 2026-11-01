@@ -86,7 +86,7 @@ flowchart TB
 | `appupdate` | MaiDroid 应用本体的在线更新：查 GitHub 最新 Release（`AppRelease.kt` 解析）、经镜像下载 APK（`AppUpdateClient`）、校验（`AppPackageCheck.kt`）后交给系统安装器 | `AppUpdateManager`、`AppUpdateClient`、`AppRelease.kt`、`AppUpdateFiles`、`AppPackageCheck.kt` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
 | `files` | 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等文件管理器，以及打开它的入口 | `ContainerDocumentsProvider`、`ContainerDocuments.kt`、`openMaiBotInFileManager` |
-| `service` | 前台服务和开机广播 | `MaiBotRuntimeService`、`BootCompletedReceiver` |
+| `service` | 前台服务、开机广播、设置页的安全退出 | `MaiBotRuntimeService`、`BootCompletedReceiver`、`SafeExitManager` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
 | `platform.napcat` | QQ（NapCat）接入：NapCat 本体（`NapCat*`）和 MaiBot 侧连它的 SnowLuma 适配器（`SnowLumaAdapter*`） | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh.kt`、`SnowLumaAdapterScripts`、`SnowLumaAdapterInstaller`、`SnowLumaAdapterConfig` |
 | `platform.qqofficial` | QQ 官方机器人接入（MaiBot 侧是 MaiBot-QQ-Adapter） | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors.kt`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
@@ -95,7 +95,7 @@ flowchart TB
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts.kt`、`OobePermissionList.kt`、`OobeTaskList.kt`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页（开机自检画面）、底部导航与横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`WakeBootLog.kt`、`HomeBottomNavigation`（含底栏和侧栏共用的 `HomeTab`、标签按钮、终端按钮）、`HomeNavigationRail`、`WebUiTab.kt` |
 | `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`NapCatDialogs.kt`、`QqOfficialConfigDialog` |
-| `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings.kt` |
+| `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置、安全退出的按钮与弹窗 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings.kt`、`SafeExitDialogs.kt` |
 | `ui.terminal` | 全屏终端输出页与 OOBE 平板布局里的嵌入面板，两者共用同一个终端查看器 | `TerminalViewer.kt`（`TerminalOutputScreen`、`TerminalOutputPanel`）、`TerminalLogList`、`TerminalViewerState` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |
 | `ui.component` | 跨页面的小组件 | `BackdropBlurView`、`BlurTargetHost`、`horizontalSlideTransition`、`statusBarTopInset` |
@@ -110,7 +110,7 @@ flowchart TB
 所有长生命周期的组件都在 `AppDependencies` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appDependencies.xxx` 用同一份实例：
 
 - 立即创建：`settings`、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
-- 第一次用时创建（`lazy`）：`maiBotProcess`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`、`appUpdater`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat 和启动 NapCat 前换装共用一个，迁移配置靠它的锁串行）。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
+- 第一次用时创建（`lazy`）：`maiBotProcess`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`、`appUpdater`、`safeExit`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat 和启动 NapCat 前换装共用一个，迁移配置靠它的锁串行）。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
 
 新增模块时在这里加一个属性，构造函数里写清依赖，不要再写 `get(context)` 式的单例。
 
@@ -129,17 +129,18 @@ flowchart TB
    - 两步结束时要么完成、要么有一张失败卡片且页脚按钮可以重试：脚本返回成功后还会按文件核对一次，意外异常也落到失败卡片上，不会停在只能等、没有按钮可点的页面，也不会让应用闪退。
 5. OOBE 完成后（之后每次打开应用都一样），`MainViewModel` 依次：检查一次 MaiDroid 新版本（`AppUpdateManager.checkOnLaunch`）->（MaiDroid 刚更新过、设置里没关自动升级时）先在唤醒页上把 MaiBot 升级到上游最新（`MaiBotUpdateManager.updateAfterAppUpgrade`，期间拦住麦麦的启动）-> 拉起 `MaiBotRuntimeService` ->（没自动升级时）检查一次 MaiBot 新版本（`MaiBotUpdateManager.checkOnLaunch`，只拉取上游提交、不动源码）-> 每 1.5 秒（在线后每 5 秒）探测一次 WebUI。查到新版本时 `MaiDroidApp` 在主页上弹更新提醒，两个都有时先弹 MaiDroid 的。“刚更新过”按 `AppSettings.lastLaunchedVersionCode` 判断，判定完立刻记下当前版本号，同一版本只自动升级一次。
 6. 主页在 WebUI 第一次在线前显示唤醒页（开机自检画面，`WakeMaiPage`），每 30 秒自动唤醒一次；上线后切到三栏外壳（WebUI、消息平台、设置）。
-7. 开机后，`BootCompletedReceiver` 在 OOBE 已完成、开机自启没关时拉起前台服务。
+7. 开机后，`BootCompletedReceiver` 在 OOBE 已完成、开机自启没关、用户上次没有安全退出时拉起前台服务。
 
 ## 前台服务与长驻进程
 
-`MaiBotRuntimeService` 每次收到 `start` 都会：挂常驻通知 -> 按设置同步 sshd ->（只同步 SSH 时到此为止）-> 拉起 NapCat（装了才拉）-> 启动或重启 MaiBot。三种入口：
+`MaiBotRuntimeService` 每次收到 `start` 都会：挂常驻通知 -> 按设置同步 sshd ->（只同步 SSH 时到此为止）-> 拉起 NapCat（装了才拉）-> 启动或重启 MaiBot。安全退出开始后例外，见下面的“安全退出”。入口：
 
 | 调用 | 作用 | 谁在用 |
 | --- | --- | --- |
 | `start(context)` | 启动 NapCat 和 MaiBot，已在运行的不重复启动 | OOBE 安装、主页唤醒、开机广播、在线更新结束 |
 | `start(context, ACTION_RESTART_RUNTIME)` | 重启 MaiBot（NapCat 没跑就拉起） | 装好或改了平台适配器后 |
 | `start(context, ACTION_SYNC_CONTAINER_SSH)` | 只按设置启停 sshd | 设置页开关 SSH、改 SSH 配置 |
+| `start(context, ACTION_SAFE_EXIT)` | 安全退出：各服务正常退出后关闭 MaiDroid | 设置页“安全退出”（经 `SafeExitManager.request`） |
 
 服务持有部分唤醒锁（只保 CPU，不亮屏），销毁时依次停 sshd、NapCat、MaiBot。
 
@@ -150,7 +151,22 @@ flowchart TB
 - **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 
-三者停止时都用 `Process.terminateGracefully()`：先 SIGTERM，3 秒后还活着再强杀；启动前还会用脚本按进程名清掉上次异常退出留下的残留。
+三者平时停止（停止、重启、服务销毁）都用 `Process.terminateGracefully()`：给宿主侧的 proot 发 SIGTERM，3 秒后还活着再强杀，之后用脚本按进程名清理残留；启动前也会先清一遍上次异常退出留下的残留。注意 proot 会忽略 SIGTERM，信号到不了容器里的进程，proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测），所以这条路实际是 3 秒后强杀、再按名字清理，MaiBot 来不及走自己的关闭流程。要让进程保存好数据再退出，只能在容器里直接给它发信号，安全退出就是这么做的。
+
+### 安全退出
+
+设置页最底下的“安全退出”按钮（`SafeExitButton`，二次确认 `SafeExitConfirmDialog`）。流程在 `SafeExitManager`，由前台服务执行：
+
+1. 确认后 `SafeExitManager.request` 记下 `AppSettings.userExited`，再以 `ACTION_SAFE_EXIT` 拉起前台服务。根界面（`MaiDroidApp`）按 `SafeExitManager.state` 弹出不可取消的进度弹窗（`SafeExitProgressDialog`），只有“切到后台”一个按钮。
+2. 服务把常驻通知换成“正在安全退出 MaiDroid”和当前进度，三项服务同时退出：
+   - **MaiBot**（`shutdownForExit`）：在线更新还在做就先等它做完 -> 用 `MaiBotScripts.requestExit()` 在容器里给 Runner（`python bot.py`）发 SIGTERM，Runner 转给 Worker（`python -m src.runtime`）并等它走完优雅关闭（停插件运行时、持久化 A_Memorix 记忆、关数据库），之后 uv、script、sh 依次退出，proot 也就结束了。空闲时约 3 秒；最多等 80 秒（MaiBot 自己给 Worker 留 60 秒）。外面几层 sh、script、uv 的命令行里也带着 bot.py，靠 `MaiBotScripts.EXIT_TARGET` 排除。
+   - **NapCat**（`shutdownForExit`）：用 `NapCatScripts.requestQqExit()` 给 QQ 主进程发 SIGTERM，QQ 正常下线退出（实测 1~2 秒、退出码 0）；launcher.sh 放到后台的 Xvfb 还撑着 proot，再跑一次 `NapCatScripts.cleanup()` 清掉。
+   - **sshd**（`stopForExit`）：没有要保存的数据，照常停止。
+   - 某项找不到要通知的进程、等到超时或出错，就照平时的方式强制停止，进度里标成“已强制停止”。
+3. 全部停下后服务撤掉通知、停掉自己，在 `onDestroy` 之后调用 `closeMaiDroid`：从最近任务里移除 MaiDroid 的界面，结束进程。
+   一定要结束进程：退出一开始，三个监管器就永久拦下所有启动请求（唤醒、更新完成后的重启、改时区重启……），进程留着的话，下次打开会复用它，麦麦就拉不起来了。
+
+用户点完退出马上切走或者从最近任务里划掉 MaiDroid 也不影响：前台服务和唤醒锁让进程撑到服务都停完。退出期间服务收到的其他启动请求只会接着退出，返回 `START_NOT_STICKY`，进程万一被系统杀掉也不会重建服务、把麦麦拉起来。`userExited` 为 true 时开机不自动拉起（和强行停止应用后一样，等用户自己打开）；服务收到应用里发来的任何其他启动请求时清掉它。
 
 ## 界面状态的流向
 
@@ -173,6 +189,7 @@ flowchart TB
 | `container_ssh_root_password` | 容器 root 密码 | 空 |
 | `last_launched_version_code` | 上次打开主界面时 MaiDroid 的 versionCode，比当前小说明刚更新过（决定要不要自动升级 MaiBot） | 0 |
 | `maibot_auto_update_disabled` | 关闭 MaiDroid 更新后的 MaiBot 自动升级（设置页“应用版本”弹窗底部的开关） | false |
+| `user_exited` | 用户在设置页安全退出了、之后还没再用过 MaiDroid；为 true 时开机不自动拉起 | false |
 
 其余状态都从文件系统现读（容器是否就绪、平台是否已装、凭据），不另存一份，避免两边不一致。
 

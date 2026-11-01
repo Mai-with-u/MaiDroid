@@ -88,7 +88,7 @@ private const val PermissionSettingsDetail = "permissions"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
- * 应用（消息平台、应用版本与 MaiDroid 自身的更新）。
+ * 应用（消息平台、应用版本与 MaiDroid 自身的更新），最底下是“安全退出”按钮。
  * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
@@ -115,6 +115,8 @@ internal fun SettingsPage(
         installedPlatformCards(napCatState, qqOfficialState).count { it.running }
     }
     var showSshDialog by remember { mutableStateOf(false) }
+    // 安全退出的二次确认；转屏重建时保留，免得用户刚点开就没了
+    var showSafeExitConfirm by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -212,6 +214,7 @@ internal fun SettingsPage(
                     onOpenFilesClick = onOpenFilesClick,
                     appUpdateState = appUpdateState,
                     onAppUpdateClick = { openAppUpdateDialog() },
+                    onSafeExitClick = { showSafeExitConfirm = true },
                     modifier = Modifier
                         .width(navigationWidth)
                         .fillMaxHeight()
@@ -272,6 +275,7 @@ internal fun SettingsPage(
                         onOpenFilesClick = onOpenFilesClick,
                         appUpdateState = appUpdateState,
                         onAppUpdateClick = { openAppUpdateDialog() },
+                        onSafeExitClick = { showSafeExitConfirm = true },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -286,6 +290,16 @@ internal fun SettingsPage(
         if (showAppUpdateDialog) {
             // 设置页点开的更新弹窗底部带“关闭 MaiBot 自动更新”开关；启动时自动弹的提醒不带
             AppUpdateDialogHost(onDismiss = { showAppUpdateDialog = false }, showMaiBotAutoUpdateSwitch = true)
+        }
+
+        if (showSafeExitConfirm) {
+            SafeExitConfirmDialog(
+                onConfirm = {
+                    showSafeExitConfirm = false
+                    context.appDependencies.safeExit.request(context)
+                },
+                onDismiss = { showSafeExitConfirm = false }
+            )
         }
 
         if (showSshDialog) {
@@ -334,6 +348,7 @@ private fun SettingsNavigationPane(
     onOpenFilesClick: () -> Unit,
     appUpdateState: AppUpdateState,
     onAppUpdateClick: () -> Unit,
+    onSafeExitClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
@@ -533,6 +548,14 @@ private fun SettingsNavigationPane(
                     }
                 )
             }
+        }
+
+        // 设置页最底下：安全退出。点了先弹二次确认，确认后各服务正常退出、MaiDroid 自动关闭。
+        item {
+            SafeExitButton(
+                onClick = onSafeExitClick,
+                modifier = Modifier.padding(top = if (compact) 4.dp else 8.dp)
+            )
         }
     }
 }

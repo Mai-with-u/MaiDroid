@@ -5,7 +5,7 @@ import org.maiwithu.maidroid.ssh.ContainerSshPortRange
 
 /**
  * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置、
- * 上次打开时的 MaiDroid 版本号、是否关闭 MaiDroid 更新后的 MaiBot 自动升级。
+ * 上次打开时的 MaiDroid 版本号、是否关闭 MaiDroid 更新后的 MaiBot 自动升级、用户是否安全退出了。
  * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。键名已在用户设备上存在，不能改。
  */
 internal class AppSettings(
@@ -22,6 +22,7 @@ internal class AppSettings(
         const val KEY_CONTAINER_SSH_ROOT_PASSWORD = "container_ssh_root_password"
         const val KEY_LAST_LAUNCHED_VERSION_CODE = "last_launched_version_code"
         const val KEY_MAIBOT_AUTO_UPDATE_DISABLED = "maibot_auto_update_disabled"
+        const val KEY_USER_EXITED = "user_exited"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
     }
@@ -78,6 +79,16 @@ internal class AppSettings(
         get() = kv.decodeBool(KEY_MAIBOT_AUTO_UPDATE_DISABLED, false)
         set(value) {
             kv.encode(KEY_MAIBOT_AUTO_UPDATE_DISABLED, value)
+        }
+
+    /**
+     * 用户在设置页点了“安全退出”，之后还没再用过 MaiDroid。为 true 时开机不自动拉起麦麦（和强行停止应用后一样，
+     * 等用户自己打开）；前台服务收到应用里发来的任何启动请求时清掉。
+     */
+    var userExited: Boolean
+        get() = kv.decodeBool(KEY_USER_EXITED, false)
+        set(value) {
+            kv.encode(KEY_USER_EXITED, value)
         }
 
     fun saveContainerSsh(port: Int, rootPassword: String) {

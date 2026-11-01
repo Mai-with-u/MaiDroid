@@ -58,7 +58,9 @@ class MainActivity : ComponentActivity() {
                     permissions = permissions,
                     versionName = BuildConfig.VERSION_NAME,
                     onOpenWebUi = ::openWebUi,
-                    onExit = ::finish
+                    onExit = ::finish,
+                    // 安全退出进度弹窗的“切到后台”：只把任务退到后台，退出照样在前台服务里做完
+                    onMoveToBackground = { moveTaskToBack(true) }
                 )
             }
         }

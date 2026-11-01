@@ -17,6 +17,7 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
 
 - 引导安装：第一次打开时按提示授权、准备容器、安装 MaiBot。哪一步失败，页面上会写原因，点按钮就能重试。
 - 常驻运行：前台服务托管 MaiBot，意外退出会自动重启，开机后自动拉起（需要系统允许自启动）。
+- 安全退出：设置页最底下的“安全退出”先让麦麦保存好数据、QQ 正常下线，再关闭 MaiDroid，不用去系统设置里强行停止。
 - 在手机上管理 MaiBot：主页的 WebUI 页签就是 MaiBot 自己的管理界面，导出、下载、上传按钮都能用，横屏时按桌面版显示。
 - 接入 QQ，有两种方式：用 NapCat 扫码登录个人 QQ，或者填 QQ 开放平台的 AppID 和 AppSecret 使用官方机器人。
 - 更新：设置页可以直接更新容器里的 MaiBot，也能检查、下载并安装 MaiDroid 自己的新版本。
@@ -158,7 +159,7 @@ sequenceDiagram
 | 容器怎么搭、命令怎么跑 | `runtime/`：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 镜像、DNS、时区 |
 | MaiBot 的安装、启动、更新 | `maibot/`，在线更新在 `maibot/update/` |
 | QQ 接入 | `platform/napcat/`、`platform/qqofficial/` |
-| 前台服务、开机自启 | `service/` |
+| 前台服务、开机自启、安全退出 | `service/` |
 | 嵌入的 MaiBot WebUI | `webui/`：令牌、WebView、请求改写、注入脚本、横屏桌面版、两指滚动、上传、下载 |
 | 容器 SSH | `ssh/` |
 | 系统“文件”应用里的 MaiBot 目录 | `files/` |

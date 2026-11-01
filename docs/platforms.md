@@ -129,7 +129,7 @@ NapCat 没有注销 QQ 的接口，QQ 只随进程结束下线。所以“退出
    - `XxxFiles`：宿主侧的文件位置和“是否已装好”；
    - `XxxPlatformState`：界面状态；
    - `XxxPlatformManager`：安装、配置、状态汇总，构造函数注入 `RuntimeReadiness`、`ContainerCommandRunner` 等。
-2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停。
+2. 需要长驻进程时写一个 `XxxProcessSupervisor`，并在 `MaiBotRuntimeService.onStartCommand` / `onDestroy` 里启停；再在 `SafeExitManager` 里加一项，让设置页的“安全退出”也停掉它（进程能自己保存数据的，用 `requestExitScript` 在容器里请它退出，见架构总览的“安全退出”）。
 3. 在 `AppDependencies` 里加一个 `lazy` 属性。
 4. 界面：在 `PlatformCatalog.AvailablePlatforms` 加平台（有多种接入方式时在 `AccessMethod` 加选项），在 `installedPlatformCards` 里按真实状态生成已安装卡片，弹窗放在 `ui/platform/` 的独立文件里。
 5. 装好或改了配置后经 `ACTION_RESTART_RUNTIME` 重启 MaiBot。

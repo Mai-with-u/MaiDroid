@@ -12,6 +12,7 @@ import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.service.SafeExitManager
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.ssh.ContainerSshManager
 
@@ -56,6 +57,10 @@ internal class AppDependencies(context: Context) {
     }
     val maiBotUpdater: MaiBotUpdateManager by lazy {
         MaiBotUpdateManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess)
+    }
+    // 设置页的“安全退出”：让上面三个长驻进程正常退出后关闭应用，由前台服务执行。
+    val safeExit: SafeExitManager by lazy {
+        SafeExitManager(settings, maiBotProcess, napCatProcess, containerSsh)
     }
 
     // ── MaiDroid 应用本体的在线更新（与容器无关） ─────────────────────────
