@@ -16,7 +16,11 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.MaiBotStartup
+import org.maiwithu.maidroid.maibot.MaiBotStartupResult
+import org.maiwithu.maidroid.maibot.failure
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.ui.theme.BootAccent
@@ -90,6 +94,17 @@ internal fun bootLines(
             BootLine("webui endpoint", "waiting", BootCheck.Pending)
         }
     )
+}
+
+/**
+ * 唤醒页上 MaiBot 起不来时给的错误码：启动前检查没过（MB-BLOCKED），或唤醒页出现后又意外退出了
+ * MaiBotStartup.MAX_EXITS 次以上（MB-CRASH，从最近两次运行的输出里认原因）；还在正常启动、只退出过一次时返回 null。
+ * recentOutput 只在需要认原因时才读。
+ */
+internal fun wakeFailure(status: MaiBotProcessStatus, exits: Int, recentOutput: () -> String): Failure? = when {
+    status.launchBlockedReason != null -> MaiBotStartupResult.Blocked(status.launchBlockedReason).failure("")
+    exits >= MaiBotStartup.MAX_EXITS -> MaiBotStartupResult.Crashed(exits, status.lastExitCode).failure(recentOutput())
+    else -> null
 }
 
 /**

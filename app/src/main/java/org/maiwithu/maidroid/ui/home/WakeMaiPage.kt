@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -44,7 +45,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
+import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
+import org.maiwithu.maidroid.terminal.AnsiText
+import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.theme.BootAccent
 import org.maiwithu.maidroid.ui.theme.BootInk
 import org.maiwithu.maidroid.ui.theme.BootText
@@ -52,6 +57,7 @@ import org.maiwithu.maidroid.ui.theme.BootTextDim
 import org.maiwithu.maidroid.ui.theme.BootTextFaint
 import org.maiwithu.maidroid.ui.theme.BootTrack
 import org.maiwithu.maidroid.ui.theme.JetBrainsMono
+import org.maiwithu.maidroid.ui.theme.StatusWarning
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
@@ -108,12 +114,18 @@ internal fun WakeMaiPage(
 ) {
     // 只算唤醒页出现之后的意外退出，之前崩过几次和这次唤醒无关。
     val baselineExits = remember { maiBotStatus.exitCount }
+    val exits = maiBotStatus.exitCount - baselineExits
     val lines = bootLines(
         webUiOnline,
         maiBotStatus,
-        exits = maiBotStatus.exitCount - baselineExits,
+        exits = exits,
         update = maiBotUpdate?.let(::maiBotUpdateBootLine)
     )
+    // MaiBot 起不来（启动前检查没过、反复退出）时进度条下面多一行错误码和“反馈问题”；每多退出一次重新认一次原因
+    val failure = remember(maiBotStatus.launchBlockedReason, exits, maiBotStatus.lastExitCode) {
+        wakeFailure(maiBotStatus, exits) { maiBotRecentRunOutput(TerminalLog.logs.value.map(AnsiText::plain)) }
+    }
+    var showFeedback by rememberSaveable { mutableStateOf(false) }
     val currentLines by rememberUpdatedState(lines)
     val currentOnFinished by rememberUpdatedState(onFinished)
     val currentOnLeft by rememberUpdatedState(onLeft)
@@ -230,7 +242,38 @@ internal fun WakeMaiPage(
                 emphasizeSkip = stalled,
                 onSkip = onFinished
             )
+
+            failure?.let { BootFailureRow(code = it.code, onFeedback = { showFeedback = true }) }
         }
+    }
+
+    val reported = failure
+    if (showFeedback && reported != null) {
+        FeedbackDialog(failure = reported, onDismiss = { showFeedback = false })
+    }
+}
+
+// 起不来时的一行：“ERR 错误码”和右边的“反馈问题”，沿用开机画面的等宽小字，点“反馈问题”打开反馈弹窗。
+@Composable
+private fun BootFailureRow(code: String, onFeedback: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = "ERR $code",
+            style = BootMetaStyle,
+            color = StatusWarning,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "反馈问题 ⏎",
+            style = BootMetaStyle,
+            color = StatusWarning,
+            modifier = Modifier
+                .clickable(role = Role.Button, onClickLabel = "反馈问题", onClick = onFeedback)
+                .padding(start = 24.dp, top = 10.dp, bottom = 10.dp)
+        )
     }
 }
 

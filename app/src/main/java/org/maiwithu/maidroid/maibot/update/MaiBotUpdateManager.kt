@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureCause
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.maibot.MaiBotDependencyStep
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
@@ -40,7 +44,7 @@ internal enum class MaiBotUpdateAction {
 }
 
 /**
- * 在线更新的界面状态：当前与上游版本、用户改过的源码文件数、进行中的步骤说明和失败原因。
+ * 在线更新的界面状态：当前与上游版本、用户改过的源码文件数、进行中的步骤说明和失败原因（带错误码）。
  * switchTarget 是最近一次切换版本通道的目标：切换中、切换失败（重试时切回同一个通道）、刚切换完时有值，
  * 之后再检查或更新就清空，弹窗据此把“更新”的文案换成“切换”。
  */
@@ -51,10 +55,13 @@ internal data class MaiBotUpdateState(
     val latest: MaiBotRevision? = null,
     val localChangeCount: Int = 0,
     val progressText: String? = null,
-    val errorMessage: String? = null,
+    val failure: Failure? = null,
     val failedAction: MaiBotUpdateAction? = null,
     val switchTarget: MaiBotChannel? = null
 ) {
+    /** 失败说明，界面上的文案直接用它。 */
+    val errorMessage: String? get() = failure?.message
+
     val isBusy: Boolean
         get() = phase == MaiBotUpdatePhase.Checking || phase == MaiBotUpdatePhase.Updating
 
@@ -79,7 +86,7 @@ private sealed interface AutoUpdateOutcome {
     data class Skipped(val reason: String) : AutoUpdateOutcome
     data object UpToDate : AutoUpdateOutcome
     data object Updated : AutoUpdateOutcome
-    data class Failed(val reason: String) : AutoUpdateOutcome
+    data class Failed(val failure: Failure) : AutoUpdateOutcome
 }
 
 /**
@@ -166,7 +173,7 @@ internal class MaiBotUpdateManager(
         job = scope.launch {
             beginAction(MaiBotUpdatePhase.Checking, "正在通过 GitHub 镜像获取上游版本...")
             validationError()?.let { error ->
-                failCheck(error)
+                failCheck(Failure(FailureStep.UpdatePrecheck, error))
                 return@launch
             }
 
@@ -176,13 +183,13 @@ internal class MaiBotUpdateManager(
             val report = parseMaiBotUpdateReport(result.output)
             applyReport(report)
             if (!result.success || report.installed == null || report.latest == null) {
-                failCheck("获取上游版本失败：${result.summary()}")
+                failCheck(failureOf(FailureStep.UpdateFetch, "获取上游版本失败：${result.summary()}", result.output))
                 return@launch
             }
             // 上游有新提交、但它支持的数据库版本比麦麦现在的库旧（dev 回退提交时会这样）：不提供更新，说明原因
             if (report.hasUpdate) {
                 maiBotDatabaseDowngradeMessage(report, target = null)?.let { message ->
-                    failCheck(message)
+                    failCheck(Failure(FailureStep.UpdateFetch, message, FailureCause.DatabaseDowngrade))
                     return@launch
                 }
             }
@@ -200,7 +207,7 @@ internal class MaiBotUpdateManager(
                 }
             )
             _state.update {
-                it.copy(phase = phase, progressText = null, errorMessage = null, failedAction = null)
+                it.copy(phase = phase, progressText = null, failure = null, failedAction = null)
             }
             // 启动检查查到新版本：主页弹窗提醒，用户点“更新并重启”就地更新
             if (report.hasUpdate && checkingOnLaunch) {
@@ -210,13 +217,14 @@ internal class MaiBotUpdateManager(
         }
     }
 
-    // 检查这一步失败：用户自己点的检查照常报错；启动时的自动检查只记日志、退回空闲，不在设置页挂一条没人问过的失败。
-    private fun failCheck(message: String) {
+    // 检查这一步失败：用户自己点的检查照常报错；启动时的自动检查只记日志（含错误码）、退回空闲，不在设置页挂一条没人问过的失败。
+    private fun failCheck(failure: Failure) {
         if (!checkingOnLaunch) {
-            fail(MaiBotUpdateAction.Check, message)
+            fail(MaiBotUpdateAction.Check, failure)
             return
         }
-        TerminalLog.append("$LOG_PREFIX 启动时检查更新没有成功：$message")
+        TerminalLog.append("$LOG_PREFIX 启动时检查更新没有成功：${failure.message}")
+        TerminalLog.append(failure.logLine())
         _state.update { it.copy(phase = MaiBotUpdatePhase.Idle, progressText = null) }
     }
 
@@ -245,7 +253,7 @@ internal class MaiBotUpdateManager(
                 switchTarget = target
             )
             validationError()?.let { error ->
-                fail(action, error)
+                fail(action, Failure(FailureStep.UpdatePrecheck, error))
                 return@launch
             }
             if (target != null) {
@@ -281,7 +289,7 @@ internal class MaiBotUpdateManager(
                 it.copy(
                     phase = MaiBotUpdatePhase.Updated,
                     progressText = null,
-                    errorMessage = null,
+                    failure = null,
                     failedAction = null
                 )
             }
@@ -292,12 +300,15 @@ internal class MaiBotUpdateManager(
      * 切换前的预检，麦麦照常运行：拉取目标分支（不动工作区）-> 比较它支持的数据库版本和麦麦现在的库。
      * 返回取消切换的原因，可以切换时返回 null。结果不写进状态：报告里的分支和最新提交是目标分支的，还没切过去。
      */
-    private suspend fun precheckSwitch(target: MaiBotChannel): String? {
+    private suspend fun precheckSwitch(target: MaiBotChannel): Failure? {
         TerminalLog.append("")
         TerminalLog.append("$LOG_PREFIX 切换到${target.label}前先拉取上游 ${target.branch} 分支，确认数据库不会降级")
         val result = runCommand(MaiBotUpdateScripts.fetchLatest(target.branch))
-        if (!result.success) return "获取上游 ${target.branch} 分支失败：${result.summary()}"
+        if (!result.success) {
+            return failureOf(FailureStep.UpdateFetch, "获取上游 ${target.branch} 分支失败：${result.summary()}", result.output)
+        }
         return maiBotDatabaseDowngradeMessage(parseMaiBotUpdateReport(result.output), target)
+            ?.let { Failure(FailureStep.UpdateFetch, it, FailureCause.DatabaseDowngrade) }
     }
 
     /**
@@ -329,7 +340,7 @@ internal class MaiBotUpdateManager(
                 AutoUpdateOutcome.UpToDate -> {
                     TerminalLog.append("$LOG_PREFIX 已是最新版本 ${_state.value.installed?.shortCommit.orEmpty()}")
                     _state.update {
-                        it.copy(phase = MaiBotUpdatePhase.UpToDate, progressText = null, errorMessage = null)
+                        it.copy(phase = MaiBotUpdatePhase.UpToDate, progressText = null, failure = null)
                     }
                 }
                 AutoUpdateOutcome.Updated -> {
@@ -338,14 +349,14 @@ internal class MaiBotUpdateManager(
                         it.copy(
                             phase = MaiBotUpdatePhase.Updated,
                             progressText = null,
-                            errorMessage = null,
+                            failure = null,
                             failedAction = null
                         )
                     }
                 }
                 // 升级到一半失败：弹出 MaiBot 更新弹窗，说明原因并给“重试更新”
                 is AutoUpdateOutcome.Failed -> {
-                    fail(MaiBotUpdateAction.Apply, outcome.reason)
+                    fail(MaiBotUpdateAction.Apply, outcome.failure)
                     _launchPrompt.value = true
                 }
             }
@@ -379,8 +390,8 @@ internal class MaiBotUpdateManager(
         return updateWhileStopped()?.let { AutoUpdateOutcome.Failed(it) } ?: AutoUpdateOutcome.Updated
     }
 
-    /** target 为空时更新当前分支，否则切到该通道的分支。返回失败原因，成功返回 null。 */
-    private suspend fun updateWhileStopped(target: MaiBotChannel? = null): String? {
+    /** target 为空时更新当前分支，否则切到该通道的分支。返回带错误码的失败原因，成功返回 null。 */
+    private suspend fun updateWhileStopped(target: MaiBotChannel? = null): Failure? {
         showProgress(
             MaiBotUpdatePhase.Updating,
             if (target == null) {
@@ -393,9 +404,11 @@ internal class MaiBotUpdateManager(
         val report = parseMaiBotUpdateReport(updateResult.output)
         applyReport(report)
         // 脚本在动源码之前发现数据库会降级、退出了：源码和分支都没变，说明原因（预检之后上游又变了才会走到这里）
-        maiBotDatabaseDowngradeMessage(report, target)?.let { return it }
+        maiBotDatabaseDowngradeMessage(report, target)?.let {
+            return Failure(FailureStep.UpdateReset, it, FailureCause.DatabaseDowngrade)
+        }
         if (!updateResult.success || report.installed == null) {
-            return "源码更新失败：${updateResult.summary()}"
+            return failureOf(FailureStep.UpdateReset, "源码更新失败：${updateResult.summary()}", updateResult.output)
         }
 
         // 源码切换后按 OOBE 同样的三步重装依赖：uv 和 Python 已就绪时脚本会立刻跳过，
@@ -403,7 +416,7 @@ internal class MaiBotUpdateManager(
         for (step in MaiBotDependencyStep.entries) {
             showProgress(MaiBotUpdatePhase.Updating, step.progressText)
             val result = runCommand(step.script())
-            if (!result.success) return step.failureMessage(result)
+            if (!result.success) return step.failure(result)
         }
         return null
     }
@@ -454,17 +467,19 @@ internal class MaiBotUpdateManager(
 
     private fun showProgress(phase: MaiBotUpdatePhase, text: String) {
         _state.update {
-            it.copy(phase = phase, progressText = text, errorMessage = null, failedAction = null)
+            it.copy(phase = phase, progressText = text, failure = null, failedAction = null)
         }
     }
 
-    private fun fail(action: MaiBotUpdateAction, message: String) {
-        TerminalLog.append("$LOG_PREFIX 失败：$message")
+    // 失败说明和错误码都写进终端日志（诊断包靠错误码那一行找出最近的失败），弹窗显示错误码和建议。
+    private fun fail(action: MaiBotUpdateAction, failure: Failure) {
+        TerminalLog.append("$LOG_PREFIX 失败：${failure.message}")
+        TerminalLog.append(failure.logLine())
         _state.update {
             it.copy(
                 phase = MaiBotUpdatePhase.Failed,
                 progressText = null,
-                errorMessage = message,
+                failure = failure,
                 failedAction = action
             )
         }

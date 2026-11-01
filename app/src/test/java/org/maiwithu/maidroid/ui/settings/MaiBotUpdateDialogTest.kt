@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.maibot.update.MaiBotChannel
 import org.maiwithu.maidroid.maibot.update.MaiBotRevision
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
@@ -35,7 +37,7 @@ class MaiBotUpdateDialogTest {
             MaiBotUpdateState(
                 phase = MaiBotUpdatePhase.Failed,
                 failedAction = MaiBotUpdateAction.Apply,
-                errorMessage = "依赖同步失败"
+                failure = Failure(FailureStep.UvSync, "依赖同步失败")
             )
         )
 
@@ -128,7 +130,7 @@ class MaiBotUpdateDialogTest {
         val failed = MaiBotUpdateState(
             phase = MaiBotUpdatePhase.Failed,
             failedAction = MaiBotUpdateAction.Switch,
-            errorMessage = "源码更新失败：exit 1",
+            failure = Failure(FailureStep.UpdateReset, "源码更新失败：exit 1"),
             switchTarget = MaiBotChannel.Stable
         )
 

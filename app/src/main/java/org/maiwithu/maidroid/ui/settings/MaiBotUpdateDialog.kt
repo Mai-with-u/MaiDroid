@@ -40,6 +40,7 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
+import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -244,6 +245,12 @@ internal fun MaiBotUpdateDialog(
                 }
 
                 UpdateStatusLine(state)
+
+                // 失败时：错误码、认出的原因和建议、“反馈问题”
+                val failure = state.failure
+                if (state.phase == MaiBotUpdatePhase.Failed && failure != null) {
+                    FailureNotice(failure = failure)
+                }
 
                 if (showLocalChangeNote) {
                     UpdateNote(

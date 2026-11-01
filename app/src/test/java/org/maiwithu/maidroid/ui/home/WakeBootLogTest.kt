@@ -73,4 +73,25 @@ class WakeBootLogTest {
 
         assertNull(bootProgressTarget(1, blocked, 0f))
     }
+
+    @Test
+    fun wakePageShowsCodeOnlyWhenMaiBotCannotStart() {
+        var outputRead = false
+        val output = {
+            outputRead = true
+            "Traceback (most recent call last):\nModuleNotFoundError: No module named 'aiohttp'"
+        }
+        // 只退出过一次还在正常重启：不报错，也不去读输出
+        assertNull(wakeFailure(MaiBotProcessStatus(exitCount = 1), exits = 1, recentOutput = output))
+        assertEquals(false, outputRead)
+
+        assertEquals(
+            "MB-CRASH/PY-MODULE",
+            wakeFailure(MaiBotProcessStatus(exitCount = 3, lastExitCode = 1), exits = 2, recentOutput = output)?.code
+        )
+        assertEquals(
+            "MB-BLOCKED",
+            wakeFailure(MaiBotProcessStatus(launchBlockedReason = "proot 未就绪"), exits = 0, recentOutput = output)?.code
+        )
+    }
 }
