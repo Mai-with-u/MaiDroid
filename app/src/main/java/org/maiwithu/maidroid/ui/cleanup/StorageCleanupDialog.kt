@@ -114,6 +114,13 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                                 }
                             )
                         }
+                        // 选中合计写在正文里：写进按钮会把按钮撑宽，“取消”被挤到第二行
+                        if (selected.isNotEmpty()) {
+                            BodyText(
+                                "已选约 ${formatBytes(selected.sumOf { current.sizes.sizes[it] ?: 0L })}。",
+                                color = TextPrimary
+                            )
+                        }
                         BodyText("配置、聊天数据、插件和已经装好的依赖都不会被删。")
                     }
                     CleanupStage.Cleaning -> Progress("正在清理，请不要关闭应用...")
@@ -131,21 +138,15 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            when (val current = stage) {
+            when (stage) {
                 CleanupStage.Unavailable -> PrimaryButton("打开存储设置") {
                     openStorageSettings(context)
                     onDismiss()
                 }
-                is CleanupStage.Ready -> {
-                    val total = selected.sumOf { current.sizes.sizes[it] ?: 0L }
-                    PrimaryButton(
-                        text = if (selected.isEmpty()) "清理" else "清理（约 ${formatBytes(total)}）",
-                        enabled = selected.isNotEmpty()
-                    ) {
-                        val items = selected
-                        stage = CleanupStage.Cleaning
-                        scope.launch { stage = CleanupStage.Done(cleanup.clean(items)) }
-                    }
+                is CleanupStage.Ready -> PrimaryButton(text = "清理", enabled = selected.isNotEmpty()) {
+                    val items = selected
+                    stage = CleanupStage.Cleaning
+                    scope.launch { stage = CleanupStage.Done(cleanup.clean(items)) }
                 }
                 CleanupStage.Measuring, CleanupStage.Cleaning -> PrimaryButton("清理", enabled = false) {}
                 is CleanupStage.Done -> PrimaryButton("完成", onClick = onDismiss)
