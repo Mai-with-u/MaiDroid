@@ -15,13 +15,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.maibot.MaiBotAgreement
 import org.maiwithu.maidroid.maibot.MaiBotDependencyStep
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.maibot.MaiBotStartupResult
-import org.maiwithu.maidroid.maibot.failureMessage
+import org.maiwithu.maidroid.maibot.failure
+import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
 import org.maiwithu.maidroid.maibot.maiBotStartupVerdict
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
@@ -36,6 +40,7 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.settings.AppSettings
+import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 
@@ -101,12 +106,12 @@ internal class OobeSetupManager(
     fun startInstall() {
         if (_state.value.isComplete || settings.setupComplete) return
         if (installJob?.isActive == true) return
-        installJob = launchStep(onError = { message -> failInstall(runningInstallTask, message) }) { runInstall() }
+        installJob = launchStep(onError = { failure -> failInstall(runningInstallTask, failure) }) { runInstall() }
     }
 
     // 意外异常（读写文件出错、系统拒绝启动服务等）也算这一步失败，交给 onError 标出失败卡片；
     // 不让协程带着“进行中”的卡片悄悄结束，也不让异常冒到主线程让应用闪退。
-    private fun launchStep(onError: (String) -> Unit, block: suspend () -> Unit): Job = scope.launch {
+    private fun launchStep(onError: (Failure) -> Unit, block: suspend () -> Unit): Job = scope.launch {
         try {
             block()
         } catch (e: CancellationException) {
@@ -114,7 +119,7 @@ internal class OobeSetupManager(
         } catch (e: Exception) {
             Log.e(TAG, "OOBE step failed", e)
             appendCommandLog("[MaiDroid] ${e.javaClass.simpleName}: ${e.message}")
-            onError("出错了：${e.message ?: e.javaClass.simpleName}")
+            onError(Failure(FailureStep.OobeUnexpected, "出错了：${e.message ?: e.javaClass.simpleName}"))
         }
     }
 
@@ -127,14 +132,14 @@ internal class OobeSetupManager(
                 showContainerProgress(progress.stage.affectedTasks(), progress.statusText)
             }
             result.onFailure { error ->
-                failContainer(error.message ?: "容器资源解包失败")
+                failContainer(failureOf(FailureStep.ContainerUnpack, error.message ?: "容器资源解包失败"))
                 return
             }
             RuntimeFileModes.ensureExecutableBits(paths)
         }
 
         if (!readiness.isProotRuntimeReady()) {
-            failContainer("proot 启动器不可执行，请确认安装的是 arm64 版 APK 后重新安装")
+            failContainer(Failure(FailureStep.ContainerProot, "proot 启动器不可执行，请确认安装的是 arm64 版 APK 后重新安装"))
             return
         }
 
@@ -145,16 +150,24 @@ internal class OobeSetupManager(
             }
 
             val setupSteps = listOf(
-                "正在配置共享存储入口..." to ContainerSetupScripts.setupStorageBridge(),
-                "正在配置容器 DNS..." to ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext)),
-                "正在配置清华 Debian 镜像源..." to ContainerSetupScripts.configureAptMirror(),
-                "正在容器内安装 Git、curl 和证书..." to ContainerSetupScripts.installSystemDependencies()
+                Triple("正在配置共享存储入口...", FailureStep.ContainerStorage, ContainerSetupScripts.setupStorageBridge()),
+                Triple(
+                    "正在配置容器 DNS...",
+                    FailureStep.ContainerDns,
+                    ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext))
+                ),
+                Triple("正在配置清华 Debian 镜像源...", FailureStep.AptMirror, ContainerSetupScripts.configureAptMirror()),
+                Triple(
+                    "正在容器内安装 Git、curl 和证书...",
+                    FailureStep.AptInstall,
+                    ContainerSetupScripts.installSystemDependencies()
+                )
             )
-            for ((statusText, script) in setupSteps) {
+            for ((statusText, step, script) in setupSteps) {
                 showContainerProgress(SYSTEM_DEPENDENCY_TASKS, statusText)
                 val result = runCommand(script)
                 if (!result.success) {
-                    failContainer(result.summary())
+                    failContainer(failureOf(step, result.summary(), result.output))
                     return
                 }
             }
@@ -163,7 +176,7 @@ internal class OobeSetupManager(
         // 脚本都返回成功也按文件再核对一次，没就绪的部件标成失败、给出重试按钮。
         val notReady = readiness.containerRequirements().firstOrNull { !it.ready }
         if (notReady != null) {
-            failContainer("${notReady.name} 未就绪：${notReady.hint}")
+            failContainer(Failure(FailureStep.ContainerCheck, "${notReady.name} 未就绪：${notReady.hint}"))
             return
         }
         showCheckedState()
@@ -173,7 +186,10 @@ internal class OobeSetupManager(
         RuntimeFileModes.ensureExecutableBits(paths)
         // 正常从“配置容器”进来时容器一定就绪（MainViewModel 也会先检查、没就绪就退回上一步），这里只是兜底。
         readiness.containerProblem()?.let { problem ->
-            failInstall(OobeTaskKind.MaiBotSource, "容器还没有配置好（$problem），请返回上一步重新配置")
+            failInstall(
+                OobeTaskKind.MaiBotSource,
+                Failure(FailureStep.ContainerCheck, "容器还没有配置好（$problem），请返回上一步重新配置")
+            )
             return
         }
 
@@ -184,10 +200,10 @@ internal class OobeSetupManager(
             OobeTaskKind.MaiBotSource
         }
         val dnsScript = ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext))
-        if (!runInstallCommand(dnsTaskKind, "正在配置容器 DNS...", dnsScript)) return
+        if (!runInstallCommand(dnsTaskKind, FailureStep.ContainerDns, "正在配置容器 DNS...", dnsScript)) return
 
         if (!readiness.isMaiBotSourceReady() &&
-            !runInstallCommand(OobeTaskKind.MaiBotSource, "正在克隆 MaiBot...", MaiBotScripts.clone())
+            !runInstallCommand(OobeTaskKind.MaiBotSource, FailureStep.MaiBotClone, "正在克隆 MaiBot...", MaiBotScripts.clone())
         ) {
             return
         }
@@ -195,7 +211,7 @@ internal class OobeSetupManager(
         // 依赖三步每次都跑：脚本都能重复执行，已就绪时 uv、Python 立刻跳过，uv sync 只核对一遍（真机上几十毫秒）。
         // 以前按“site-packages 非空”跳过，装包时被打断留下的半套依赖会被当成装好，到启动时才以 WebUI 超时的样子暴露。
         for (step in MaiBotDependencyStep.entries) {
-            if (!runInstallCommand(OobeTaskKind.PythonDependencies, step.progressText, step.script(), step::failureMessage)) {
+            if (!runInstallCommand(OobeTaskKind.PythonDependencies, step.failureStep, step.progressText, step.script(), step::failure)) {
                 return
             }
         }
@@ -203,7 +219,7 @@ internal class OobeSetupManager(
         if (!readiness.isMaiBotDependencyReady()) {
             failInstall(
                 OobeTaskKind.PythonDependencies,
-                "安装 Python 依赖包失败：uv sync 已结束，但虚拟环境里没有装好的依赖包"
+                Failure(FailureStep.VenvCheck, "安装 Python 依赖包失败：uv sync 已结束，但虚拟环境里没有装好的依赖包")
             )
             return
         }
@@ -215,8 +231,10 @@ internal class OobeSetupManager(
         }
 
         showInstallRunning(OobeTaskKind.WebUi, "正在启动 MaiBot...")
-        startMaiBotAndAwaitWebUi().failureMessage()?.let { message ->
-            failInstall(OobeTaskKind.WebUi, message)
+        // 起不来时从 MaiBot 最近两次运行的输出里认原因（缺依赖、配置文件写错、端口被占……）
+        val startup = startMaiBotAndAwaitWebUi()
+        startup.failure(maiBotRecentRunOutput(TerminalLog.logs.value.map(AnsiText::plain)))?.let { failure ->
+            failInstall(OobeTaskKind.WebUi, failure)
             return
         }
 
@@ -226,20 +244,22 @@ internal class OobeSetupManager(
             installTasks = buildInstallTasks(),
             footerText = "MaiBot WebUI 已启动，可以打开 ${MaiBotWebUi.URL}",
             canInstall = true,
-            isComplete = true
+            isComplete = true,
+            failure = null
         )
     }
 
-    // 跑一条安装命令：标出进行中的卡片 -> 执行 -> 失败时把原因记在这张卡片上并返回 false。
+    // 跑一条安装命令：标出进行中的卡片 -> 执行 -> 失败时把带错误码的原因记在这张卡片上并返回 false。
     private suspend fun runInstallCommand(
         kind: OobeTaskKind,
+        step: FailureStep,
         statusText: String,
         script: ContainerScript,
-        failureMessage: (ContainerCommandResult) -> String = { it.summary() }
+        failureOfResult: (ContainerCommandResult) -> Failure = { failureOf(step, it.summary(), it.output) }
     ): Boolean {
         showInstallRunning(kind, statusText)
         val result = runCommand(script)
-        if (!result.success) failInstall(kind, failureMessage(result))
+        if (!result.success) failInstall(kind, failureOfResult(result))
         return result.success
     }
 
@@ -287,7 +307,8 @@ internal class OobeSetupManager(
                 "容器还没有准备好，请继续配置 rootfs、proot 和系统依赖。"
             },
             canInstall = ready,
-            isComplete = false
+            isComplete = false,
+            failure = null
         )
     }
 
@@ -326,7 +347,8 @@ internal class OobeSetupManager(
             installTasks = tasks,
             footerText = statusText,
             canInstall = false,
-            isComplete = false
+            isComplete = false,
+            failure = null
         )
     }
 
@@ -344,33 +366,39 @@ internal class OobeSetupManager(
             containerTasks = tasks,
             footerText = statusText,
             canInstall = false,
-            isComplete = false
+            isComplete = false,
+            failure = null
         )
     }
 
-    // 第一张没完成的容器卡片标为失败（全都就绪时标最后一张），页脚显示失败原因并给出“重新配置”。
-    private fun failContainer(message: String) {
+    // 第一张没完成的容器卡片标为失败（全都就绪时标最后一张），页脚显示失败原因、错误码并给出“重新配置”；
+    // 错误码同时写进终端日志，诊断包靠它找出最近的失败。
+    private fun failContainer(failure: Failure) {
+        appendCommandLog(failure.logLine())
         val tasks = buildContainerTasks()
         val failedIndex = tasks.indexOfFirst { it.status != OobeTaskStatus.Done }.takeIf { it >= 0 } ?: tasks.lastIndex
         _state.value = _state.value.copy(
             containerTasks = tasks.mapIndexed { index, task ->
-                if (index == failedIndex) task.copy(status = OobeTaskStatus.Failed, statusText = message) else task
+                if (index == failedIndex) task.copy(status = OobeTaskStatus.Failed, statusText = failure.message) else task
             },
-            footerText = message,
+            footerText = failure.message,
             canInstall = false,
-            isComplete = false
+            isComplete = false,
+            failure = failure
         )
     }
 
-    // 出错的那张安装卡片标为失败；canInstall 置为 true，页脚按钮变成“重试安装”。
-    private fun failInstall(kind: OobeTaskKind, message: String) {
+    // 出错的那张安装卡片标为失败；canInstall 置为 true，页脚按钮变成“重试安装”。错误码同样写进终端日志。
+    private fun failInstall(kind: OobeTaskKind, failure: Failure) {
+        appendCommandLog(failure.logLine())
         _state.value = _state.value.copy(
             installTasks = buildInstallTasks().map { task ->
-                if (task.kind == kind) task.copy(status = OobeTaskStatus.Failed, statusText = message) else task
+                if (task.kind == kind) task.copy(status = OobeTaskStatus.Failed, statusText = failure.message) else task
             },
-            footerText = message,
+            footerText = failure.message,
             canInstall = true,
-            isComplete = false
+            isComplete = false,
+            failure = failure
         )
     }
 

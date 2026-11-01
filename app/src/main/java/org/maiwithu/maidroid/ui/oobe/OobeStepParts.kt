@@ -50,11 +50,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -133,6 +135,7 @@ internal fun OobeStepHeader(
  * 权限步骤 -> 存储授权后才能点“下一步”；
  * 配置容器 -> 容器就绪时“开始安装”，失败时“重新配置”；
  * 安装 MaiBot -> 完成时“进入 MaiDroid”，失败且没有任务在跑时“重试安装”，否则“请稍候”。
+ * 两步失败时说明下面多一块：错误码、认出的原因和建议、跳转按钮和“反馈问题”。
  * 平板布局通过 modifier 限制按钮区最大宽度。
  */
 @Composable
@@ -158,6 +161,7 @@ internal fun OobeStepFooter(
             proceedText = "开始安装",
             waitingText = "重新配置",
             waitingEnabled = setupState.containerTasks.hasFailedTask(),
+            failure = setupState.failure,
             onProceed = onNext,
             onRetry = onRetry,
             modifier = modifier
@@ -172,6 +176,7 @@ internal fun OobeStepFooter(
                 proceedText = "进入 MaiDroid",
                 waitingText = if (installFailed) "重试安装" else "请稍候",
                 waitingEnabled = installFailed && !installRunning,
+                failure = setupState.failure,
                 onProceed = onNext,
                 onRetry = onRetry,
                 modifier = modifier
@@ -278,7 +283,7 @@ private fun NextButton(
     }
 }
 
-// 配置容器、安装 MaiBot 两步的页脚：状态标志 + 当前进展说明，下面一个按钮。
+// 配置容器、安装 MaiBot 两步的页脚：状态标志 + 当前进展说明，失败时再加错误码和建议，下面一个按钮。
 // 能继续时按钮执行 onProceed，否则执行 onRetry（waitingEnabled 为 false 时按钮禁用）。
 @Composable
 private fun SetupFooter(
@@ -287,6 +292,7 @@ private fun SetupFooter(
     proceedText: String,
     waitingText: String,
     waitingEnabled: Boolean,
+    failure: Failure?,
     onProceed: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
@@ -320,6 +326,10 @@ private fun SetupFooter(
                 color = OobeTextSecondary,
                 lineHeight = 17.sp
             )
+        }
+
+        if (failure != null && !canProceed) {
+            FailureNotice(failure = failure, textColor = OobeTextSecondary, modifier = Modifier.padding(start = 38.dp))
         }
 
         Button(

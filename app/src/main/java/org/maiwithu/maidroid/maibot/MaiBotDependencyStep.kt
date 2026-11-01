@@ -1,5 +1,8 @@
 package org.maiwithu.maidroid.maibot
 
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerScript
 
@@ -11,11 +14,13 @@ import org.maiwithu.maidroid.runtime.ContainerScript
 internal enum class MaiBotDependencyStep(
     /** 这一步进行中时界面上的说明。 */
     val progressText: String,
-    private val failureLabel: String
+    private val failureLabel: String,
+    /** 这一步失败时错误码的前半段。 */
+    val failureStep: FailureStep
 ) {
-    Uv("正在安装 uv...", "安装 uv 失败"),
-    Python("正在准备 Python 解释器...", "准备 Python 解释器失败"),
-    Packages("正在安装 Python 依赖包（uv sync），可能需要几分钟...", "安装 Python 依赖包失败");
+    Uv("正在安装 uv...", "安装 uv 失败", FailureStep.UvInstall),
+    Python("正在准备 Python 解释器...", "准备 Python 解释器失败", FailureStep.PythonInstall),
+    Packages("正在安装 Python 依赖包（uv sync），可能需要几分钟...", "安装 Python 依赖包失败", FailureStep.UvSync);
 
     fun script(): ContainerScript = when (this) {
         Uv -> MaiBotScripts.installUv()
@@ -31,6 +36,9 @@ internal enum class MaiBotDependencyStep(
         val reason = if (this == Packages) uvErrorSummary(result.output) else null
         return "$failureLabel：${reason ?: result.summary()}"
     }
+
+    /** 失败说明加上错误码：前半段是这一步，后半段从完整输出里认原因。 */
+    fun failure(result: ContainerCommandResult): Failure = failureOf(failureStep, failureMessage(result), result.output)
 }
 
 /**

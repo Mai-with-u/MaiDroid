@@ -66,4 +66,28 @@ class MaiBotStartupTest {
         )
         assertNull(MaiBotStartupResult.Ready.failureMessage())
     }
+
+
+    @Test
+    fun `startup failures carry codes and runtime causes only`() {
+        val crashOutput = "[LLM] 请求超时：operation timed out\nModuleNotFoundError: No module named 'aiohttp'"
+        assertEquals(
+            "MB-CRASH/PY-MODULE",
+            MaiBotStartupResult.Crashed(exits = 2, lastExitCode = 1).failure(crashOutput)?.code
+        )
+        // 运行中的网络超时不当作起不来的原因
+        assertEquals("MB-TIMEOUT", MaiBotStartupResult.TimedOut.failure("operation timed out")?.code)
+        assertEquals("MB-BLOCKED", MaiBotStartupResult.Blocked("容器未就绪").failure("")?.code)
+        assertEquals("MB-NOSTART", MaiBotStartupResult.NotStarted.failure("")?.code)
+        assertNull(MaiBotStartupResult.Ready.failure(crashOutput))
+    }
+
+    @Test
+    fun `recent run output starts at the second last process start`() {
+        val started = MaiBotProcessSupervisor.PROCESS_STARTED_LOG
+        val lines = listOf("old", "$started (PID: 1)", "run1", "$started (PID: 2)", "run2", "$started (PID: 3)")
+        assertEquals("$started (PID: 2)\nrun2\n$started (PID: 3)", maiBotRecentRunOutput(lines))
+        assertEquals("a\nb", maiBotRecentRunOutput(listOf("a", "b")))
+        assertEquals("$started (PID: 1)\nonly", maiBotRecentRunOutput(listOf("$started (PID: 1)", "only")))
+    }
 }
