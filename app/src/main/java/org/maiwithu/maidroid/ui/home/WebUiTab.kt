@@ -215,7 +215,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 /**
  * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），WebView 拿到非零尺寸后才开始加载。
  * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局宽度至少 1040），竖屏按手机版。
- * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”；竖屏时右上角是刷新按钮，横屏时刷新按钮在左侧导航栏里。
+ * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”（电量低暂停着时说明是电量低）；竖屏时右上角是刷新按钮，横屏时刷新按钮在左侧导航栏里。
  * startClearance：横屏时左侧悬浮侧栏的宽度，网页和横幅都让开它，让出的那一条涂网页自己的底色。
  */
 @Composable
@@ -224,6 +224,7 @@ internal fun WebUiTabPage(
     onWakeMai: () -> Unit,
     state: WebUiTabState,
     modifier: Modifier = Modifier,
+    lowBatteryPaused: Boolean = false,
     terminalLogs: List<String> = emptyList(),
     url: String = MaiBotWebUi.URL,
     showRefreshButton: Boolean = true,
@@ -329,8 +330,9 @@ internal fun WebUiTabPage(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
+                // 电量低暂停着：WebUI 是麦麦自己保存好数据停下的，不是出了问题，横幅直接说明原因
                 Text(
-                    text = "WebUI 离线",
+                    text = if (lowBatteryPaused) "电量低，麦麦已暂停" else "WebUI 离线",
                     color = TextPrimary,
                     fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,

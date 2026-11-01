@@ -209,5 +209,9 @@ internal enum class FailureCause(
     DatabaseLocked(
         "DB-LOCKED", "MaiBot 数据库被占用",
         "可能同时跑着两个麦麦。在设置页安全退出后重新打开 MaiDroid。"
+    ),
+    LowBattery(
+        "BAT-LOW", "手机电量太低",
+        "电量低于 5% 又没在充电时，麦麦和 QQ 会先保存好数据停下，免得没电关机时丢数据。插上充电器后会自动重新启动。"
     )
 }

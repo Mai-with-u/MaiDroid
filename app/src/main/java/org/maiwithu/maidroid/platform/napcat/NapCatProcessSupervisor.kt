@@ -63,19 +63,23 @@ internal class NapCatProcessSupervisor(
     @Volatile
     private var shuttingDown = false
 
+    // 电量低时暂停期间拦下启动请求，电量恢复（插上电）时由前台服务解除。只在 lock 内修改。
+    @Volatile
+    private var pausedForLowBattery = false
+
     /** 进程在跑，或者正在启动（清理残留、生成 launcher 的阶段）。 */
     val isRunning: Boolean
         get() = process?.isAlive == true || job?.isActive == true
 
     /**
-     * 没装 NapCat、已在运行或 MaiDroid 正在安全退出时什么也不做。否则在后台：
+     * 没装 NapCat、已在运行、MaiDroid 正在安全退出或电量低暂停着时什么也不做。否则在后台：
      * 需要时换装新版 SnowLuma 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
      * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
      * 只看 NapCat 本体装没装好：MaiBot 太旧、暂时换不了适配器的老用户，QQ 照样能登录。
      */
     fun start() {
         synchronized(lock) {
-            if (shuttingDown || isRunning) return
+            if (shuttingDown || pausedForLowBattery || isRunning) return
             if (!files.isNapCatReady()) return
 
             RuntimeFileModes.ensureExecutableBits(paths)
@@ -85,7 +89,12 @@ internal class NapCatProcessSupervisor(
 
     /** 停掉 NapCat：请 QQ 正常下线退出，再清理剩下的 Xvfb 等进程；在后台执行。 */
     fun stop() {
-        scope.launch { lifecycleMutex.withLock { stopLocked() } }
+        scope.launch { stopAndWait() }
+    }
+
+    /** 和 stop 一样，但挂起到 NapCat 停下；手机关机前用它抢那几秒（见 MaiBotRuntimeService 的关机广播）。 */
+    suspend fun stopAndWait(): ProcessExitOutcome = withContext(Dispatchers.IO) {
+        lifecycleMutex.withLock { stopLocked() }
     }
 
     /**
@@ -94,6 +103,20 @@ internal class NapCatProcessSupervisor(
     suspend fun shutdownForExit(): ProcessExitOutcome = withContext(Dispatchers.IO) {
         synchronized(lock) { shuttingDown = true }
         lifecycleMutex.withLock { stopLocked() }
+    }
+
+    /**
+     * 电量低、又没插电（规则见 LowBatteryPolicy）：之后的启动请求先拦下 -> 照常停止（请 QQ 正常下线退出）。
+     * 挂起到 NapCat 停下。
+     */
+    suspend fun pauseForLowBattery(): ProcessExitOutcome {
+        synchronized(lock) { pausedForLowBattery = true }
+        return stopAndWait()
+    }
+
+    /** 电量恢复：解除拦截。不自己拉起，由前台服务决定要不要启动。 */
+    fun resumeAfterLowBattery() {
+        synchronized(lock) { pausedForLowBattery = false }
     }
 
     /**
@@ -161,11 +184,11 @@ internal class NapCatProcessSupervisor(
         try {
             val currentProcess = commandRunner.start(NapCatScripts.launch())
             startedProcess = currentProcess
-            // 停止（含安全退出）可能恰好在启动途中发生：terminateProcess 在同一把锁里取消本协程，
-            // 所以要么停止流程看得到这个进程、请 QQ 退出，要么这里看到本协程已被取消或正在退出，
+            // 停止（含安全退出、低电量暂停）可能恰好在启动途中发生：terminateProcess 在同一把锁里取消本协程，
+            // 所以要么停止流程看得到这个进程、请 QQ 退出，要么这里看到本协程已被取消、正在退出或暂停着，
             // 自己把刚起的进程结束掉（QQ 还没登录，没有要保存的）。
             val abandoned = synchronized(lock) {
-                val stale = shuttingDown || ownJob?.isActive == false
+                val stale = shuttingDown || pausedForLowBattery || ownJob?.isActive == false
                 if (!stale) process = currentProcess
                 stale
             }
