@@ -18,8 +18,11 @@ import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
 import org.maiwithu.maidroid.platform.napcat.NapCatFiles
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterFiles
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterConfig
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaFiles
 import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -36,7 +39,7 @@ import java.time.format.DateTimeFormatter
  * “反馈问题”背后的收集者：读版本、机型、权限、网络、容器和进程状态，从日志文件里找最近的失败，
  * 打码后拼成诊断报告、剪贴板文字、预填的 Issue 地址和 zip 诊断包。
  *
- * 只读不写（除了用户选的诊断包位置），不创建会启动后台轮询的平台管理器：NapCat、QQ 官方机器人只看文件。
+ * 只读不写（除了用户选的诊断包位置），不创建会启动后台轮询的平台管理器：NapCat、SnowLuma、QQ 官方机器人只看文件。
  * 由 AppDependencies 懒创建；prepare 在 IO 线程上跑，几 MB 日志打码要一两秒，界面显示“正在收集”。
  */
 internal class DiagnosticsManager(
@@ -189,9 +192,17 @@ internal class DiagnosticsManager(
             status.running -> "运行中"
             else -> "没有运行"
         } + if (status.exitCount > 0) "，意外退出 ${status.exitCount} 次（最后退出码 ${status.lastExitCode ?: "未知"}）" else ""
+        // NapCat 和 SnowLuma 二选一：两个都装了时写清楚现在启用的是哪个，排查“QQ 没上线”先看是不是启用错了
+        val activeQqClient = QqClientChoice(paths).read()
+        fun qqClientState(client: QqClient, installed: Boolean): String = when {
+            !installed -> "未安装"
+            client == activeQqClient -> "已安装，正在使用"
+            else -> "已安装，已停用"
+        }
         return ReportSection("运行状态", listOf(
             "MaiBot" to maiBot,
-            "QQ（NapCat）" to if (NapCatFiles(paths).isNapCatReady()) "已安装" else "未安装",
+            "QQ（NapCat）" to qqClientState(QqClient.NapCat, NapCatFiles(paths).isNapCatReady()),
+            "QQ（SnowLuma）" to qqClientState(QqClient.SnowLuma, SnowLumaFiles(paths).isSnowLumaReady()),
             "QQ 官方机器人适配器" to if (QqOfficialAdapterFiles(paths).isInstalled()) "已安装" else "未安装",
             "容器 SSH" to if (settings.containerSshEnabled) "已开启" else "未开启"
         ))
@@ -227,6 +238,8 @@ internal class DiagnosticsManager(
         val napCat = NapCatFiles(paths)
         add("NapCat令牌", readTextOrNull(napCat.adapter.oneBotTokenFile)?.trim())
         add("NapCat管理令牌", readTextOrNull(napCat.webUiConfig)?.let { runCatching { JSONObject(it).optString("token") }.getOrNull() })
+        val snowLuma = SnowLumaFiles(paths)
+        add("SnowLuma管理密码", snowLuma.readWebUiPassword())
         val qqOfficial = QqOfficialAdapterConfig.read(readTextOrNull(QqOfficialAdapterFiles(paths).configFile()))
         add("AppID", qqOfficial.appId)
         add("AppSecret", qqOfficial.appSecret)
@@ -238,9 +251,11 @@ internal class DiagnosticsManager(
         readTextOrNull(File(maiBotConfigDir, "bot_config.toml"))?.let { text ->
             QQ_ACCOUNT_LINE.findAll(text).forEach { add("QQ号", it.groupValues[1]) }
         }
-        // NapCat 登录后按 QQ 号另存的配置文件名，以及 QQ 本地登录数据的目录名，都是登录过的 QQ 号
-        napCat.configDir.listFiles()?.forEach { file ->
-            NAPCAT_ACCOUNT_FILE.matchEntire(file.name)?.let { add("QQ号", it.groupValues[1]) }
+        // NapCat、SnowLuma 登录后按 QQ 号另存的配置文件名，以及 QQ 本地登录数据的目录名（两边共用一份 QQ），都是登录过的 QQ 号
+        listOf(napCat.configDir, snowLuma.configDir).forEach { dir ->
+            dir.listFiles()?.forEach { file ->
+                QQ_CLIENT_ACCOUNT_FILE.matchEntire(file.name)?.let { add("QQ号", it.groupValues[1]) }
+            }
         }
         napCat.qqLoginDataDir.listFiles()?.forEach { dir ->
             if (dir.name.length >= 5 && dir.name.all(Char::isDigit)) add("QQ号", dir.name)
@@ -278,7 +293,8 @@ internal class FeedbackPackage(
 
 private val API_KEY_LINE = Regex("""(?m)^\s*api_key\s*=\s*["']([^"'\n]+)["']""")
 private val QQ_ACCOUNT_LINE = Regex("""(?m)^\s*qq_account\s*=\s*["']?(\d{5,12})""")
-private val NAPCAT_ACCOUNT_FILE = Regex("""(?:onebot11|napcat)_(\d{5,12})\.json""")
+// NapCat 的 onebot11_<QQ号>.json、napcat_<QQ号>.json，SnowLuma 的 onebot_<QQ号>.json
+private val QQ_CLIENT_ACCOUNT_FILE = Regex("""(?:onebot11|napcat|onebot)_(\d{5,12})\.json""")
 
 /** 读 MaiBot 仓库当前所在的分支和提交，不跑 git：.git/HEAD 指向的引用，再从散放的引用文件或 packed-refs 里找提交。 */
 private fun readGitHead(gitDir: File): Pair<String?, String?> {
