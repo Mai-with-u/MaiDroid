@@ -18,8 +18,11 @@ import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.qq.QqAdapterFiles
 import org.maiwithu.maidroid.platform.qq.QqAdapterUpkeep
+import org.maiwithu.maidroid.platform.qq.QqClientChoice
+import org.maiwithu.maidroid.platform.qq.QqClientSwitcher
 import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -78,13 +81,21 @@ internal class AppDependencies(context: Context) {
     private val qqAdapterUpkeep: QqAdapterUpkeep by lazy {
         QqAdapterUpkeep(QqAdapterFiles(runtimePaths), snowLumaAdapterInstaller, maiBotProcess)
     }
+    // 个人 QQ 的两种协议端（NapCat、SnowLuma）二选一：启用哪个记在容器里，两个监管器只拉起被启用的那个。
+    private val qqClientChoice: QqClientChoice by lazy { QqClientChoice(runtimePaths) }
+    val qqClientSwitcher: QqClientSwitcher by lazy {
+        QqClientSwitcher(qqClientChoice, napCatProcess, snowLumaProcess)
+    }
     val napCatProcess: NapCatProcessSupervisor by lazy {
-        NapCatProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep)
+        NapCatProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice)
+    }
+    val snowLumaProcess: SnowLumaProcessSupervisor by lazy {
+        SnowLumaProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice)
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
             appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller,
-            networkMonitor
+            qqClientSwitcher, networkMonitor
         )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {
@@ -103,9 +114,9 @@ internal class AppDependencies(context: Context) {
     val storageCleanup: StorageCleanupManager by lazy {
         StorageCleanupManager(runtimePaths, runtimeReadiness, commandRunner)
     }
-    // 设置页的“安全退出”：让上面三个长驻进程正常退出后关闭应用，由前台服务执行。
+    // 设置页的“安全退出”：让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
-        SafeExitManager(settings, maiBotProcess, napCatProcess, containerSsh)
+        SafeExitManager(settings, maiBotProcess, napCatProcess, snowLumaProcess, containerSsh)
     }
 
     // 手机有没有网：断网失败后等网络恢复自动重试用

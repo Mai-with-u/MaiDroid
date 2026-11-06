@@ -34,9 +34,9 @@ import org.maiwithu.maidroid.terminal.TerminalLog
 import java.util.TimeZone
 
 /**
- * 托管容器里所有长驻进程的前台服务：MaiBot、NapCat（装了才启动）和容器 sshd（开了才启动）。
+ * 托管容器里所有长驻进程的前台服务：MaiBot、QQ 协议端（NapCat 或 SnowLuma，装了、启用了才启动）和容器 sshd（开了才启动）。
  *
- * 常驻通知 + 部分唤醒锁让系统不在后台杀掉它；服务销毁时依次停掉 sshd、NapCat、MaiBot。
+ * 常驻通知 + 部分唤醒锁让系统不在后台杀掉它；服务销毁时依次停掉 sshd、QQ 协议端、MaiBot。
  * 所有“把 MaiBot 拉起来 / 重启”的入口（主页唤醒、开机广播、装完平台、在线更新）都经 start 走到这里。
  * 设置页的“安全退出”也由它执行（ACTION_SAFE_EXIT，流程见 SafeExitManager）：等所有服务正常退出后停掉自己并关闭 MaiDroid。
  * 服务活着时还监听手机改时区，让容器时区跟着改（见 ContainerTimeZone）。
@@ -57,7 +57,7 @@ class MaiBotRuntimeService : Service() {
         // 关机广播最多等所有接收者 10 秒，留两秒余量：到点还没停完就放行关机，剩下的交给重新打开后的恢复
         private const val SHUTDOWN_WAIT_MS = 8_000L
 
-        /** 重启 MaiBot（以及没在跑的 NapCat），用于装好或改了平台适配器之后让 MaiBot 重新加载插件。 */
+        /** 重启 MaiBot（以及没在跑的 QQ 协议端），用于装好或改了平台适配器之后让 MaiBot 重新加载插件。 */
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
 
         /** 只按设置启停容器 sshd，不碰 MaiBot 和 NapCat。 */
@@ -105,6 +105,7 @@ class MaiBotRuntimeService : Service() {
     private val maiBotProcess get() = appDependencies.maiBotProcess
     private val containerSsh get() = appDependencies.containerSsh
     private val napCatProcess get() = appDependencies.napCatProcess
+    private val snowLumaProcess get() = appDependencies.snowLumaProcess
     private val safeExit get() = appDependencies.safeExit
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -146,6 +147,7 @@ class MaiBotRuntimeService : Service() {
                             supervisorScope {
                                 launch { maiBotProcess.stopAndWait() }
                                 launch { napCatProcess.stopAndWait() }
+                                launch { snowLumaProcess.stopAndWait() }
                             }
                         }
                     }
@@ -212,7 +214,7 @@ class MaiBotRuntimeService : Service() {
     }
 
     // 每次 start 都会走到这里：先挂常驻通知 -> 按设置同步 sshd -> 只同步 SSH 时到此为止；
-    // 否则拉起 NapCat，再按 action 启动或重启 MaiBot。
+    // 否则拉起 QQ 协议端（NapCat、SnowLuma 只有被启用的那个会起来），再按 action 启动或重启 MaiBot。
     // 安全退出开始后（包括退出途中收到唤醒、更新完成等其他启动请求）只接着退出，什么也不拉起。
     // 用户退出后、进程却在退出途中被系统杀掉时，系统重建 START_STICKY 服务会传 null，这时也只接着退出。
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -247,6 +249,7 @@ class MaiBotRuntimeService : Service() {
         serviceScope.launch { refreshContainerDns() }
 
         napCatProcess.start()
+        snowLumaProcess.start()
         if (intent?.action == ACTION_RESTART_RUNTIME) {
             maiBotProcess.restart()
         } else {
@@ -280,6 +283,7 @@ class MaiBotRuntimeService : Service() {
         }
         containerSsh.stop()
         napCatProcess.stop()
+        snowLumaProcess.stop()
         maiBotProcess.stop()
         releaseWakeLock()
         super.onDestroy()
@@ -334,6 +338,7 @@ class MaiBotRuntimeService : Service() {
                 supervisorScope {
                     launch { maiBotProcess.pauseForLowBattery() }
                     launch { napCatProcess.pauseForLowBattery() }
+                    launch { snowLumaProcess.pauseForLowBattery() }
                 }
             }
             if (lowBatteryPaused) releaseWakeLock()
@@ -349,12 +354,14 @@ class MaiBotRuntimeService : Service() {
         acquireWakeLock()
         maiBotProcess.resumeAfterLowBattery()
         napCatProcess.resumeAfterLowBattery()
+        snowLumaProcess.resumeAfterLowBattery()
         refreshRuntimeNotification()
         val pauseJob = lowBatteryPauseJob
         serviceScope.launch {
             pauseJob?.join()
             if (lowBatteryPaused || !runtimeRequested || safeExit.started) return@launch
             napCatProcess.start()
+            snowLumaProcess.start()
             maiBotProcess.start()
         }
     }

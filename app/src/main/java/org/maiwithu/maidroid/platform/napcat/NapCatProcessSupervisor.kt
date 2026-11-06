@@ -11,6 +11,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.platform.qq.QqAdapterUpkeep
 import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
@@ -27,11 +28,13 @@ import java.util.concurrent.TimeUnit
  * 前台服务负责启停，退出 QQ 登录时只重启它。停止时先请 QQ 正常下线退出，超时才强制清理。
  *
  * 与 MaiBot 不同，NapCat 意外退出后不自动重启：QQ 掉线后要重新扫码，自动拉起也登不回去。
+ * 只有 QqClientChoice 记着启用 NapCat 时才会启动（没有记录也算 NapCat），和 SnowLuma 二选一。
  */
 internal class NapCatProcessSupervisor(
     private val paths: RuntimePaths,
     private val commandRunner: ContainerCommandRunner,
-    private val adapterUpkeep: QqAdapterUpkeep
+    private val adapterUpkeep: QqAdapterUpkeep,
+    private val choice: QqClientChoice
 ) {
     private companion object {
         // 停止时等旧一轮读日志（或还在启动）的协程收尾的上限。
@@ -68,7 +71,7 @@ internal class NapCatProcessSupervisor(
         get() = process?.isAlive == true || job?.isActive == true
 
     /**
-     * 没装 NapCat、已在运行、MaiDroid 正在安全退出或电量低暂停着时什么也不做。否则在后台：
+     * 没装 NapCat、现在启用的是 SnowLuma、已在运行、MaiDroid 正在安全退出或电量低暂停着时什么也不做。否则在后台：
      * 需要时换装新版 SnowLuma 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
      * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
      * 只看 NapCat 本体装没装好：MaiBot 太旧、暂时换不了适配器的老用户，QQ 照样能登录。
@@ -76,7 +79,7 @@ internal class NapCatProcessSupervisor(
     fun start() {
         synchronized(lock) {
             if (shuttingDown || pausedForLowBattery || isRunning) return
-            if (!files.isNapCatReady()) return
+            if (!files.isNapCatReady() || !choice.isActive(QqClient.NapCat)) return
 
             RuntimeFileModes.ensureExecutableBits(paths)
             job = scope.launch { runOnce() }

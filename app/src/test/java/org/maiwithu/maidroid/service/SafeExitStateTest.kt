@@ -4,14 +4,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 
 class SafeExitStateTest {
 
-    private fun state(maiBot: SafeExitStage, napCat: SafeExitStage, ssh: SafeExitStage) = SafeExitState(
+    private fun state(maiBot: SafeExitStage, qq: SafeExitStage, ssh: SafeExitStage) = SafeExitState(
         started = true,
         stages = mapOf(
             SafeExitService.MaiBot to maiBot,
-            SafeExitService.NapCat to napCat,
+            SafeExitService.Qq to qq,
             SafeExitService.ContainerSsh to ssh
         )
     )
@@ -39,9 +40,17 @@ class SafeExitStateTest {
             safeExitNotificationText(state(SafeExitStage.WaitingForUpdate, SafeExitStage.Exited, SafeExitStage.Exited))
         )
         assertEquals(
-            "NapCat（QQ）：QQ 正在下线退出",
+            "QQ：正在下线退出",
             safeExitNotificationText(state(SafeExitStage.Exited, SafeExitStage.Stopping, SafeExitStage.Exited))
         )
+    }
+
+    @Test
+    fun `napcat and snowluma are merged into one qq row`() {
+        // 只有一个协议端在跑：另一个的“未在运行”不能盖过真实结果
+        assertEquals(ProcessExitOutcome.Exited, mergeExitOutcomes(ProcessExitOutcome.NotRunning, ProcessExitOutcome.Exited))
+        assertEquals(ProcessExitOutcome.ForceStopped, mergeExitOutcomes(ProcessExitOutcome.ForceStopped, ProcessExitOutcome.NotRunning))
+        assertEquals(ProcessExitOutcome.NotRunning, mergeExitOutcomes(ProcessExitOutcome.NotRunning, ProcessExitOutcome.NotRunning))
     }
 
     @Test

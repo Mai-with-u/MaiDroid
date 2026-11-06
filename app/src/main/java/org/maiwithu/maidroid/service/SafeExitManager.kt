@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.ssh.ContainerSshManager
@@ -24,7 +25,8 @@ import org.maiwithu.maidroid.terminal.TerminalLog
 /** 安全退出要停的长驻服务，按退出进度里的显示顺序排列。 */
 internal enum class SafeExitService(val label: String) {
     MaiBot("MaiBot"),
-    NapCat("NapCat（QQ）"),
+    /** QQ 协议端：NapCat 和 SnowLuma 只会有一个在跑，合成一项显示。 */
+    Qq("QQ"),
     ContainerSsh("容器 SSH")
 }
 
@@ -49,7 +51,7 @@ internal data class SafeExitState(
 }
 
 /**
- * 设置页的“安全退出”：让 MaiBot、NapCat、容器 sshd 各自正常退出（MaiBot 保存好记忆和数据、QQ 正常下线），
+ * 设置页的“安全退出”：让 MaiBot、NapCat 或 SnowLuma、容器 sshd 各自正常退出（MaiBot 保存好记忆和数据、QQ 正常下线），
  * 全部停下后关闭 MaiDroid。
  *
  * 退出由前台服务执行（MaiBotRuntimeService.ACTION_SAFE_EXIT）：用户点了退出马上切走，或者从最近任务里划掉 MaiDroid，
@@ -60,6 +62,7 @@ internal class SafeExitManager(
     private val settings: AppSettings,
     private val maiBotProcess: MaiBotProcessSupervisor,
     private val napCatProcess: NapCatProcessSupervisor,
+    private val snowLumaProcess: SnowLumaProcessSupervisor,
     private val containerSsh: ContainerSshManager
 ) {
     private val scope = backgroundScope("安全退出", Dispatchers.IO)
@@ -102,7 +105,7 @@ internal class SafeExitManager(
         job.await()
     }
 
-    // 三项服务同时退出、互不等待：MaiBot 关得最慢（最长约 80 秒），NapCat、sshd 几秒就好，总耗时取决于 MaiBot。
+    // 各项服务同时退出、互不等待：MaiBot 关得最慢（最长约 80 秒），QQ、sshd 几秒就好，总耗时取决于 MaiBot。
     // 某一项意外出错也记为强制停止、接着关闭应用：进程结束时系统会结束它留下的所有子进程，不会有残留。
     private suspend fun stopAll() {
         markStarted()
@@ -117,10 +120,17 @@ internal class SafeExitManager(
                     }
                 }
             }
-            launch { stopService(SafeExitService.NapCat) { napCatProcess.shutdownForExit() } }
+            launch { stopService(SafeExitService.Qq) { stopQq() } }
             launch { stopService(SafeExitService.ContainerSsh) { containerSsh.stopForExit() } }
         }
         TerminalLog.append("[MaiDroid] 所有服务都已停下，关闭 MaiDroid")
+    }
+
+    // NapCat、SnowLuma 都拦下之后的启动请求并请各自的 QQ 退出（只会有一个真在跑），结果合成一项。
+    private suspend fun stopQq(): ProcessExitOutcome = coroutineScope {
+        val napCat = async { napCatProcess.shutdownForExit() }
+        val snowLuma = async { snowLumaProcess.shutdownForExit() }
+        mergeExitOutcomes(napCat.await(), snowLuma.await())
     }
 
     private suspend fun stopService(service: SafeExitService, stop: suspend () -> ProcessExitOutcome) {
@@ -163,13 +173,20 @@ internal fun SafeExitStage.describe(service: SafeExitService): String =
         SafeExitStage.WaitingForUpdate -> "正在等在线更新完成，之后再退出"
         SafeExitStage.Stopping -> when (service) {
             SafeExitService.MaiBot -> "正在保存数据并退出"
-            SafeExitService.NapCat -> "QQ 正在下线退出"
+            SafeExitService.Qq -> "正在下线退出"
             SafeExitService.ContainerSsh -> "正在停止"
         }
         SafeExitStage.Exited -> "已正常退出"
         SafeExitStage.ForceStopped -> "没有自己退出，已强制停止"
         SafeExitStage.NotRunning -> "未在运行"
     }
+
+/** 几个进程合成一项时的结果：有一个是强制停的就算强制停止，否则有一个正常退出就算正常退出，都没在跑才算未在运行。 */
+internal fun mergeExitOutcomes(vararg outcomes: ProcessExitOutcome): ProcessExitOutcome = when {
+    ProcessExitOutcome.ForceStopped in outcomes -> ProcessExitOutcome.ForceStopped
+    ProcessExitOutcome.Exited in outcomes -> ProcessExitOutcome.Exited
+    else -> ProcessExitOutcome.NotRunning
+}
 
 /** 常驻通知的正文：还没停下的第一项在做什么；都停下了就说正在关闭。 */
 internal fun safeExitNotificationText(state: SafeExitState): String {
