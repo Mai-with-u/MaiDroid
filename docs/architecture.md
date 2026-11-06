@@ -90,13 +90,15 @@ flowchart TB
 | `files` | 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等文件管理器，以及打开它的入口 | `ContainerDocumentsProvider`、`ContainerDocuments.kt`、`openMaiBotInFileManager` |
 | `service` | 前台服务、开机广播、设置页的安全退出、低电量暂停 | `MaiBotRuntimeService`、`BootCompletedReceiver`、`SafeExitManager`、`LowBatteryPolicy` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
-| `platform.napcat` | QQ（NapCat）接入：NapCat 本体（`NapCat*`）和 MaiBot 侧连它的 SnowLuma 适配器（`SnowLumaAdapter*`） | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh.kt`、`SnowLumaAdapterScripts`、`SnowLumaAdapterInstaller`、`SnowLumaAdapterConfig` |
+| `platform.qq` | 两种 QQ 协议端（NapCat、SnowLuma 客户端）共用的部分：启用哪一种和切换、OneBot 地址与 token、MaiBot 侧连它们的 SnowLuma 适配器（`SnowLumaAdapter*`） | `QqClient.kt`（`QqClient`、`QqClientChoice`）、`QqClientSwitcher`、`QqOneBot`、`QqAdapterFiles`、`QqAdapterUpkeep`、`SnowLumaAdapterScripts`、`SnowLumaAdapterInstaller`、`SnowLumaAdapterConfig` |
+| `platform.napcat` | QQ（NapCat）接入：NapCat 本体 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh.kt` |
+| `platform.snowluma` | QQ（SnowLuma 客户端）接入：在 Xvfb 上跑 LinuxQQ、让 SnowLuma 注入，读 Xvfb 的屏幕文件把 QQ 窗口显示给用户 | `SnowLumaPlatformManager`、`SnowLumaProcessSupervisor`、`SnowLumaWebUiClient.kt`、`SnowLumaScripts`、`SnowLumaFiles`、`SnowLumaPlatformState.kt`、`QqScreen.kt` |
 | `platform.qqofficial` | QQ 官方机器人接入（MaiBot 侧是 MaiBot-QQ-Adapter） | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors.kt`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
 | `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、横屏桌面版、两指滚动、网页底色上报、网页选文件、网页下载 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiResponseRewriter`、`WebUiInjectedScripts`、`WebUiDesktopViewport`、`WebUiTwoFingerScroll`、`WebUiPageBackground`、`WebUiFileChooser`、`WebUiDownloads`、`WebUiDownloadNames.kt`、`WebUiDownloadScripts`、`WebUiBlobReceiver` |
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts.kt`、`OobePermissionList.kt`、`OobeTaskList.kt`、`OobeAuthorizationDialog` |
 | `ui.home` | 主页外壳、唤醒页（开机自检画面）、底部导航与横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`WakeBootLog.kt`、`HomeBottomNavigation`（含底栏和侧栏共用的 `HomeTab`、标签按钮、终端按钮）、`HomeNavigationRail`、`WebUiTab.kt` |
-| `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`NapCatDialogs.kt`、`QqOfficialConfigDialog` |
+| `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`NapCatDialogs.kt`、`SnowLumaDialogs.kt`、`QqOfficialConfigDialog` |
 | `ui.diagnostics` | 失败提示（错误码、原因、建议和按钮）、反馈问题弹窗、闪退后的询问 | `FailureNotice`、`FeedbackDialog`、`CrashPromptDialog` |
 | `ui.cleanup` | 清理空间弹窗 | `StorageCleanupDialog` |
 | `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置、安全退出的按钮与弹窗 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings.kt`、`SafeExitDialogs.kt` |
@@ -114,7 +116,7 @@ flowchart TB
 所有长生命周期的组件都在 `AppDependencies` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appDependencies.xxx` 用同一份实例：
 
 - 立即创建：`settings`、`diagnosticsFiles`、`terminalLogRecorder`（一创建就开始把终端输出写进文件）、`crashRecorder`（`MaiDroidApplication` 随后装上闪退记录）、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
-- 第一次用时创建（`lazy`）：`maiBotProcess`、`containerSsh`、`napCatProcess`、`napCat`、`qqOfficial`、`maiBotUpdater`、`appUpdater`、`safeExit`、`diagnostics`、`storageCleanup`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat 和启动 NapCat 前换装共用一个，迁移配置靠它的锁串行）。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
+- 第一次用时创建（`lazy`）：`maiBotProcess`、`containerSsh`、`qqClientSwitcher`、`napCatProcess`、`snowLumaProcess`、`napCat`、`snowLuma`、`qqOfficial`、`maiBotUpdater`、`appUpdater`、`safeExit`、`diagnostics`、`storageCleanup`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat、SnowLuma 和两边启动前换装共用一个，迁移配置靠它的锁串行）、`qqAdapterUpkeep`、`qqClientChoice`。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
 
 新增模块时在这里加一个属性，构造函数里写清依赖，不要再写 `get(context)` 式的单例。
 
@@ -138,29 +140,31 @@ flowchart TB
 
 ## 前台服务与长驻进程
 
-`MaiBotRuntimeService` 每次收到 `start` 都会：挂常驻通知 -> 按设置同步 sshd ->（只同步 SSH 时到此为止）-> 拉起 NapCat（装了才拉）-> 启动或重启 MaiBot。安全退出开始后例外，见下面的“安全退出”。入口：
+`MaiBotRuntimeService` 每次收到 `start` 都会：挂常驻通知 -> 按设置同步 sshd ->（只同步 SSH 时到此为止）-> 拉起 QQ 协议端（NapCat、SnowLuma 两个监管器都叫一声，只有装好、而且被启用的那个会起来）-> 启动或重启 MaiBot。安全退出开始后例外，见下面的“安全退出”。入口：
 
 | 调用 | 作用 | 谁在用 |
 | --- | --- | --- |
-| `start(context)` | 启动 NapCat 和 MaiBot，已在运行的不重复启动 | OOBE 安装、主页唤醒、开机广播、在线更新结束 |
-| `start(context, ACTION_RESTART_RUNTIME)` | 重启 MaiBot（NapCat 没跑就拉起） | 装好或改了平台适配器后 |
+| `start(context)` | 启动 QQ 协议端和 MaiBot，已在运行的不重复启动 | OOBE 安装、主页唤醒、开机广播、在线更新结束 |
+| `start(context, ACTION_RESTART_RUNTIME)` | 重启 MaiBot（QQ 协议端没跑就拉起） | 装好或改了平台适配器后、切换 QQ 协议端后 |
 | `start(context, ACTION_SYNC_CONTAINER_SSH)` | 只按设置启停 sshd | 设置页开关 SSH、改 SSH 配置 |
 | `start(context, ACTION_SAFE_EXIT)` | 安全退出：各服务正常退出后关闭 MaiDroid | 设置页“安全退出”（经 `SafeExitManager.request`） |
 | `SetupKeepAlive.hold(context)`（`ACTION_SETUP_HOLD`） | 只挂“正在初始化”的通知保活，不启动任何服务；`release()` 后服务没在跑麦麦就自己停 | OOBE 配置容器、安装 MaiBot |
 
-服务持有部分唤醒锁（只保 CPU，不亮屏），销毁时依次停 sshd、NapCat、MaiBot；只为保活起的服务销毁时什么都不停。服务启动和网络切换时重写一次容器 DNS。服务活着时还盯着电量和关机，见下面的“低电量暂停与关机”。
+服务持有部分唤醒锁（只保 CPU，不亮屏），销毁时依次停 sshd、NapCat、SnowLuma、MaiBot；只为保活起的服务销毁时什么都不停。服务启动和网络切换时重写一次容器 DNS。服务活着时还盯着电量和关机，见下面的“低电量暂停与关机”。
 
-三个长驻进程的监管方式：
+几个长驻进程的监管方式：
 
 - **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下；低电量暂停期间同样拦下（`pauseForLowBattery`），状态里标出 `lowBatteryPaused`。运行状态在 `status`（`MaiBotProcessStatus`）：是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算）、启动前检查没过时被拦下的原因。OOBE 等 WebUI 时据此判断 MaiBot 是还在起、起来就崩还是根本没拉起，规则在 `MaiBotStartup`。每次拉起前先看 WebUI 端口：自己的 MaiBot 没在跑、端口上却有程序在听，就是被别的程序占着，这时不拉起、在状态里标出 `webUiPortTaken`（OOBE 和唤醒页据此报 `PORT-BUSY`），每 5 秒再看一次，空出来就启动。
 - 启动前台服务的入口（OOBE、主页唤醒）都兜住了系统拒绝：应用在后台时 Android 12+ 不让新开前台服务，这时直接让 `MaiBotProcessSupervisor` 启动，回到前台进入主页时再拉服务。
-- **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。
+- **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。只有启用的是 NapCat 才启动（`QqClientChoice`）。
+- **SnowLuma**（`SnowLumaProcessSupervisor`）：和 NapCat 二选一，只有启用的是 SnowLuma 才启动；同样不自动重启，启动前同样检查适配器（两边共用 `QqAdapterUpkeep`）。“重启 QQ”时只重启它。WebUI 默认端口被别的程序占着时换一个空端口启动。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 
 停止长驻进程（停止、重启、在线更新前、安全退出、服务销毁）时要在容器里直接给进程发信号：宿主侧 `Process.destroy()` 只能给 proot 发 SIGTERM，而 proot 会忽略它，信号到不了容器里的进程；proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测）。所以停止流程是：用 `requestExitScript` 在容器里请进程自己退出 -> 等它保存好数据 -> 兜底用 `Process.killProot()` 强杀还没退的 proot -> 用脚本按进程名清理残留。启动前也会先清一遍上次异常退出留下的残留。
 
 - **MaiBot**（`MaiBotProcessSupervisor.stopLocked`）：用 `MaiBotScripts.requestExit()` 给 Runner（`python bot.py`）发 SIGTERM，Runner 转给 Worker（`python -m src.runtime`）并等它走完优雅关闭（停插件运行时、持久化 A_Memorix 记忆、关数据库），之后 uv、script、sh 依次退出，proot 也就结束了。空闲时约 3 秒；最多等 80 秒（MaiBot 自己给 Worker 留 60 秒）。外面几层 sh、script、uv 的命令行里也带着 bot.py，靠 `MaiBotScripts.EXIT_TARGET` 排除。Runner 还没起来（uv 还在同步依赖）或超时就强杀。清理残留按 `MaiBotScripts.STALE_PROCESS_PATTERN` 认出每一层进程；Runner 忽略 SIGHUP，伪终端关掉它也不会退出，必须点名清掉。
 - **NapCat**（`NapCatProcessSupervisor.stopLocked`）：用 `NapCatScripts.requestQqExit()` 给 QQ 主进程发 SIGTERM，QQ 正常下线退出（实测 1~2 秒、退出码 0）；launcher.sh 放到后台的 Xvfb 还撑着 proot，再跑一次 `NapCatScripts.cleanup()` 清掉。退出 QQ 登录（只重启 NapCat）也走这条路。
+- **SnowLuma**（`SnowLumaProcessSupervisor.stopLocked`）：先用 `SnowLumaScripts.requestSnowLumaExit()` 给 SnowLuma 的两个 node 进程发 SIGTERM，守护进程转给工作进程，工作进程关掉 OneBot、WebUI，写完日志再退出（最多等 20 秒）-> 再用 `requestQqExit()` 请 QQ 主进程下线退出（最多 20 秒）-> 跑 `cleanup()` 清掉 Xvfb、屏幕文件和记下的显示号。真机上还没量过要多久。
 - **sshd**：没有要保存的数据，直接强杀 proot 再按名字清理。
 
 ### 安全退出
@@ -170,10 +174,11 @@ flowchart TB
 1. 确认后 `SafeExitManager.request` 记下 `AppSettings.userExited`，再以 `ACTION_SAFE_EXIT` 拉起前台服务。根界面（`MaiDroidApp`）按 `SafeExitManager.state` 弹出不可取消的进度弹窗（`SafeExitProgressDialog`），只有“切到后台”一个按钮。
 2. 服务把常驻通知换成“正在安全退出 MaiDroid”和当前进度，三项服务同时退出：
    - **MaiBot**（`shutdownForExit`）：在线更新还在做就先等它做完，再照上面的方式停止（请 Runner 自己退出、保存好数据）。
-   - **NapCat**（`shutdownForExit`）、**sshd**（`stopForExit`）：照上面的方式停止。
+   - **QQ**：NapCat、SnowLuma 两个监管器的 `shutdownForExit` 同时跑（没启用的那个本来就没在跑，很快返回），两边的结果合成一项（`mergeExitOutcomes`），有一边被强制停止就算强制停止。
+   - **sshd**（`stopForExit`）：照上面的方式停止。
    - 某项没有自己退出（等到超时、找不到要通知的进程）或出错，就强制停止，进度里标成“已强制停止”。
 3. 全部停下后服务撤掉通知、停掉自己，在 `onDestroy` 之后调用 `closeMaiDroid`：从最近任务里移除 MaiDroid 的界面，结束进程。
-   一定要结束进程：退出一开始，三个监管器就永久拦下所有启动请求（唤醒、更新完成后的重启、改时区重启……），进程留着的话，下次打开会复用它，麦麦就拉不起来了。
+   一定要结束进程：退出一开始，各个监管器就永久拦下所有启动请求（唤醒、更新完成后的重启、改时区重启……），进程留着的话，下次打开会复用它，麦麦就拉不起来了。
 
 用户点完退出马上切走或者从最近任务里划掉 MaiDroid 也不影响：前台服务和唤醒锁让进程撑到服务都停完。退出期间服务收到的其他启动请求只会接着退出，返回 `START_NOT_STICKY`，进程万一被系统杀掉也不会重建服务、把麦麦拉起来。`userExited` 为 true 时开机不自动拉起（和强行停止应用后一样，等用户自己打开）；服务收到应用里发来的任何其他启动请求时清掉它。
 
@@ -181,14 +186,14 @@ flowchart TB
 
 手机没电关机时系统只给几秒，麦麦来不及保存，内存里的记忆和聊天就丢了。所以 `MaiBotRuntimeService` 活着时注册两个系统广播：
 
-- **电量变化**（`ACTION_BATTERY_CHANGED`，粘性广播，注册时就拿到当前电量）：判断规则在 `LowBatteryPolicy`。电量低于 5%、又没插电时暂停：常驻通知换成“电量低，麦麦和 QQ 已暂停” -> 两个监管器的 `pauseForLowBattery` 同时请麦麦、QQ 正常退出（和平常停止一样）并拦下之后的启动请求 -> 都停下后放掉唤醒锁，让手机能睡下。插上电或电量回到 10% 以上时恢复：拿回唤醒锁 -> 解除拦截 -> 等暂停那一轮停完 -> 服务在托管麦麦时照常拉起 NapCat 和麦麦。两个阈值隔开一截，电量在 5% 上下跳时不会反复停、启。服务刚起来时电量就很低（开机自启、打开应用），`onCreate` 里先判断，`onStartCommand` 的启动请求直接被拦下，不会拉起来又马上停掉。暂停期间唤醒页的 MaiBot 一行显示 `low battery`，错误码 `MB-BLOCKED/BAT-LOW`；WebUI 页签的横幅显示“电量低，麦麦已暂停”，点唤醒只提示要插电。暂停不算用户退出，不动 `userExited`。
-- **关机**（`ACTION_SHUTDOWN`，只发给运行中注册的接收者）：系统正常关机、重启（包括电量耗尽自动关机）前发出，最多等所有接收者 10 秒。服务用 `goAsync` 拖住广播，请麦麦和 QQ 同时正常退出（`stopAndWait`），都停下或满 8 秒就放行关机。只停不拦，万一没真关机，之后的唤醒照样能拉起；下次开机由开机广播照常自启。2026-11 真机实测麦麦 3 秒、QQ 1 秒退完。
+- **电量变化**（`ACTION_BATTERY_CHANGED`，粘性广播，注册时就拿到当前电量）：判断规则在 `LowBatteryPolicy`。电量低于 5%、又没插电时暂停：常驻通知换成“电量低，麦麦和 QQ 已暂停” -> 麦麦、NapCat、SnowLuma 三个监管器的 `pauseForLowBattery` 同时请麦麦、QQ 正常退出（和平常停止一样）并拦下之后的启动请求 -> 都停下后放掉唤醒锁，让手机能睡下。插上电或电量回到 10% 以上时恢复：拿回唤醒锁 -> 解除拦截 -> 等暂停那一轮停完 -> 服务在托管麦麦时照常拉起 QQ 协议端和麦麦。两个阈值隔开一截，电量在 5% 上下跳时不会反复停、启。服务刚起来时电量就很低（开机自启、打开应用），`onCreate` 里先判断，`onStartCommand` 的启动请求直接被拦下，不会拉起来又马上停掉。暂停期间唤醒页的 MaiBot 一行显示 `low battery`，错误码 `MB-BLOCKED/BAT-LOW`；WebUI 页签的横幅显示“电量低，麦麦已暂停”，点唤醒只提示要插电。暂停不算用户退出，不动 `userExited`。
+- **关机**（`ACTION_SHUTDOWN`，只发给运行中注册的接收者）：系统正常关机、重启（包括电量耗尽自动关机）前发出，最多等所有接收者 10 秒。服务用 `goAsync` 拖住广播，请麦麦和 QQ（NapCat、SnowLuma 两个监管器都叫）同时正常退出（`stopAndWait`），都停下或满 8 秒就放行关机。只停不拦，万一没真关机，之后的唤醒照样能拉起；下次开机由开机广播照常自启。2026-11 真机实测麦麦 3 秒、QQ 1 秒退完。
 
 直接断电、系统崩溃不会有任何通知，仍然只能靠“扛得住暴力测试”里的规则在重开后恢复。
 
 ## 界面状态的流向
 
-- 模块用 `StateFlow` 暴露状态（`NapCatPlatformState`、`QqOfficialPlatformState`、`MaiBotUpdateState`、`ContainerSshState`、`OobeSetupState`），界面 `collectAsState()` 读。
+- 模块用 `StateFlow` 暴露状态（`NapCatPlatformState`、`SnowLumaPlatformState`、`QqOfficialPlatformState`、`MaiBotUpdateState`、`ContainerSshState`、`OobeSetupState`），界面 `collectAsState()` 读。
 - 界面动作直接调用模块方法（`installNapCat()`、`saveCredentials()`、`applyUpdate()`……），模块内部用自己的协程作用域跑，离开页面也不会中断。
 - 权限状态不进 ViewModel：它依赖 Activity（结果回调要在 Activity 启动前注册），放在 `SystemPermissionController` 里，用 Compose 状态保存，`onResume` 时刷新。
 
@@ -214,7 +219,7 @@ flowchart TB
 
 ## 日志
 
-- `TerminalLog`：MaiBot、NapCat、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，在主页的终端按钮（竖屏在底栏右端，WebUI 页签里先点右下角的小按钮展开底栏；横屏在左侧导航栏底部）打开的终端输出页查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[MaiDroid 更新]`、`[GitHub]`。
+- `TerminalLog`：MaiBot、NapCat、SnowLuma、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，在主页的终端按钮（竖屏在底栏右端，WebUI 页签里先点右下角的小按钮展开底栏；横屏在左侧导航栏底部）打开的终端输出页查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[SnowLuma]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[MaiDroid 更新]`、`[GitHub]`。
 - QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionErrors`。
 - WebView 相关日志在 `MaiDroidWebUi` 标签（`MaiBotWebUi.LOG_TAG`）。
 - `TerminalLogRecorder` 把终端输出同时写进 `files/diagnostics/logs/terminal-<启动时间>.log`：每行带时间，每个进程一份，单个文件满 2 MB 接着写 `.2.log`，所有文件合计超过 12 MB 删最旧的。反馈问题时带上最近几份，用户不用自己翻终端。
@@ -236,7 +241,7 @@ flowchart TB
 
 ### 规则
 
-1. **“装好了”只认最后一步写的完成标记，或能证明完整的检查**。只看可执行文件在不在会被半截骗过：2026-11 真机在 apt “Setting up ca-certificates” 时强杀，git、curl 已经解包在位，重开后直接判定容器就绪，dpkg 半装状态一直拖到下次用 apt 才暴露。现在 `DpkgState` 看 dpkg 有没有做完，依赖看 site-packages 里有没有包，NapCat 看 `napcat_ready` 加 OneBot 配置。
+1. **“装好了”只认最后一步写的完成标记，或能证明完整的检查**。只看可执行文件在不在会被半截骗过：2026-11 真机在 apt “Setting up ca-certificates” 时强杀，git、curl 已经解包在位，重开后直接判定容器就绪，dpkg 半装状态一直拖到下次用 apt 才暴露。现在 `DpkgState` 看 dpkg 有没有做完，依赖看 site-packages 里有没有包，NapCat 看 `napcat_ready` 加 OneBot 配置，SnowLuma 看 `snowluma_ready` 加入口文件和 OneBot 配置（发行包先解到临时目录，核对过才换上）。
 2. **进度存在文件里，重开后现读**。OOBE 走到哪一步存在 `AppSettings.oobeStep`；其余状态（容器、依赖、平台装没装）都从文件系统现读，不另存一份。
 3. **先写到临时位置，做完再改名**。解包到 `debian.tmp`、`termux.tmp`，克隆到 `/opt/MaiBot.tmp`，完成后改名成正式目录；下次开工前先删掉上次留下的临时目录（`RuntimeAssetInstaller.discardStaging`），删正式目录前先删完成标记。
 4. **小文件原子写，大批量写完先落盘**。配置、凭据、标记一律用 `writeTextAtomically`（写临时文件 -> fsync -> 原子改名），断电后要么是旧内容、要么是新内容。解包、装 QQ、克隆、装依赖这类大批量写入，完成后先 `flushFileSystems()` 再写完成标记，断电后不会出现“标记在、文件是空的”。
@@ -245,7 +250,7 @@ flowchart TB
 7. **空间不够要先说**。开工前用 `StorageSpace.shortageFailure` 按预估量检查，不够直接报 `DISK-FULL` 并给“清理空间”按钮；只在看着不够时才扣掉上次已下载的缓存再判断，免得重试时被自己下好的缓存挡住。日志文件写不进去时停一分钟再试（`TerminalLogFiles`），不能把应用带崩。剩余空间低于 300 MB 时进主页提醒一次（`LowStorageDialog`）。
 8. **一处出错不能带走全部**。长驻的协程作用域都用 `backgroundScope`（SupervisorJob，未捕获的异常写进终端日志），某个协程出错不会连带停掉 MaiBot 和 NapCat。WebView 渲染进程崩溃或被系统回收时 `onRenderProcessGone` 返回 true，只换一个新的 WebView，2 分钟内连崩 3 次就停下等用户点重试（`WebUiRenderCrashGuard`）。MMKV 文件损坏时由 `AppSettingsRecovery` 恢复，不闪退。
 9. **装东西期间保活，但不能指望保活**。OOBE 配置容器、安装 MaiBot 时挂“正在初始化”的前台服务（`SetupKeepAlive`、`ACTION_SETUP_HOLD`）；OOBE 完成后前台服务常驻，装消息平台、在线更新时同样有它撑着。切到后台、从最近任务划掉都不会被杀。强行停止（`am force-stop`）、闪退、断电会把容器里的进程一起带走，这是常态，靠上面几条恢复。
-10. **端口、显示号这类全局资源可能被别人占着**。手机上所有应用共用回环端口和抽象 Unix 套接字（另一个 MaiDroid、Termux 里的 MaiBot 或 VNC）。MaiBot WebUI 端口被占时监管器不拉起，报 `PORT-BUSY`，端口空出来自动启动；判“WebUI 在线”必须是自己的 MaiBot 在跑。NapCat 的 Xvfb 用 `-displayfd` 自己挑空着的显示号。新功能要用这类资源时也一样：先确认是自己的，被占时说清楚，别人让出来后能自己接上。
+10. **端口、显示号这类全局资源可能被别人占着**。手机上所有应用共用回环端口和抽象 Unix 套接字（另一个 MaiDroid、Termux 里的 MaiBot 或 VNC）。MaiBot WebUI 端口被占时监管器不拉起，报 `PORT-BUSY`，端口空出来自动启动；判“WebUI 在线”必须是自己的 MaiBot 在跑。NapCat、SnowLuma 的 Xvfb 用 `-displayfd` 自己挑空着的显示号；SnowLuma 的 WebUI 默认端口被占时换一个空端口。新功能要用这类资源时也一样：先确认是自己的，被占时说清楚，别人让出来后能自己接上。
 11. **失败都要落到界面上**。意外异常也要接住、转成带错误码的失败提示（见“错误码与反馈”），不能把 `ENOENT` 这类底层异常原文直接给用户看。
 12. **没电之前先停好**。电量低于 5% 又没插电时先请麦麦和 QQ 保存好数据停下，插上电自动拉起；收到关机广播时再抢几秒请它们退出（见“低电量暂停与关机”）。新加的长驻进程要有数据要保存，也要接进这两处：暂停时停下并拦下启动请求，关机时一起停。
 
