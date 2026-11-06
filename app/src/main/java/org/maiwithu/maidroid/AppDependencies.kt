@@ -22,6 +22,7 @@ import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.platform.qq.QqClientSwitcher
 import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformManager
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkMonitor
@@ -95,6 +96,12 @@ internal class AppDependencies(context: Context) {
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
             appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller,
+            qqClientSwitcher, networkMonitor
+        )
+    }
+    val snowLuma: SnowLumaPlatformManager by lazy {
+        SnowLumaPlatformManager(
+            appContext, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess, snowLumaAdapterInstaller,
             qqClientSwitcher, networkMonitor
         )
     }

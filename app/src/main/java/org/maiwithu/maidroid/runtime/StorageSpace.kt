@@ -33,6 +33,9 @@ internal object StorageSpace {
     /** NapCat 和 LinuxQQ：调试机实测 QQ 约 650 MB、NapCat 约 110 MB，再加安装包下载。 */
     const val NAPCAT_INSTALL_BYTES = 1 * GB
 
+    /** SnowLuma 和 LinuxQQ：QQ 约 650 MB（和 NapCat 共用，已是这一版就不再装），SnowLuma 发行包解开后约 150 MB，再加两个安装包下载。 */
+    const val SNOWLUMA_INSTALL_BYTES = 1 * GB
+
     /** 在线更新 MaiBot：新源码加上可能新增的依赖包。 */
     const val MAIBOT_UPDATE_BYTES = 500 * MB
 

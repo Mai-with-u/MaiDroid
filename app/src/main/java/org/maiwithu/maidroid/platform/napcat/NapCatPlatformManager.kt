@@ -375,7 +375,11 @@ internal class NapCatPlatformManager(
     }
 
     private suspend fun refreshStatus() {
-        var snapshot = withContext(Dispatchers.IO) { statusReader.read(preferredUin = loginAccount?.uin) }
+        // 启用 SnowLuma 时 8095 是 SnowLuma 开的，不能算成 NapCat 在线：这时不探测端口
+        val active = withContext(Dispatchers.IO) { switcher.activeClient() == QqClient.NapCat }
+        var snapshot = withContext(Dispatchers.IO) {
+            statusReader.read(checkConnection = active, preferredUin = loginAccount?.uin)
+        }
         // OneBot 端口通了说明 QQ 已登录：第一次连通时问 NapCat 登的是哪个号，按它挑 onebot11_<QQ号>.json
         // 并显示昵称（换过号后最新修改的配置文件不一定是当前账号）；端口断了就忘掉，下次登录可能换号。
         if (!snapshot.oneBotReachable) {
@@ -383,7 +387,7 @@ internal class NapCatPlatformManager(
         } else if (loginAccount == null) {
             webUiClient.loginAccount()?.let { account ->
                 loginAccount = account
-                snapshot = withContext(Dispatchers.IO) { statusReader.read(preferredUin = account.uin) }
+                snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = active, preferredUin = account.uin) }
             }
         }
         val account = loginAccount
@@ -407,7 +411,8 @@ internal class NapCatPlatformManager(
                 oneBotReachable = snapshot.oneBotReachable,
                 oneBotConfig = snapshot.oneBotConfig,
                 accountId = account?.uin ?: snapshot.accountId,
-                accountName = account?.nick
+                accountName = account?.nick,
+                active = active
             )
         }
     }
@@ -421,7 +426,8 @@ internal class NapCatPlatformManager(
             qrCodeLastModified = snapshot.qrCodeLastModified
         ).copy(
             oneBotConfig = snapshot.oneBotConfig,
-            accountId = snapshot.accountId
+            accountId = snapshot.accountId,
+            active = switcher.activeClient() == QqClient.NapCat
         )
     }
 

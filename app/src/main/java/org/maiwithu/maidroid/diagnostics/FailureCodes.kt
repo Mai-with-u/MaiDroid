@@ -78,6 +78,13 @@ internal enum class FailureStep(val code: String, val label: String) {
     NapCatAdapterConfig("QQ-CONFIG", "配置 QQ 适配器"),
     NapCatFilesCheck("QQ-FILES", "核对 NapCat 文件"),
 
+    // ── QQ（SnowLuma）接入：和 NapCat 二选一，MaiBot 侧装的是同一个 QQ 适配器 ─────────
+    SnowLumaPrecheck("SL-PRECHECK", "安装 SnowLuma 前检查"),
+    SnowLumaInstall("SL-INSTALL", "安装 SnowLuma 和 QQ"),
+    SnowLumaAdapter("SL-ADAPTER", "安装 QQ 适配器（SnowLuma）"),
+    SnowLumaAdapterConfig("SL-CONFIG", "配置 QQ 适配器（SnowLuma）"),
+    SnowLumaFilesCheck("SL-FILES", "核对 SnowLuma 文件"),
+
     // ── QQ 官方机器人接入 ─────────────────────────────────────────
     QqOfficialPrecheck("QQO-PRECHECK", "安装 QQ 官方机器人适配器前检查"),
     QqOfficialInstall("QQO-INSTALL", "安装 QQ 官方机器人适配器"),
