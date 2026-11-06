@@ -5,6 +5,7 @@ import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
 import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
 import org.maiwithu.maidroid.runtime.requestExitScript
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -29,8 +30,14 @@ internal object SnowLumaScripts {
         "https://github.com/SnowLuma/SnowLuma/releases/download/v$VERSION/SnowLuma-v$VERSION-linux-arm64.tar.gz"
     private const val BUNDLE_SHA256 = "75311338de0d6588295ae71d4a242584294a0b5b349b35af2145eddaad6b10b8"
 
-    /** SnowLuma 上游钉的 LinuxQQ 版本，和 NapCat 共用 /opt/QQ。 */
+    /** SnowLuma 上游钉的 LinuxQQ 版本（安装包名里的写法：版本号_发布日期），和 NapCat 共用 /opt/QQ。 */
     const val QQ_VERSION = "3.2.32_260812"
+
+    /**
+     * 同一版 QQ 装好后 /opt/QQ/resources/app/package.json 里写的版本号：版本号-构建号，和包名里的发布日期对不上，
+     * 只能单独记（2026-11 真机上读出来的）。安装前拿它判断容器里的 QQ 是不是这一版；升级 QQ 时和 QQ_VERSION 一起改。
+     */
+    const val QQ_PACKAGE_JSON_VERSION = "3.2.32-52194"
     private const val QQ_PACKAGE = "QQ_${QQ_VERSION}_arm64_01.deb"
     private const val QQ_SHA256 = "8796ccfd66acc025ef18db37185532d40bc8c58921e17da6d28c295acbcf8f92"
 
@@ -56,6 +63,9 @@ internal object SnowLumaScripts {
     // QQ 里的 hook 和 SnowLuma 之间的 unix 套接字目录，两边必须一致：不设时 SnowLuma 按 QQ 进程的真实 uid 拼目录，
     // proot -0 下 QQ 看到的是 0、Android 上真实的是应用 uid，两边会对不上。路径要短，套接字路径有 108 字节上限。
     private const val HOOK_RUNTIME_DIR = "/tmp/snowluma-hook"
+
+    // /proc/locks 的替身，启动脚本往里填 QQ 的文件锁，原因见启动脚本里的注释
+    private const val PROC_LOCKS = InContainerPaths.PROC_LOCKS_STAND_IN
     private const val DOWNLOAD_DIR = "/root/.cache/maidroid-snowluma"
 
     /** Xvfb 屏幕大小：QQ 登录窗口和登录后的主窗口都放得下，屏幕文件约 4 MB。 */
@@ -73,9 +83,10 @@ internal object SnowLumaScripts {
     /**
      * SnowLuma 的两个 node 进程（守护进程和它拉起的工作进程，命令行一样）。收到 SIGTERM 后守护进程转给工作进程，
      * 工作进程关掉 OneBot、WebUI，写完日志再退出，两个都发也没关系（重复的退出请求会被忽略）。
-     * 正则里的点写成 [.]，免得匹配到脚本自己的命令行里那份正则原文。
+     * 只认入口文件：node 起来后把命令行改成了 `node /root/snowluma/app/index.mjs`（2026-11 真机上看到的），
+     * 不是启动时写的 `/root/snowluma/app/node ...`。正则里的点写成 [.]，免得匹配到脚本自己的命令行里那份正则原文。
      */
-    val SNOWLUMA_EXIT_TARGET = ExitTarget(pattern = "snowluma.app.node .*index[.]mjs", exclude = "awk", processName = "SnowLuma")
+    val SNOWLUMA_EXIT_TARGET = ExitTarget(pattern = "snowluma.app.index[.]mjs", exclude = "awk", processName = "SnowLuma")
 
     /** LinuxQQ 主进程，排除命令行带 --type= 的 zygote、utility 子进程；和 NapCat 起 QQ 用的参数一样。 */
     val QQ_EXIT_TARGET = ExitTarget(pattern = "qq --no-sandbox --disable-gpu", exclude = "--type=", processName = "QQ")
@@ -135,11 +146,13 @@ internal object SnowLumaScripts {
         body = listOf(
             "set +e",
             killMatchingProcessesScript(
-                pattern = "Xvfb |qq --no-sandbox|snowluma-launcher[.]sh|snowluma.app.node .*index[.]mjs",
+                pattern = "Xvfb |qq --no-sandbox|snowluma-launcher[.]sh|snowluma.app.index[.]mjs",
                 processName = "stale process",
                 logPrefix = "[SnowLuma] "
             ),
-            "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* $DISPLAY_FILE $SCREEN_FILE",
+            "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* $DISPLAY_FILE $SCREEN_FILE $PROC_LOCKS.new",
+            // 拼锁表的循环随启动脚本一起被清掉；替身文件留着（proot 绑定要用），只清空内容
+            ": > $PROC_LOCKS",
             "exit 0"
         ).joinToString("\n"),
         workingDirectory = "/root"
@@ -213,9 +226,9 @@ internal object SnowLumaScripts {
         fi
 
         # LinuxQQ 和 NapCat 共用 /opt/QQ：已经是这一版就不动；不是（没装、或者 NapCat 装的是别的版本）就换成这一版，
-        # SnowLuma 的原生组件绑着 QQ 的版本。版本号 package.json 里写成 3.2.32-260812，和包名里的下划线换一下再比。
+        # SnowLuma 的原生组件绑着 QQ 的版本。package.json 里的版本号是“版本号-构建号”，按 QQ_PACKAGE_JSON_VERSION 比。
         maidroid_progress 0.20 "Check LinuxQQ"
-        qq_wanted="${'$'}(printf "%s" ${shellQuote(QQ_VERSION)} | tr '_' '-')"
+        qq_wanted=${shellQuote(QQ_PACKAGE_JSON_VERSION)}
         qq_current="${'$'}(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /opt/QQ/resources/app/package.json 2>/dev/null | head -n 1)"
         if [ "${'$'}qq_current" = "${'$'}qq_wanted" ] && command -v qq >/dev/null 2>&1; then
             printf "[SnowLuma] LinuxQQ %s already installed\n" "${'$'}qq_current"
@@ -335,6 +348,20 @@ internal object SnowLumaScripts {
         echo "[SnowLuma] Xvfb started on :${'$'}display, pid=${'$'}xvfb_pid"
         export DISPLAY=":${'$'}display"
 
+        # Android 不让应用读 /proc/locks，SnowLuma 却要靠它认出 QQ 登录了哪个号（看 QQ 锁着哪个账号的 nt_msg.db），
+        # 读不到就一直停在“等待登录”。proot 把 /proc/locks 绑到了 $PROC_LOCKS（见 ProotCommand）：
+        # 这里每 2 秒用 QQ 进程 fdinfo 里的 lock: 行拼一张同样格式的表，先写临时文件再改名，SnowLuma 读不到写了一半的表。
+        (
+            while :; do
+                for qq_pid in ${'$'}(pgrep -x qq); do
+                    grep -h '^lock:' /proc/${'$'}qq_pid/fdinfo/* 2>/dev/null
+                done | sed 's/^lock:[[:space:]]*//' > $PROC_LOCKS.new
+                mv -f $PROC_LOCKS.new $PROC_LOCKS
+                sleep 2
+            done
+        ) &
+        locks_pid=${'$'}!
+
         # SnowLuma 放在后台跑，工作目录是数据目录（config/、data/、logs/ 都放在工作目录下）：
         # 自动注入默认关着，要打开；不查更新（程序目录由 MaiDroid 管）；WebUI 只听本机，端口由监管器挑好传进来；
         # 首次启动用 MaiDroid 生成的密码建 WebUI 账号；用户在安装前同意过协议，才替用户确认协议。
@@ -363,6 +390,10 @@ internal object SnowLumaScripts {
         exit_code=${'$'}?
         echo "[SnowLuma] qq exited with code ${'$'}exit_code"
 
+        # QQ 退出了，锁表也不用再拼：停掉循环、清空替身，免得留着旧进程的锁
+        kill "${'$'}locks_pid" 2>/dev/null || true
+        : > $PROC_LOCKS
+
         # QQ 退出了，SnowLuma 留着也收发不了消息：请它保存好数据退出，最多等 15 秒
         if kill -0 "${'$'}snowluma_pid" 2>/dev/null; then
             kill -TERM "${'$'}snowluma_pid" 2>/dev/null || true
@@ -371,6 +402,9 @@ internal object SnowLumaScripts {
                 sleep 1
             done
         fi
+
+        # 最后结束后台的 Xvfb：它不退，proot 就一直不退，应用会以为 SnowLuma 还在跑（QQ 自己崩了时尤其如此）
+        kill "${'$'}xvfb_pid" 2>/dev/null || true
         exit ${'$'}exit_code
         EOF
         chmod +x $LAUNCHER

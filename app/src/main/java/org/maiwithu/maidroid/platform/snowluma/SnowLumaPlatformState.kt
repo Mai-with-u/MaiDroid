@@ -33,6 +33,11 @@ internal data class SnowLumaPlatformState(
     val hookError: String = "",
     val accountId: String? = null,
     val accountName: String? = null,
+    /**
+     * SnowLuma 认出了 QQ 正在用的账号：QQ 已经登录、打开了这个号的数据，只是 SnowLuma 还没确认接管好。
+     * 真机上看到它只在 QQ 真正登录后才出现（停在登录页时认不出），所以这时不该再叫用户去登录。
+     */
+    val accountDetected: Boolean = false,
     /** 用户点了“重启 QQ”，正在停下再拉起。 */
     val qqRestarting: Boolean = false,
     /** 正在从 NapCat 切到 SnowLuma（等 NapCat 的 QQ 下线）。 */
@@ -64,6 +69,9 @@ internal data class SnowLumaPlatformState(
 internal fun snowLumaLoginHint(state: SnowLumaPlatformState): String = when {
     state.qqRestarting -> "正在重启 QQ…"
     state.loggedIn -> "QQ 已登录"
+    // QQ 登录了、SnowLuma 还没接管好：说清楚不是用户的事，一直这样就去看终端
+    state.hookPhase == SnowLumaHookPhase.WaitingLogin && state.accountDetected ->
+        "QQ 已登录，正在等 SnowLuma 接管；一直停在这里，原因见终端里 [SnowLuma] 开头的输出"
     state.hookPhase == SnowLumaHookPhase.WaitingLogin -> "用手机 QQ 扫码登录；二维码过期了就点一下二维码刷新，也可以点“登录”用上次的账号"
     state.hookPhase == SnowLumaHookPhase.Injecting -> "SnowLuma 正在连接 QQ…"
     state.hookPhase == SnowLumaHookPhase.QqStarting -> "QQ 正在启动…"

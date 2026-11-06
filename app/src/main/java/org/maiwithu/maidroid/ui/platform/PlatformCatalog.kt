@@ -152,6 +152,8 @@ private fun snowLumaInstalledCard(state: SnowLumaPlatformState): InstalledPlatfo
     val account = when {
         !state.active -> "SnowLuma 已停用"
         state.loggedIn -> "${state.accountDisplayName ?: "QQ"} 在线"
+        // QQ 已经登录、SnowLuma 还没接管好时不叫用户再去登录
+        state.hookPhase == SnowLumaHookPhase.WaitingLogin && state.accountDetected -> "QQ 已登录，等待 SnowLuma 接管"
         state.hookPhase == SnowLumaHookPhase.WaitingLogin -> "等待在 QQ 窗口登录"
         state.hookPhase == SnowLumaHookPhase.Failed -> "SnowLuma 接入 QQ 失败"
         state.running -> "SnowLuma 启动中"

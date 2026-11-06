@@ -145,7 +145,7 @@ NapCat 和 SnowLuma 都在容器里跑 LinuxQQ（共用 `/opt/QQ` 和 QQ 的登�
 2. SnowLuma 本体还没装（`snowluma_ready` 标记、`index.mjs`、全局 OneBot 配置缺一个）才运行安装脚本，进度经 `/tmp/snowluma_progress`、`snowluma_progress_des` 汇报（和 NapCat 的进度文件分开）：
    - 沿用或生成 OneBot token；第一次安装时生成 SnowLuma 管理页（WebUI）的密码，存在 `/root/.maidroid/snowluma_webui_password`；记下协议同意。
    - apt 装 `xvfb`、`xdotool`（往 QQ 窗口里点击）、`procps`、`curl`、`ca-certificates`、`tar` 和中文字体 `fonts-wqy-zenhei`（不然 QQ 窗口里的字显示成方块）。
-   - `/opt/QQ/resources/app/package.json` 里的 QQ 版本不是 SnowLuma 上游钉的那一版（`SnowLumaScripts.QQ_VERSION`）时，下载这一版的 deb 装上；NapCat 装过别的版本也换掉（允许降级）。先试 QQ 官方下载地址，再经 GitHub 镜像试上游安装脚本用的备份，下到的都要对得上 sha256。再往 `/etc/hosts` 里挡住 `qqpatch.gtimg.cn`，免得 QQ 热更新换掉组件、注入对不上。
+   - `/opt/QQ/resources/app/package.json` 里的 QQ 版本不是 SnowLuma 上游钉的那一版时，下载这一版的 deb 装上。同一版 QQ 有两种写法：安装包名里是“版本号_发布日期”（`SnowLumaScripts.QQ_VERSION`，`3.2.32_260812`），`package.json` 里是“版本号-构建号”（`QQ_PACKAGE_JSON_VERSION`，`3.2.32-52194`，真机上读出来的），比对用后者；NapCat 装过别的版本也换掉（允许降级）。先试 QQ 官方下载地址，再经 GitHub 镜像试上游安装脚本用的备份，下到的都要对得上 sha256。再往 `/etc/hosts` 里挡住 `qqpatch.gtimg.cn`，免得 QQ 热更新换掉组件、注入对不上。
    - 经 GitHub 镜像下载 SnowLuma 完整版发行包（自带 Node 24），校验 sha256 后解到 `/root/snowluma/app.tmp`，入口和 node 都在才换成 `/root/snowluma/app`。
    - 写全局 OneBot 配置 `/root/snowluma/data/config/onebot.json`：只开一个 `127.0.0.1:8095` 的 WebSocket 服务端，带上 token，消息用 array 格式。SnowLuma 默认的 HTTP 3000、WS 3001 不开；`#sl` 状态命令关掉，不然群里有人发 `#sl` 时机器人会自动回一条状态。
    - 写完成标记，生成启动脚本 `/root/snowluma-launcher.sh`。
@@ -161,12 +161,15 @@ NapCat 和 SnowLuma 都在容器里跑 LinuxQQ（共用 `/opt/QQ` 和 QQ 的登�
 每次启动：需要时换装 SnowLuma 适配器 -> 清掉残留的 Xvfb、qq、SnowLuma、启动脚本进程和 X11 锁 -> 重新生成启动脚本 -> 挑 WebUI 端口（默认 5099，被别的程序占着就换一个空端口，经 `SNOWLUMA_WEBUI_PORT` 传进去，脚本记在 `/tmp/.maidroid-snowluma-webui-port`）-> 前台运行启动脚本：
 
 1. 起 Xvfb，屏幕 1280x800。显示号用 `-displayfd` 自己挑（理由同 NapCat），记在 `/tmp/.maidroid-snowluma-display`。`-fbdir /tmp/snowluma-screen` 让 Xvfb 把屏幕内容一直写在一个 XWD 文件里，宿主侧读它显示 QQ 窗口。
-2. 后台起 SnowLuma，工作目录是 `/root/snowluma/data`。SnowLuma 把 `config/`、`data/`、`logs/` 放在工作目录下，和程序目录分开，升级时换掉程序目录不丢登录和配置。环境变量：打开自动注入（`SNOWLUMA_HOOK_AUTOLOAD=1`），不查更新，WebUI 只听本机，首次启动用上面的密码建 WebUI 账号，日志最多 64 MB、留 3 天。QQ 里的 hook 和 SnowLuma 之间的 unix 套接字目录固定为 `/tmp/snowluma-hook`（`SNOWLUMA_HOOK_RUNTIME_DIR`）：不设时 SnowLuma 按 QQ 进程的真实 uid 拼目录，PRoot `-0` 下 QQ 看到的是 0，Android 上真实的是应用 uid，两边会对不上。
-3. 前台起 LinuxQQ（参数和 NapCat 一样），SnowLuma 每 1.5 秒找一次 QQ 主进程，找到就注入。QQ 退出后请 SnowLuma 退出（最多等 15 秒），脚本随之结束。
+2. 后台每 2 秒拼一次 `/proc/locks` 的替身（见下）。
+3. 后台起 SnowLuma，工作目录是 `/root/snowluma/data`。SnowLuma 把 `config/`、`data/`、`logs/` 放在工作目录下，和程序目录分开，升级时换掉程序目录不丢登录和配置。环境变量：打开自动注入（`SNOWLUMA_HOOK_AUTOLOAD=1`），不查更新，WebUI 只听本机，首次启动用上面的密码建 WebUI 账号，日志最多 64 MB、留 3 天。QQ 里的 hook 和 SnowLuma 之间的 unix 套接字目录固定为 `/tmp/snowluma-hook`（`SNOWLUMA_HOOK_RUNTIME_DIR`）：不设时 SnowLuma 按 QQ 进程的真实 uid 拼目录，PRoot `-0` 下 QQ 看到的是 0，Android 上真实的是应用 uid，两边会对不上。
+4. 前台起 LinuxQQ（参数和 NapCat 一样），SnowLuma 每 1.5 秒找一次 QQ 主进程，找到就注入。QQ 退出后停掉拼锁表的循环、请 SnowLuma 退出（最多等 15 秒），最后结束 Xvfb：它不退 proot 就不退，应用会一直以为 SnowLuma 还在跑。
+
+SnowLuma 认 QQ 登录了哪个号，是读 `/proc/locks`，找 QQ 进程锁着哪个账号的 `nt_msg.db`。Android 不让普通应用读 `/proc/locks`，读不到时它会一直停在“等待登录”（日志里有 `account detection failed: EACCES ... /proc/locks`）。应用自己的进程能读 `/proc/<pid>/fdinfo/*`，里面带 `lock:` 的行就是这个文件上的锁，格式和 `/proc/locks` 的一行相同。所以 proot 把 `/proc/locks` 绑到容器里的普通文件 `/tmp/.maidroid-proc-locks`（`InContainerPaths.PROC_LOCKS_STAND_IN`，每条容器命令都绑，平时是空的），启动脚本每 2 秒用 QQ 进程 fdinfo 里的锁信息重写一遍，先写临时文件再改名，SnowLuma 读不到写了一半的表。
 
 输出加 `[SnowLuma]` 前缀写进终端日志。和 NapCat 一样不自动重启；SnowLuma 本体装好、而且启用的是 SnowLuma 才启动，不看适配器装没装。
 
-停止：先给 SnowLuma 的两个 node 进程（守护进程和工作进程）发 SIGTERM，请它关掉 OneBot、WebUI、写完日志再退出（最多等 20 秒）-> 再请 QQ 主进程正常下线退出（最多 20 秒）-> 清掉剩下的 Xvfb、屏幕文件和记下的显示号。安全退出、低电量暂停、手机关机都走这条路。
+停止：先给 SnowLuma 的两个 node 进程（守护进程和工作进程）发 SIGTERM（node 起来后把命令行改成了 `node /root/snowluma/app/index.mjs`，所以只按入口文件认），请它关掉 OneBot、WebUI、写完日志再退出（最多等 20 秒）-> 再请 QQ 主进程正常下线退出（最多 20 秒）-> 清掉剩下的 Xvfb、屏幕文件和记下的显示号。安全退出、低电量暂停、手机关机都走这条路。
 
 ### 状态怎么来的（`SnowLumaPlatformManager.refreshStatus`、`SnowLumaWebUiClient`）
 
@@ -182,6 +185,12 @@ NapCat 和 SnowLuma 都在容器里跑 LinuxQQ（共用 `/opt/QQ` 和 QQ 的登�
 SnowLuma 没有出二维码的接口，登录二维码只画在 QQ 自己的窗口里。所以 QQ 窗口弹窗开着时每秒读一次 Xvfb 的屏幕文件：`XwdScreen.decode` 按 XWD 文件头找到像素，没有窗口管理器，屏幕上除了 QQ 的窗口都是背景色，按和左上角那个像素不同框出 QQ 窗口那块画出来。用户点在画面上，按比例换算成屏幕坐标，用 `xdotool` 点进 QQ 窗口（刷新二维码、快速登录的“登录”按钮都靠它），连点时排队依次点。
 
 点设置时：QQ 已登录就打开 SnowLuma 管理页（`/?token=<密码>`，页面自己登录，用户不用输密码）；没登录打开 QQ 窗口，登录成功后自动关掉。
+
+### 现状：注入组件不报“登录就绪”
+
+2026-11-06 第一次上真机：安装、注入（`pipe connected`）、认出账号（`login identity discovered ... awaiting readiness`）都正常，QQ 窗口能显示、能点、能登录；但 QQ 登录之后，注入进 QQ 的闭源组件一直没发来登录状态，SnowLuma 停在 `loaded`、`loggedIn: false`，不开 OneBot 服务，麦麦收发不了消息。注入后组件还报了一次 `Client private-message reporting is unavailable status=-1`。这一层是闭源的，MaiDroid 这边改不了，trace 日志（`SNOWLUMA_LOG_LEVEL=trace`）已交给上游排查。和普通 Linux 相比，一个明显的区别是 proot 下 QQ 进程的 `/proc/<pid>/maps` 里写的是宿主机上的真实路径（`/data/user/0/<包名>/files/debian/opt/QQ/...`），不是容器里的 `/opt/QQ/...`。
+
+这时“已连接”卡片写“QQ 已登录，等待 SnowLuma 接管”：SnowLuma 只有在 QQ 真正登录、打开账号数据之后才认得出账号，所以“认出了账号但没就绪”就不是用户还没登录（`SnowLumaPlatformState.accountDetected`）。
 
 ### 重启 QQ
 

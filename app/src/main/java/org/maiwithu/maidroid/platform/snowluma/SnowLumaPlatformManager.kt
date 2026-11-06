@@ -386,7 +386,9 @@ internal class SnowLumaPlatformManager(
                 hookPhase = processes?.let(::snowLumaHookPhase),
                 hookError = primary?.error.orEmpty(),
                 accountId = primary?.uin?.ifBlank { null } ?: accountFromConfig,
-                accountName = primary?.nickname?.ifBlank { null }
+                accountName = primary?.nickname?.ifBlank { null },
+                // 账号只看 SnowLuma 这次认出来的，不看按 QQ 号另存的旧配置（以前登录过也会有）
+                accountDetected = !primary?.uin.isNullOrBlank()
             )
         }
     }

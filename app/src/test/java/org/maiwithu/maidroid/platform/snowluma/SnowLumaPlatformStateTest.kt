@@ -19,6 +19,12 @@ class SnowLumaPlatformStateTest {
     @Test
     fun `login hint tells the user what to do in the qq window`() {
         assertTrue(snowLumaLoginHint(installed.copy(running = true, hookPhase = SnowLumaHookPhase.WaitingLogin)).contains("扫码"))
+        // 认出了账号说明 QQ 已经登录，卡在 SnowLuma 接管这一步，不再叫用户扫码
+        val waitingForSnowLuma = snowLumaLoginHint(
+            installed.copy(running = true, hookPhase = SnowLumaHookPhase.WaitingLogin, accountDetected = true)
+        )
+        assertTrue(waitingForSnowLuma.startsWith("QQ 已登录"))
+        assertFalse(waitingForSnowLuma.contains("扫码"))
         assertEquals("QQ 正在启动…", snowLumaLoginHint(installed.copy(running = true, hookPhase = SnowLumaHookPhase.QqStarting)))
         // 注入失败把 SnowLuma 的原因带上，没给原因时指到终端
         assertTrue(

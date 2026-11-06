@@ -59,6 +59,7 @@ if (!result.success) fail(result.summary())
 libproot_exec.so --link2symlink -0 -r <rootfs>
   -b /dev -b /proc -b /sys -b /sdcard
   -b <假 /proc 文件>:/proc/stat（以及 loadavg、vmstat、uptime）
+  -b <termux/tmp>/.maidroid-proc-locks:/proc/locks
   -b <termux/tmp>:/tmp
   -w <工作目录>
   /bin/sh -c "unset LD_LIBRARY_PATH; export PATH=… HOME=/root …; <脚本正文>"
@@ -66,7 +67,7 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 - `-0` 假装 root，`--link2symlink` 让不支持硬链接的应用私有目录也能装 Debian 包。
 - proot 进程本身的环境变量里有 `PROOT_LOADER`、`LD_LIBRARY_PATH`（指向 nativeLibraryDir 和 termux/lib）；进入容器后脚本前缀会 unset `LD_LIBRARY_PATH`，避免 Android 的库污染 Debian 程序。
-- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。
+- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。`/proc/locks` 同样读不了，它的替身放在 `/tmp` 下（容器里要能改写），平时是空的，SnowLuma 运行时由它的启动脚本填内容，见 [消息平台接入](platforms.md) 的 SnowLuma 一节。
 
 写脚本时用 `shellQuote()` 包外部输入；需要结束残留进程用 `killMatchingProcessesScript()`。
 

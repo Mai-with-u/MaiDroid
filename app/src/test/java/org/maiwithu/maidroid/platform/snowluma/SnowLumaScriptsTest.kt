@@ -27,6 +27,8 @@ class SnowLumaScriptsTest {
         val check = install.indexOf("qq_current=")
         val download = install.indexOf("maidroid_snowluma_fetch /root/.cache/maidroid-snowluma/QQ_3.2.32_260812_arm64_01.deb")
         assertTrue(check in 0 until download)
+        // package.json 里写的是“版本号-构建号”（真机读出来的），不是包名里的发布日期
+        assertTrue(install.contains("qq_wanted='3.2.32-52194'"))
         // 官方地址在前，GitHub 备份在后；NapCat 装过别的版本时允许降级
         assertTrue(install.indexOf("https://qqdl.gtimg.cn/") < install.indexOf("maidroid_github_urls 'https://github.com/Rodert/qq-versions/"))
         assertTrue(install.contains("maidroid_apt_install --allow-downgrades /root/.cache/maidroid-snowluma/QQ_3.2.32_260812_arm64_01.deb"))
@@ -72,10 +74,31 @@ class SnowLumaScriptsTest {
     }
 
     @Test
+    fun `launcher rebuilds the lock table from qq fdinfo while qq runs`() {
+        // QQ 起来之前就开始拼，先写临时文件再改名；QQ 退出后停掉并清空
+        val loop = launcher.indexOf("for qq_pid in \$(pgrep -x qq); do")
+        assertTrue(loop in 0 until launcher.indexOf("Launching LinuxQQ"))
+        assertTrue(launcher.contains("grep -h '^lock:' /proc/\$qq_pid/fdinfo/* 2>/dev/null"))
+        assertTrue(launcher.contains("done | sed 's/^lock:[[:space:]]*//' > /tmp/.maidroid-proc-locks.new"))
+        assertTrue(launcher.contains("mv -f /tmp/.maidroid-proc-locks.new /tmp/.maidroid-proc-locks"))
+        assertTrue(launcher.indexOf("kill \"\$locks_pid\"") > launcher.indexOf("qq exited with code"))
+        // QQ 退出后最后结束 Xvfb，proot 才会跟着退出
+        assertTrue(launcher.indexOf("kill \"\$xvfb_pid\"") > launcher.indexOf("kill -TERM \"\$snowluma_pid\""))
+        // 清理时只清空替身，不删：proot 每条命令都要绑定它
+        val cleanup = SnowLumaScripts.cleanup().body
+        assertTrue(cleanup.contains(": > /tmp/.maidroid-proc-locks"))
+        assertFalse(cleanup.contains("rm -f /tmp/.maidroid-proc-locks "))
+    }
+
+    @Test
     fun `exit targets match the real processes`() {
         val snowLuma = Regex(SnowLumaScripts.SNOWLUMA_EXIT_TARGET.pattern)
+        // 真机上 ps 看到的是 node 改过的命令行；启动时写的原样也要认
+        assertTrue(snowLuma.containsMatchIn("node /root/snowluma/app/index.mjs"))
         assertTrue(snowLuma.containsMatchIn("/root/snowluma/app/node /root/snowluma/app/index.mjs"))
         assertFalse(snowLuma.containsMatchIn("bash /root/snowluma-launcher.sh"))
+        // 清理残留时同样认得出改过命令行的 node
+        assertTrue(SnowLumaScripts.cleanup().body.contains("snowluma.app.index[.]mjs"))
         val qq = Regex(SnowLumaScripts.QQ_EXIT_TARGET.pattern)
         assertTrue(qq.containsMatchIn("qq --no-sandbox --disable-gpu --disable-dev-shm-usage"))
     }

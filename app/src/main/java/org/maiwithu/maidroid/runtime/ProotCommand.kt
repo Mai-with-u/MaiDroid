@@ -62,6 +62,7 @@ internal class ProotCommand(private val paths: RuntimePaths) {
             "-b", "${paths.fakeProcLoadAvg.absolutePath}:/proc/loadavg",
             "-b", "${paths.fakeProcVmStat.absolutePath}:/proc/vmstat",
             "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
+            "-b", "${paths.fakeProcLocks.absolutePath}:/proc/locks",
             "-b", "/sys",
             "-b", "/sdcard",
             "-b", "${paths.termuxTmpDir.absolutePath}:/tmp",
@@ -78,6 +79,7 @@ internal class ProotCommand(private val paths: RuntimePaths) {
      * Android 不允许普通应用读 /proc/stat、/proc/loadavg、/proc/vmstat、/proc/uptime，
      * psutil、uv 等程序读不到会直接报错。这里写一份全零的假文件，由 proot 绑定到对应位置；
      * 开机时间按“一分钟前”填，内容不变时不重写，避免每条命令都触发一次磁盘写入。
+     * /proc/locks 同样读不了，它的替身由用到它的 SnowLuma 启动脚本填内容（见 InContainerPaths.PROC_LOCKS_STAND_IN）。
      */
     private fun ensureFakeProcFiles() {
         val bootTimeSeconds = (System.currentTimeMillis() / 1000L) - 60L
@@ -115,6 +117,11 @@ internal class ProotCommand(private val paths: RuntimePaths) {
             """.trimIndent() + "\n"
         )
         writeIfChanged(paths.fakeProcUptime, "60.00 60.00\n")
+        // /proc/locks 的替身只在没有时建一个空的：SnowLuma 运行期间容器里会不断重写它，这里不能覆盖
+        if (!paths.fakeProcLocks.isFile) {
+            paths.fakeProcLocks.parentFile?.mkdirs()
+            paths.fakeProcLocks.writeText("")
+        }
     }
 
     private fun writeIfChanged(file: File, content: String) {
