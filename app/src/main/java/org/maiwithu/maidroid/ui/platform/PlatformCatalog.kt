@@ -6,6 +6,8 @@ import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaHookPhase
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextMuted
 
@@ -20,13 +22,17 @@ internal enum class AccessMethod(val label: String) {
     /** 容器里跑 NapCat 登录个人 QQ，MaiBot 侧用 MaiBot-SnowLuma-Adapter 去连，代码在 platform/napcat。 */
     NapCat("NapCat"),
 
-    /** 在手机上跑 SnowLuma 客户端代替 NapCat，还没适配，只是展示；和 NapCat 用的 SnowLuma 适配器不是一回事。 */
+    /**
+     * 容器里跑 SnowLuma 客户端登录个人 QQ，代替 NapCat（两者二选一），MaiBot 侧同样用 MaiBot-SnowLuma-Adapter 去连，
+     * 代码在 platform/snowluma。和 NapCat 用的 SnowLuma 适配器不是一回事：这个选项说的是 QQ 协议端。
+     */
     SnowLumaClient("SnowLuma")
 }
 
 // 已安装卡片点齿轮时按来源打开对应的配置弹窗。
 internal enum class InstalledPlatformKind {
     NapCat,
+    SnowLuma,
     QqOfficial
 }
 
@@ -53,7 +59,7 @@ internal data class AvailablePlatform(
     val accessMethodProviders: Map<AccessMethod, String> = emptyMap()
 )
 
-// 已安装平台只由 installedPlatformCards 按 NapCat 和 QQ 官方机器人的真实状态生成，
+// 已安装平台只由 installedPlatformCards 按 NapCat、SnowLuma 和 QQ 官方机器人的真实状态生成，
 // 这里不再放写死的假账号，避免没适配的平台被误显示成"在线"。
 internal val AvailablePlatforms = listOf(
     AvailablePlatform(
@@ -69,7 +75,7 @@ internal val AvailablePlatforms = listOf(
         accessMethods = listOf(AccessMethod.QqOfficial, AccessMethod.NapCat, AccessMethod.SnowLumaClient),
         accessMethodProviders = mapOf(
             AccessMethod.NapCat to "将由 NapCat 提供服务",
-            AccessMethod.SnowLumaClient to "SnowLuma 暂未适配"
+            AccessMethod.SnowLumaClient to "将由 SnowLuma 提供服务"
         )
     ),
     AvailablePlatform(
@@ -100,14 +106,16 @@ internal val AvailablePlatforms = listOf(
 )
 
 /**
- * “已安装”一行显示哪些卡片：按 NapCat 和 QQ 官方机器人的真实状态生成，没装的不显示。
+ * “已安装”一行显示哪些卡片：按 NapCat、SnowLuma 和 QQ 官方机器人的真实状态生成，没装的不显示。
  * 设置页“消息平台”一行的运行中数量也按这里的 running 统计，两处口径一致。
  */
 internal fun installedPlatformCards(
     napCatState: NapCatPlatformState,
+    snowLumaState: SnowLumaPlatformState,
     qqOfficialState: QqOfficialPlatformState
 ): List<InstalledPlatform> = listOfNotNull(
     napCatInstalledCard(napCatState),
+    snowLumaInstalledCard(snowLumaState),
     qqOfficialInstalledCard(qqOfficialState)
 )
 
@@ -116,7 +124,9 @@ private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlat
         return null
     }
 
+    // 改用 SnowLuma 后 NapCat 的卡片留着（没卸载），写明停用了，点齿轮还能看配置
     val account = when {
+        !napCatState.active -> "NapCat 已停用"
         napCatState.oneBotReachable -> "${napCatState.accountDisplayName ?: "QQ"} 在线"
         napCatState.installed -> "NapCat 等待连接"
         else -> "NapCat 待配置"
@@ -130,6 +140,32 @@ private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlat
         iconColor = Color(0xCC0F3BE9),
         statusColor = if (napCatState.oneBotReachable) StatusOnline else TextMuted,
         running = napCatState.oneBotReachable
+    )
+}
+
+/**
+ * SnowLuma 装好后才出现在已安装行里；改用 NapCat 后留着，写明停用了。
+ * 没登录时按 SnowLuma 汇报的进度说清楚卡在哪一步（QQ 启动中、等待扫码、注入失败）。
+ */
+private fun snowLumaInstalledCard(state: SnowLumaPlatformState): InstalledPlatform? {
+    if (!state.installed) return null
+    val account = when {
+        !state.active -> "SnowLuma 已停用"
+        state.loggedIn -> "${state.accountDisplayName ?: "QQ"} 在线"
+        state.hookPhase == SnowLumaHookPhase.WaitingLogin -> "等待在 QQ 窗口登录"
+        state.hookPhase == SnowLumaHookPhase.Failed -> "SnowLuma 接入 QQ 失败"
+        state.running -> "SnowLuma 启动中"
+        else -> "SnowLuma 未运行"
+    }
+    return InstalledPlatform(
+        kind = InstalledPlatformKind.SnowLuma,
+        // 卡片标题只有 130dp 宽，和 NapCat 的“QQ（NapCat）”一样短
+        name = "QQ（SnowLuma）",
+        iconRes = R.drawable.ic_platform_qq,
+        account = account,
+        iconColor = Color(0xCC0F3BE9),
+        statusColor = if (state.active && state.loggedIn) StatusOnline else TextMuted,
+        running = state.active && state.loggedIn
     )
 }
 

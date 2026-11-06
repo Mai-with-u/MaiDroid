@@ -40,8 +40,11 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
+import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialInstallPhase
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaInstallPhase
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -270,24 +273,11 @@ private fun SmallTag(text: String) {
 internal fun PlatformInstallCard(
     platform: AvailablePlatform,
     selectedAccessMethod: AccessMethod?,
-    napCatState: NapCatPlatformState,
-    qqOfficialState: QqOfficialPlatformState,
-    onAccessMethodSelected: (AccessMethod) -> Unit,
-    onNapCatInstall: () -> Unit,
-    onNapCatSettings: () -> Unit,
-    onQqOfficialSettings: () -> Unit,
-    onUnsupportedInstall: () -> Unit
+    targets: PlatformInstallTargets,
+    onAccessMethodSelected: (AccessMethod) -> Unit
 ) {
     val hasAccessMethods = platform.accessMethods.isNotEmpty()
-    val installAction = platformInstallAction(
-        selectedAccessMethod = selectedAccessMethod,
-        napCatState = napCatState,
-        qqOfficialState = qqOfficialState,
-        onNapCatInstall = onNapCatInstall,
-        onNapCatSettings = onNapCatSettings,
-        onQqOfficialSettings = onQqOfficialSettings,
-        onUnsupportedInstall = onUnsupportedInstall
-    )
+    val installAction = platformInstallAction(selectedAccessMethod, targets)
 
     Box(
         modifier = Modifier
@@ -390,44 +380,73 @@ internal class PlatformInstallAction(
     val onClick: () -> Unit
 )
 
+/** 平台右侧按钮要看的各接入方式的状态，以及点下去的回调。平板的卡片和手机的列表行共用一份。 */
+internal class PlatformInstallTargets(
+    val napCatState: NapCatPlatformState,
+    val snowLumaState: SnowLumaPlatformState,
+    val qqOfficialState: QqOfficialPlatformState,
+    val onNapCatInstall: () -> Unit,
+    val onNapCatSettings: () -> Unit,
+    /** SnowLuma 还没装：先弹协议弹窗，同意后才开始安装。 */
+    val onSnowLumaInstall: () -> Unit,
+    val onSnowLumaSettings: () -> Unit,
+    /** 现在启用的是另一种 QQ 协议端：先弹确认，再切换（目标没装就装）。 */
+    val onSwitchQqClient: (QqClient) -> Unit,
+    val onQqOfficialSettings: () -> Unit,
+    val onUnsupportedInstall: () -> Unit
+)
+
 /**
- * 按选中的接入方式决定右侧按钮：按钮跟着选中的适配器显示各自的安装进度，没适配的选项一律显示下载图标。
- * 点下去：官方机器人 -> 打开凭据弹窗（安装中不响应）；NapCat -> 安装中不响应、装好进设置、没装就开始安装；
- * 其他没适配的选项 -> 提示暂未适配。
+ * 按选中的接入方式决定右侧按钮：按钮跟着选中的接入方式显示各自的安装进度，没选的平台显示下载图标。
+ * 点下去：官方机器人 -> 打开凭据弹窗（安装中不响应）；
+ * NapCat、SnowLuma -> 安装中不响应；另一种正启用着（而且装好了）就先确认切换；装好进设置；没装就开始安装
+ * （SnowLuma 先看协议）；没有接入方式的平台 -> 提示暂未适配。
  */
 internal fun platformInstallAction(
     selectedAccessMethod: AccessMethod?,
-    napCatState: NapCatPlatformState,
-    qqOfficialState: QqOfficialPlatformState,
-    onNapCatInstall: () -> Unit,
-    onNapCatSettings: () -> Unit,
-    onQqOfficialSettings: () -> Unit,
-    onUnsupportedInstall: () -> Unit
+    targets: PlatformInstallTargets
 ): PlatformInstallAction {
-    val isNapCatTarget = selectedAccessMethod == AccessMethod.NapCat
-    val isQqOfficialTarget = selectedAccessMethod == AccessMethod.QqOfficial
-    val state = when {
-        isNapCatTarget -> InstallButtonState(
-            installing = napCatState.isInstalling,
-            progress = napCatState.progress,
-            installed = napCatState.canOpenSettings,
-            failed = napCatState.phase == NapCatInstallPhase.Failed
+    val napCat = targets.napCatState
+    val snowLuma = targets.snowLumaState
+    val qqOfficial = targets.qqOfficialState
+    val state = when (selectedAccessMethod) {
+        AccessMethod.NapCat -> InstallButtonState(
+            installing = napCat.isInstalling,
+            progress = napCat.progress,
+            installed = napCat.canOpenSettings,
+            failed = napCat.phase == NapCatInstallPhase.Failed
         )
-        isQqOfficialTarget -> InstallButtonState(
-            installing = qqOfficialState.isInstalling,
-            progress = qqOfficialState.progress,
-            installed = qqOfficialState.installed,
-            failed = qqOfficialState.phase == QqOfficialInstallPhase.Failed
+        // 从 NapCat 切过来时要等 NapCat 的 QQ 下线，期间按钮显示转圈，不让人连点
+        AccessMethod.SnowLumaClient -> InstallButtonState(
+            installing = snowLuma.isInstalling || snowLuma.switching,
+            progress = if (snowLuma.switching) 0.5f else snowLuma.progress,
+            installed = snowLuma.canOpenSettings,
+            failed = snowLuma.phase == SnowLumaInstallPhase.Failed
         )
-        else -> InstallButtonState()
+        AccessMethod.QqOfficial -> InstallButtonState(
+            installing = qqOfficial.isInstalling,
+            progress = qqOfficial.progress,
+            installed = qqOfficial.installed,
+            failed = qqOfficial.phase == QqOfficialInstallPhase.Failed
+        )
+        null -> InstallButtonState()
     }
     return PlatformInstallAction(state) {
-        when {
-            isQqOfficialTarget -> if (!qqOfficialState.isInstalling) onQqOfficialSettings()
-            !isNapCatTarget -> onUnsupportedInstall()
-            napCatState.isInstalling -> Unit
-            napCatState.canOpenSettings -> onNapCatSettings()
-            else -> onNapCatInstall()
+        when (selectedAccessMethod) {
+            AccessMethod.QqOfficial -> if (!qqOfficial.isInstalling) targets.onQqOfficialSettings()
+            AccessMethod.NapCat -> when {
+                napCat.isInstalling -> Unit
+                snowLuma.active && snowLuma.installed -> targets.onSwitchQqClient(QqClient.NapCat)
+                napCat.canOpenSettings -> targets.onNapCatSettings()
+                else -> targets.onNapCatInstall()
+            }
+            AccessMethod.SnowLumaClient -> when {
+                snowLuma.isInstalling || snowLuma.switching -> Unit
+                snowLuma.installed && !snowLuma.active -> targets.onSwitchQqClient(QqClient.SnowLuma)
+                snowLuma.installed -> targets.onSnowLumaSettings()
+                else -> targets.onSnowLumaInstall()
+            }
+            null -> targets.onUnsupportedInstall()
         }
     }
 }

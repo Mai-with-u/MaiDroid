@@ -34,6 +34,7 @@ class MessagePlatformsPageTest {
         assertEquals(listOf(AccessMethod.QqOfficial, AccessMethod.NapCat, AccessMethod.SnowLumaClient), qq.accessMethods)
         assertEquals("将由 QQ 官方接口提供服务", qq.accessMethodProviders[AccessMethod.QqOfficial] ?: qq.provider)
         assertEquals("将由 NapCat 提供服务", qq.accessMethodProviders[AccessMethod.NapCat] ?: qq.provider)
+        assertEquals("将由 SnowLuma 提供服务", qq.accessMethodProviders[AccessMethod.SnowLumaClient] ?: qq.provider)
     }
 
     @Test
