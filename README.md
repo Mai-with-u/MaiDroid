@@ -19,7 +19,7 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
 - 常驻运行：前台服务托管 MaiBot，意外退出会自动重启，开机后自动拉起（需要系统允许自启动）。
 - 安全退出：设置页最底下的“安全退出”先让麦麦保存好数据、QQ 正常下线，再关闭 MaiDroid，不用去系统设置里强行停止。
 - 在手机上管理 MaiBot：主页的 WebUI 页签就是 MaiBot 自己的管理界面，导出、下载、上传按钮都能用，横屏时按桌面版显示。
-- 接入 QQ，有三种方式：用 NapCat 或 SnowLuma 扫码登录个人 QQ（两者二选一），或者填 QQ 开放平台的 AppID 和 AppSecret 使用官方机器人。
+- 接入 QQ，有三种方式：用 NapCat 或 SnowLuma（实验性，见“现状”）扫码登录个人 QQ（两者二选一），或者填 QQ 开放平台的 AppID 和 AppSecret 使用官方机器人。
 - 更新：设置页可以直接更新容器里的 MaiBot，也能检查、下载并安装 MaiDroid 自己的新版本。
 - 看日志：终端输出页汇总容器里所有进程的输出，可以搜索、暂停、多选复制。
 - 看文件：系统“文件”应用的侧边栏里会出现“MaiBot”和“MaiDroid 容器”两个位置，MT 管理器这类支持 SAF 的文件管理器也能添加。
@@ -202,7 +202,7 @@ MaiBot相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)�
 - 稳定的消息闭环、健康检查和错误提示还需要补齐。
 - 无障碍、输入法、通知监听这类手机侧的能力还没有全部落地。
 - 消息平台目前只接入了 QQ。Discord、WhatsApp、Signal 在界面里标着“暂未适配”。
-- SnowLuma 装的是固定版本的 SnowLuma 和 LinuxQQ（它的组件绑着 QQ 的版本），跟着 MaiDroid 的版本升级。
+- SnowLuma 还是实验性的：能装、能在 QQ 窗口里登录，但在手机上它还确认不了 QQ 已经登录，不开 OneBot 服务，麦麦收发不了消息，要等 SnowLuma 那边适配。它装的是固定版本的 SnowLuma 和 LinuxQQ（组件绑着 QQ 的版本），跟着 MaiDroid 的版本升级。
 
 ## 开发
 
