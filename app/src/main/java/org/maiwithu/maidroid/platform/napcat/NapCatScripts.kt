@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.maiwithu.maidroid.platform.qq.QqOneBot
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
@@ -26,8 +27,9 @@ internal object NapCatScripts {
     /**
      * 首次安装 NapCat 本体：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
      * 打 napcat_ready 标记 -> 生成 launcher.sh。
-     * token 只在第一次安装时生成，之后重装沿用容器里已保存的那份，避免 MaiBot 适配器配置失配。
-     * MaiBot 侧的 SnowLuma 适配器不在这里装：脚本跑完后由 SnowLumaAdapterInstaller 另外安装，配置等 MaiBot 生成后再迁移，
+     * token 只在第一次安装 QQ 协议端时生成，之后重装、换成 SnowLuma 都沿用容器里已保存的那份（QqOneBot），
+     * 避免 MaiBot 适配器配置失配。
+     * MaiBot 侧的 SnowLuma 适配器不在这里装：脚本跑完后由 SnowLumaAdapterInstaller（platform/qq）另外安装，配置等 MaiBot 生成后再迁移，
      * 这样 NapCat 已装好、只缺适配器（老用户迁移）时不用再跑一遍 NapCat 安装器。
      */
     fun install(token: String): ContainerScript = ContainerScript(
@@ -35,7 +37,9 @@ internal object NapCatScripts {
             "set -e",
             AptMirrors.shellFunctions(),
             GitHubMirrors.shellFunctions(),
-            installBody(token),
+            // 读出已保存的 token，没有才存下新的；后面写 onebot11.json 时用 shell 变量 napcat_token
+            QqOneBot.ensureTokenScript(token, variable = "napcat_token"),
+            installBody(),
             prepareRuntimeBody(),
             "maidroid_progress 0.9 ${shellQuote("NapCat install completed")}"
         ).joinToString("\n"),
@@ -89,7 +93,7 @@ internal object NapCatScripts {
         workingDirectory = "/root"
     )
 
-    private fun installBody(token: String): String =
+    private fun installBody(): String =
         """
         progress_file="${'$'}{TMPDIR:-/tmp}/progress"
         progress_des_file="${'$'}{TMPDIR:-/tmp}/progress_des"
@@ -101,14 +105,6 @@ internal object NapCatScripts {
         }
 
         maidroid_progress 0.05 "Prepare NapCat install"
-        mkdir -p "${'$'}HOME/.maidroid"
-        if [ -s "${'$'}HOME/.maidroid/napcat_token" ]; then
-            napcat_token="${'$'}(cat "${'$'}HOME/.maidroid/napcat_token")"
-        else
-            napcat_token="$token"
-            printf "%s" "${'$'}napcat_token" > "${'$'}HOME/.maidroid/napcat_token"
-            chmod 600 "${'$'}HOME/.maidroid/napcat_token" 2>/dev/null || true
-        fi
 
         if [ -d "${'$'}HOME/napcat" ] && [ ! -f "${'$'}HOME/.maidroid/napcat_ready" ]; then
             if find "${'$'}HOME/napcat" -mindepth 1 -type f | grep -q .; then
@@ -189,8 +185,8 @@ internal object NapCatScripts {
               {
                 "name": "WsServer",
                 "enable": true,
-                "host": "${SnowLumaAdapterConfig.ONE_BOT_HOST}",
-                "port": ${SnowLumaAdapterConfig.ONE_BOT_PORT},
+                "host": "${QqOneBot.HOST}",
+                "port": ${QqOneBot.PORT},
                 "reportSelfMessage": false,
                 "enableForcePushEvent": true,
                 "messagePostFormat": "array",

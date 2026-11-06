@@ -14,6 +14,10 @@ class NapCatScriptsTest {
         // 镜像返回网页或报错文字时不能当成安装器去执行
         assertTrue(install.contains("grep -qi 'napcat' napcat.sh"))
         assertFalse(install.contains("curl -fL --connect-timeout 20 -o napcat.sh https://"))
+        // OneBot token 和 SnowLuma 共用一份：先读出或存下，写 onebot11.json 时才有值
+        assertTrue(install.indexOf("napcat_token=\"${'$'}(cat /root/.maidroid/napcat_token)\"") in 0 until install.indexOf("onebot11.json"))
+        // 安装脚本里的 here-doc 结束标记必须顶格，否则 shell 找不到结尾
+        assertTrue(install.contains("\nEOF\n"))
     }
 
     @Test

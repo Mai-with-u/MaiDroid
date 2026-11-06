@@ -21,6 +21,8 @@ import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -264,7 +266,7 @@ internal class NapCatPlatformManager(
             _state.update { it.copy(progress = 0.92f, progressDescription = "下载 MaiBot 的 QQ 适配器") }
             // 安装输出照常进终端，同时留一份用来认失败原因
             val adapterOutput = StringBuilder()
-            val adapterError = adapterInstaller.install(onLine = { line ->
+            val adapterError = adapterInstaller.install(QqClient.NapCat, onLine = { line ->
                 TerminalLog.append(line)
                 adapterOutput.appendLine(line)
             })

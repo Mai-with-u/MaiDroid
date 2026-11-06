@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform.napcat
+package org.maiwithu.maidroid.platform.qq
 
 import org.maiwithu.maidroid.maibot.PluginConfigToml
 import org.maiwithu.maidroid.runtime.writeTextAtomically
@@ -10,15 +10,11 @@ import java.io.File
  * MaiDroid 不自己从头写这份配置：MaiBot 第一次加载插件时会按适配器的默认值生成一份完整的配置
  * （含 MaiBot 强制要求的 plugin.config_version，以及适配器当前版本的所有配置段），
  * MaiDroid 等它生成后再在上面改（SnowLumaAdapterInstaller.migrateConfigWhenReady）：
- * 启用插件（适配器默认关着，不开不会去连）-> [client] 指向本机 NapCat（地址、端口、OneBot token）->
+ * 启用插件（适配器默认关着，不开不会去连）-> [client] 指向本机的 QQ 协议端（QqOneBot 的地址、端口、token，NapCat 和 SnowLuma 一样）->
  * 旧适配器 MaiBot-Napcat-Adapter 的配置里有对应项的设置原样搬过来。其余节和注释原样保留。
  * MaiBot 监听插件配置文件，改完会自己补装依赖并热启用适配器。
  */
 internal object SnowLumaAdapterConfig {
-    /** 与 NapCatScripts 写进 onebot11.json 的 WebSocket 服务端一致。 */
-    const val ONE_BOT_HOST = "127.0.0.1"
-    const val ONE_BOT_PORT = 8095
-
     private const val PLUGIN_SECTION = "plugin"
     private const val CLIENT_SECTION = "client"
 
@@ -50,7 +46,7 @@ internal object SnowLumaAdapterConfig {
             .not()
 
     /**
-     * [client] 的地址、端口、token 都指向本机 NapCat 就算迁移过。
+     * [client] 的地址、端口、token 都指向本机的 QQ 协议端（QqOneBot）就算迁移过。
      * 只看连接项、不看 enabled：用户之后在 WebUI 里关掉适配器是他自己的选择，不能每次启动都给打开。
      */
     fun isMigrated(text: String, token: String): Boolean {
@@ -58,7 +54,7 @@ internal object SnowLumaAdapterConfig {
         val server = PluginConfigToml.rawValue(lines, CLIENT_SECTION, "server")?.let(PluginConfigToml::parseString)
         val port = PluginConfigToml.rawValue(lines, CLIENT_SECTION, "port")?.substringBefore('#')?.trim()
         val savedToken = PluginConfigToml.rawValue(lines, CLIENT_SECTION, "token")?.let(PluginConfigToml::parseString)
-        return server == ONE_BOT_HOST && port == ONE_BOT_PORT.toString() && savedToken == token
+        return server == QqOneBot.HOST && port == QqOneBot.PORT.toString() && savedToken == token
     }
 
     /**
@@ -68,8 +64,8 @@ internal object SnowLumaAdapterConfig {
     fun migrate(generated: String, token: String, legacy: String?): String {
         val lines = PluginConfigToml.lines(generated)
         PluginConfigToml.setValue(lines, PLUGIN_SECTION, "enabled", "true")
-        PluginConfigToml.setValue(lines, CLIENT_SECTION, "server", PluginConfigToml.tomlString(ONE_BOT_HOST))
-        PluginConfigToml.setValue(lines, CLIENT_SECTION, "port", ONE_BOT_PORT.toString())
+        PluginConfigToml.setValue(lines, CLIENT_SECTION, "server", PluginConfigToml.tomlString(QqOneBot.HOST))
+        PluginConfigToml.setValue(lines, CLIENT_SECTION, "port", QqOneBot.PORT.toString())
         PluginConfigToml.setValue(lines, CLIENT_SECTION, "token", PluginConfigToml.tomlString(token))
         if (!legacy.isNullOrBlank()) {
             val legacyLines = PluginConfigToml.lines(legacy)

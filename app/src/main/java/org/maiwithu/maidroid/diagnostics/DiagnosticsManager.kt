@@ -225,7 +225,7 @@ internal class DiagnosticsManager(
         add("WebUI令牌", MaiBotWebUi.readAccessTokenFromConfig(paths))
         add("WebUI令牌", MaiBotWebUi.extractAccessTokenFromLogs(TerminalLog.logs.value))
         val napCat = NapCatFiles(paths)
-        add("NapCat令牌", readTextOrNull(napCat.oneBotTokenFile)?.trim())
+        add("NapCat令牌", readTextOrNull(napCat.adapter.oneBotTokenFile)?.trim())
         add("NapCat管理令牌", readTextOrNull(napCat.webUiConfig)?.let { runCatching { JSONObject(it).optString("token") }.getOrNull() })
         val qqOfficial = QqOfficialAdapterConfig.read(readTextOrNull(QqOfficialAdapterFiles(paths).configFile()))
         add("AppID", qqOfficial.appId)

@@ -14,10 +14,11 @@ import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
-import org.maiwithu.maidroid.platform.napcat.SnowLumaAdapterInstaller
-import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
+import org.maiwithu.maidroid.platform.qq.QqAdapterFiles
+import org.maiwithu.maidroid.platform.qq.QqAdapterUpkeep
+import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkMonitor
@@ -70,12 +71,15 @@ internal class AppDependencies(context: Context) {
     val containerSsh: ContainerSshManager by lazy {
         ContainerSshManager(settings, runtimeReadiness, commandRunner)
     }
-    // 消息平台页安装和 NapCat 启动前换装共用一个，迁移适配器配置时靠它的锁串行。
+    // MaiBot 侧的 SnowLuma 适配器：消息平台页安装 NapCat、SnowLuma 和两边启动前的换装共用一个，迁移配置时靠它的锁串行。
     private val snowLumaAdapterInstaller: SnowLumaAdapterInstaller by lazy {
-        SnowLumaAdapterInstaller(NapCatFiles(runtimePaths), commandRunner)
+        SnowLumaAdapterInstaller(QqAdapterFiles(runtimePaths), commandRunner)
+    }
+    private val qqAdapterUpkeep: QqAdapterUpkeep by lazy {
+        QqAdapterUpkeep(QqAdapterFiles(runtimePaths), snowLumaAdapterInstaller, maiBotProcess)
     }
     val napCatProcess: NapCatProcessSupervisor by lazy {
-        NapCatProcessSupervisor(runtimePaths, commandRunner, maiBotProcess, snowLumaAdapterInstaller)
+        NapCatProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep)
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
