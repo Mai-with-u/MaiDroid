@@ -23,12 +23,12 @@ import org.maiwithu.maidroid.runtime.shellQuote
  */
 internal object SnowLumaScripts {
     /** 装的 SnowLuma 版本（GitHub Release 的 tag 去掉 v）。 */
-    const val VERSION = "2.4.1"
+    const val VERSION = "2.4.2"
 
     // 完整版发行包（自带 Node 24），sha256 取自 GitHub Release 资产的 digest
     private const val BUNDLE_URL =
         "https://github.com/SnowLuma/SnowLuma/releases/download/v$VERSION/SnowLuma-v$VERSION-linux-arm64.tar.gz"
-    private const val BUNDLE_SHA256 = "5b40a80fd09be2f0d83fd409bd7124e3b90bddcb12792bcfd8d06029608408b1"
+    private const val BUNDLE_SHA256 = "c4bcff22828fb465d6fbd8caa375e82432fd3af684b297c43f2c428a2de2200c"
 
     /** SnowLuma 上游钉的 LinuxQQ 版本（安装包名里的写法：版本号_发布日期），和 NapCat 共用 /opt/QQ。 */
     const val QQ_VERSION = "3.2.32_260812"

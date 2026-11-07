@@ -15,7 +15,7 @@ class SnowLumaScriptsTest {
         // 固定版本，经 GitHub 镜像下载，sha256 对不上就换下一个来源
         assertTrue(install.contains("releases/download/v${SnowLumaScripts.VERSION}/SnowLuma-v${SnowLumaScripts.VERSION}-linux-arm64.tar.gz"))
         assertTrue(install.contains("maidroid_github_urls 'https://github.com/SnowLuma/SnowLuma/releases/download/"))
-        assertTrue(install.contains("5b40a80fd09be2f0d83fd409bd7124e3b90bddcb12792bcfd8d06029608408b1"))
+        assertTrue(install.contains("c4bcff22828fb465d6fbd8caa375e82432fd3af684b297c43f2c428a2de2200c"))
         assertTrue(install.contains("if [ \"${'$'}fetch_got\" = \"${'$'}fetch_sha\" ]; then"))
         // 先解到临时目录、确认入口和 node 都在才换上
         assertTrue(install.indexOf("tar -xzf") < install.indexOf("mv /root/snowluma/app.tmp /root/snowluma/app"))
