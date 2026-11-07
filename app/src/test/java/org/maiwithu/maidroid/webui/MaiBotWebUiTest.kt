@@ -5,8 +5,35 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.nio.file.Files
 
 class MaiBotWebUiTest {
+    @Test
+    fun extractAccessTokenFromLogsFindsHostTemporaryPassword() {
+        // 多实例宿主版的 MaiBot 只打印“WebUI 临时登录密码：…”（全角冒号）
+        val token = MaiBotWebUi.extractAccessTokenFromLogs(listOf("WebUI 临时登录密码：hostTemp123"))
+
+        assertEquals("hostTemp123", token)
+    }
+
+    @Test
+    fun readAccessTokenPrefersHostCredentialsOverLegacyFile() {
+        // 升级后旧的 data/webui.json 可能还留着过期令牌，新位置 host/webui.json 要优先
+        val dir = Files.createTempDirectory("webui").toFile()
+        try {
+            val host = File(dir, "host/webui.json").apply { parentFile?.mkdirs(); writeText("""{"access_token":"hostToken"}""") }
+            val legacy = File(dir, "data/webui.json").apply { parentFile?.mkdirs(); writeText("""{"access_token":"oldToken"}""") }
+
+            assertEquals("hostToken", MaiBotWebUi.readAccessTokenFromFiles(listOf(host, legacy)))
+            host.delete()
+            // 还没升级的 MaiBot 只有旧位置
+            assertEquals("oldToken", MaiBotWebUi.readAccessTokenFromFiles(listOf(host, legacy)))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
     @Test
     fun extractAccessTokenFromLogsFindsStartupToken() {
         val token = MaiBotWebUi.extractAccessTokenFromLogs(
