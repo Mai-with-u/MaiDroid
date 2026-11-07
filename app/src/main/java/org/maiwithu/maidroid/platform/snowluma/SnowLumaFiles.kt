@@ -54,8 +54,16 @@ internal class SnowLumaFiles(paths: RuntimePaths) {
     val installProgressFile: File = File(tmpDir, SnowLumaScripts.PROGRESS_FILE.removePrefix("/tmp/"))
     val installProgressDescriptionFile: File = File(tmpDir, SnowLumaScripts.PROGRESS_DESCRIPTION_FILE.removePrefix("/tmp/"))
 
-    /** SnowLuma 本体装好了（完成标记、程序和 OneBot 配置都在），可以启动；不管 MaiBot 侧的适配器。 */
-    fun isSnowLumaReady(): Boolean = readyMarker.isFile && entry.isFile && globalOneBotConfig.isFile
+    /**
+     * SnowLuma 本体装好了（完成标记、程序和 OneBot 配置都在），可以启动；不管 MaiBot 侧的适配器。
+     * 完成标记里的版本和 MaiDroid 要的版本不一样时也算没装好：消息平台页会让用户重新安装，
+     * 安装脚本换掉程序目录、保留数据目录（登录和配置都还在），这样旧版本就升级上来了。
+     */
+    fun isSnowLumaReady(): Boolean =
+        readyMarker.isFile &&
+            runCatching { readyMarker.readText().trim() }.getOrNull() == SnowLumaScripts.VERSION &&
+            entry.isFile &&
+            globalOneBotConfig.isFile
 
     /** SnowLuma 本体和 SnowLuma 适配器都装好、适配器配置也迁移好了才算装好，消息平台页按这个显示。 */
     fun isInstalled(): Boolean = isSnowLumaReady() && adapter.isAdapterConfigured()
