@@ -186,11 +186,11 @@ SnowLuma 没有出二维码的接口，登录二维码只画在 QQ 自己的窗�
 
 点设置时：QQ 已登录就打开 SnowLuma 管理页（`/?token=<密码>`，页面自己登录，用户不用输密码）；没登录打开 QQ 窗口，登录成功后自动关掉。
 
-### 现状：注入组件不报“登录就绪”
+### proot 版本要跟上 Termux
 
-2026-11-06 第一次上真机：安装、注入（`pipe connected`）、认出账号（`login identity discovered ... awaiting readiness`）都正常，QQ 窗口能显示、能点、能登录；但 QQ 登录之后，注入进 QQ 的闭源组件一直没发来登录状态，SnowLuma 停在 `loaded`、`loggedIn: false`，不开 OneBot 服务，麦麦收发不了消息。注入后组件还报了一次 `Client private-message reporting is unavailable status=-1`。这一层是闭源的，MaiDroid 这边改不了，trace 日志（`SNOWLUMA_LOG_LEVEL=trace`）已交给上游排查。和普通 Linux 相比，一个明显的区别是 proot 下 QQ 进程的 `/proc/<pid>/maps` 里写的是宿主机上的真实路径（`/data/user/0/<包名>/files/debian/opt/QQ/...`），不是容器里的 `/opt/QQ/...`。
+SnowLuma 的注入组件对 proot 版本敏感：MaiDroid 曾打包 Termux proot 5.1.107.82，SnowLuma（2.4.0～2.4.2）在它下面注入成功、认出账号，却始终收不到注入组件发来的登录状态，停在 `loaded`、`loggedIn: false`，不开 OneBot 服务。换成 Termux 当前的 5.1.107.102 后正常上线。注入后那条 `Client private-message reporting is unavailable status=-1` 在正常上线时也会出现，不是故障线索。升级 jniLibs 里的 proot 时，要把可执行文件依赖的 `libtalloc.so.2` 改名成 `libtalloc.so`（APK 里的原生库只能叫 `lib*.so`）。
 
-这时“已连接”卡片写“QQ 已登录，等待 SnowLuma 接管”：SnowLuma 只有在 QQ 真正登录、打开账号数据之后才认得出账号，所以“认出了账号但没就绪”就不是用户还没登录（`SnowLumaPlatformState.accountDetected`）。
+认出账号却还没就绪时，“已连接”卡片写“QQ 已登录，等待 SnowLuma 接管”：SnowLuma 只有在 QQ 真正登录、打开账号数据之后才认得出账号，所以“认出了账号但没就绪”就不是用户还没登录（`SnowLumaPlatformState.accountDetected`）。
 
 ### 重启 QQ
 
