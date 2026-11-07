@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.terminal.AnsiText
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -35,8 +36,9 @@ internal object MaiBotWebUi {
         isLenient = true
     }
 
-    // MaiBot 启动时在日志里打印的访问令牌，例如“WebUI access token: abc123”。
-    private val tokenLogRegex = Regex("""(?i)WebUI[^\r\n]*Token:\s*([^\s]+)""")
+    // MaiBot 启动时在日志里打印的访问令牌：旧版是“WebUI access token: abc123”，
+    // 多实例宿主版只在用临时令牌时打印“WebUI 临时登录密码：abc123”（全角冒号）。
+    private val tokenLogRegex = Regex("""(?i)WebUI[^\r\n]*(?:Token:|临时登录密码[：:])\s*([^\s]+)""")
 
     /**
      * 探测 WebUI 是否已经能响应 HTTP。OOBE 等待启动和主页在线状态共用这一处。
@@ -76,7 +78,7 @@ internal object MaiBotWebUi {
 
     /**
      * 打开 WebUI 时实际加载的地址：找得到访问令牌就打开 /auth?token=…，让 WebUI 自动登录；找不到就打开首页。
-     * 令牌优先读 MaiBot 的 data/webui.json，读不到再从终端日志里找最近一次打印的。
+     * 令牌优先读 MaiBot 的 WebUI 凭据（host/webui.json，旧版是 data/webui.json），读不到再从终端日志里找最近一次打印的。
      */
     fun launchUrl(
         paths: RuntimePaths,
@@ -124,9 +126,18 @@ internal object MaiBotWebUi {
             url.replace(Regex("""token=[^&#]+"""), "token=<redacted>")
         }
 
-    /** 读 MaiBot data/webui.json 里的访问令牌；诊断包打码时也要用它认出日志里的令牌。 */
-    fun readAccessTokenFromConfig(paths: RuntimePaths): String? {
-        val tokenFile = paths.maiBotWebUiConfig
+    /** 读 MaiBot WebUI 凭据里的访问令牌（先新位置 host/webui.json，再旧位置 data/webui.json）；诊断包打码时也要用它认出日志里的令牌。 */
+    fun readAccessTokenFromConfig(paths: RuntimePaths): String? =
+        readAccessTokenFromFiles(paths.maiBotWebUiCredentials)
+
+    /**
+     * 按顺序读凭据文件，第一个读得出令牌的为准。
+     * 升级后旧文件里有 MaiBot 不认识的字段时会被留下，令牌可能已经过期，所以新位置必须排在前面。
+     */
+    fun readAccessTokenFromFiles(files: List<File>): String? =
+        files.firstNotNullOfOrNull(::readAccessTokenFromFile)
+
+    private fun readAccessTokenFromFile(tokenFile: File): String? {
         if (!tokenFile.isFile) return null
 
         return runCatching {

@@ -76,8 +76,14 @@ internal class RuntimePaths private constructor(
     val maiBotEula: File = File(maiBotDir, "EULA.md")
     val maiBotPrivacy: File = File(maiBotDir, "PRIVACY.md")
 
-    /** MaiBot WebUI 的配置，里面有登录用的 access_token。 */
-    val maiBotWebUiConfig: File = File(maiBotDir, "data/webui.json")
+    /**
+     * MaiBot WebUI 的登录凭据（access_token）。2026-11 起 MaiBot 改成多实例宿主，凭据挪到 host/webui.json，
+     * 旧位置 data/webui.json 在升级时迁过去并删掉；还没升级的 MaiBot 只有旧位置。按顺序找，先新后旧。
+     */
+    val maiBotWebUiCredentials: List<File> = listOf(
+        File(maiBotDir, "host/webui.json"),
+        File(maiBotDir, "data/webui.json")
+    )
     val venvDir: File = File(maiBotDir, ".venv")
 
     /** uv 的下载缓存和 uv 管理的 Python 解释器（容器 /root 下）；装依赖到一半时它们已经占了不少空间。 */

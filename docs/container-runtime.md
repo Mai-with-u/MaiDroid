@@ -26,7 +26,7 @@ filesDir/
 │   ├── .maidroid-rootfs-ready  解包完成标记
 │   ├── opt/MaiBot/             MaiBot 源码（容器内 /opt/MaiBot）
 │   │   ├── .venv/              uv 建的虚拟环境
-│   │   ├── data/webui.json     WebUI 配置，含 access_token
+│   │   ├── data/webui.json     旧版 WebUI 凭据（新版 MaiBot 挪到 host/webui.json）
 │   │   └── plugins/            MaiBot 插件（QQ 适配器即 SnowLuma 适配器、QQ 官方机器人适配器）
 │   ├── proc/.stat 等           假 /proc 文件
 │   └── root/                   容器内 /root：uv、napcat、launcher.sh、snowluma/、snowluma-launcher.sh、.maidroid/（MaiDroid 自己的状态文件）
