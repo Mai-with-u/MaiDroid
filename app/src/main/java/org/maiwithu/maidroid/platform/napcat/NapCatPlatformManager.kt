@@ -21,6 +21,9 @@ import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqClientSwitcher
+import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -50,6 +53,7 @@ internal class NapCatPlatformManager(
     private val commandRunner: ContainerCommandRunner,
     private val napCatProcess: NapCatProcessSupervisor,
     private val adapterInstaller: SnowLumaAdapterInstaller,
+    private val switcher: QqClientSwitcher,
     private val network: NetworkMonitor
 ) {
     private companion object {
@@ -184,23 +188,31 @@ internal class NapCatPlatformManager(
     }
 
     /**
-     * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就只重启运行时；否则在后台：
+     * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就改用 NapCat 并重启运行时；否则在后台：
      * 检查容器、MaiBot 源码和 MaiBot 版本 -> NapCat 本体没装才跑 NapCat 安装脚本（进度文件每 500 毫秒同步到进度环）->
      * 没装就装 MaiBot 侧的 SnowLuma 适配器（SnowLumaAdapterInstaller，顺带删掉停更的旧适配器）->
-     * 经前台服务拉起 NapCat 并重启 MaiBot，让它加载适配器、生成默认配置 -> 等配置生成后迁移连接设置，
-     * MaiBot 发现配置变了会自己热启用适配器。
+     * 改用 NapCat（停掉 SnowLuma）-> 经前台服务拉起 NapCat 并重启 MaiBot，让它加载适配器、生成默认配置 ->
+     * 等配置生成后迁移连接设置，MaiBot 发现配置变了会自己热启用适配器。
+     * 和 SnowLuma 的安装共用一把锁（两边都会跑 apt、装 QQ），SnowLuma 正在装时直接告诉用户等它装完。
      */
     fun installNapCat() {
         if (installJob?.isActive == true) return
 
         if (files.isInstalled() && !adapterInstaller.needsInstall()) {
-            refresh()
-            restartRuntime()
+            scope.launch {
+                switcher.activate(QqClient.NapCat)
+                refreshStatus()
+                restartRuntime()
+            }
             return
         }
 
         cancelAutoRetry()
         installJob = scope.launch {
+            if (!switcher.installLock.tryLock()) {
+                fail(Failure(FailureStep.NapCatPrecheck, "SnowLuma 正在安装，等它装完再装 NapCat"))
+                return@launch
+            }
             // 意外异常（读写文件出错、系统拒绝启动服务……）也落到失败提示上，不让进度环一直转、按钮点不了
             try {
                 runInstall()
@@ -208,6 +220,8 @@ internal class NapCatPlatformManager(
                 throw e
             } catch (e: Exception) {
                 fail(Failure(FailureStep.NapCatInstall, "安装时出了意外错误：${e.message ?: e.javaClass.simpleName}"))
+            } finally {
+                switcher.installLock.unlock()
             }
         }
     }
@@ -264,7 +278,7 @@ internal class NapCatPlatformManager(
             _state.update { it.copy(progress = 0.92f, progressDescription = "下载 MaiBot 的 QQ 适配器") }
             // 安装输出照常进终端，同时留一份用来认失败原因
             val adapterOutput = StringBuilder()
-            val adapterError = adapterInstaller.install(onLine = { line ->
+            val adapterError = adapterInstaller.install(QqClient.NapCat, onLine = { line ->
                 TerminalLog.append(line)
                 adapterOutput.appendLine(line)
             })
@@ -275,8 +289,10 @@ internal class NapCatPlatformManager(
             withContext(Dispatchers.IO) { flushFileSystems() }
         }
 
-        // 重启 MaiBot 让它加载新适配器、按适配器默认值生成配置（同时拉起 NapCat），生成后再迁移连接设置。
+        // 改用 NapCat（之前启用的是 SnowLuma 就先等它的 QQ 下线）-> 重启 MaiBot 让它加载新适配器、
+        // 按适配器默认值生成配置（同时拉起 NapCat），生成后再迁移连接设置。
         _state.update { it.copy(progress = 0.95f, progressDescription = "等麦麦生成 QQ 适配器配置") }
+        switcher.activate(QqClient.NapCat)
         TerminalLog.append("[NapCat] 重启麦麦加载 QQ 适配器，等它生成配置后迁移连接设置")
         restartRuntime()
         val migrationError = adapterInstaller.migrateConfigWhenReady()
@@ -359,7 +375,11 @@ internal class NapCatPlatformManager(
     }
 
     private suspend fun refreshStatus() {
-        var snapshot = withContext(Dispatchers.IO) { statusReader.read(preferredUin = loginAccount?.uin) }
+        // 启用 SnowLuma 时 8095 是 SnowLuma 开的，不能算成 NapCat 在线：这时不探测端口
+        val active = withContext(Dispatchers.IO) { switcher.activeClient() == QqClient.NapCat }
+        var snapshot = withContext(Dispatchers.IO) {
+            statusReader.read(checkConnection = active, preferredUin = loginAccount?.uin)
+        }
         // OneBot 端口通了说明 QQ 已登录：第一次连通时问 NapCat 登的是哪个号，按它挑 onebot11_<QQ号>.json
         // 并显示昵称（换过号后最新修改的配置文件不一定是当前账号）；端口断了就忘掉，下次登录可能换号。
         if (!snapshot.oneBotReachable) {
@@ -367,7 +387,7 @@ internal class NapCatPlatformManager(
         } else if (loginAccount == null) {
             webUiClient.loginAccount()?.let { account ->
                 loginAccount = account
-                snapshot = withContext(Dispatchers.IO) { statusReader.read(preferredUin = account.uin) }
+                snapshot = withContext(Dispatchers.IO) { statusReader.read(checkConnection = active, preferredUin = account.uin) }
             }
         }
         val account = loginAccount
@@ -391,7 +411,8 @@ internal class NapCatPlatformManager(
                 oneBotReachable = snapshot.oneBotReachable,
                 oneBotConfig = snapshot.oneBotConfig,
                 accountId = account?.uin ?: snapshot.accountId,
-                accountName = account?.nick
+                accountName = account?.nick,
+                active = active
             )
         }
     }
@@ -405,7 +426,8 @@ internal class NapCatPlatformManager(
             qrCodeLastModified = snapshot.qrCodeLastModified
         ).copy(
             oneBotConfig = snapshot.oneBotConfig,
-            accountId = snapshot.accountId
+            accountId = snapshot.accountId,
+            active = switcher.activeClient() == QqClient.NapCat
         )
     }
 

@@ -123,6 +123,7 @@ internal fun MaiDroidApp(
             showingSplash -> StartupSplashPage(modifier = Modifier.fillMaxSize())
 
             // 主页上的“唤醒”：WebUI 在线就全屏打开它，否则拉起 MaiBot（手动点按时再提示一句）。
+            // 电量低暂停着时启动请求会被拦下，手动点按时说明要插上电，不说“正在唤醒”。
             setupComplete -> HomeScreen(
                 webUiOnline = webUiOnline,
                 versionName = versionName,
@@ -138,7 +139,12 @@ internal fun MaiDroidApp(
                     } else {
                         viewModel.wakeMaiBot()
                         if (showToast) {
-                            Toast.makeText(context, "正在唤醒麦麦...", Toast.LENGTH_SHORT).show()
+                            val text = if (maiBotStatus.lowBatteryPaused) {
+                                "电量低，麦麦先停着；插上充电后会自动启动"
+                            } else {
+                                "正在唤醒麦麦..."
+                            }
+                            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }

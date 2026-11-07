@@ -32,8 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
-import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -219,13 +217,8 @@ internal fun EmptyPlatformRow() {
 internal fun PlatformRow(
     platform: AvailablePlatform,
     selectedAccessMethod: AccessMethod?,
-    napCatState: NapCatPlatformState,
-    qqOfficialState: QqOfficialPlatformState,
-    onAccessMethodSelected: (AccessMethod) -> Unit,
-    onNapCatInstall: () -> Unit,
-    onNapCatSettings: () -> Unit,
-    onQqOfficialSettings: () -> Unit,
-    onUnsupportedInstall: () -> Unit
+    targets: PlatformInstallTargets,
+    onAccessMethodSelected: (AccessMethod) -> Unit
 ) {
     // 有接入方式的平台才算已适配；目前只有 QQ。
     val supported = platform.accessMethods.isNotEmpty()
@@ -279,15 +272,7 @@ internal fun PlatformRow(
             Spacer(modifier = Modifier.width(8.dp))
 
             if (supported) {
-                val installAction = platformInstallAction(
-                    selectedAccessMethod = selectedAccessMethod,
-                    napCatState = napCatState,
-                    qqOfficialState = qqOfficialState,
-                    onNapCatInstall = onNapCatInstall,
-                    onNapCatSettings = onNapCatSettings,
-                    onQqOfficialSettings = onQqOfficialSettings,
-                    onUnsupportedInstall = onUnsupportedInstall
-                )
+                val installAction = platformInstallAction(selectedAccessMethod, targets)
                 DownloadIconButton(
                     state = installAction.state,
                     onClick = installAction.onClick

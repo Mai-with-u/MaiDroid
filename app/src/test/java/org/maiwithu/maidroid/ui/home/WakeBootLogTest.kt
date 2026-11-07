@@ -29,6 +29,15 @@ class WakeBootLogTest {
     }
 
     @Test
+    fun `low battery pause shows on the maibot line`() {
+        val paused = MaiBotProcessStatus(lowBatteryPaused = true)
+        val lines = bootLines(webUiOnline = false, status = paused, exits = 0)
+
+        assertEquals(BootLine("maibot process", "low battery", BootCheck.Warning), lines[1])
+        assertEquals("MB-BLOCKED/BAT-LOW", wakeFailure(paused, 0) { "" }?.code)
+    }
+
+    @Test
     fun `auto update line sits between container and maibot process`() {
         val lines = bootLines(false, starting, 0, update = updateLine(MaiBotUpdatePhase.Updating))
 

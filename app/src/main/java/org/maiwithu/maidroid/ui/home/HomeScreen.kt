@@ -105,6 +105,7 @@ internal fun HomeScreen(
                 permissionActions = permissionActions,
                 onTabSelected = { selectedTab = it },
                 onWakeMai = onWakeMai,
+                lowBatteryPaused = maiBotStatus.lowBatteryPaused,
                 onTerminalDismiss = { showTerminalOutput = false },
                 showTerminalOutput = showTerminalOutput,
                 onTerminalClick = { showTerminalOutput = true },
@@ -153,7 +154,8 @@ private fun HomeTabsShell(
     onWakeMai: (showToast: Boolean) -> Unit,
     onTerminalClick: () -> Unit,
     onTerminalDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    lowBatteryPaused: Boolean = false
 ) {
     var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
     val webUiTabState = rememberWebUiTabState()
@@ -218,6 +220,7 @@ private fun HomeTabsShell(
                                 webUiOnline = webUiOnline,
                                 onWakeMai = { onWakeMai(true) },
                                 state = webUiTabState,
+                                lowBatteryPaused = lowBatteryPaused,
                                 terminalLogs = terminalLogs,
                                 showRefreshButton = !useRail,
                                 startClearance = pageStartClearance,

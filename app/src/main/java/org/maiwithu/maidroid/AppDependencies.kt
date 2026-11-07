@@ -14,11 +14,16 @@ import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
-import org.maiwithu.maidroid.platform.napcat.SnowLumaAdapterInstaller
-import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
+import org.maiwithu.maidroid.platform.qq.QqAdapterFiles
+import org.maiwithu.maidroid.platform.qq.QqAdapterUpkeep
+import org.maiwithu.maidroid.platform.qq.QqClientChoice
+import org.maiwithu.maidroid.platform.qq.QqClientSwitcher
+import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformManager
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -70,17 +75,34 @@ internal class AppDependencies(context: Context) {
     val containerSsh: ContainerSshManager by lazy {
         ContainerSshManager(settings, runtimeReadiness, commandRunner)
     }
-    // 消息平台页安装和 NapCat 启动前换装共用一个，迁移适配器配置时靠它的锁串行。
+    // MaiBot 侧的 SnowLuma 适配器：消息平台页安装 NapCat、SnowLuma 和两边启动前的换装共用一个，迁移配置时靠它的锁串行。
     private val snowLumaAdapterInstaller: SnowLumaAdapterInstaller by lazy {
-        SnowLumaAdapterInstaller(NapCatFiles(runtimePaths), commandRunner)
+        SnowLumaAdapterInstaller(QqAdapterFiles(runtimePaths), commandRunner)
+    }
+    private val qqAdapterUpkeep: QqAdapterUpkeep by lazy {
+        QqAdapterUpkeep(QqAdapterFiles(runtimePaths), snowLumaAdapterInstaller, maiBotProcess)
+    }
+    // 个人 QQ 的两种协议端（NapCat、SnowLuma）二选一：启用哪个记在容器里，两个监管器只拉起被启用的那个。
+    private val qqClientChoice: QqClientChoice by lazy { QqClientChoice(runtimePaths) }
+    val qqClientSwitcher: QqClientSwitcher by lazy {
+        QqClientSwitcher(qqClientChoice, napCatProcess, snowLumaProcess)
     }
     val napCatProcess: NapCatProcessSupervisor by lazy {
-        NapCatProcessSupervisor(runtimePaths, commandRunner, maiBotProcess, snowLumaAdapterInstaller)
+        NapCatProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice)
+    }
+    val snowLumaProcess: SnowLumaProcessSupervisor by lazy {
+        SnowLumaProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice)
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
             appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller,
-            networkMonitor
+            qqClientSwitcher, networkMonitor
+        )
+    }
+    val snowLuma: SnowLumaPlatformManager by lazy {
+        SnowLumaPlatformManager(
+            appContext, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess, snowLumaAdapterInstaller,
+            qqClientSwitcher, networkMonitor
         )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {
@@ -99,9 +121,9 @@ internal class AppDependencies(context: Context) {
     val storageCleanup: StorageCleanupManager by lazy {
         StorageCleanupManager(runtimePaths, runtimeReadiness, commandRunner)
     }
-    // 设置页的“安全退出”：让上面三个长驻进程正常退出后关闭应用，由前台服务执行。
+    // 设置页的“安全退出”：让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
-        SafeExitManager(settings, maiBotProcess, napCatProcess, containerSsh)
+        SafeExitManager(settings, maiBotProcess, napCatProcess, snowLumaProcess, containerSsh)
     }
 
     // 手机有没有网：断网失败后等网络恢复自动重试用

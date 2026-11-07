@@ -78,6 +78,13 @@ internal enum class FailureStep(val code: String, val label: String) {
     NapCatAdapterConfig("QQ-CONFIG", "配置 QQ 适配器"),
     NapCatFilesCheck("QQ-FILES", "核对 NapCat 文件"),
 
+    // ── QQ（SnowLuma）接入：和 NapCat 二选一，MaiBot 侧装的是同一个 QQ 适配器 ─────────
+    SnowLumaPrecheck("SL-PRECHECK", "安装 SnowLuma 前检查"),
+    SnowLumaInstall("SL-INSTALL", "安装 SnowLuma 和 QQ"),
+    SnowLumaAdapter("SL-ADAPTER", "安装 QQ 适配器（SnowLuma）"),
+    SnowLumaAdapterConfig("SL-CONFIG", "配置 QQ 适配器（SnowLuma）"),
+    SnowLumaFilesCheck("SL-FILES", "核对 SnowLuma 文件"),
+
     // ── QQ 官方机器人接入 ─────────────────────────────────────────
     QqOfficialPrecheck("QQO-PRECHECK", "安装 QQ 官方机器人适配器前检查"),
     QqOfficialInstall("QQO-INSTALL", "安装 QQ 官方机器人适配器"),
@@ -209,5 +216,9 @@ internal enum class FailureCause(
     DatabaseLocked(
         "DB-LOCKED", "MaiBot 数据库被占用",
         "可能同时跑着两个麦麦。在设置页安全退出后重新打开 MaiDroid。"
+    ),
+    LowBattery(
+        "BAT-LOW", "手机电量太低",
+        "电量低于 5% 又没在充电时，麦麦和 QQ 会先保存好数据停下，免得没电关机时丢数据。插上充电器后会自动重新启动。"
     )
 }

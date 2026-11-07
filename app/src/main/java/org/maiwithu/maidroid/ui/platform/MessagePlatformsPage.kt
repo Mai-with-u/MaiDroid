@@ -67,8 +67,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.appDependencies
-import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
-import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
+import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -156,10 +155,8 @@ internal fun filterPlatforms(
 private class PlatformActions(
     val onInstalledSettingsClick: (InstalledPlatform) -> Unit,
     val onAccessMethodSelected: (AvailablePlatform, AccessMethod) -> Unit,
-    val onNapCatInstall: () -> Unit,
-    val onNapCatSettings: () -> Unit,
-    val onQqOfficialSettings: () -> Unit,
-    val onUnsupportedInstall: () -> Unit
+    /** 右侧下载 / 设置按钮看的状态和回调。 */
+    val targets: PlatformInstallTargets
 )
 
 @Composable
@@ -167,6 +164,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val napCatManager = remember(context) { context.appDependencies.napCat }
     val napCatState by napCatManager.state.collectAsState()
+    val snowLumaManager = remember(context) { context.appDependencies.snowLuma }
+    val snowLumaState by snowLumaManager.state.collectAsState()
     val uiScope = rememberCoroutineScope()
     val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
@@ -175,6 +174,9 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     }
     LaunchedEffect(qqOfficialManager) {
         qqOfficialManager.refresh()
+    }
+    LaunchedEffect(snowLumaManager) {
+        snowLumaManager.refresh()
     }
     var selectedCategory by remember { mutableStateOf("全部") }
     // 右上角搜索：点开后标题下出现搜索框，按名称和简介筛选当前分类；再点一次或按返回键收起并清空关键字。
@@ -192,8 +194,19 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     var showNapCatConfig by rememberSaveable { mutableStateOf(false) }
     var showQqLogoutConfirm by rememberSaveable { mutableStateOf(false) }
     var showQqOfficialConfig by rememberSaveable { mutableStateOf(false) }
+    // SnowLuma 这一路的弹窗：安装前的协议、QQ 窗口（qqWindowForLogin 表示是为登录打开的，登录成功就自动关）、
+    // 配置详情、重启 QQ 的确认；qqClientSwitchTarget 是要切过去的协议端（记 wireValue，能存进 Bundle）。
+    var showSnowLumaAgreement by rememberSaveable { mutableStateOf(false) }
+    var showQqWindow by rememberSaveable { mutableStateOf(false) }
+    var qqWindowForLogin by rememberSaveable { mutableStateOf(false) }
+    var showSnowLumaConfig by rememberSaveable { mutableStateOf(false) }
+    var showSnowLumaRestart by rememberSaveable { mutableStateOf(false) }
+    var qqClientSwitchTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val categories = listOf("全部", "国内", "海外", "其他")
-    val installedPlatforms = installedPlatformCards(napCatState, qqOfficialState)
+    val installedPlatforms = installedPlatformCards(napCatState, snowLumaState, qqOfficialState)
+    val openWebPage: (String) -> Unit = { url ->
+        context.startActivity(Intent(context, WebUiActivity::class.java).apply { putExtra(WebUiActivity.EXTRA_URL, url) })
+    }
     val runningCount = installedPlatforms.count { it.running }
     val onSearchClick: () -> Unit = { if (searchOpen) closeSearch() else searchOpen = true }
 
@@ -204,6 +217,10 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     napCatManager.refresh()
                     showNapCatConfig = true
                 }
+                InstalledPlatformKind.SnowLuma -> {
+                    snowLumaManager.refresh()
+                    showSnowLumaConfig = true
+                }
                 InstalledPlatformKind.QqOfficial -> {
                     qqOfficialManager.refresh()
                     showQqOfficialConfig = true
@@ -213,32 +230,48 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         onAccessMethodSelected = { platform, accessMethod ->
             selectedAccessMethods = selectedAccessMethods + (platform.name to accessMethod)
         },
-        onNapCatInstall = { napCatManager.installNapCat() },
-        onNapCatSettings = {
-            napCatManager.refresh()
-            // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
-            // 不能只看 OneBot 端口：登录后端口还没起来或 WsServer 被关掉时，
-            // 会弹出二维码又因“已登录”立刻关掉，永远进不了管理页去修。
-            uiScope.launch {
-                if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
-                    context.startActivity(
-                        Intent(context, WebUiActivity::class.java).apply {
-                            putExtra(WebUiActivity.EXTRA_URL, napCatManager.webUiPageUrl())
-                        }
-                    )
-                } else {
-                    showNapCatQrCode = true
+        targets = PlatformInstallTargets(
+            napCatState = napCatState,
+            snowLumaState = snowLumaState,
+            qqOfficialState = qqOfficialState,
+            onNapCatInstall = { napCatManager.installNapCat() },
+            onNapCatSettings = {
+                napCatManager.refresh()
+                // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
+                // 不能只看 OneBot 端口：登录后端口还没起来或 WsServer 被关掉时，
+                // 会弹出二维码又因“已登录”立刻关掉，永远进不了管理页去修。
+                uiScope.launch {
+                    if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
+                        openWebPage(napCatManager.webUiPageUrl())
+                    } else {
+                        showNapCatQrCode = true
+                    }
                 }
+            },
+            // SnowLuma 没装时先看协议，同意后才装
+            onSnowLumaInstall = { showSnowLumaAgreement = true },
+            onSnowLumaSettings = {
+                snowLumaManager.refresh()
+                // 点设置 -> QQ 已登录进 SnowLuma 管理页，没登录打开 QQ 窗口去扫码
+                uiScope.launch {
+                    if (snowLumaState.loggedIn || snowLumaManager.isQqLoggedIn()) {
+                        openWebPage(snowLumaManager.webUiPageUrl())
+                    } else {
+                        qqWindowForLogin = true
+                        showQqWindow = true
+                    }
+                }
+            },
+            onSwitchQqClient = { target -> qqClientSwitchTarget = target.wireValue },
+            // 官方机器人没装时点下载、装好后点齿轮都打开同一个凭据弹窗：先填 AppID 再安装。
+            onQqOfficialSettings = {
+                qqOfficialManager.refresh()
+                showQqOfficialConfig = true
+            },
+            onUnsupportedInstall = {
+                Toast.makeText(context, "这个平台暂未适配，敬请期待", Toast.LENGTH_SHORT).show()
             }
-        },
-        // 官方机器人没装时点下载、装好后点齿轮都打开同一个凭据弹窗：先填 AppID 再安装。
-        onQqOfficialSettings = {
-            qqOfficialManager.refresh()
-            showQqOfficialConfig = true
-        },
-        onUnsupportedInstall = {
-            Toast.makeText(context, "这个平台暂未适配，敬请期待", Toast.LENGTH_SHORT).show()
-        }
+        )
     )
 
     BoxWithConstraints(
@@ -316,13 +349,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         PlatformRow(
                             platform = platform,
                             selectedAccessMethod = selectedAccessMethods[platform.name] ?: platform.accessMethods.firstOrNull(),
-                            napCatState = napCatState,
-                            qqOfficialState = qqOfficialState,
-                            onAccessMethodSelected = { accessMethod -> actions.onAccessMethodSelected(platform, accessMethod) },
-                            onNapCatInstall = actions.onNapCatInstall,
-                            onNapCatSettings = actions.onNapCatSettings,
-                            onQqOfficialSettings = actions.onQqOfficialSettings,
-                            onUnsupportedInstall = actions.onUnsupportedInstall
+                            targets = actions.targets,
+                            onAccessMethodSelected = { accessMethod -> actions.onAccessMethodSelected(platform, accessMethod) }
                         )
                     }
                 }
@@ -431,8 +459,6 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         PlatformGrid(
                             platforms = visiblePlatforms,
                             selectedAccessMethods = selectedAccessMethods,
-                            napCatState = napCatState,
-                            qqOfficialState = qqOfficialState,
                             actions = actions
                         )
                     }
@@ -493,6 +519,90 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
+        // 装 SnowLuma 前先看协议：同意后才开始装，进度显示在卡片的进度环上
+        if (showSnowLumaAgreement) {
+            SnowLumaAgreementDialog(
+                napCatInstalled = napCatState.installed,
+                onConfirm = {
+                    showSnowLumaAgreement = false
+                    snowLumaManager.installSnowLuma()
+                    Toast.makeText(context, "正在安装 SnowLuma 和 QQ", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showSnowLumaAgreement = false }
+            )
+        }
+
+        if (showQqWindow) {
+            // 弹窗开着才读屏：每秒一帧，关掉弹窗协程取消即停止
+            LaunchedEffect(snowLumaManager) {
+                snowLumaManager.watchScreen()
+            }
+            // 为登录打开的：在 QQ 窗口里登录成功 -> 自动关弹窗并提示；从配置里打开来看窗口的不自动关
+            LaunchedEffect(snowLumaState.loggedIn) {
+                if (qqWindowForLogin && snowLumaState.loggedIn) {
+                    showQqWindow = false
+                    Toast.makeText(context, "QQ 登录成功", Toast.LENGTH_SHORT).show()
+                }
+            }
+            val frame by snowLumaManager.screen.collectAsState()
+            QqWindowDialog(
+                state = snowLumaState,
+                frame = frame,
+                onTap = { tapped, x, y -> snowLumaManager.clickQqWindow(tapped, x, y) },
+                onDismiss = { showQqWindow = false }
+            )
+        }
+
+        if (showSnowLumaConfig) {
+            SnowLumaConfigDialog(
+                state = snowLumaState,
+                onRefresh = { snowLumaManager.refresh() },
+                onShowQqWindow = {
+                    showSnowLumaConfig = false
+                    qqWindowForLogin = false
+                    showQqWindow = true
+                },
+                onOpenWebUi = { openWebPage(snowLumaManager.webUiPageUrl()) },
+                onRestartQq = { showSnowLumaRestart = true },
+                onDismiss = { showSnowLumaConfig = false }
+            )
+        }
+
+        // 重启 QQ 会让 MaiBot 暂时断开 QQ，先确认；确认后关掉配置弹窗，后台重启 SnowLuma 和 QQ
+        if (showSnowLumaRestart) {
+            SnowLumaRestartQqDialog(
+                onConfirm = {
+                    showSnowLumaRestart = false
+                    showSnowLumaConfig = false
+                    snowLumaManager.restartQq()
+                    Toast.makeText(context, "正在重启 QQ，稍后在 QQ 窗口里登录", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showSnowLumaRestart = false }
+            )
+        }
+
+        // 两种协议端只能启用一个：切过去前先确认。目标装好了就直接切；NapCat 没装就装，装完自动切过去
+        qqClientSwitchTarget?.let { wireValue ->
+            val target = QqClient.fromWireValue(wireValue)
+            val targetInstalled = when (target) {
+                QqClient.NapCat -> napCatState.installed
+                QqClient.SnowLuma -> snowLumaState.installed
+            }
+            QqClientSwitchDialog(
+                target = target,
+                targetInstalled = targetInstalled,
+                onConfirm = {
+                    qqClientSwitchTarget = null
+                    when (target) {
+                        QqClient.NapCat -> napCatManager.installNapCat()
+                        QqClient.SnowLuma -> snowLumaManager.activate()
+                    }
+                    Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { qqClientSwitchTarget = null }
+            )
+        }
+
         // 退出 QQ 会让 MaiBot 断开 QQ，必须二次确认；确认后关掉配置弹窗，后台清自动登录并重启 NapCat。
         if (showQqLogoutConfirm) {
             QqLogoutConfirmDialog(
@@ -512,8 +622,6 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 private fun PlatformGrid(
     platforms: List<AvailablePlatform>,
     selectedAccessMethods: Map<String, AccessMethod>,
-    napCatState: NapCatPlatformState,
-    qqOfficialState: QqOfficialPlatformState,
     actions: PlatformActions
 ) {
     val bottomClearance = LocalBottomNavigationClearance.current
@@ -562,13 +670,8 @@ private fun PlatformGrid(
                     PlatformInstallCard(
                         platform = platform,
                         selectedAccessMethod = selectedAccessMethods[platform.name] ?: platform.accessMethods.firstOrNull(),
-                        napCatState = napCatState,
-                        qqOfficialState = qqOfficialState,
-                        onAccessMethodSelected = { accessMethod -> actions.onAccessMethodSelected(platform, accessMethod) },
-                        onNapCatInstall = actions.onNapCatInstall,
-                        onNapCatSettings = actions.onNapCatSettings,
-                        onQqOfficialSettings = actions.onQqOfficialSettings,
-                        onUnsupportedInstall = actions.onUnsupportedInstall
+                        targets = actions.targets,
+                        onAccessMethodSelected = { accessMethod -> actions.onAccessMethodSelected(platform, accessMethod) }
                     )
                 }
             }

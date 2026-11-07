@@ -5,6 +5,7 @@ import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.MAIBOT_RUNTIME_CAUSES
 import org.maiwithu.maidroid.diagnostics.diagnoseFailureCause
+import org.maiwithu.maidroid.service.LowBatteryPolicy
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 
 /**
@@ -36,6 +37,9 @@ internal sealed interface MaiBotStartupResult {
     /** WebUI 端口被别的程序占着，监管器在等它空出来，没有拉起进程。 */
     data object PortTaken : MaiBotStartupResult
 
+    /** 手机电量低、又没插电，MaiBot 保存好数据停着，插上电后由前台服务拉起。 */
+    data object LowBattery : MaiBotStartupResult
+
     /** 进程起来后反复退出。 */
     data class Crashed(val exits: Int, val lastExitCode: Int?) : MaiBotStartupResult
 
@@ -49,7 +53,7 @@ internal sealed interface MaiBotStartupResult {
 /**
  * baselineExitCount 是请求启动前 status.exitCount 的值，只看这之后的退出；
  * WebUI 探测通了还要进程确实在跑，免得别的程序占着同一个端口被当成 MaiBot。
- * 端口被占时监管器根本不拉起进程（running 一直是 false），这里立刻报出来，不用等到超时。
+ * 端口被占、电量低暂停时监管器根本不拉起进程（running 一直是 false），这里立刻报出来，不用等到超时。
  */
 internal fun maiBotStartupVerdict(
     status: MaiBotProcessStatus,
@@ -60,6 +64,7 @@ internal fun maiBotStartupVerdict(
     val exits = status.exitCount - baselineExitCount
     return when {
         webUiReachable && status.running -> MaiBotStartupResult.Ready
+        status.lowBatteryPaused -> MaiBotStartupResult.LowBattery
         status.launchBlockedReason != null -> MaiBotStartupResult.Blocked(status.launchBlockedReason)
         status.webUiPortTaken -> MaiBotStartupResult.PortTaken
         exits >= MaiBotStartup.MAX_EXITS -> MaiBotStartupResult.Crashed(exits, status.lastExitCode)
@@ -76,6 +81,8 @@ internal fun MaiBotStartupResult.failureMessage(): String? = when (this) {
     is MaiBotStartupResult.Blocked -> "MaiBot 没有启动：$reason"
     MaiBotStartupResult.PortTaken ->
         "MaiBot 没有启动：WebUI 要用的端口 ${MaiBotWebUi.PORT} 被别的程序占着，端口空出来后会自动启动"
+    MaiBotStartupResult.LowBattery ->
+        "手机电量低于 ${LowBatteryPolicy.PAUSE_BELOW_PERCENT}%，麦麦和 QQ 已保存好数据停下，插上充电后会自动启动"
     is MaiBotStartupResult.Crashed ->
         "MaiBot 启动后连续退出了 $exits 次（最后退出码 ${lastExitCode ?: "未知"}），请查看终端输出里的报错"
     MaiBotStartupResult.NotStarted -> "MaiBot 进程一直没有启动起来，请查看终端输出"
@@ -93,6 +100,7 @@ internal fun MaiBotStartupResult.failure(recentOutput: String): Failure? {
         MaiBotStartupResult.Ready -> return null
         is MaiBotStartupResult.Blocked -> return Failure(FailureStep.MaiBotBlocked, message)
         MaiBotStartupResult.PortTaken -> return Failure(FailureStep.MaiBotBlocked, message, FailureCause.PortInUse)
+        MaiBotStartupResult.LowBattery -> return Failure(FailureStep.MaiBotBlocked, message, FailureCause.LowBattery)
         is MaiBotStartupResult.Crashed -> FailureStep.MaiBotCrash
         MaiBotStartupResult.NotStarted -> return Failure(FailureStep.MaiBotNotStarted, message)
         MaiBotStartupResult.TimedOut -> FailureStep.MaiBotTimeout

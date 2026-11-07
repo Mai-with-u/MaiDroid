@@ -121,8 +121,14 @@ internal fun WakeMaiPage(
         exits = exits,
         update = maiBotUpdate?.let(::maiBotUpdateBootLine)
     )
-    // MaiBot 起不来（启动前检查没过、反复退出）时进度条下面多一行错误码和“反馈问题”；每多退出一次重新认一次原因
-    val failure = remember(maiBotStatus.launchBlockedReason, maiBotStatus.webUiPortTaken, exits, maiBotStatus.lastExitCode) {
+    // MaiBot 起不来（启动前检查没过、端口被占、电量低暂停、反复退出）时进度条下面多一行错误码和“反馈问题”；每多退出一次重新认一次原因
+    val failure = remember(
+        maiBotStatus.launchBlockedReason,
+        maiBotStatus.webUiPortTaken,
+        maiBotStatus.lowBatteryPaused,
+        exits,
+        maiBotStatus.lastExitCode
+    ) {
         wakeFailure(maiBotStatus, exits) { maiBotRecentRunOutput(TerminalLog.logs.value.map(AnsiText::plain)) }
     }
     var showFeedback by rememberSaveable { mutableStateOf(false) }

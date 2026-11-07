@@ -108,15 +108,17 @@ internal fun SettingsPage(
     val sshState by sshManager.state.collectAsState()
     val napCatManager = remember(context) { context.appDependencies.napCat }
     val napCatState by napCatManager.state.collectAsState()
+    val snowLumaManager = remember(context) { context.appDependencies.snowLuma }
+    val snowLumaState by snowLumaManager.state.collectAsState()
     val updateManager = remember(context) { context.appDependencies.maiBotUpdater }
     val updateState by updateManager.state.collectAsState()
     val appUpdater = remember(context) { context.appDependencies.appUpdater }
     val appUpdateState by appUpdater.state.collectAsState()
     val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
-    // 设置页的“运行中平台”与消息平台页同一口径：NapCat 在线、官方机器人已启用且无连接报错都算。
-    val runningPlatformCount = remember(napCatState, qqOfficialState) {
-        installedPlatformCards(napCatState, qqOfficialState).count { it.running }
+    // 设置页的“运行中平台”与消息平台页同一口径：NapCat 或 SnowLuma 在线、官方机器人已启用且无连接报错都算。
+    val runningPlatformCount = remember(napCatState, snowLumaState, qqOfficialState) {
+        installedPlatformCards(napCatState, snowLumaState, qqOfficialState).count { it.running }
     }
     var showSshDialog by remember { mutableStateOf(false) }
     // 安全退出的二次确认；转屏重建时保留，免得用户刚点开就没了

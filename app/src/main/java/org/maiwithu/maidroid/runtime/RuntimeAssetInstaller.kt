@@ -19,9 +19,9 @@ import java.util.zip.ZipInputStream
 internal object RuntimeAssets {
     const val ROOTFS = "runtime/debian-rootfs.tar.xz"
     const val BOOTSTRAP = "runtime/bootstrap-aarch64.zip"
-    const val PROOT_DEB = "runtime/proot_5.1.107.82_aarch64.deb"
+    const val PROOT_DEB = "runtime/proot_5.1.107.102_aarch64.deb"
     const val LIBANDROID_SHMEM_DEB = "runtime/libandroid-shmem_0.7_aarch64.deb"
-    const val LIBTALLOC_DEB = "runtime/libtalloc_2.4.3_aarch64.deb"
+    const val LIBTALLOC_DEB = "runtime/libtalloc_2.5.0_aarch64.deb"
 }
 
 /** 解包进行到哪一部分：OOBE 据此决定哪几张容器卡片显示为进行中。 */

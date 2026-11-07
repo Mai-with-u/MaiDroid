@@ -59,6 +59,9 @@ internal class RuntimePaths private constructor(
     val fakeProcVmStat: File = File(rootfsDir, "proc/.vmstat")
     val fakeProcUptime: File = File(rootfsDir, "proc/.uptime")
 
+    /** /proc/locks 的替身放在容器的 /tmp 下（容器里要能改写它），原因见 InContainerPaths.PROC_LOCKS_STAND_IN。 */
+    val fakeProcLocks: File = File(termuxTmpDir, InContainerPaths.PROC_LOCKS_STAND_IN.removePrefix("/tmp/"))
+
     // ── 容器里的系统依赖 ─────────────────────────────────────────────
     val gitExecutable: File = File(rootfsDir, "usr/bin/git")
     val curlExecutable: File = File(rootfsDir, "usr/bin/curl")

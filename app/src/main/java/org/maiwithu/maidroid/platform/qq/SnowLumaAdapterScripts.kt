@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform.napcat
+package org.maiwithu.maidroid.platform.qq
 
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.GitHubMirrors
@@ -6,12 +6,12 @@ import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /**
- * MaiBot 侧连 NapCat 的 SnowLuma 适配器插件（MaiBot-SnowLuma-Adapter）：来源、版本要求和安装脚本。
+ * MaiBot 侧连 QQ 协议端的 SnowLuma 适配器插件（MaiBot-SnowLuma-Adapter）：来源、版本要求和安装脚本。
  *
- * 名字里的 SnowLuma 是适配器的名字，不是说要在手机上跑 SnowLuma 客户端：
- * 这个适配器同时支持 SnowLuma 客户端和 NapCat 两种 QQ 协议端，连上后按对端自动切换，MaiDroid 让它连 NapCat。
+ * 名字里的 SnowLuma 是适配器的名字：这个适配器同时支持 SnowLuma 客户端和 NapCat 两种 QQ 协议端，
+ * 连上后按对端（get_version_info 的 app_name）自动切换，MaiDroid 启用哪种协议端它就连哪种（地址都是 QqOneBot）。
  * 原来的 MaiBot-Napcat-Adapter 已停更（清单名写着“不再更新，请使用Snowluma适配器”），
- * 安装新适配器时会把它删掉，两个适配器同时连一个 NapCat 会把每条消息收两遍。
+ * 安装新适配器时会把它删掉，两个适配器同时连一个协议端会把每条消息收两遍。
  * 界面和终端日志里对用户说的“QQ 适配器”就是它。
  */
 internal object SnowLumaAdapterScripts {
@@ -37,8 +37,9 @@ internal object SnowLumaAdapterScripts {
      * 先装新的再删旧的：克隆失败时脚本在 set -e 下直接退出，旧适配器还在，QQ 不会断。
      * 临时目录以点开头，MaiBot 扫插件和热重载时会跳过它；core.createObject=rename 避免 proot 把
      * packfile 硬链接变成绝对路径符号链接，改名后仓库仍可读。连接配置由宿主侧另写，不在脚本里。
+     * 输出行带上发起安装的那一路协议端的前缀（logPrefix），终端里看得出是装 NapCat 还是 SnowLuma 时装的。
      */
-    fun install(cloneAdapter: Boolean): ContainerScript {
+    fun install(cloneAdapter: Boolean, logPrefix: String = QqClient.NapCat.logPrefix): ContainerScript {
         val pluginsDir = InContainerPaths.MAIBOT_PLUGINS_DIR
         val adapterDir = "$pluginsDir/$DIR_NAME"
         val stagingDir = "$pluginsDir/.$DIR_NAME.tmp"
@@ -50,10 +51,10 @@ internal object SnowLumaAdapterScripts {
             maidroid_github_clone ${shellQuote(REPOSITORY_URL)} ${shellQuote(stagingDir)} -c core.createObject=rename --depth=1 --single-branch
             rm -rf ${shellQuote(adapterDir)}
             mv ${shellQuote(stagingDir)} ${shellQuote(adapterDir)}
-            printf "[NapCat] QQ 适配器已下载到 %s\n" ${shellQuote(adapterDir)}
+            printf "%s QQ 适配器已下载到 %s\n" ${shellQuote(logPrefix)} ${shellQuote(adapterDir)}
             """.trimIndent()
         } else {
-            """printf "[NapCat] QQ 适配器已存在，跳过下载\n""""
+            """printf "%s QQ 适配器已存在，跳过下载\n" ${shellQuote(logPrefix)}"""
         }
         return ContainerScript(
             listOf(
@@ -65,7 +66,7 @@ internal object SnowLumaAdapterScripts {
                     [ -f "${'$'}manifest" ] || continue
                     if grep -qiE ${shellQuote(legacyIdPattern)} "${'$'}manifest"; then
                         legacy_dir="${'$'}(dirname "${'$'}manifest")"
-                        printf "[NapCat] 删除已停更的旧 NapCat 适配器: %s\n" "${'$'}legacy_dir"
+                        printf "%s 删除已停更的旧 NapCat 适配器: %s\n" ${shellQuote(logPrefix)} "${'$'}legacy_dir"
                         rm -rf "${'$'}legacy_dir"
                     fi
                 done

@@ -110,7 +110,7 @@ internal fun SafeExitConfirmDialog(
         },
         text = {
             Text(
-                text = "将通知麦麦、NapCat 和容器 SSH 正常退出：麦麦先保存好记忆和数据（通常几秒，最长约一分半钟），" +
+                text = "将通知麦麦、QQ 和容器 SSH 正常退出：麦麦先保存好记忆和数据（通常几秒，最长约一分半钟），" +
                     "QQ 随之下线。全部停下后 MaiDroid 自动关闭，再次打开时会重新唤醒麦麦。\n\n" +
                     "退出期间可以切到后台或划掉 MaiDroid，通知栏会显示进度，请不要强行停止。",
                 color = TextMuted,

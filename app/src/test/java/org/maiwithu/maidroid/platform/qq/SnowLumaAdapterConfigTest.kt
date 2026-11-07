@@ -1,4 +1,4 @@
-package org.maiwithu.maidroid.platform.napcat
+package org.maiwithu.maidroid.platform.qq
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -149,5 +149,18 @@ class SnowLumaAdapterConfigTest {
         assertTrue(fresh.contains("maibot-team\\.napcat-adapter"))
         assertFalse(existing.contains("maidroid_github_clone '"))
         assertTrue(existing.contains("maibot-team\\.napcat-adapter"))
+        // 装 SnowLuma 时装的适配器，终端里的输出带 SnowLuma 的前缀
+        assertTrue(SnowLumaAdapterScripts.install(cloneAdapter = true, logPrefix = "[SnowLuma]").body.contains("'[SnowLuma]'"))
+        assertFalse(SnowLumaAdapterScripts.install(cloneAdapter = true, logPrefix = "[SnowLuma]").body.contains("[NapCat]"))
+    }
+
+    @Test
+    fun `onebot token is created once and reused by both qq clients`() {
+        val script = QqOneBot.ensureTokenScript("fresh", variable = "napcat_token")
+
+        // 已经存过就沿用，换协议端、重装都不换 token，适配器配置才对得上
+        assertTrue(script.contains("if [ -s /root/.maidroid/napcat_token ]; then"))
+        assertTrue(script.contains("napcat_token=\"${'$'}(cat /root/.maidroid/napcat_token)\""))
+        assertTrue(script.contains("napcat_token=\"fresh\""))
     }
 }

@@ -2,7 +2,7 @@
 
 MaiBot 是 Python 项目，要在 Debian 环境里用 uv 装依赖运行。MaiDroid 不需要 root：APK 自带 proot，把一个 Debian rootfs 挂成“假根目录”，所有命令都在这个容器里执行。这份文档讲容器的文件布局、命令怎么执行、OOBE 每一步做了什么，以及 MaiBot 的启动、更新和容器 SSH。
 
-相关代码都在 `runtime/`，各功能模块的脚本在各自的包里（`maibot/MaiBotScripts`、`platform/napcat/NapCatScripts`、`ssh/ContainerSshScripts` 等）。
+相关代码都在 `runtime/`，各功能模块的脚本在各自的包里（`maibot/MaiBotScripts`、`platform/napcat/NapCatScripts`、`platform/snowluma/SnowLumaScripts`、`ssh/ContainerSshScripts` 等）。
 
 ## 随 APK 分发的资源
 
@@ -27,9 +27,9 @@ filesDir/
 │   ├── opt/MaiBot/             MaiBot 源码（容器内 /opt/MaiBot）
 │   │   ├── .venv/              uv 建的虚拟环境
 │   │   ├── data/webui.json     WebUI 配置，含 access_token
-│   │   └── plugins/            MaiBot 插件（NapCat 适配器、QQ 官方机器人适配器）
+│   │   └── plugins/            MaiBot 插件（QQ 适配器即 SnowLuma 适配器、QQ 官方机器人适配器）
 │   ├── proc/.stat 等           假 /proc 文件
-│   └── root/                   容器内 /root：uv、napcat、launcher.sh、.maidroid/（MaiDroid 自己的状态文件）
+│   └── root/                   容器内 /root：uv、napcat、launcher.sh、snowluma/、snowluma-launcher.sh、.maidroid/（MaiDroid 自己的状态文件）
 ├── termux/                     Termux bootstrap 和 proot 依赖
 │   ├── .maidroid-bootstrap-ready
 │   ├── lib/
@@ -38,7 +38,7 @@ filesDir/
 nativeLibraryDir/               libproot_exec.so 等
 ```
 
-容器内的固定路径常量在 `InContainerPaths`（例如 `/opt/MaiBot`），宿主侧路径在 `RuntimePaths`；NapCat 和 QQ 官方机器人的文件位置分别在 `NapCatFiles`、`QqOfficialAdapterFiles`。
+容器内的固定路径常量在 `InContainerPaths`（例如 `/opt/MaiBot`），宿主侧路径在 `RuntimePaths`；NapCat、SnowLuma 和 QQ 官方机器人的文件位置分别在 `NapCatFiles`、`SnowLumaFiles`、`QqOfficialAdapterFiles`，两种 QQ 协议端共用的适配器和 OneBot token 在 `QqAdapterFiles`。
 
 ## 在容器里执行命令
 
@@ -50,7 +50,7 @@ if (!result.success) fail(result.summary())
 ```
 
 - `run(script)`：一次性命令，逐行回调输出，返回退出码和完整输出。进程起不来时不抛异常，返回退出码 -1。`summary()` 取最后一行非空输出作为失败原因。
-- `start(script, extraEnvironment)`：长驻进程（MaiBot、NapCat、sshd），返回 `Process`，读输出和停止由调用方负责。
+- `start(script, extraEnvironment)`：长驻进程（MaiBot、NapCat、SnowLuma、sshd），返回 `Process`，读输出和停止由调用方负责。
 - `commandLine(script)`：实际执行的 proot 命令行，OOBE 会把它打进日志。
 
 `ProotCommand` 负责翻译：
@@ -59,6 +59,7 @@ if (!result.success) fail(result.summary())
 libproot_exec.so --link2symlink -0 -r <rootfs>
   -b /dev -b /proc -b /sys -b /sdcard
   -b <假 /proc 文件>:/proc/stat（以及 loadavg、vmstat、uptime）
+  -b <termux/tmp>/.maidroid-proc-locks:/proc/locks
   -b <termux/tmp>:/tmp
   -w <工作目录>
   /bin/sh -c "unset LD_LIBRARY_PATH; export PATH=… HOME=/root …; <脚本正文>"
@@ -66,7 +67,7 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 - `-0` 假装 root，`--link2symlink` 让不支持硬链接的应用私有目录也能装 Debian 包。
 - proot 进程本身的环境变量里有 `PROOT_LOADER`、`LD_LIBRARY_PATH`（指向 nativeLibraryDir 和 termux/lib）；进入容器后脚本前缀会 unset `LD_LIBRARY_PATH`，避免 Android 的库污染 Debian 程序。
-- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。
+- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。`/proc/locks` 同样读不了，它的替身放在 `/tmp` 下（容器里要能改写），平时是空的，SnowLuma 运行时由它的启动脚本填内容，见 [消息平台接入](platforms.md) 的 SnowLuma 一节。
 
 写脚本时用 `shellQuote()` 包外部输入；需要结束残留进程用 `killMatchingProcessesScript()`。
 
@@ -130,7 +131,7 @@ proot 里没有 Android 的 DNS 解析服务，容器程序直接向 `/etc/resol
 Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内手机上会差 8 个小时。`ContainerTimeZone` 在宿主侧把 rootfs 的 `/etc/localtime` 指向手机当前时区的 zoneinfo 文件，`/etc/timezone` 写同一个名字：
 
 - `ProotCommand` 在每条容器命令启动前同步一次，内容没变不写盘；手机在应用没跑时改过时区，下次拉起的进程也会用上新时区。同步失败不挡命令，容器沿用原时区。
-- 前台服务活着时监听 `ACTION_TIMEZONE_CHANGED`：收到后立刻同步，MaiBot 正在跑就重启它。进程启动时就读定了时区，不重启会一直按旧时区报时。NapCat 不重启（会断开 QQ 登录），它只影响自己的日志时间，下次启动用上新时区；SSH 里新开的命令直接读 `/etc/localtime`，同步后立刻生效。
+- 前台服务活着时监听 `ACTION_TIMEZONE_CHANGED`：收到后立刻同步，MaiBot 正在跑就重启它。进程启动时就读定了时区，不重启会一直按旧时区报时。NapCat、SnowLuma 不重启（会断开 QQ 登录），它只影响自己的日志时间，下次启动用上新时区；SSH 里新开的命令直接读 `/etc/localtime`，同步后立刻生效。
 - 容器的 tzdata 里没有手机的时区名（手机的 tzdata 更新，或是 `GMT+08:00` 这类自定义时区）时，按当下的偏移换成 `Etc/GMT∓N`（正负号和 UTC+8 的写法相反），偏移不是整点就退回 `Etc/UTC`。
 
 ### proot 下的 git
@@ -171,6 +172,7 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 | WebUI 有响应且进程在跑 | 完成（只看端口会把占着 8001 的别的程序当成 MaiBot） |
 | 启动前检查没过 | 立刻失败，报被拦下的原因 |
 | 8001 被别的程序占着，监管器在等它空出来 | 立刻失败：`MB-BLOCKED/PORT-BUSY`；端口空出来后监管器自己拉起，点重试就能接上 |
+| 电量低、又没插电，麦麦暂停着（见 architecture.md“低电量暂停与关机”） | 立刻失败：`MB-BLOCKED/BAT-LOW`；插上电后前台服务自己拉起 |
 | 拉起后意外退出满 2 次 | 立刻失败，报退出次数和最后退出码；允许一次是因为 MaiBot 可能自己退出请求重启 |
 | 60 秒内进程没起来也没退出过 | 失败：进程一直没有启动 |
 | 进程活着满 10 分钟 WebUI 仍不通 | 失败：超时 |

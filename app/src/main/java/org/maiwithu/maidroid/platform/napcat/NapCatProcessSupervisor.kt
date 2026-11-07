@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.platform.napcat
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -10,7 +9,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.maiwithu.maidroid.diagnostics.backgroundScope
-import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
+import org.maiwithu.maidroid.platform.qq.QqAdapterUpkeep
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
@@ -27,12 +28,13 @@ import java.util.concurrent.TimeUnit
  * 前台服务负责启停，退出 QQ 登录时只重启它。停止时先请 QQ 正常下线退出，超时才强制清理。
  *
  * 与 MaiBot 不同，NapCat 意外退出后不自动重启：QQ 掉线后要重新扫码，自动拉起也登不回去。
+ * 只有 QqClientChoice 记着启用 NapCat 时才会启动（没有记录也算 NapCat），和 SnowLuma 二选一。
  */
 internal class NapCatProcessSupervisor(
     private val paths: RuntimePaths,
     private val commandRunner: ContainerCommandRunner,
-    private val maiBotProcess: MaiBotProcessSupervisor,
-    private val adapterInstaller: SnowLumaAdapterInstaller
+    private val adapterUpkeep: QqAdapterUpkeep,
+    private val choice: QqClientChoice
 ) {
     private companion object {
         // 停止时等旧一轮读日志（或还在启动）的协程收尾的上限。
@@ -44,9 +46,6 @@ internal class NapCatProcessSupervisor(
 
     private val files = NapCatFiles(paths)
 
-    // 等 MaiBot 生成适配器配置再迁移的后台任务；不跟 NapCat 进程一起取消，重启 NapCat 也不会重复起一个。
-    @Volatile
-    private var configMigrationJob: Job? = null
     private val scope = backgroundScope("NapCat 进程监管", Dispatchers.IO)
     private val lock = Any()
 
@@ -63,20 +62,24 @@ internal class NapCatProcessSupervisor(
     @Volatile
     private var shuttingDown = false
 
+    // 电量低时暂停期间拦下启动请求，电量恢复（插上电）时由前台服务解除。只在 lock 内修改。
+    @Volatile
+    private var pausedForLowBattery = false
+
     /** 进程在跑，或者正在启动（清理残留、生成 launcher 的阶段）。 */
     val isRunning: Boolean
         get() = process?.isAlive == true || job?.isActive == true
 
     /**
-     * 没装 NapCat、已在运行或 MaiDroid 正在安全退出时什么也不做。否则在后台：
+     * 没装 NapCat、现在启用的是 SnowLuma、已在运行、MaiDroid 正在安全退出或电量低暂停着时什么也不做。否则在后台：
      * 需要时换装新版 SnowLuma 适配器 -> 清理残留进程 -> 重新生成 launcher.sh ->
      * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
      * 只看 NapCat 本体装没装好：MaiBot 太旧、暂时换不了适配器的老用户，QQ 照样能登录。
      */
     fun start() {
         synchronized(lock) {
-            if (shuttingDown || isRunning) return
-            if (!files.isNapCatReady()) return
+            if (shuttingDown || pausedForLowBattery || isRunning) return
+            if (!files.isNapCatReady() || !choice.isActive(QqClient.NapCat)) return
 
             RuntimeFileModes.ensureExecutableBits(paths)
             job = scope.launch { runOnce() }
@@ -85,7 +88,12 @@ internal class NapCatProcessSupervisor(
 
     /** 停掉 NapCat：请 QQ 正常下线退出，再清理剩下的 Xvfb 等进程；在后台执行。 */
     fun stop() {
-        scope.launch { lifecycleMutex.withLock { stopLocked() } }
+        scope.launch { stopAndWait() }
+    }
+
+    /** 和 stop 一样，但挂起到 NapCat 停下；手机关机前用它抢那几秒（见 MaiBotRuntimeService 的关机广播）。 */
+    suspend fun stopAndWait(): ProcessExitOutcome = withContext(Dispatchers.IO) {
+        lifecycleMutex.withLock { stopLocked() }
     }
 
     /**
@@ -94,6 +102,20 @@ internal class NapCatProcessSupervisor(
     suspend fun shutdownForExit(): ProcessExitOutcome = withContext(Dispatchers.IO) {
         synchronized(lock) { shuttingDown = true }
         lifecycleMutex.withLock { stopLocked() }
+    }
+
+    /**
+     * 电量低、又没插电（规则见 LowBatteryPolicy）：之后的启动请求先拦下 -> 照常停止（请 QQ 正常下线退出）。
+     * 挂起到 NapCat 停下。
+     */
+    suspend fun pauseForLowBattery(): ProcessExitOutcome {
+        synchronized(lock) { pausedForLowBattery = true }
+        return stopAndWait()
+    }
+
+    /** 电量恢复：解除拦截。不自己拉起，由前台服务决定要不要启动。 */
+    fun resumeAfterLowBattery() {
+        synchronized(lock) { pausedForLowBattery = false }
     }
 
     /**
@@ -145,7 +167,8 @@ internal class NapCatProcessSupervisor(
     }
 
     private suspend fun runOnce() {
-        upgradeAdapter()
+        // 需要时换装新版 SnowLuma 适配器、补迁移它的配置（和 SnowLuma 共用，见 QqAdapterUpkeep）
+        adapterUpkeep.ensureBeforeStart(QqClient.NapCat)
         runMaintenance(NapCatScripts.cleanup())
         runMaintenance(NapCatScripts.prepareRuntime())
 
@@ -161,11 +184,11 @@ internal class NapCatProcessSupervisor(
         try {
             val currentProcess = commandRunner.start(NapCatScripts.launch())
             startedProcess = currentProcess
-            // 停止（含安全退出）可能恰好在启动途中发生：terminateProcess 在同一把锁里取消本协程，
-            // 所以要么停止流程看得到这个进程、请 QQ 退出，要么这里看到本协程已被取消或正在退出，
+            // 停止（含安全退出、低电量暂停）可能恰好在启动途中发生：terminateProcess 在同一把锁里取消本协程，
+            // 所以要么停止流程看得到这个进程、请 QQ 退出，要么这里看到本协程已被取消、正在退出或暂停着，
             // 自己把刚起的进程结束掉（QQ 还没登录，没有要保存的）。
             val abandoned = synchronized(lock) {
-                val stale = shuttingDown || ownJob?.isActive == false
+                val stale = shuttingDown || pausedForLowBattery || ownJob?.isActive == false
                 if (!stale) process = currentProcess
                 stale
             }
@@ -186,60 +209,6 @@ internal class NapCatProcessSupervisor(
             // 只清自己这一轮的引用，迟迟收尾的旧一轮不能把重启后新进程的引用清掉。
             synchronized(lock) {
                 if (process === startedProcess) process = null
-            }
-        }
-    }
-
-    /**
-     * 老用户换装：旧版本 MaiDroid 装的是已停更的 MaiBot-Napcat-Adapter。每次启动 NapCat 前检查一次：
-     * 还没有新适配器或旧的还在 -> 装上新适配器、删掉旧的 -> 重启 MaiBot 让它加载新插件并生成默认配置 ->
-     * 后台等配置生成后迁移（启用、连本机 NapCat、搬旧设置），不耽误 QQ 启动。
-     * 只差配置迁移（上次等配置时应用被杀或超时）就直接在后台等着迁移。
-     * MaiBot 低于新适配器要求的版本时先不动（旧适配器还能用），只提示去更新 MaiBot，更新后下次启动 NapCat 再换。
-     * 失败只记日志，不影响 NapCat 启动；下载失败时旧适配器还在，下次启动再试。
-     */
-    private suspend fun upgradeAdapter() {
-        val needsInstall = runCatching {
-            paths.maiBotPyproject.isFile && adapterInstaller.needsInstall()
-        }.getOrDefault(false)
-        if (needsInstall) {
-            adapterInstaller.maiBotVersionProblem()?.let { problem ->
-                TerminalLog.append("[NapCat] 暂不更换 QQ 适配器：$problem")
-                return
-            }
-            TerminalLog.append("[NapCat] 更换 QQ 适配器：安装 MaiBot-SnowLuma-Adapter，删除已停更的 MaiBot-Napcat-Adapter")
-            val error = try {
-                adapterInstaller.install(onLine = TerminalLog::append)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                e.message.orEmpty().ifBlank { e.javaClass.simpleName }
-            }
-            if (error != null) {
-                TerminalLog.append("[NapCat] 更换 QQ 适配器失败，下次启动 NapCat 时重试：$error")
-                return
-            }
-            TerminalLog.append("[NapCat] QQ 适配器已下载，重启 MaiBot 加载新适配器并生成它的配置")
-            maiBotProcess.restart()
-        }
-        if (runCatching { adapterInstaller.needsConfigMigration() }.getOrDefault(false)) {
-            startConfigMigration()
-        }
-    }
-
-    // 后台等 MaiBot 生成适配器配置后迁移；已经有一个在等就不再起。
-    private fun startConfigMigration() {
-        synchronized(lock) {
-            if (configMigrationJob?.isActive == true) return
-            configMigrationJob = scope.launch {
-                val error = adapterInstaller.migrateConfigWhenReady(
-                    onWaiting = { TerminalLog.append("[NapCat] 等麦麦生成 QQ 适配器的配置，生成后自动迁移连接设置") }
-                )
-                if (error == null) {
-                    TerminalLog.append("[NapCat] QQ 适配器配置已迁移：已启用并连接本机 NapCat，麦麦会自动加载")
-                } else {
-                    TerminalLog.append("[NapCat] 迁移 QQ 适配器配置失败，下次启动 NapCat 时重试：$error")
-                }
             }
         }
     }

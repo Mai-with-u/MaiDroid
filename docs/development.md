@@ -57,10 +57,13 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `maibot/update/MaiBotAutoUpdateTest` | MaiDroid 更新后要不要自动升级 MaiBot：刚更新过才升级，同版本、降级、还在 OOBE、设置里关掉时不升级 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
 | `oobe/OobeAutoRetryTest` | OOBE 失败后的自动重试：断网时等网络回来、其他网络错误隔一阵重试两次、重试解决不了的交给用户 |
-| `platform/napcat/SnowLumaAdapterConfigTest` | SnowLuma 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 NapCat、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器 |
+| `platform/qq/SnowLumaAdapterConfigTest` | SnowLuma 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 OneBot、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器；OneBot token 只生成一次、两种 QQ 协议端共用 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
 | `platform/napcat/NapCatScriptsTest` | NapCat 安装器经 GitHub 镜像下载并确认是安装脚本；装之前先修 dpkg 半装状态、只留一份没装完的备份；Xvfb 自己挑空着的显示号 |
+| `platform/snowluma/SnowLumaScriptsTest` | SnowLuma 安装脚本：发行包钉版本、校验 sha256 后才解开；LinuxQQ 不是钉的版本才装；OneBot 配置用共用的端口和 token；heredoc 结束符在行首；启动脚本让 Xvfb 写屏幕文件、和 QQ 共用 hook 目录；停止时认得出 SnowLuma 和 QQ 的进程；点击发到 Xvfb 挑的显示号；没有启用记录时按 NapCat |
+| `platform/snowluma/SnowLumaWebUiTest`、`platform/snowluma/SnowLumaPlatformStateTest` | SnowLuma 管理页接口的进程列表解析、登录进度归类（多个 QQ 时已登录的优先）；已登录的判断、“已连接”卡片的登录提示 |
+| `platform/snowluma/XwdScreenTest` | 解析 Xvfb 的屏幕文件：裁出 QQ 窗口、屏幕上还没窗口、文件写了一半或不是 XWD、画面变了才换签名 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
@@ -80,6 +83,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `webui/WebUiRenderCrashGuardTest` | WebView 渲染进程崩溃后自动重开：2 分钟内最多 3 次，更早的崩溃不算 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
+| `ui/platform/QqClientButtonTest` | QQ 两种协议端的按钮：SnowLuma 先看协议、装好并启用后进设置；点没启用的那个先确认切换；停用的那个照样列出、不算运行中 |
 | `ui/diagnostics/FeedbackDialogTest` | 反馈弹窗里“诊断包包括什么”只列实际带上的 |
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |

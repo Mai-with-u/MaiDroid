@@ -27,6 +27,8 @@ internal data class NapCatPlatformState(
     val oneBotConfig: NapCatOneBotConfig?,
     val accountId: String?,
     val accountName: String?,
+    /** 现在启用的 QQ 协议端是 NapCat（和 SnowLuma 二选一；没有记录时也算 NapCat）。 */
+    val active: Boolean = true,
     // 以下三项只在二维码弹窗打开期间由 keepQrCodeFresh / refreshQrCode 维护。
     val loginPhase: NapCatLoginPhase? = null,
     val qrRefreshing: Boolean = false,

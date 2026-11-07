@@ -37,6 +37,7 @@ import java.util.concurrent.TimeUnit
  * - 停止、重启时在容器里请 MaiBot 自己退出、保存好数据，超时才强杀，再清理容器里的残留进程（stopLocked）
  * - 安全退出时先等进行中的维护做完，之后永久拦下启动请求（shutdownForExit）
  * - 维护期间（如在线更新）拦截所有启动请求
+ * - 手机电量低、又没插电时先停下并拦下启动请求，插上电后解除（pauseForLowBattery）
  *
  * 启动、停止、重启都在同一把生命周期锁里依次执行，
  * 避免服务启动和主页唤醒几乎同时到达时拉起两个 MaiBot 抢占 WebUI 端口。
@@ -93,6 +94,10 @@ internal class MaiBotProcessSupervisor(
     @Volatile
     private var shuttingDown = false
 
+    // 电量低时暂停期间拦下所有启动请求，电量恢复（插上电）时由前台服务解除，见 pauseForLowBattery。
+    @Volatile
+    private var pausedForLowBattery = false
+
     private val _status = MutableStateFlow(MaiBotProcessStatus())
 
     /** 进程是否活着、意外退出过几次、为什么没能拉起；WebUI 能不能访问要另看 MaiBotWebUi 的探测。 */
@@ -109,9 +114,12 @@ internal class MaiBotProcessSupervisor(
 
     /** 主动停止 MaiBot（先请它保存好数据再退出），停止后不会自动重启。 */
     fun stop() {
-        scope.launch {
-            lifecycleMutex.withLock { stopLocked() }
-        }
+        scope.launch { stopAndWait() }
+    }
+
+    /** 和 stop 一样，但挂起到 MaiBot 停下；手机关机前用它抢那几秒（见 MaiBotRuntimeService 的关机广播）。 */
+    suspend fun stopAndWait(): ProcessExitOutcome = withContext(Dispatchers.IO) {
+        lifecycleMutex.withLock { stopLocked() }
     }
 
     /** 先停再启（停的时候同样请 MaiBot 保存好数据再退出），用于装好平台适配器后让 MaiBot 重新加载插件等场景。 */
@@ -176,6 +184,23 @@ internal class MaiBotProcessSupervisor(
         return lifecycleMutex.withLock { stopLocked() }
     }
 
+    /**
+     * 电量低、又没插电（规则见 LowBatteryPolicy）：之后的启动请求先拦下 -> 照常停止（请 MaiBot 保存好数据再退出）。
+     * 挂起到 MaiBot 停下。在线更新正在做时 MaiBot 本来就停着，更新照常做完，做完后的拉起也会被拦下。
+     * 状态里标出 lowBatteryPaused，唤醒页和首次引导据此说明为什么没启动。
+     */
+    suspend fun pauseForLowBattery(): ProcessExitOutcome {
+        pausedForLowBattery = true
+        _status.update { it.copy(lowBatteryPaused = true) }
+        return stopAndWait()
+    }
+
+    /** 电量恢复：解除拦截。不自己拉起，由前台服务决定要不要启动（只为首次引导开的服务不拉起）。 */
+    fun resumeAfterLowBattery() {
+        pausedForLowBattery = false
+        _status.update { it.copy(lowBatteryPaused = false) }
+    }
+
     // 请 Runner 自己退出；确认退出后再等一会儿 proot 结束，让 MaiBot 最后几行关闭日志读完再往下走。
     private suspend fun requestExit(currentProcess: Process): ProcessExitOutcome {
         appendLog("$LOG_PREFIX Asking MaiBot to shut down and save its data")
@@ -193,6 +218,10 @@ internal class MaiBotProcessSupervisor(
     private fun startLocked() {
         if (shuttingDown) {
             appendLog("$LOG_PREFIX MaiDroid is exiting, start request ignored")
+            return
+        }
+        if (pausedForLowBattery) {
+            appendLog("$LOG_PREFIX Battery is low, start request ignored until the phone is charging")
             return
         }
         if (maintenanceInProgress) {
@@ -382,11 +411,13 @@ internal class MaiBotProcessSupervisor(
  * 等 WebUI 的一方先记下当前值，之后看它涨了几次就知道 MaiBot 是不是起来就崩。
  * launchBlockedReason 是最近一次启动请求因启动前检查没通过而被拦下的原因，成功拉起后清空。
  * webUiPortTaken 表示 WebUI 端口被别的程序占着、正等它空出来才拉起 MaiBot。
+ * lowBatteryPaused 表示手机电量低、又没插电，MaiBot 已经（或正在）保存好数据停下，插上电后才拉起。
  */
 internal data class MaiBotProcessStatus(
     val running: Boolean = false,
     val exitCount: Int = 0,
     val lastExitCode: Int? = null,
     val launchBlockedReason: String? = null,
-    val webUiPortTaken: Boolean = false
+    val webUiPortTaken: Boolean = false,
+    val lowBatteryPaused: Boolean = false
 )

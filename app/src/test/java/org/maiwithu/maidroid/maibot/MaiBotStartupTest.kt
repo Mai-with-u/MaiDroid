@@ -49,6 +49,18 @@ class MaiBotStartupTest {
     }
 
     @Test
+    fun `low battery pause is reported right away instead of waiting for the grace period`() {
+        // 电量低暂停时监管器拦下了启动，进程一直不起来；首次引导不该等满一分钟再报“没拉起来”
+        val paused = MaiBotProcessStatus(lowBatteryPaused = true)
+
+        assertEquals(
+            MaiBotStartupResult.LowBattery,
+            maiBotStartupVerdict(paused, 0, webUiReachable = false, elapsedMs = 1_000)
+        )
+        assertEquals("MB-BLOCKED/BAT-LOW", MaiBotStartupResult.LowBattery.failure("")?.code)
+    }
+
+    @Test
     fun `process that never starts is reported after the grace period`() {
         val idle = MaiBotProcessStatus()
 
