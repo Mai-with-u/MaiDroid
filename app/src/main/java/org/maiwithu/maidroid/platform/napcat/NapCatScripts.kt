@@ -58,7 +58,8 @@ internal object NapCatScripts {
             "if command -v script >/dev/null 2>&1; then " +
             "script -q -c ${shellQuote("bash /root/launcher.sh")} /dev/null; " +
             "else bash /root/launcher.sh; fi",
-        workingDirectory = "/root"
+        workingDirectory = "/root",
+        pinToSmallCores = true
     )
 
     /**

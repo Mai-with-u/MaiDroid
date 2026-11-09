@@ -274,7 +274,8 @@ internal object MaiBotScripts {
             "if command -v script >/dev/null 2>&1; then " +
             "script -q -c ${shellQuote("uv run python bot.py")} /dev/null; " +
             "else uv run python bot.py; fi",
-        workingDirectory = MAIBOT_DIR
+        workingDirectory = MAIBOT_DIR,
+        pinToSmallCores = true
     )
 
     /**

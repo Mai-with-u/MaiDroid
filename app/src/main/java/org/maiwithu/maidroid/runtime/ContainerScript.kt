@@ -8,7 +8,9 @@ package org.maiwithu.maidroid.runtime
  */
 internal data class ContainerScript(
     val body: String,
-    val workingDirectory: String = "/"
+    val workingDirectory: String = "/",
+    /** true 时把这条命令的整棵进程树钉在「非最高频 CPU 簇」上省电（见 ProotCommand.pinSmallCoresPrelude）。 */
+    val pinToSmallCores: Boolean = false
 )
 
 /** 把任意字符串包成单引号 shell 字面量，内部的单引号按 '"'"' 转义。 */
