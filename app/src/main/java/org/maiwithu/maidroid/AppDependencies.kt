@@ -11,6 +11,7 @@ import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
 import org.maiwithu.maidroid.diagnostics.recentSystemCrashes
 import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
+import org.maiwithu.maidroid.maibot.MaiBotLogHousekeeper
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
@@ -69,7 +70,12 @@ internal class AppDependencies(context: Context) {
     val commandRunner = ContainerCommandRunner(runtimePaths)
 
     // ── 容器里的长驻进程与功能模块 ───────────────────────────────────────
+    // MaiBot 日志的磁盘占底管家：worker-console.log 不滚动，MaiDroid 侧按大小 copytruncate（见类注释）。
+    val maiBotLogHousekeeper: MaiBotLogHousekeeper by lazy {
+        MaiBotLogHousekeeper(runtimePaths).also { it.start() }
+    }
     val maiBotProcess: MaiBotProcessSupervisor by lazy {
+        maiBotLogHousekeeper // 先保证日志管家跑起来
         MaiBotProcessSupervisor(runtimePaths, runtimeReadiness, commandRunner)
     }
     val containerSsh: ContainerSshManager by lazy {
