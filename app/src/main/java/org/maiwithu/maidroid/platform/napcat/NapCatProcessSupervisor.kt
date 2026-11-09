@@ -3,6 +3,8 @@ package org.maiwithu.maidroid.platform.napcat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,7 +29,9 @@ import java.util.concurrent.TimeUnit
  * 容器里的 NapCat 进程（Xvfb + 注入了 NapCat 的 LinuxQQ）。由 AppDependencies 持有唯一实例，
  * 前台服务负责启停，退出 QQ 登录时只重启它。停止时先请 QQ 正常下线退出，超时才强制清理。
  *
- * 与 MaiBot 不同，NapCat 意外退出后不自动重启：QQ 掉线后要重新扫码，自动拉起也登不回去。
+ * proot 意外退出（QQ 崩了、被后台管理杀掉）时按退避整树重启，最多连续 3 次，稳定跑满 10 分钟后计数清零：
+ * NapCat 以 LD_PRELOAD 寄生在 QQ 进程里（SnowLuma 那种「只重启协议端、保登录」的死法对它不存在），
+ * 重启就是整个 QQ 重启，可能要重新扫码，所以也设上限，用尽后停在终端日志等手动处理。
  * 只有 QqClientChoice 记着启用 NapCat 时才会启动（没有记录也算 NapCat），和 SnowLuma 二选一。
  */
 internal class NapCatProcessSupervisor(
@@ -42,6 +46,15 @@ internal class NapCatProcessSupervisor(
 
         // 停止时清掉 Xvfb 后等 proot 跟着结束的上限。
         const val PROOT_EXIT_WAIT_MS = 5_000L
+
+        // 意外退出后整树重启的退避节奏和上限（和 MaiBot 监管一致的节奏）。
+        const val INITIAL_RESTART_DELAY_MS = 5_000L
+        const val MAX_RESTART_DELAY_MS = 60_000L
+        const val BACKOFF_MULTIPLIER = 2.0
+        const val MAX_CONSECUTIVE_RESTARTS = 3
+
+        // 上一轮稳定跑满这么久，下次意外退出前把连续重启计数清零。
+        const val STABLE_RUNTIME_MS = 10 * 60 * 1000L
     }
 
     private val files = NapCatFiles(paths)
@@ -82,7 +95,7 @@ internal class NapCatProcessSupervisor(
             if (!files.isNapCatReady() || !choice.isActive(QqClient.NapCat)) return
 
             RuntimeFileModes.ensureExecutableBits(paths)
-            job = scope.launch { runOnce() }
+            job = scope.launch { superviseRuntime() }
         }
     }
 
@@ -166,7 +179,48 @@ internal class NapCatProcessSupervisor(
         return outcome
     }
 
-    private suspend fun runOnce() {
+    /**
+     * 监管循环：拉起并读日志直到退出 -> 正常停止（安全退出、低电量、切平台、用户重启）收手 ->
+     * 意外退出则退避后整树重启，最多连续 [MAX_CONSECUTIVE_RESTARTS] 次。和 SnowLuma 监管一致（见那边注释）。
+     */
+    private suspend fun superviseRuntime() {
+        var restartDelayMs = INITIAL_RESTART_DELAY_MS
+        var restarts = 0
+        while (currentCoroutineContext().isActive) {
+            if (shouldStopSupervising()) return
+            val launchedAt = System.currentTimeMillis()
+            val unexpectedExit = runOnce()
+            if (shouldStopSupervising()) return
+            // 上轮稳定跑满了：算不上连着失败，计数和退避都清零，让以后每次意外退出都有完整的重启预算。
+            if (System.currentTimeMillis() - launchedAt >= STABLE_RUNTIME_MS) {
+                if (restarts > 0) TerminalLog.append("[NapCat] 上轮已稳定运行 10 分钟，整树重启计数清零")
+                restarts = 0
+                restartDelayMs = INITIAL_RESTART_DELAY_MS
+            }
+            // 主动交出的退出（launcher 缺失、被下令放弃）：不管预算还剩多少都不重启。
+            if (!unexpectedExit) return
+            // 预算用尽（QQ 重启要重新扫码，不能无限自动拉起）：停在终端日志里等手动处理。
+            if (restarts >= MAX_CONSECUTIVE_RESTARTS) {
+                TerminalLog.append("[NapCat] 已连续整树重启 $MAX_CONSECUTIVE_RESTARTS 次仍不稳，停止自动重启；请手动重启 NapCat")
+                return
+            }
+            restarts++
+            TerminalLog.append("[NapCat] NapCat 意外退出，${restartDelayMs / 1000} 秒后整树重启（第 $restarts/$MAX_CONSECUTIVE_RESTARTS 次）")
+            delay(restartDelayMs)
+            restartDelayMs = (restartDelayMs * BACKOFF_MULTIPLIER).toLong().coerceAtMost(MAX_RESTART_DELAY_MS)
+        }
+    }
+
+    // 被主动停止（安全退出、低电量暂停）或平台没在用时，监管循环不再拉起。
+    private fun shouldStopSupervising() =
+        shuttingDown || pausedForLowBattery || !choice.isActive(QqClient.NapCat) || !files.isNapCatReady()
+
+    /**
+     * 跑一轮：需要时换装新版 SnowLuma 适配器、补迁移它的配置 -> 清理残留进程 -> 重新生成 launcher.sh ->
+     * 前台运行 launcher.sh，把输出加 [NapCat] 前缀写进终端日志。
+     * 返回这轮的退出是否属于「意外退出」（true 时监管循环会整树重启）：被下令放弃、launcher 根本缺失都算不上。
+     */
+    private suspend fun runOnce(): Boolean {
         // 需要时换装新版 SnowLuma 适配器、补迁移它的配置（和 SnowLuma 共用，见 QqAdapterUpkeep）
         adapterUpkeep.ensureBeforeStart(QqClient.NapCat)
         runMaintenance(NapCatScripts.cleanup())
@@ -174,7 +228,7 @@ internal class NapCatProcessSupervisor(
 
         if (!files.launcher.isFile) {
             TerminalLog.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")
-            return
+            return false
         }
 
         TerminalLog.append("")
@@ -194,7 +248,7 @@ internal class NapCatProcessSupervisor(
             }
             if (abandoned) {
                 currentProcess.killProot()
-                return
+                return false
             }
             currentProcess.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { rawLine ->
@@ -202,9 +256,13 @@ internal class NapCatProcessSupervisor(
                 }
             }
             val exitCode = currentProcess.waitFor()
+            // launcher 随 QQ 退出：只要不是被下令停掉，都交给监管循环整树重启。
             TerminalLog.append("[NapCat] 进程退出码: $exitCode")
+            return true
         } catch (e: Exception) {
             TerminalLog.append("[NapCat] 启动异常: ${e.message.orEmpty()}")
+            // 宿主侧命令没跑成（proot 拉不起来等）：还允许监管循环按退避重试几次，别把一次抖动当永久失败。
+            return true
         } finally {
             // 只清自己这一轮的引用，迟迟收尾的旧一轮不能把重启后新进程的引用清掉。
             synchronized(lock) {

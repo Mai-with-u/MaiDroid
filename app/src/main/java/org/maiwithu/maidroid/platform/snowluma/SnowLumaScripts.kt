@@ -76,6 +76,12 @@ internal object SnowLumaScripts {
     const val WEBUI_DEFAULT_PORT = 5099
     const val WEBUI_PORT_ENV = "SNOWLUMA_WEBUI_PORT"
 
+    // 节点保育（launcher 内）：节点意外退出时原地重起新节点（QQ 和它的登录不动），连续失败上限与「稳定窗口」清零线。
+    // 宿主侧请节点保存退出时写下标记文件，保育循环见到就不再重启，免得把「保存退出」当成意外死亡又拉起来。
+    private const val NODE_STOP_MARKER = "/tmp/.maidroid-snowluma-stop"
+    private const val NODE_RESTART_LIMIT = 3
+    private const val NODE_STABLE_SECONDS = 600
+
     // 停止时等 SnowLuma、QQ 自己退出的上限，超时就照常强制清理。
     private const val SNOWLUMA_EXIT_TIMEOUT_SECONDS = 20
     private const val QQ_EXIT_TIMEOUT_SECONDS = 20
@@ -120,13 +126,16 @@ internal object SnowLumaScripts {
             "if command -v script >/dev/null 2>&1; then " +
             "script -q -c ${shellQuote("bash $LAUNCHER")} /dev/null; " +
             "else bash $LAUNCHER; fi",
-        workingDirectory = "/root"
+        workingDirectory = "/root",
+        pinToSmallCores = true
     )
 
     /** 停止时先请 SnowLuma 保存好数据退出（QQ 不会因此下线）。结果用 requestedExitOf 读。 */
     fun requestSnowLumaExit(): ContainerScript = ContainerScript(
         body = listOf(
             "set +e",
+            // 写下停机标记，launcher 里的节点保育循环见到它就不再重启节点（见 prepareRuntimeBody 的保育注释）
+            "printf stop > $NODE_STOP_MARKER 2>/dev/null || true",
             requestExitScript(SNOWLUMA_EXIT_TARGET, timeoutSeconds = SNOWLUMA_EXIT_TIMEOUT_SECONDS, logPrefix = "[SnowLuma] ")
         ).joinToString("\n"),
         workingDirectory = "/root"
@@ -150,7 +159,7 @@ internal object SnowLumaScripts {
                 processName = "stale process",
                 logPrefix = "[SnowLuma] "
             ),
-            "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* $DISPLAY_FILE $SCREEN_FILE $PROC_LOCKS.new",
+            "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* $DISPLAY_FILE $SCREEN_FILE $PROC_LOCKS.new $NODE_STOP_MARKER",
             // 拼锁表的循环随启动脚本一起被清掉；替身文件留着（proot 绑定要用），只清空内容
             ": > $PROC_LOCKS",
             "exit 0"
@@ -315,6 +324,8 @@ internal object SnowLumaScripts {
         cd /root
         mkdir -p /tmp /tmp/.X11-unix /tmp/runtime-root $SCREEN_DIR $HOOK_RUNTIME_DIR
         chmod 700 /tmp/runtime-root $HOOK_RUNTIME_DIR 2>/dev/null || true
+        # 上次正常保存退出留下的停机标记清掉，保育循环才能正常盯着新节点
+        rm -f $NODE_STOP_MARKER
         export XDG_RUNTIME_DIR=/tmp/runtime-root
         export HOME=/root
         export QQNT_PROFILE_DIR=/root/.config/QQ
@@ -352,11 +363,26 @@ internal object SnowLumaScripts {
         # 读不到就一直停在“等待登录”。proot 把 /proc/locks 绑到了 $PROC_LOCKS（见 ProotCommand）：
         # 这里每 2 秒用 QQ 进程 fdinfo 里的 lock: 行拼一张同样格式的表，先写临时文件再改名，SnowLuma 读不到写了一半的表。
         (
+            last_ts=${'$'}(date +%s)
+            spins=0
             while :; do
                 for qq_pid in ${'$'}(pgrep -x qq); do
                     grep -h '^lock:' /proc/${'$'}qq_pid/fdinfo/* 2>/dev/null
                 done | sed 's/^lock:[[:space:]]*//' > $PROC_LOCKS.new
                 mv -f $PROC_LOCKS.new $PROC_LOCKS
+                # 防空转：正常一次循环约 2 秒。若连续 5 次都在 1 秒内转完（sleep 等系统调用失效的病态状态，
+                # 2026-11-08 proot 死后就这样整整烧了 26 小时 CPU），退出循环止血，等 launcher 收尾清理。
+                now=${'$'}(date +%s)
+                if [ ${'$'}((now - last_ts)) -lt 1 ]; then
+                    spins=${'$'}((spins + 1))
+                    if [ "${'$'}spins" -ge 5 ]; then
+                        echo "[SnowLuma] lock table loop is spinning too fast, stopping it"
+                        break
+                    fi
+                else
+                    spins=0
+                fi
+                last_ts=${'$'}now
                 sleep 2
             done
         ) &
@@ -368,6 +394,9 @@ internal object SnowLumaScripts {
         export SNOWLUMA_HOOK_AUTOLOAD=1
         export SNOWLUMA_UPDATE_CHECK=0
         export NO_COLOR=1
+        # 给 SnowLuma node 的 V8 堆设上限：它哪儿都不看 this amount 就敢吃到 400MB+，这里封在 384MB，防失控。
+        # 只对容器里的 node 生效（QQ 启动行会 -u 掉这条变量，Electron 自己不吃 NODE_OPTIONS 也不能吃进意外配置）。
+        export NODE_OPTIONS="--max-old-space-size=384"
         export SNOWLUMA_WEBUI_HOST=127.0.0.1
         export $WEBUI_PORT_ENV="${'$'}{$WEBUI_PORT_ENV:-$WEBUI_DEFAULT_PORT}"
         printf "%s" "${'$'}$WEBUI_PORT_ENV" > $WEBUI_PORT_FILE
@@ -384,24 +413,66 @@ internal object SnowLumaScripts {
         (cd $DATA_DIR && exec $APP_DIR/node $APP_DIR/index.mjs) 2>&1 &
         snowluma_pid=${'$'}!
 
+        # SnowLuma 节点保育：2026-11-08 凌晨节点被后台管理单独杀掉后没人拉起，麦麦离线 26 小时。
+        # 在这里（同一条 proot 实例里）重起新节点才有正常的路径转译，从宿主侧 fire-and-forget 拉起的新 proot
+        # 会随命令返回退出、新节点失转译而反复死，所以不能从宿主侧兜底。重启只动节点，QQ 和它的登录不动；
+        # 连续失败满 $NODE_RESTART_LIMIT 次放弃保育，请 QQ 退出走宿主侧的整树重启；节点稳定跑满
+        # $NODE_STABLE_SECONDS 秒后连续计数清零。宿主侧请节点保存退出时写 $NODE_STOP_MARKER，保育见到不再重启。
+        (
+            # 等 QQ 起来才开始盯节点（QQ 通常几百毫秒内就能被 pgrep 到，最多等两分钟）
+            for _ in ${'$'}(seq 1 120); do
+                pgrep -x qq >/dev/null 2>&1 && break
+                sleep 1
+            done
+            sleep 1
+            restarts=0
+            spawn_ts=0
+            while :; do
+                # QQ 没了：启动脚本马上会在前台流程结尾清理节点，保育不再掺和
+                pgrep -x qq >/dev/null 2>&1 || break
+                [ -s $NODE_STOP_MARKER ] && break
+                if ! kill -0 "${'$'}snowluma_pid" 2>/dev/null; then
+                    echo "[SnowLuma] SnowLuma node exited unexpectedly"
+                    if [ "${'$'}spawn_ts" -gt 0 ] && [ "$(( ${'$'}(date +%s) - spawn_ts ))" -ge $NODE_STABLE_SECONDS ]; then
+                        restarts=0
+                    fi
+                    if [ "${'$'}restarts" -ge $NODE_RESTART_LIMIT ]; then
+                        echo "[SnowLuma] node died $NODE_RESTART_LIMIT times in a row, giving up; asking QQ to exit for a full restart"
+                        pkill -TERM -f "qq --no-sandbox --disable-gpu" 2>/dev/null || true
+                        break
+                    fi
+                    restarts=$(( ${'$'}restarts + 1 ))
+                    sleep 5
+                    echo "[SnowLuma] restarting SnowLuma node (attempt ${'$'}restarts/$NODE_RESTART_LIMIT)"
+                    (cd $DATA_DIR && exec $APP_DIR/node $APP_DIR/index.mjs) 2>&1 &
+                    snowluma_pid=${'$'}!
+                    spawn_ts=${'$'}(date +%s)
+                fi
+                sleep 5
+            done
+        ) &
+        babysitter_pid=${'$'}!
+
         # QQ 在前台跑，SnowLuma 找到它就注入；QQ 本身不需要 SnowLuma 的这些变量，但要和它用同一个 hook 目录
         echo "[SnowLuma] Launching LinuxQQ"
-        env -u SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1
+        env -u SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD -u NODE_OPTIONS qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1
         exit_code=${'$'}?
         echo "[SnowLuma] qq exited with code ${'$'}exit_code"
 
-        # QQ 退出了，锁表也不用再拼：停掉循环、清空替身，免得留着旧进程的锁
+        # QQ 退出了，锁表和保育循环也不用再跑：停掉它们、清空替身，免得留着旧进程的锁
         kill "${'$'}locks_pid" 2>/dev/null || true
+        kill "${'$'}babysitter_pid" 2>/dev/null || true
         : > $PROC_LOCKS
 
-        # QQ 退出了，SnowLuma 留着也收发不了消息：请它保存好数据退出，最多等 15 秒
-        if kill -0 "${'$'}snowluma_pid" 2>/dev/null; then
-            kill -TERM "${'$'}snowluma_pid" 2>/dev/null || true
-            for _ in ${'$'}(seq 1 15); do
-                kill -0 "${'$'}snowluma_pid" 2>/dev/null || break
-                sleep 1
-            done
-        fi
+        # QQ 退出了，SnowLuma 留着也收发不了消息：请它保存好数据退出，最多等 15 秒。
+        # 按进程名找而不是用记录的 pid：保育重启过节点的话，记录的 pid 已是死的，新 pid 保育才知道。
+        pkill -TERM -f "snowluma.app.index[.]mjs" 2>/dev/null || true
+        for _ in ${'$'}(seq 1 15); do
+            pgrep -f "snowluma.app.index[.]mjs" >/dev/null 2>&1 || break
+            sleep 1
+        done
+
+        rm -f $NODE_STOP_MARKER
 
         # 最后结束后台的 Xvfb：它不退，proot 就一直不退，应用会以为 SnowLuma 还在跑（QQ 自己崩了时尤其如此）
         kill "${'$'}xvfb_pid" 2>/dev/null || true
