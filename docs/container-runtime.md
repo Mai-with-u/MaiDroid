@@ -67,9 +67,9 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 - `-0` 假装 root，`--link2symlink` 让不支持硬链接的应用私有目录也能装 Debian 包。
 - proot 进程本身的环境变量里有 `PROOT_LOADER`、`LD_LIBRARY_PATH`（指向 nativeLibraryDir 和 termux/lib）；进入容器后脚本前缀会 unset `LD_LIBRARY_PATH`，避免 Android 的库污染 Debian 程序。
-- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。`/proc/locks` 同样读不了，它的替身放在 `/tmp` 下（容器里要能改写），平时是空的，SnowLuma 运行时由它的启动脚本填内容，见 [消息平台接入](platforms.md) 的 SnowLuma 一节。
+- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。`/proc/locks` 同样读不了，它的替身放在 `/tmp` 下（容器里要能改写），平时是空的，SnowLuma 运行时由宿主侧 `ProcLocksSync` 直接读取宿主机 `/proc/<qq_pid>/fdinfo` 里的锁记录原子更新，避免在容器内定期派生子进程，见 [消息平台接入](platforms.md) 的 SnowLuma 一节。
 
-写脚本时用 `shellQuote()` 包外部输入；需要结束残留进程用 `killMatchingProcessesScript()`。
+写脚本时用 `shellQuote()` 包外部输入；宿主机侧同 UID 清理残留进程可用 `killOwnMatchingProcesses()`（或容器脚本内用 `killMatchingProcessesScript()`）。
 
 ## 就绪检查（`RuntimeReadiness`）
 
@@ -161,7 +161,7 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 
 ## MaiBot 的启动
 
-`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程，每次拉起前再看一眼 8001 端口：被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot）时拉起来也绑不上端口，只会反复重启，所以先不拉起，等端口空出来。
+`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：注入 `PYTHONUNBUFFERED=1` 并直接 `exec /opt/MaiBot/.venv/bin/python bot.py`（仅在 `.venv` 缺失时回退 `exec uv run python bot.py`），省掉 `script` 伪终端与常驻 `uv` 包装进程占用的系统幻影进程名额。每轮拉起前先在宿主侧调 `cleanupStaleProcesses()`（经 `killOwnMatchingProcesses` 按进程名清掉上次残留的 `bot.py`、bootstrap、worker 与插件运行器，不再为此额外起一次 proot），再看一眼 8001 端口：被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot）时拉起来也绑不上端口，只会反复重启，所以先不拉起，等端口空出来。
 
 ### 等 WebUI 的判断
 

@@ -150,19 +150,19 @@ flowchart TB
 | `start(context, ACTION_SAFE_EXIT)` | 安全退出：各服务正常退出后关闭 MaiDroid | 设置页“安全退出”（经 `SafeExitManager.request`） |
 | `SetupKeepAlive.hold(context)`（`ACTION_SETUP_HOLD`） | 只挂“正在初始化”的通知保活，不启动任何服务；`release()` 后服务没在跑麦麦就自己停 | OOBE 配置容器、安装 MaiBot |
 
-服务持有部分唤醒锁（只保 CPU，不亮屏），销毁时依次停 sshd、NapCat、SnowLuma、MaiBot；只为保活起的服务销毁时什么都不停。服务启动和网络切换时重写一次容器 DNS。服务活着时还盯着电量和关机，见下面的“低电量暂停与关机”。
+服务以 `specialUse` 前台服务类型运行（避开 Android 15+ `dataSync` 的 6 小时后台运行时限和开机自启限制，并兜底实现 `onTimeout`），同时持有部分唤醒锁（只保 CPU，不亮屏）与低延迟 `WifiLock`（防息屏后 Wi-Fi 深睡断联）；销毁时依次停 sshd、NapCat、SnowLuma、MaiBot；只为保活起的服务销毁时什么都不停。服务启动和网络切换时重写一次容器 DNS。服务活着时还盯着电量和关机，见下面的“低电量暂停与关机”。
 
 几个长驻进程的监管方式：
 
-- **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下；低电量暂停期间同样拦下（`pauseForLowBattery`），状态里标出 `lowBatteryPaused`。运行状态在 `status`（`MaiBotProcessStatus`）：是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算）、启动前检查没过时被拦下的原因。OOBE 等 WebUI 时据此判断 MaiBot 是还在起、起来就崩还是根本没拉起，规则在 `MaiBotStartup`。每次拉起前先看 WebUI 端口：自己的 MaiBot 没在跑、端口上却有程序在听，就是被别的程序占着，这时不拉起、在状态里标出 `webUiPortTaken`（OOBE 和唤醒页据此报 `PORT-BUSY`），每 5 秒再看一次，空出来就启动。
+- **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启，每轮拉起前都在宿主机按同 UID 清理残留 Python 进程（不额外起 proot）。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下；低电量暂停期间同样拦下（`pauseForLowBattery`），状态里标出 `lowBatteryPaused`。运行状态在 `status`（`MaiBotProcessStatus`）：是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算）、启动前检查没过时被拦下的原因。OOBE 等 WebUI 时据此判断 MaiBot 是还在起、起来就崩还是根本没拉起，规则在 `MaiBotStartup`。每次拉起前先看 WebUI 端口：自己的 MaiBot 没在跑、端口上却有程序在听，就是被别的程序占着，这时不拉起、在状态里标出 `webUiPortTaken`（OOBE 和唤醒页据此报 `PORT-BUSY`），每 5 秒再看一次，空出来就启动。
 - 启动前台服务的入口（OOBE、主页唤醒）都兜住了系统拒绝：应用在后台时 Android 12+ 不让新开前台服务，这时直接让 `MaiBotProcessSupervisor` 启动，回到前台进入主页时再拉服务。
-- **NapCat**（`NapCatProcessSupervisor`）：不自动重启（QQ 掉线后要重新扫码）。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。只有启用的是 NapCat 才启动（`QqClientChoice`）。
-- **SnowLuma**（`SnowLumaProcessSupervisor`）：和 NapCat 二选一，只有启用的是 SnowLuma 才启动；同样不自动重启，启动前同样检查适配器（两边共用 `QqAdapterUpkeep`）。“重启 QQ”时只重启它。WebUI 默认端口被别的程序占着时换一个空端口启动。
+- **NapCat**（`NapCatProcessSupervisor`）：意外退出时按 5 秒起、翻倍、最长 1 分钟退避整树重启，最多连续 3 次（用尽后停在终端日志等手动处理，避免反复强制重登要求重新扫码），稳定运行满 10 分钟计数清零。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。只有启用的是 NapCat 才启动（`QqClientChoice`）。
+- **SnowLuma**（`SnowLumaProcessSupervisor`）：和 NapCat 二选一，只有启用的是 SnowLuma 才启动；容器启动脚本内由 `wait -n` 事件驱动保育节点（node 挂掉时原地重启、保住 QQ 登录态，连续失败 3 次再请 QQ 退出走整树重启），宿主侧按退避整树重启并在连续 3 次用尽后冷却 10 分钟再自动重试；`/proc/locks` 替身由宿主协程 `ProcLocksSync` 维护。启动前同样检查适配器（两边共用 `QqAdapterUpkeep`）。“重启 QQ”时只重启它。WebUI 默认端口被别的程序占着时换一个空端口启动。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
 
-停止长驻进程（停止、重启、在线更新前、安全退出、服务销毁）时要在容器里直接给进程发信号：宿主侧 `Process.destroy()` 只能给 proot 发 SIGTERM，而 proot 会忽略它，信号到不了容器里的进程；proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测）。所以停止流程是：用 `requestExitScript` 在容器里请进程自己退出 -> 等它保存好数据 -> 兜底用 `Process.killProot()` 强杀还没退的 proot -> 用脚本按进程名清理残留。启动前也会先清一遍上次异常退出留下的残留。
+停止长驻进程（停止、重启、在线更新前、安全退出、服务销毁）时要在容器里直接给进程发信号：宿主侧 `Process.destroy()` 只能给 proot 发 SIGTERM，而 proot 会忽略它，信号到不了容器里的进程；proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测）。所以停止流程是：用 `requestExitScript` 在容器里请进程自己退出 -> 等它保存好数据 -> 兜底用 `Process.killProot()` 强杀还没退的 proot -> 清理残留进程。启动前也会先清一遍上次异常退出留下的残留。
 
-- **MaiBot**（`MaiBotProcessSupervisor.stopLocked`）：用 `MaiBotScripts.requestExit()` 给 Runner（`python bot.py`）发 SIGTERM，Runner 转给 Worker（`python -m src.runtime`）并等它走完优雅关闭（停插件运行时、持久化 A_Memorix 记忆、关数据库），之后 uv、script、sh 依次退出，proot 也就结束了。空闲时约 3 秒；最多等 80 秒（MaiBot 自己给 Worker 留 60 秒）。外面几层 sh、script、uv 的命令行里也带着 bot.py，靠 `MaiBotScripts.EXIT_TARGET` 排除。Runner 还没起来（uv 还在同步依赖）或超时就强杀。清理残留按 `MaiBotScripts.STALE_PROCESS_PATTERN` 认出每一层进程；Runner 忽略 SIGHUP，伪终端关掉它也不会退出，必须点名清掉。
+- **MaiBot**（`MaiBotProcessSupervisor.stopLocked`）：用 `MaiBotScripts.requestExit()` 给 Runner（`python bot.py`）发 SIGTERM，Runner 转给 Worker（`python -m src.runtime`）并等它走完优雅关闭（停插件运行时、持久化 A_Memorix 记忆、关数据库），Runner 与 proot 随之依次退出。空闲时约 3 秒；最多等 80 秒（MaiBot 自己给 Worker 留 60 秒）。外层 proot/sh 包装命令行靠 `MaiBotScripts.EXIT_TARGET` 排除。Runner 还没起来（uv 还在同步依赖）或超时就强杀。清理残留由宿主机直接按同 UID 与 `MaiBotScripts.STALE_PROCESS_PATTERN` 结束残留 Python 进程。
 - **NapCat**（`NapCatProcessSupervisor.stopLocked`）：用 `NapCatScripts.requestQqExit()` 给 QQ 主进程发 SIGTERM，QQ 正常下线退出（实测 1~2 秒、退出码 0）；launcher.sh 放到后台的 Xvfb 还撑着 proot，再跑一次 `NapCatScripts.cleanup()` 清掉。退出 QQ 登录（只重启 NapCat）也走这条路。
 - **SnowLuma**（`SnowLumaProcessSupervisor.stopLocked`）：先用 `SnowLumaScripts.requestSnowLumaExit()` 给 SnowLuma 的两个 node 进程发 SIGTERM，守护进程转给工作进程，工作进程关掉 OneBot、WebUI，写完日志再退出（最多等 20 秒）-> 再用 `requestQqExit()` 请 QQ 主进程下线退出（最多 20 秒）-> 跑 `cleanup()` 清掉 Xvfb、屏幕文件和记下的显示号。真机上还没量过要多久。
 - **sshd**：没有要保存的数据，直接强杀 proot 再按名字清理。
@@ -324,6 +324,6 @@ WebUI 页签顶部按情况显示“WebView 加载失败，重试”或“WebUI 
 
 弹出键盘时 WebView 底部让出键盘高度：主界面是全面屏（`enableEdgeToEdge`），清单里的 `adjustResize` 不再缩小窗口，WebUI 页签按 `WindowInsets.imeAnimationTarget` 给 WebView 加底部内边距，网页可视高度跟着变矮，内核把正在输入的框滚到可见处。按键盘最终高度只缩一次，不随键盘动画逐帧缩放（WebUI 页面重，逐帧重排会卡）；悬浮键盘报上来的高度是 0，不缩。全屏 `WebUiActivity` 的容器内边距也加上了键盘（旧系统由窗口自己缩小，拿到的是 0；Android 15 起强制全面屏后才起作用）。
 
-WebView 的渲染进程崩溃或被系统回收（内存紧张时常见）时，`WebUiWebViewClient.onRenderProcessGone` 返回 true，不让整个应用跟着闪退：页签里 `WebUiTabState.replaceDeadWebView` 丢掉死掉的 WebView、换一个新的重新加载，全屏 `WebUiActivity` 直接重建自己。2 分钟内连崩 3 次就不再自动重开，页签显示加载失败、等用户点重试，免得一加载就崩的页面死循环。
+WebView 的渲染进程崩溃或被系统回收（内存紧张时常见）时，`WebUiWebViewClient.onRenderProcessGone` 返回 true，不让整个应用跟着闪退：页签里 `WebUiTabState.replaceDeadWebView` 丢掉死掉的 WebView、换一个新的重新加载，全屏 `WebUiActivity` 直接重建自己。2 分钟内连崩 3 次就不再自动重开，页签显示加载失败、等用户点重试，免得一加载就崩的页面死循环。此外，主页退到后台空闲满 3 分钟且没有挂起的文件选择/保存下载回调时，`WebUiTabState.hibernateIfIdle` 会销毁网页并让沙箱渲染进程退出释放内存，用户回到前台或手动刷新时自动重建重连。
 
 Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数（见 `WebUiTab.rememberWebUiTabState`），否则 WebView 把页面高度当成 0，vh 恒为 0 整页空白。
