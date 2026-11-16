@@ -101,14 +101,14 @@ internal class AppDependencies(context: Context) {
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
-            appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller,
-            qqClientSwitcher, networkMonitor
+            appContext, settings, runtimePaths, runtimeReadiness, commandRunner, napCatProcess,
+            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
         )
     }
     val snowLuma: SnowLumaPlatformManager by lazy {
         SnowLumaPlatformManager(
-            appContext, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess, snowLumaAdapterInstaller,
-            qqClientSwitcher, networkMonitor
+            appContext, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess,
+            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
         )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {

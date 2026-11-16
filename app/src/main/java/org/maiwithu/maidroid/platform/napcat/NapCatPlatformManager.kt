@@ -23,7 +23,10 @@ import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqClientSwitcher
+import org.maiwithu.maidroid.platform.qq.QqCustomSource
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -34,6 +37,7 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.runtime.StorageSpace
 import org.maiwithu.maidroid.runtime.flushFileSystems
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
+import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
 import java.security.SecureRandom
@@ -48,6 +52,7 @@ import java.security.SecureRandom
  */
 internal class NapCatPlatformManager(
     private val appContext: Context,
+    private val settings: AppSettings,
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
@@ -101,6 +106,16 @@ internal class NapCatPlatformManager(
         scope.launch {
             refreshStatus()
         }
+    }
+
+    /** 校验并保存用户填写的自定义 NapCat 仓库或安装包直链；无效返回错误说明，保存成功返回 null。 */
+    fun saveCustomRepoUrl(rawUrl: String): String? {
+        val parsed = parseQqCustomSource(QqClient.NapCat, rawUrl)
+        if (parsed is QqSourceParseResult.Invalid) return parsed.reason
+        val normalized = (parsed as QqSourceParseResult.Valid).source.rawUrl
+        settings.napCatRepoUrl = normalized
+        _state.update { it.copy(customRepoUrl = normalized) }
+        return null
     }
 
     /** 已登录时点 NapCat 设置要打开的管理页地址，带 token 让页面自动登录。 */
@@ -188,23 +203,43 @@ internal class NapCatPlatformManager(
     }
 
     /**
-     * 点 QQ 卡片的下载按钮（选中 NapCat 适配器时）。已经装好就改用 NapCat 并重启运行时；否则在后台：
-     * 检查容器、MaiBot 源码和 MaiBot 版本 -> NapCat 本体没装才跑 NapCat 安装脚本（进度文件每 500 毫秒同步到进度环）->
-     * 没装就装 MaiBot 侧的 SnowLuma 适配器（SnowLumaAdapterInstaller，顺带删掉停更的旧适配器）->
-     * 改用 NapCat（停掉 SnowLuma）-> 经前台服务拉起 NapCat 并重启 MaiBot，让它加载适配器、生成默认配置 ->
-     * 等配置生成后迁移连接设置，MaiBot 发现配置变了会自己热启用适配器。
-     * 和 SnowLuma 的安装共用一把锁（两边都会跑 apt、装 QQ），SnowLuma 正在装时直接告诉用户等它装完。
+     * 点下载（或从配置弹窗重新安装）NapCat。
+     * 非强装且已装好时直接改用 NapCat 并重启运行时；需要安装或重装时先校验并持久化自定义源地址 ->
+     * 检查容器、MaiBot 源码/版本、网络和空间 -> 重装前先安全停掉正在跑的 NapCat 并清完成标记（保留配置与 QQ 登录态）->
+     * 跑安装脚本 -> 装 MaiBot 侧 QQ 适配器 -> 改用 NapCat 并重启运行时、迁移配置。
      */
-    fun installNapCat() {
+    fun installNapCat(rawUrl: String? = null, forceReinstall: Boolean = false) {
         if (installJob?.isActive == true) return
 
-        if (files.isInstalled() && !adapterInstaller.needsInstall()) {
+        val requestedUrl = rawUrl?.trim()
+        if (!requestedUrl.isNullOrEmpty()) {
+            when (val parsed = parseQqCustomSource(QqClient.NapCat, requestedUrl)) {
+                is QqSourceParseResult.Invalid -> {
+                    fail(Failure(FailureStep.NapCatPrecheck, parsed.reason))
+                    return
+                }
+                is QqSourceParseResult.Valid -> {
+                    settings.napCatRepoUrl = parsed.source.rawUrl
+                    _state.update { it.copy(customRepoUrl = parsed.source.rawUrl) }
+                }
+            }
+        }
+
+        if (!forceReinstall && files.isInstalled() && !adapterInstaller.needsInstall()) {
             scope.launch {
                 switcher.activate(QqClient.NapCat)
                 refreshStatus()
                 restartRuntime()
             }
             return
+        }
+
+        val source = when (val parsed = parseQqCustomSource(QqClient.NapCat, requestedUrl ?: settings.napCatRepoUrl)) {
+            is QqSourceParseResult.Valid -> parsed.source
+            is QqSourceParseResult.Invalid -> {
+                fail(Failure(FailureStep.NapCatPrecheck, parsed.reason))
+                return
+            }
         }
 
         cancelAutoRetry()
@@ -215,7 +250,7 @@ internal class NapCatPlatformManager(
             }
             // 意外异常（读写文件出错、系统拒绝启动服务……）也落到失败提示上，不让进度环一直转、按钮点不了
             try {
-                runInstall()
+                runInstall(source, forceReinstall)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -226,13 +261,13 @@ internal class NapCatPlatformManager(
         }
     }
 
-    private suspend fun runInstall() {
+    private suspend fun runInstall(source: QqCustomSource, forceReinstall: Boolean) {
         _state.update {
             it.copy(
                 phase = NapCatInstallPhase.Installing,
                 installed = false,
                 progress = 0.02f,
-                progressDescription = "准备安装 NapCat",
+                progressDescription = if (forceReinstall) "准备重新安装 NapCat" else "准备安装 NapCat",
                 failure = null
             )
         }
@@ -249,7 +284,7 @@ internal class NapCatPlatformManager(
             fail(Failure(FailureStep.NapCatPrecheck, validationError))
             return
         }
-        // NapCat 安装器、LinuxQQ 和 QQ 适配器都要从网上下载，没连网、空间明摆着不够时直接说
+        // NapCat、LinuxQQ 和 QQ 适配器都要从网上下载，没连网、空间明摆着不够时直接说
         val precheck = NetworkStatus.read(appContext).offlineFailure(FailureStep.NapCatInstall)
             ?: installSpaceShortage()
         if (precheck != null) {
@@ -258,12 +293,20 @@ internal class NapCatPlatformManager(
         }
 
         TerminalLog.append("")
-        TerminalLog.append("[NapCat] 启动安装流程")
+        TerminalLog.append("[NapCat] 启动安装流程（来源: ${source.rawUrl}）")
 
-        if (!withContext(Dispatchers.IO) { files.isNapCatReady() }) {
+        if (forceReinstall) {
+            if (napCatProcess.isRunning) {
+                TerminalLog.append("[NapCat] 停止运行中的 NapCat 以便覆盖更新程序文件")
+                napCatProcess.stopAndWait()
+            }
+            withContext(Dispatchers.IO) { files.readyMarker.delete() }
+        }
+
+        if (forceReinstall || !withContext(Dispatchers.IO) { files.isNapCatReady() }) {
             statusReader.clearInstallProgress()
             startProgressWatcher()
-            val result = runInstallScript(NapCatScripts.install(token = generateToken()))
+            val result = runInstallScript(NapCatScripts.install(token = generateToken(), source = source))
             progressJob?.cancel()
             progressJob = null
             if (!result.success) {
@@ -412,7 +455,8 @@ internal class NapCatPlatformManager(
                 oneBotConfig = snapshot.oneBotConfig,
                 accountId = account?.uin ?: snapshot.accountId,
                 accountName = account?.nick,
-                active = active
+                active = active,
+                customRepoUrl = settings.napCatRepoUrl
             )
         }
     }
@@ -423,7 +467,8 @@ internal class NapCatPlatformManager(
         return NapCatPlatformState.initial(
             installed = snapshot.installed,
             qrCodePath = snapshot.qrCodePath,
-            qrCodeLastModified = snapshot.qrCodeLastModified
+            qrCodeLastModified = snapshot.qrCodeLastModified,
+            customRepoUrl = settings.napCatRepoUrl
         ).copy(
             oneBotConfig = snapshot.oneBotConfig,
             accountId = snapshot.accountId,

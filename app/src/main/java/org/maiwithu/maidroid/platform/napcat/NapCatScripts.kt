@@ -1,7 +1,9 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
 import org.maiwithu.maidroid.runtime.AptMirrors
+import org.maiwithu.maidroid.runtime.ContainerBindMount
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
 import org.maiwithu.maidroid.runtime.GitHubMirrors
@@ -12,6 +14,10 @@ import org.maiwithu.maidroid.runtime.shellQuote
 /**
  * NapCat（LinuxQQ + NapCat 注入）在容器里的安装、启动和清理脚本。
  *
+ * 原安装脚本仓库不可用后，改由 MaiDroid 直接安装官方 LinuxQQ，并从用户填写的自定义仓库或压缩包直链
+ * 下载 NapCat.Shell.zip；启动时不编译 C++ 预加载库，改为生成 loadNapCat.cjs 与修改后的 qq-package.json，
+ * 在启动命令里通过 proot -b 临时绑定到 /opt/QQ/resources/app/package.json，不改动磁盘上的原版 QQ 文件。
+ *
  * 安装进度通过 $TMPDIR/progress 和 progress_des 两个文件汇报（宿主侧对应 termux/tmp），
  * NapCatPlatformManager 每 500 毫秒读一次显示到消息平台页的进度环上。
  */
@@ -20,38 +26,46 @@ internal object NapCatScripts {
     // 停止时等 QQ 自己退出的上限；实测 1~2 秒，留足余量，超时就照常强制清理。
     private const val QQ_EXIT_TIMEOUT_SECONDS = 20
 
-    // NapCat 官方的 Linux 安装器。
-    private const val INSTALLER_URL =
-        "https://raw.githubusercontent.com/NapNeko/napcat-linux-installer/refs/heads/main/install.sh"
+    /** NapCat 运行要求的 LinuxQQ 最低构建号与内置官方安装包。 */
+    const val QQ_MIN_BUILD_VERSION = 53644
+    const val QQ_VERSION = "3.2.34-53644"
+    private const val QQ_PACKAGE = "linuxqq_${QQ_VERSION}_arm64.deb"
+    private const val QQ_OFFICIAL_URL = "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/$QQ_PACKAGE"
+    private const val DOWNLOAD_DIR = "/root/.cache/maidroid-napcat"
+
+    /** NapCat 启动入口脚本：由绑定覆盖后的 QQ package.json main 字段引导加载。 */
+    const val LOAD_SCRIPT = "/root/loadNapCat.cjs"
+
+    /** 宿主机侧相对 rootfs 的覆盖配置与容器内挂载目标，启动时临时覆盖而不改原版 QQ 文件。 */
+    const val QQ_PACKAGE_JSON_OVERRIDE_REL = "root/napcat/qq-package.json"
+    const val QQ_PACKAGE_JSON_OVERRIDE = "/$QQ_PACKAGE_JSON_OVERRIDE_REL"
+    const val QQ_PACKAGE_JSON_TARGET = "/opt/QQ/resources/app/package.json"
 
     /**
-     * 首次安装 NapCat 本体：写入 OneBot token -> 跑官方 napcat 安装器 -> 生成 OneBot11 WebSocket 服务端配置 ->
-     * 打 napcat_ready 标记 -> 生成 launcher.sh。
-     * token 只在第一次安装 QQ 协议端时生成，之后重装、换成 SnowLuma 都沿用容器里已保存的那份（QqOneBot），
-     * 避免 MaiBot 适配器配置失配。
-     * MaiBot 侧的 SnowLuma 适配器不在这里装：脚本跑完后由 SnowLumaAdapterInstaller（platform/qq）另外安装，配置等 MaiBot 生成后再迁移，
-     * 这样 NapCat 已装好、只缺适配器（老用户迁移）时不用再跑一遍 NapCat 安装器。
+     * 安装或重装 NapCat 本体：写入 OneBot token -> 装系统依赖与官方 LinuxQQ ->
+     * 从用户指定的自定义来源下载 NapCat.Shell.zip（保留已有 config/plugins）-> 生成 OneBot11 WebSocket 配置 ->
+     * 打 napcat_ready 标记 -> 生成 loadNapCat.cjs、qq-package.json 与 launcher.sh。
      */
-    fun install(token: String): ContainerScript = ContainerScript(
+    fun install(token: String, source: QqCustomSource): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
             AptMirrors.shellFunctions(),
             GitHubMirrors.shellFunctions(),
             // 读出已保存的 token，没有才存下新的；后面写 onebot11.json 时用 shell 变量 napcat_token
             QqOneBot.ensureTokenScript(token, variable = "napcat_token"),
-            installBody(),
+            installBody(source),
             prepareRuntimeBody(),
             "maidroid_progress 0.9 ${shellQuote("NapCat install completed")}"
         ).joinToString("\n"),
         workingDirectory = "/root"
     )
 
-    /** 每次启动 NapCat 前执行：补齐缓存和 X11 目录，并重新生成 /root/launcher.sh。 */
+    /** 每次启动 NapCat 前执行：补齐目录，更新 loadNapCat.cjs / qq-package.json，并重新生成 /root/launcher.sh。 */
     fun prepareRuntime(): ContainerScript = ContainerScript(prepareRuntimeBody(), workingDirectory = "/root")
 
     /**
-     * 前台运行 launcher.sh（Xvfb + LinuxQQ）。有 script 命令时套一层伪终端，
-     * 让 QQ 的输出按行刷新，终端日志里能实时看到登录过程。
+     * 前台运行 launcher.sh（Xvfb + LinuxQQ）。通过 extraBinds 把覆盖后的 qq-package.json 挂载到 QQ 安装目录，
+     * 既能让 QQ 直接导入 NapCat，又不破坏磁盘上的原始 package.json（与 SnowLuma 共用 /opt/QQ 互不影响）。
      */
     fun launch(): ContainerScript = ContainerScript(
         body = "cd /root && " +
@@ -59,14 +73,18 @@ internal object NapCatScripts {
             "script -q -c ${shellQuote("bash /root/launcher.sh")} /dev/null; " +
             "else bash /root/launcher.sh; fi",
         workingDirectory = "/root",
-        pinToSmallCores = true
+        pinToSmallCores = true,
+        extraBinds = listOf(
+            ContainerBindMount(
+                rootfsRelativeSource = QQ_PACKAGE_JSON_OVERRIDE_REL,
+                containerTarget = QQ_PACKAGE_JSON_TARGET
+            )
+        )
     )
 
     /**
      * 停止、重启和安全退出时，请 LinuxQQ 的主进程（launcher.sh 里那条 qq --no-sandbox --disable-gpu ...）自己下线退出，
-     * 最多等 QQ_EXIT_TIMEOUT_SECONDS 秒。2026-11 真机实测 QQ 收到 SIGTERM 后 1~2 秒退出、退出码 0，
-     * zygote、utility 等子进程（命令行带 --type=）由主进程自己收掉，所以只发给主进程。
-     * QQ 退出后 launcher.sh 跟着退出，但它放到后台的 Xvfb 还在，proot 要等 Xvfb 也退出才结束，之后要再跑一次 cleanup。
+     * 最多等 QQ_EXIT_TIMEOUT_SECONDS 秒。zygote、utility 等子进程（命令行带 --type=）由主进程自己收掉，所以只发给主进程。
      */
     fun requestQqExit(): ContainerScript = ContainerScript(
         body = listOf(
@@ -94,7 +112,7 @@ internal object NapCatScripts {
         workingDirectory = "/root"
     )
 
-    private fun installBody(): String =
+    private fun installBody(source: QqCustomSource): String =
         """
         progress_file="${'$'}{TMPDIR:-/tmp}/progress"
         progress_des_file="${'$'}{TMPDIR:-/tmp}/progress_des"
@@ -105,12 +123,48 @@ internal object NapCatScripts {
             printf "[NapCat] %s\n" "${'$'}2"
         }
 
+        # 经镜像（GitHub 域名）或直连下载 NapCat.Shell.zip，并用 unzip -t 当场验证确实是完整压缩包，
+        # 挡住代理失效、限流返回的 200 HTML 提示页面。
+        maidroid_napcat_fetch_zip() {
+            zip_target="${'$'}1"
+            for candidate_url in ${'$'}(maidroid_download_urls "${'$'}zip_target"); do
+                rm -f $DOWNLOAD_DIR/NapCat.Shell.zip.part
+                printf "[NapCat] downloading %s\n" "${'$'}candidate_url"
+                if curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+                    -o $DOWNLOAD_DIR/NapCat.Shell.zip.part "${'$'}candidate_url" && \
+                    unzip -t $DOWNLOAD_DIR/NapCat.Shell.zip.part >/dev/null 2>&1; then
+                    mv $DOWNLOAD_DIR/NapCat.Shell.zip.part $DOWNLOAD_DIR/NapCat.Shell.zip
+                    return 0
+                fi
+                printf "[NapCat] download or zip check failed, trying next source\n"
+            done
+            rm -f $DOWNLOAD_DIR/NapCat.Shell.zip.part
+            return 1
+        }
+
+        # 向 GitHub Releases 接口查 NapCat.Shell.zip（兼容最新版是 pre-release 或略微改名的发行包）。
+        maidroid_napcat_fetch_github_release() {
+            api_url="${'$'}1"
+            jq_filter="${'$'}2"
+            for api_candidate in ${'$'}(maidroid_download_urls "${'$'}api_url"); do
+                printf "[NapCat] querying release metadata: %s\n" "${'$'}api_candidate"
+                api_json="${'$'}(curl -fsSL --connect-timeout 15 --max-time 30 "${'$'}api_candidate" 2>/dev/null || true)"
+                [ -n "${'$'}api_json" ] || continue
+                asset_url="${'$'}(printf '%s' "${'$'}api_json" | jq -r "${'$'}jq_filter" 2>/dev/null || true)"
+                if [ -n "${'$'}asset_url" ] && [ "${'$'}asset_url" != "null" ]; then
+                    if maidroid_napcat_fetch_zip "${'$'}asset_url"; then
+                        return 0
+                    fi
+                fi
+            done
+            return 1
+        }
+
         maidroid_progress 0.05 "Prepare NapCat install"
 
-        if [ -d "${'$'}HOME/napcat" ] && [ ! -f "${'$'}HOME/.maidroid/napcat_ready" ]; then
+        # 只有上一次初装打断、连默认配置都没写过的半成品目录才挪到备份里；重装时保留已有 config 里的账号设置。
+        if [ -d "${'$'}HOME/napcat" ] && [ ! -f "${'$'}HOME/.maidroid/napcat_ready" ] && [ ! -f "${'$'}HOME/napcat/config/onebot11.json" ]; then
             if find "${'$'}HOME/napcat" -mindepth 1 -type f | grep -q .; then
-                # 只留最新一份备份：装一次被打断一次就多一份上百 MB 的备份，反复几次会把空间占满。
-                # 备份的都是没装完的 NapCat 目录，QQ 的登录数据在 ~/.config/QQ，不在这里面。
                 for old_backup in "${'$'}HOME"/napcat.maidroid-bak.*; do
                     [ -e "${'$'}old_backup" ] || continue
                     printf "[NapCat] Remove older unfinished NapCat backup: %s\n" "${'$'}old_backup"
@@ -125,59 +179,102 @@ internal object NapCatScripts {
             fi
         fi
 
-        if ! command -v sudo >/dev/null 2>&1; then
-            printf "[NapCat] sudo not found, creating root compatible wrapper\n"
-            mkdir -p /usr/local/bin
-            cat > /usr/local/bin/sudo <<'EOF'
-        #!/bin/sh
-        exec "$@"
-        EOF
-            chmod +x /usr/local/bin/sudo
-        fi
-
-        # NapCat 安装器自己用 apt-get 装 QQ 和依赖：上次装到一半被打断（闪退、断电）留下的 dpkg 半装状态先收拾掉，
-        # 否则安装器一上来就报 dpkg was interrupted；再写好 apt 的超时设置，并用会自动换源的 maidroid_apt_install
-        # 先把安装器要的常用依赖装上（换成功的源留在 sources.list 里，安装器随后的 apt-get 也走它）。
-        # 预装失败不算失败，交给安装器自己装，真装不上时由它报错。
         maidroid_progress 0.10 "Prepare system packages"
         export DEBIAN_FRONTEND=noninteractive
         if ! dpkg --configure -a; then
             printf "[NapCat] dpkg --configure -a failed, apt-get -f install will try to repair\n"
         fi
         maidroid_apt_write_network_conf
-        if ! maidroid_apt_install zip unzip jq curl xvfb screen xauth procps g++; then
-            printf "[NapCat] pre-installing packages failed (%s), leaving it to the NapCat installer\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
-        fi
-
-        maidroid_progress 0.15 "Download NapCat installer"
-        # raw.githubusercontent.com 国内常连不上：按 GitHubMirrors 的线路依次下载，下到的必须是提到 napcat 的 shell 脚本，
-        # 镜像限流、拉黑时可能返回 200 的网页或报错文字（2026-11 实测 ghfast.top 回“Forbidden by black list.”）。
-        # 安装器自己下载 NapCat 和 LinuxQQ 时有它自己的镜像列表，这里只管拿到安装器本身。
-        napcat_installer_ready=0
-        for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
-            mirror_name="${'$'}{mirror_spec%%|*}"
-            mirror_prefix="${'$'}{mirror_spec#*|}"
-            printf "[NapCat] downloading installer via %s\n" "${'$'}mirror_name"
-            rm -f napcat.sh
-            if curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 30 -o napcat.sh \
-                "${'$'}(maidroid_github_candidate_url "${'$'}mirror_prefix" ${shellQuote(INSTALLER_URL)})" &&
-                head -n 1 napcat.sh | grep -q '^#!' && grep -qi 'napcat' napcat.sh; then
-                napcat_installer_ready=1
-                break
-            fi
-        done
-        if [ "${'$'}napcat_installer_ready" != 1 ]; then
-            printf "下载不到 NapCat 安装脚本（直连和所有 GitHub 镜像都失败），请检查网络后重试\n"
+        if ! maidroid_apt_install zip unzip jq curl xvfb procps ca-certificates; then
+            printf "装不上 NapCat 需要的系统软件包（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
             exit 1
         fi
 
-        maidroid_progress 0.35 "Make NapCat installer executable"
-        chmod +x napcat.sh
+        # 检查并安装官方 LinuxQQ：已装有符合最低构建号的版本时跳过，避免重复下载两百 MB 安装包。
+        maidroid_progress 0.20 "Check LinuxQQ"
+        mkdir -p $DOWNLOAD_DIR
+        if [ -f $QQ_PACKAGE_JSON_TARGET ] && \
+            jq -e '.buildVersion | tonumber >= $QQ_MIN_BUILD_VERSION' $QQ_PACKAGE_JSON_TARGET >/dev/null 2>&1 && \
+            command -v qq >/dev/null 2>&1; then
+            printf "[NapCat] LinuxQQ buildVersion >= $QQ_MIN_BUILD_VERSION already installed\n"
+        else
+            maidroid_progress 0.25 "Download LinuxQQ"
+            rm -f $DOWNLOAD_DIR/$QQ_PACKAGE $DOWNLOAD_DIR/$QQ_PACKAGE.part
+            printf "[NapCat] downloading LinuxQQ %s\n" ${shellQuote(QQ_OFFICIAL_URL)}
+            if ! curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+                -o $DOWNLOAD_DIR/$QQ_PACKAGE.part ${shellQuote(QQ_OFFICIAL_URL)} || \
+                ! dpkg-deb -I $DOWNLOAD_DIR/$QQ_PACKAGE.part >/dev/null 2>&1; then
+                rm -f $DOWNLOAD_DIR/$QQ_PACKAGE.part
+                printf "下载不到有效的 LinuxQQ 安装包，请检查网络后重试\n"
+                exit 1
+            fi
+            mv $DOWNLOAD_DIR/$QQ_PACKAGE.part $DOWNLOAD_DIR/$QQ_PACKAGE
 
-        maidroid_progress 0.45 "Run NapCat installer"
-        bash napcat.sh
+            maidroid_progress 0.38 "Install LinuxQQ"
+            if ! maidroid_apt_install --allow-downgrades $DOWNLOAD_DIR/$QQ_PACKAGE; then
+                rm -f $DOWNLOAD_DIR/$QQ_PACKAGE
+                printf "LinuxQQ 安装失败（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
+                exit 1
+            fi
+            rm -f $DOWNLOAD_DIR/$QQ_PACKAGE
 
-        maidroid_progress 0.78 "Write NapCat OneBot11 WebSocket config"
+            if apt-cache show libasound2t64 >/dev/null 2>&1; then
+                asound_pkg="libasound2t64"
+            else
+                asound_pkg="libasound2"
+            fi
+            if ! maidroid_apt_install libnss3 libgbm1 libgssapi-krb5-2 "${'$'}asound_pkg"; then
+                printf "LinuxQQ 运行依赖安装失败（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
+                exit 1
+            fi
+        fi
+
+        maidroid_progress 0.55 "Download NapCat package"
+        """.trimIndent() + "\n" +
+        downloadCustomArchiveScript(source) + "\n" +
+        """
+        if [ "${'$'}napcat_zip_ready" != 1 ]; then
+            printf "从自定义地址下载不到有效的 NapCat.Shell.zip，请检查填写的仓库或直链是否包含该发行包\n"
+            exit 1
+        fi
+        napcat_sha="${'$'}(sha256sum $DOWNLOAD_DIR/NapCat.Shell.zip | awk '{print ${'$'}1}')"
+        printf "[NapCat] custom package sha256: %s (not verified against official checksum)\n" "${'$'}napcat_sha"
+
+        maidroid_progress 0.74 "Unpack NapCat"
+        rm -rf $DOWNLOAD_DIR/unpack
+        mkdir -p $DOWNLOAD_DIR/unpack
+        unzip -q -o $DOWNLOAD_DIR/NapCat.Shell.zip -d $DOWNLOAD_DIR/unpack
+        if [ -f $DOWNLOAD_DIR/unpack/napcat.mjs ]; then
+            napcat_src="$DOWNLOAD_DIR/unpack"
+        else
+            napcat_entry="${'$'}(find $DOWNLOAD_DIR/unpack -maxdepth 2 -type f -name 'napcat.mjs' | head -n 1)"
+            napcat_src="${'$'}(dirname "${'$'}{napcat_entry:-/missing}")"
+        fi
+        if [ ! -f "${'$'}{napcat_src}/napcat.mjs" ]; then
+            rm -rf $DOWNLOAD_DIR/unpack $DOWNLOAD_DIR/NapCat.Shell.zip
+            printf "压缩包内未找到 napcat.mjs，请确认下载的是 NapCat.Shell.zip\n"
+            exit 1
+        fi
+        mkdir -p "${'$'}HOME/napcat/config" "${'$'}HOME/napcat/plugins"
+        for entry in "${'$'}{napcat_src}"/*; do
+            [ -e "${'$'}entry" ] || continue
+            base="${'$'}(basename "${'$'}entry")"
+            case "${'$'}base" in
+                config|plugins)
+                    if [ -d "${'$'}entry" ]; then
+                        mkdir -p "${'$'}HOME/napcat/${'$'}base"
+                        cp -rn "${'$'}entry"/. "${'$'}HOME/napcat/${'$'}base"/ 2>/dev/null || true
+                    fi
+                    ;;
+                *)
+                    rm -rf "${'$'}HOME/napcat/${'$'}base"
+                    cp -a "${'$'}entry" "${'$'}HOME/napcat/${'$'}base"
+                    ;;
+            esac
+        done
+        rm -rf $DOWNLOAD_DIR/unpack $DOWNLOAD_DIR/NapCat.Shell.zip
+
+        maidroid_progress 0.80 "Write NapCat OneBot11 WebSocket config"
         mkdir -p "${'$'}HOME/napcat/config"
         cat > "${'$'}HOME/napcat/config/onebot11.json" <<EOF
         {
@@ -205,8 +302,68 @@ internal object NapCatScripts {
         EOF
 
         maidroid_progress 0.86 "Record NapCat install state"
+        mkdir -p "${'$'}HOME/.maidroid"
         printf "ready\n" > "${'$'}HOME/.maidroid/napcat_ready"
         """.trimIndent()
+
+    /**
+     * 按用户填写的地址类型生成 NapCat.Shell.zip 下载逻辑：
+     * - 直链直接尝试经镜像（或直连）下载；
+     * - 仓库链接带 tag 时按该 tag 下载，不带 tag 时先试 releases/latest，失败再用 GitHub Releases API 兜底查资产。
+     */
+    private fun downloadCustomArchiveScript(source: QqCustomSource): String = when (source) {
+        is QqCustomSource.DirectArchive ->
+            """
+            napcat_zip_ready=0
+            if maidroid_napcat_fetch_zip ${shellQuote(source.rawUrl)}; then
+                napcat_zip_ready=1
+            fi
+            """.trimIndent()
+        is QqCustomSource.Repository -> {
+            val assetFilter =
+                "[(.assets[]? | select(.name == \"NapCat.Shell.zip\") | .browser_download_url), " +
+                    "(.assets[]? | select((.name | test(\"NapCat\\\\.Shell.*\\\\.zip\$\"; \"i\")) and ((.name | test(\"windows\"; \"i\")) | not)) | .browser_download_url)][0] // empty"
+            val listAssetFilter =
+                "[(.[]?.assets[]? | select(.name == \"NapCat.Shell.zip\") | .browser_download_url), " +
+                    "(.[]?.assets[]? | select((.name | test(\"NapCat\\\\.Shell.*\\\\.zip\$\"; \"i\")) and ((.name | test(\"windows\"; \"i\")) | not)) | .browser_download_url)][0] // empty"
+            if (source.pinnedTag != null) {
+                val directTagUrl = "${source.repoBaseUrl}/releases/download/${source.pinnedTag}/NapCat.Shell.zip"
+                val apiFallback = source.gitHubRepoSlug?.let { slug ->
+                    val tagApiUrl = "https://api.github.com/repos/$slug/releases/tags/${source.pinnedTag}"
+                    """
+                    elif maidroid_napcat_fetch_github_release ${shellQuote(tagApiUrl)} ${shellQuote(assetFilter)}; then
+                        napcat_zip_ready=1
+                    """.trimIndent()
+                }.orEmpty()
+                """
+                napcat_zip_ready=0
+                if maidroid_napcat_fetch_zip ${shellQuote(directTagUrl)}; then
+                    napcat_zip_ready=1
+                $apiFallback
+                fi
+                """.trimIndent()
+            } else {
+                val latestUrl = "${source.repoBaseUrl}/releases/latest/download/NapCat.Shell.zip"
+                val apiFallback = source.gitHubRepoSlug?.let { slug ->
+                    val latestApiUrl = "https://api.github.com/repos/$slug/releases/latest"
+                    val listApiUrl = "https://api.github.com/repos/$slug/releases?per_page=5"
+                    """
+                    elif maidroid_napcat_fetch_github_release ${shellQuote(latestApiUrl)} ${shellQuote(assetFilter)}; then
+                        napcat_zip_ready=1
+                    elif maidroid_napcat_fetch_github_release ${shellQuote(listApiUrl)} ${shellQuote(listAssetFilter)}; then
+                        napcat_zip_ready=1
+                    """.trimIndent()
+                }.orEmpty()
+                """
+                napcat_zip_ready=0
+                if maidroid_napcat_fetch_zip ${shellQuote(latestUrl)}; then
+                    napcat_zip_ready=1
+                $apiFallback
+                fi
+                """.trimIndent()
+            }
+        }
+    }
 
     // Xvfb 挑中的显示号记在这里，launcher.sh 写、cleanup 删
     private const val DISPLAY_FILE = "/tmp/.maidroid-display"
@@ -216,6 +373,22 @@ internal object NapCatScripts {
         set -e
         mkdir -p /root/napcat/cache /root/napcat/config /tmp /tmp/.X11-unix /tmp/runtime-root
         chmod 700 /tmp/runtime-root 2>/dev/null || true
+        cat > $LOAD_SCRIPT <<'EOF'
+        const path = require('path');
+        const currentPath = process.env.NAPCAT_BOOTMAIN || path.dirname(__filename);
+        (async () => {
+            await import('file://' + path.join(currentPath, './napcat/napcat.mjs'));
+        })();
+        EOF
+        if [ -f $QQ_PACKAGE_JSON_TARGET ]; then
+            # 改写后的 package.json 单独保存在 /root/napcat 下，由 proot 在启动 NapCat 时挂载覆盖原文件。
+            if command -v jq >/dev/null 2>&1; then
+                jq --arg main "../../../../root/loadNapCat.cjs" '.main = ${'$'}main' $QQ_PACKAGE_JSON_TARGET > $QQ_PACKAGE_JSON_OVERRIDE.tmp
+            else
+                sed 's|"main"[[:space:]]*:[[:space:]]*"[^"]*"|"main": "../../../../root/loadNapCat.cjs"|' $QQ_PACKAGE_JSON_TARGET > $QQ_PACKAGE_JSON_OVERRIDE.tmp
+            fi
+            mv $QQ_PACKAGE_JSON_OVERRIDE.tmp $QQ_PACKAGE_JSON_OVERRIDE
+        fi
         cat > /root/launcher.sh <<'EOF'
         #!/bin/bash
         set -u
@@ -259,8 +432,8 @@ internal object NapCatScripts {
         fi
         export DISPLAY=":${'$'}display"
 
-        echo "[NapCat] Launching LinuxQQ with NapCat preload"
-        LD_PRELOAD=/root/libnapcat_launcher.so qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1
+        echo "[NapCat] Launching LinuxQQ with NapCat package binding"
+        qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1
         exit_code=$?
         echo "[NapCat] qq exited with code ${'$'}exit_code"
         exit ${'$'}exit_code
