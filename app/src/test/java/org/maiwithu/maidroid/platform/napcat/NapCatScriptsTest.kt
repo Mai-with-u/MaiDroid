@@ -90,6 +90,7 @@ class NapCatScriptsTest {
 
         assertTrue(install.indexOf("dpkg --configure -a") in 0 until aptStep)
         assertTrue(install.indexOf("maidroid_apt_write_network_conf\n") in 0 until aptStep)
+        assertTrue(install.contains("maidroid_apt_install --reinstall unzip"))
         assertTrue(install.indexOf("rm -rf \"${'$'}old_backup\"") < install.indexOf("mv \"${'$'}HOME/napcat\" \"${'$'}backup_dir\""))
     }
 }

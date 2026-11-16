@@ -190,6 +190,17 @@ internal object NapCatScripts {
             exit 1
         fi
 
+        # 旧版容器在 /data/data 路径下装过 unzip 时，--link2symlink 留下的软链在 /data/user/0 下会失效，
+        # dpkg 仍认为已安装而跳过；调不通 unzip 时清掉失效软链再强制重装一次。
+        if ! unzip -v >/dev/null 2>&1; then
+            printf "[NapCat] unzip is not runnable under current rootfs path, reinstalling unzip\n"
+            rm -f /usr/bin/unzip /usr/bin/zipinfo
+            if ! maidroid_apt_install --reinstall unzip || ! unzip -v >/dev/null 2>&1; then
+                printf "修复 NapCat 需要的 unzip 失败（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
+                exit 1
+            fi
+        fi
+
         # 检查并安装官方 LinuxQQ：已装有符合最低构建号的版本时跳过，避免重复下载两百 MB 安装包。
         maidroid_progress 0.20 "Check LinuxQQ"
         mkdir -p $DOWNLOAD_DIR
