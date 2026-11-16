@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.platform.snowluma
 
+import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
@@ -11,26 +12,23 @@ import org.maiwithu.maidroid.runtime.requestExitScript
 import org.maiwithu.maidroid.runtime.shellQuote
 
 /**
- * SnowLuma 客户端（https://github.com/SnowLuma/SnowLuma）在容器里的安装、启动和清理脚本。
+ * SnowLuma 客户端在容器里的安装、启动和清理脚本。
  *
  * SnowLuma 不自己登录 QQ：容器里先在 Xvfb 上跑一个原版 LinuxQQ，SnowLuma 每 1.5 秒找一次 QQ 主进程，
  * 用 ptrace 把它的原生组件注入进去，再给 MaiBot 开 OneBot WebSocket（地址、端口、token 和 NapCat 一样，见 QqOneBot）。
  * 登录二维码只画在 QQ 自己的窗口里，所以 Xvfb 用 -fbdir 把屏幕写成文件，宿主侧读出来给用户看、替用户点。
  *
- * 版本固定：发行包和 LinuxQQ 都按上游给的 sha256 校验后才装。SnowLuma 的原生组件绑着 QQ 的版本，
- * 上游自己的 Docker 镜像和安装脚本都钉在下面这版 QQ 上；升级时两组常量一起改，并重新在真机上验证注入。
- * SnowLuma 的原生组件是专有软件，按作者的书面授权由 MaiDroid 自动下载部署，用户在安装前看过并同意它的协议。
+ * 原官方仓库不可用后，SnowLuma 发行包由用户填写自定义仓库或直链下载，优先匹配 v2.4.2 并在找不到时回退最新 Release
+ * 的 linux-arm64 完整包；安装时会核对并记录实际 sha256 与官方 v2.4.2 的差异，LinuxQQ 仍按 sha256 严格校验。
  */
 internal object SnowLumaScripts {
-    /** 装的 SnowLuma 版本（GitHub Release 的 tag 去掉 v）。 */
+    /** 优先匹配的 SnowLuma 目标版本（GitHub Release 的 tag 去掉 v）。 */
     const val VERSION = "2.4.2"
 
-    // 完整版发行包（自带 Node 24），sha256 取自 GitHub Release 资产的 digest
-    private const val BUNDLE_URL =
-        "https://github.com/SnowLuma/SnowLuma/releases/download/v$VERSION/SnowLuma-v$VERSION-linux-arm64.tar.gz"
-    private const val BUNDLE_SHA256 = "c4bcff22828fb465d6fbd8caa375e82432fd3af684b297c43f2c428a2de2200c"
+    /** 原官方 v2.4.2 linux-arm64 完整版发行包的 sha256，用于日志提示是否被重新打包或修改。 */
+    const val OFFICIAL_BUNDLE_SHA256 = "c4bcff22828fb465d6fbd8caa375e82432fd3af684b297c43f2c428a2de2200c"
 
-    /** SnowLuma 上游钉的 LinuxQQ 版本（安装包名里的写法：版本号_发布日期），和 NapCat 共用 /opt/QQ。 */
+    /** SnowLuma 绑定的 LinuxQQ 版本（安装包名里的写法：版本号_发布日期），和 NapCat 共用 /opt/QQ。 */
     const val QQ_VERSION = "3.2.32_260812"
 
     /**
@@ -41,7 +39,7 @@ internal object SnowLumaScripts {
     private const val QQ_PACKAGE = "QQ_${QQ_VERSION}_arm64_01.deb"
     private const val QQ_SHA256 = "8796ccfd66acc025ef18db37185532d40bc8c58921e17da6d28c295acbcf8f92"
 
-    // QQ 官方下载地址在前，上游安装脚本用的 GitHub 备份在后（经 GitHub 镜像），哪个下到都要对得上 sha256
+    // QQ 官方下载地址在前，GitHub 备份在后（经 GitHub 镜像），哪个下到都要对得上 sha256
     private const val QQ_OFFICIAL_URL = "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.33/release/3f89efc5/$QQ_PACKAGE"
     private const val QQ_GITHUB_URL =
         "https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260813-1d08f1d4/$QQ_PACKAGE"
@@ -89,8 +87,6 @@ internal object SnowLumaScripts {
     /**
      * SnowLuma 的两个 node 进程（守护进程和它拉起的工作进程，命令行一样）。收到 SIGTERM 后守护进程转给工作进程，
      * 工作进程关掉 OneBot、WebUI，写完日志再退出，两个都发也没关系（重复的退出请求会被忽略）。
-     * 只认入口文件：node 起来后把命令行改成了 `node /root/snowluma/app/index.mjs`（2026-11 真机上看到的），
-     * 不是启动时写的 `/root/snowluma/app/node ...`。正则里的点写成 [.]，免得匹配到脚本自己的命令行里那份正则原文。
      */
     val SNOWLUMA_EXIT_TARGET = ExitTarget(pattern = "snowluma.app.index[.]mjs", exclude = "awk", processName = "SnowLuma")
 
@@ -98,19 +94,19 @@ internal object SnowLumaScripts {
     val QQ_EXIT_TARGET = ExitTarget(pattern = "qq --no-sandbox --disable-gpu", exclude = "--type=", processName = "QQ")
 
     /**
-     * 首次安装（或重装）：
-     * 写 OneBot token、WebUI 密码和协议同意记录 -> 装 Xvfb、xdotool、中文字体 -> 没有这版 LinuxQQ 就下载校验后装上，
-     * 并挡住 QQ 的热更新 -> 下载校验 SnowLuma 发行包、解到程序目录 -> 写全局 OneBot 配置 -> 打完成标记 -> 生成启动脚本。
-     * 每一步都假设上次装到一半被打断：dpkg 先收拾半装状态，下载和解包都先写临时文件、校验通过才换上。
+     * 首次安装（或从自定义地址重装）：
+     * 写 OneBot token、WebUI 密码和协议同意记录 -> 装 Xvfb、xdotool、jq、中文字体 -> 没有这版 LinuxQQ 就下载校验后装上，
+     * 并挡住 QQ 的热更新 -> 从用户指定的自定义来源下载 SnowLuma 发行包、验证归档并对比官方 sha256、解到程序目录 ->
+     * 写全局 OneBot 配置 -> 打完成标记 -> 生成启动脚本。
      */
-    fun install(token: String, webUiPassword: String): ContainerScript = ContainerScript(
+    fun install(token: String, webUiPassword: String, source: QqCustomSource): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
             AptMirrors.shellFunctions(),
             GitHubMirrors.shellFunctions(),
             // 和 NapCat 共用一份 OneBot token：装过 NapCat 的沿用它的，MaiBot 侧的适配器配置不用改
             QqOneBot.ensureTokenScript(token, variable = "onebot_token"),
-            installBody(webUiPassword),
+            installBody(webUiPassword, source),
             prepareRuntimeBody(),
             "maidroid_progress 0.9 ${shellQuote("SnowLuma install completed")}"
         ).joinToString("\n"),
@@ -176,7 +172,7 @@ internal object SnowLumaScripts {
         workingDirectory = "/root"
     )
 
-    private fun installBody(webUiPassword: String): String =
+    private fun installBody(webUiPassword: String, source: QqCustomSource): String =
         """
         maidroid_progress() {
             printf "%s\n" "${'$'}1" > $PROGRESS_FILE
@@ -184,7 +180,7 @@ internal object SnowLumaScripts {
             printf "[SnowLuma] %s\n" "${'$'}2"
         }
 
-        # 依次试每个地址下载到 $1，下到的 sha256 必须是 $2：镜像限流、拉黑时会回 200 的网页，下到了也不能用
+        # 依次试每个地址下载到 $1，下到的 sha256 必须是 $2（用于严格校验固定版本的 LinuxQQ deb）。
         maidroid_snowluma_fetch() {
             fetch_out="${'$'}1"
             fetch_sha="${'$'}2"
@@ -205,11 +201,42 @@ internal object SnowLumaScripts {
             return 1
         }
 
-        # 一个 GitHub 地址经每条镜像线路（含直连）的实际下载地址
-        maidroid_github_urls() {
-            for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
-                maidroid_github_candidate_url "${'$'}{mirror_spec#*|}" "${'$'}1"
+        # 从自定义源下载 SnowLuma 发行包：跳过官方固定 sha256 限制，但立即用 tar -tzf 检查压缩包完整性，
+        # 避免把镜像站限流返回的 200 HTML 页面当成归档解包。
+        maidroid_snowluma_fetch_archive() {
+            archive_out="${'$'}1"
+            archive_url="${'$'}2"
+            for fetch_url in ${'$'}(maidroid_download_urls "${'$'}archive_url"); do
+                rm -f "${'$'}archive_out.part"
+                printf "[SnowLuma] downloading %s\n" "${'$'}fetch_url"
+                if curl -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+                    -o "${'$'}archive_out.part" "${'$'}fetch_url" && \
+                    tar -tzf "${'$'}archive_out.part" >/dev/null 2>&1; then
+                    mv "${'$'}archive_out.part" "${'$'}archive_out"
+                    return 0
+                fi
+                printf "[SnowLuma] download or archive check failed, trying next source\n"
             done
+            rm -f "${'$'}archive_out.part"
+            return 1
+        }
+
+        # 查 GitHub Releases 接口挑出 linux-arm64 完整版 .tar.gz（排除 -lite），找到后经镜像下载并检验归档。
+        maidroid_snowluma_fetch_github_release() {
+            api_url="${'$'}1"
+            jq_filter="${'$'}2"
+            for api_candidate in ${'$'}(maidroid_download_urls "${'$'}api_url"); do
+                printf "[SnowLuma] querying release metadata: %s\n" "${'$'}api_candidate"
+                api_json="${'$'}(curl -fsSL --connect-timeout 15 --max-time 30 "${'$'}api_candidate" 2>/dev/null || true)"
+                [ -n "${'$'}api_json" ] || continue
+                asset_url="${'$'}(printf '%s' "${'$'}api_json" | jq -r "${'$'}jq_filter" 2>/dev/null || true)"
+                if [ -n "${'$'}asset_url" ] && [ "${'$'}asset_url" != "null" ]; then
+                    if maidroid_snowluma_fetch_archive $DOWNLOAD_DIR/snowluma.tar.gz "${'$'}asset_url"; then
+                        return 0
+                    fi
+                fi
+            done
+            return 1
         }
 
         maidroid_progress 0.05 "Prepare SnowLuma install"
@@ -218,18 +245,18 @@ internal object SnowLumaScripts {
             printf "%s" ${shellQuote(webUiPassword)} > $WEBUI_PASSWORD_FILE
             chmod 600 $WEBUI_PASSWORD_FILE 2>/dev/null || true
         fi
-        # 用户是在消息平台页看过 SnowLuma 的协议、点了“同意并安装”才走到这里的，记下来，启动时据此替用户确认协议
+        # 用户是在消息平台页看过风险与协议说明、点了确认才走到这里的，记下来，启动时据此替用户确认协议
         printf "SnowLuma %s agreed %s\n" $VERSION "${'$'}(date -u +%Y-%m-%dT%H:%M:%SZ)" > $CONSENT_MARKER
 
         # 上次装到一半被打断留下的 dpkg 半装状态先收拾掉；apt 带超时，下载失败会自动换源。
-        # xdotool 往 QQ 窗口里点击，中文字体让 QQ 窗口里的字（“扫码登录”“二维码已失效”）不显示成方块。
+        # xdotool 往 QQ 窗口里点击，jq 用来从自定义仓库接口挑选 arm64 资产，中文字体让 QQ 窗口文字不显示成方块。
         maidroid_progress 0.10 "Install system packages"
         export DEBIAN_FRONTEND=noninteractive
         if ! dpkg --configure -a; then
             printf "[SnowLuma] dpkg --configure -a failed, apt-get -f install will try to repair\n"
         fi
         maidroid_apt_write_network_conf
-        if ! maidroid_apt_install xvfb xdotool procps curl ca-certificates tar fonts-wqy-zenhei; then
+        if ! maidroid_apt_install xvfb xdotool procps curl ca-certificates tar jq fonts-wqy-zenhei; then
             printf "装不上 SnowLuma 需要的系统软件包（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
             exit 1
         fi
@@ -245,7 +272,7 @@ internal object SnowLumaScripts {
             printf "[SnowLuma] LinuxQQ is %s, installing %s\n" "${'$'}{qq_current:-missing}" "${'$'}qq_wanted"
             maidroid_progress 0.25 "Download LinuxQQ"
             if ! maidroid_snowluma_fetch $DOWNLOAD_DIR/$QQ_PACKAGE $QQ_SHA256 \
-                ${shellQuote(QQ_OFFICIAL_URL)} ${'$'}(maidroid_github_urls ${shellQuote(QQ_GITHUB_URL)}); then
+                ${shellQuote(QQ_OFFICIAL_URL)} ${'$'}(maidroid_download_urls ${shellQuote(QQ_GITHUB_URL)}); then
                 printf "下载不到 LinuxQQ 安装包（官方地址和所有 GitHub 镜像都失败或校验不通过），请检查网络后重试\n"
                 exit 1
             fi
@@ -257,15 +284,25 @@ internal object SnowLumaScripts {
             fi
             rm -f $DOWNLOAD_DIR/$QQ_PACKAGE
         fi
-        # 挡住 QQ 的热更新：热更新会悄悄换掉 QQ 的组件，SnowLuma 的注入就对不上了（上游安装脚本也这么做）
+        # 挡住 QQ 的热更新：热更新会悄悄换掉 QQ 的组件，SnowLuma 的注入就对不上了
         if ! grep -q 'qqpatch[.]gtimg[.]cn' /etc/hosts 2>/dev/null; then
             printf "0.0.0.0 qqpatch.gtimg.cn\n" >> /etc/hosts
         fi
 
         maidroid_progress 0.60 "Download SnowLuma"
-        if ! maidroid_snowluma_fetch $DOWNLOAD_DIR/snowluma.tar.gz $BUNDLE_SHA256 ${'$'}(maidroid_github_urls ${shellQuote(BUNDLE_URL)}); then
-            printf "下载不到 SnowLuma 发行包（直连和所有 GitHub 镜像都失败或校验不通过），请检查网络后重试\n"
+        """.trimIndent() + "\n" +
+        downloadCustomArchiveScript(source) + "\n" +
+        """
+        if [ "${'$'}snowluma_archive_ready" != 1 ]; then
+            printf "从自定义地址下载不到有效的 SnowLuma linux-arm64 发行包，请检查仓库 Release 或直链后重试\n"
             exit 1
+        fi
+        bundle_sha="${'$'}(sha256sum $DOWNLOAD_DIR/snowluma.tar.gz | awk '{print ${'$'}1}')"
+        if [ "${'$'}bundle_sha" = ${shellQuote(OFFICIAL_BUNDLE_SHA256)} ]; then
+            printf "[SnowLuma] bundle sha256 matches official v$VERSION release\n"
+        else
+            printf "[SnowLuma] WARNING: bundle sha256 (%s) differs from official v$VERSION (%s); continuing per user risk confirmation\n" \
+                "${'$'}bundle_sha" ${shellQuote(OFFICIAL_BUNDLE_SHA256)}
         fi
 
         # 先解到临时目录，确认入口和自带的 node 都在再换上；数据在另一个目录，换程序目录不丢登录和配置
@@ -273,6 +310,14 @@ internal object SnowLumaScripts {
         rm -rf $APP_DIR.tmp
         mkdir -p $APP_DIR.tmp
         tar -xzf $DOWNLOAD_DIR/snowluma.tar.gz -C $APP_DIR.tmp
+        if [ ! -f $APP_DIR.tmp/index.mjs ]; then
+            nested_entry="${'$'}(find $APP_DIR.tmp -maxdepth 2 -type f -name 'index.mjs' | head -n 1)"
+            if [ -n "${'$'}nested_entry" ]; then
+                nested_dir="${'$'}(dirname "${'$'}nested_entry")"
+                mv "${'$'}nested_dir"/* "${'$'}nested_dir"/.[!.]* $APP_DIR.tmp/ 2>/dev/null || true
+            fi
+        fi
+        [ -f $APP_DIR.tmp/node ] && chmod +x $APP_DIR.tmp/node 2>/dev/null || true
         if [ ! -f $APP_DIR.tmp/index.mjs ] || [ ! -x $APP_DIR.tmp/node ]; then
             printf "SnowLuma 发行包内容不完整，请重试\n"
             exit 1
@@ -312,6 +357,71 @@ internal object SnowLumaScripts {
         maidroid_progress 0.88 "Record SnowLuma install state"
         printf "%s\n" $VERSION > $READY_MARKER
         """.trimIndent()
+
+    /**
+     * 按用户填写的地址类型生成 SnowLuma 发行包下载逻辑：
+     * - 直链直接尝试经镜像或直连下载；
+     * - 未指定 tag 的仓库优先尝试 v2.4.2，失败时再查最新 Release（含 pre-release）的 linux-arm64 完整包；
+     * - 指定 tag 的仓库先按该 tag 拼包名下载，失败再查对应 tag 的 Release 资产列表。
+     */
+    private fun downloadCustomArchiveScript(source: QqCustomSource): String = when (source) {
+        is QqCustomSource.DirectArchive ->
+            """
+            snowluma_archive_ready=0
+            if maidroid_snowluma_fetch_archive $DOWNLOAD_DIR/snowluma.tar.gz ${shellQuote(source.rawUrl)}; then
+                snowluma_archive_ready=1
+            fi
+            """.trimIndent()
+        is QqCustomSource.Repository -> {
+            val singleReleaseFilter =
+                "[.assets[]? | select((.name | test(\"linux-arm64.*\\\\.tar\\\\.gz\$\"; \"i\")) and ((.name | test(\"-lite\"; \"i\")) | not)) | .browser_download_url][0] // empty"
+            val listReleaseFilter =
+                "[.[]?.assets[]? | select((.name | test(\"linux-arm64.*\\\\.tar\\\\.gz\$\"; \"i\")) and ((.name | test(\"-lite\"; \"i\")) | not)) | .browser_download_url][0] // empty"
+            if (source.pinnedTag != null) {
+                val pinnedVer = source.pinnedTag.removePrefix("v")
+                val pinnedUrl = "${source.repoBaseUrl}/releases/download/${source.pinnedTag}/SnowLuma-v$pinnedVer-linux-arm64.tar.gz"
+                val apiFallback = source.gitHubRepoSlug?.let { slug ->
+                    val tagApiUrl = "https://api.github.com/repos/$slug/releases/tags/${source.pinnedTag}"
+                    """
+                    elif maidroid_snowluma_fetch_github_release ${shellQuote(tagApiUrl)} ${shellQuote(singleReleaseFilter)}; then
+                        snowluma_archive_ready=1
+                    """.trimIndent()
+                }.orEmpty()
+                """
+                snowluma_archive_ready=0
+                if maidroid_snowluma_fetch_archive $DOWNLOAD_DIR/snowluma.tar.gz ${shellQuote(pinnedUrl)}; then
+                    snowluma_archive_ready=1
+                $apiFallback
+                fi
+                """.trimIndent()
+            } else {
+                val preferredUrl = "${source.repoBaseUrl}/releases/download/v$VERSION/SnowLuma-v$VERSION-linux-arm64.tar.gz"
+                val fallbackBlock = if (source.gitHubRepoSlug != null) {
+                    val latestApiUrl = "https://api.github.com/repos/${source.gitHubRepoSlug}/releases/latest"
+                    val listApiUrl = "https://api.github.com/repos/${source.gitHubRepoSlug}/releases?per_page=5"
+                    """
+                    elif maidroid_snowluma_fetch_github_release ${shellQuote(latestApiUrl)} ${shellQuote(singleReleaseFilter)}; then
+                        snowluma_archive_ready=1
+                    elif maidroid_snowluma_fetch_github_release ${shellQuote(listApiUrl)} ${shellQuote(listReleaseFilter)}; then
+                        snowluma_archive_ready=1
+                    """.trimIndent()
+                } else {
+                    val latestDownloadUrl = "${source.repoBaseUrl}/releases/latest/download/SnowLuma-v$VERSION-linux-arm64.tar.gz"
+                    """
+                    elif maidroid_snowluma_fetch_archive $DOWNLOAD_DIR/snowluma.tar.gz ${shellQuote(latestDownloadUrl)}; then
+                        snowluma_archive_ready=1
+                    """.trimIndent()
+                }
+                """
+                snowluma_archive_ready=0
+                if maidroid_snowluma_fetch_archive $DOWNLOAD_DIR/snowluma.tar.gz ${shellQuote(preferredUrl)}; then
+                    snowluma_archive_ready=1
+                $fallbackBlock
+                fi
+                """.trimIndent()
+            }
+        }
+    }
 
     private fun prepareRuntimeBody(): String =
         """
@@ -394,8 +504,8 @@ internal object SnowLumaScripts {
         export SNOWLUMA_HOOK_AUTOLOAD=1
         export SNOWLUMA_UPDATE_CHECK=0
         export NO_COLOR=1
-        # 给 SnowLuma node 的 V8 堆设上限：它哪儿都不看 this amount 就敢吃到 400MB+，这里封在 384MB，防失控。
-        # 只对容器里的 node 生效（QQ 启动行会 -u 掉这条变量，Electron 自己不吃 NODE_OPTIONS 也不能吃进意外配置）。
+        # 给 SnowLuma node 的 V8 堆设上限：封在 384MB 防失控。
+        # 只对容器里的 node 生效（QQ 启动行会 -u 掉这条变量）。
         export NODE_OPTIONS="--max-old-space-size=384"
         export SNOWLUMA_WEBUI_HOST=127.0.0.1
         export $WEBUI_PORT_ENV="${'$'}{$WEBUI_PORT_ENV:-$WEBUI_DEFAULT_PORT}"
@@ -413,13 +523,10 @@ internal object SnowLumaScripts {
         (cd $DATA_DIR && exec $APP_DIR/node $APP_DIR/index.mjs) 2>&1 &
         snowluma_pid=${'$'}!
 
-        # SnowLuma 节点保育：2026-11-08 凌晨节点被后台管理单独杀掉后没人拉起，麦麦离线 26 小时。
-        # 在这里（同一条 proot 实例里）重起新节点才有正常的路径转译，从宿主侧 fire-and-forget 拉起的新 proot
-        # 会随命令返回退出、新节点失转译而反复死，所以不能从宿主侧兜底。重启只动节点，QQ 和它的登录不动；
-        # 连续失败满 $NODE_RESTART_LIMIT 次放弃保育，请 QQ 退出走宿主侧的整树重启；节点稳定跑满
+        # SnowLuma 节点保育：同一条 proot 实例内只重启节点、不动 QQ 和登录态；
+        # 连续失败满 $NODE_RESTART_LIMIT 次放弃保育，请 QQ 退出走宿主侧的整树重启；稳定跑满
         # $NODE_STABLE_SECONDS 秒后连续计数清零。宿主侧请节点保存退出时写 $NODE_STOP_MARKER，保育见到不再重启。
         (
-            # 等 QQ 起来才开始盯节点（QQ 通常几百毫秒内就能被 pgrep 到，最多等两分钟）
             for _ in ${'$'}(seq 1 120); do
                 pgrep -x qq >/dev/null 2>&1 && break
                 sleep 1
@@ -428,7 +535,6 @@ internal object SnowLumaScripts {
             restarts=0
             spawn_ts=0
             while :; do
-                # QQ 没了：启动脚本马上会在前台流程结尾清理节点，保育不再掺和
                 pgrep -x qq >/dev/null 2>&1 || break
                 [ -s $NODE_STOP_MARKER ] && break
                 if ! kill -0 "${'$'}snowluma_pid" 2>/dev/null; then
@@ -459,13 +565,10 @@ internal object SnowLumaScripts {
         exit_code=${'$'}?
         echo "[SnowLuma] qq exited with code ${'$'}exit_code"
 
-        # QQ 退出了，锁表和保育循环也不用再跑：停掉它们、清空替身，免得留着旧进程的锁
         kill "${'$'}locks_pid" 2>/dev/null || true
         kill "${'$'}babysitter_pid" 2>/dev/null || true
         : > $PROC_LOCKS
 
-        # QQ 退出了，SnowLuma 留着也收发不了消息：请它保存好数据退出，最多等 15 秒。
-        # 按进程名找而不是用记录的 pid：保育重启过节点的话，记录的 pid 已是死的，新 pid 保育才知道。
         pkill -TERM -f "snowluma.app.index[.]mjs" 2>/dev/null || true
         for _ in ${'$'}(seq 1 15); do
             pgrep -f "snowluma.app.index[.]mjs" >/dev/null 2>&1 || break
@@ -474,7 +577,6 @@ internal object SnowLumaScripts {
 
         rm -f $NODE_STOP_MARKER
 
-        # 最后结束后台的 Xvfb：它不退，proot 就一直不退，应用会以为 SnowLuma 还在跑（QQ 自己崩了时尤其如此）
         kill "${'$'}xvfb_pid" 2>/dev/null || true
         exit ${'$'}exit_code
         EOF

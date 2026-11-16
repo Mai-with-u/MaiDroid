@@ -107,7 +107,7 @@ internal class AppDependencies(context: Context) {
     }
     val snowLuma: SnowLumaPlatformManager by lazy {
         SnowLumaPlatformManager(
-            appContext, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess,
+            appContext, settings, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess,
             snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
         )
     }
