@@ -5,11 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -17,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,9 +24,11 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -140,16 +141,33 @@ internal fun PlatformConfigDialogShell(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        // 固定满屏容器尺寸并在内部居中弹窗卡片，避免折叠项展开/收起时每帧触发 WindowManager.relayoutWindow 跨进程重排拖慢动画
         BoxWithConstraints(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
             contentAlignment = Alignment.Center
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss
+                    )
+            )
             val maxDialogHeight = (maxHeight * 0.86f).coerceAtLeast(320.dp)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
                     .widthIn(max = 420.dp)
-                    .heightIn(max = maxDialogHeight),
+                    .heightIn(max = maxDialogHeight)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    ),
                 shape = RoundedCornerShape(Corners.Card),
                 color = CardSurface,
                 contentColor = TextPrimary
@@ -442,18 +460,17 @@ internal fun ConfigFoldableSection(
     var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
         label = "ConfigFoldArrow"
     )
 
+    // 仅由单级 AnimatedVisibility(expandVertically/shrinkVertically) 驱动高度变化，
+    // 移除外层 animateContentSize 与慢弹簧，消除双弹簧串联带来的近 1 秒收起长尾。
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Chip))
             .background(SectionInnerSurface)
-            .animateContentSize(
-                animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)
-            )
     ) {
         Row(
             modifier = Modifier
@@ -492,8 +509,14 @@ internal fun ConfigFoldableSection(
 
         AnimatedVisibility(
             visible = expanded,
-            enter = fadeIn(tween(150)) + expandVertically(),
-            exit = fadeOut(tween(120)) + shrinkVertically()
+            enter = fadeIn(tween(150)) + expandVertically(
+                animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
+                expandFrom = Alignment.Top
+            ),
+            exit = fadeOut(tween(120)) + shrinkVertically(
+                animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+                shrinkTowards = Alignment.Top
+            )
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 ConfigGroupDivider(startPaddingDp = 14)
