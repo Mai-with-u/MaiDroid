@@ -29,6 +29,8 @@ internal class AppSettings(
         const val KEY_MAIBOT_AUTO_UPDATE_DISABLED = "maibot_auto_update_disabled"
         const val KEY_USER_EXITED = "user_exited"
         const val KEY_OOBE_STEP = "oobe_step"
+        const val KEY_NAPCAT_CUSTOM_REPO_URL = "napcat_custom_repo_url"
+        const val KEY_SNOWLUMA_CUSTOM_REPO_URL = "snowluma_custom_repo_url"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
     }
@@ -105,6 +107,26 @@ internal class AppSettings(
         get() = kv.decodeString(KEY_OOBE_STEP, null)
         set(value) {
             kv.encode(KEY_OOBE_STEP, value)
+        }
+
+    /**
+     * 用户自己填写的 NapCat 自定义仓库或压缩包直链；默认留空，不内置第三方 fork。
+     * 未填时下载安装会弹窗让用户填写，已安装后可在 NapCat 配置弹窗里修改或重装。
+     */
+    var napCatRepoUrl: String
+        get() = kv.decodeString(KEY_NAPCAT_CUSTOM_REPO_URL, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_NAPCAT_CUSTOM_REPO_URL, value.trim())
+        }
+
+    /**
+     * 用户自己填写的 SnowLuma 自定义仓库或发行包直链；默认留空，不内置第三方 fork。
+     * 未填时下载安装会弹窗让用户填写，已安装后可在 SnowLuma 配置弹窗里修改或重装。
+     */
+    var snowLumaRepoUrl: String
+        get() = kv.decodeString(KEY_SNOWLUMA_CUSTOM_REPO_URL, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_SNOWLUMA_CUSTOM_REPO_URL, value.trim())
         }
 
     fun saveContainerSsh(port: Int, rootPassword: String) {

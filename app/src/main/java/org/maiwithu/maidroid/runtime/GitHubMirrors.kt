@@ -82,6 +82,22 @@ internal object GitHubMirrors {
             fi
         }
 
+        # 下载任意链接的候选地址列表：属于 GitHub 域名时经全部镜像和直连线路依次尝试，
+        # 非 GitHub 域名（如其他代码托管站或自建直链）只原样输出，避免误拼 GitHub 反代前缀。
+        maidroid_download_urls() {
+            target_url="${'$'}1"
+            case "${'$'}target_url" in
+                https://github.com/*|https://api.github.com/*|https://raw.githubusercontent.com/*|https://objects.githubusercontent.com/*|https://release-assets.githubusercontent.com/*)
+                    for mirror_spec in ${'$'}(maidroid_github_mirror_specs); do
+                        maidroid_github_candidate_url "${'$'}{mirror_spec#*|}" "${'$'}target_url"
+                    done
+                    ;;
+                *)
+                    printf "%s\n" "${'$'}target_url"
+                    ;;
+            esac
+        }
+
         maidroid_github_clone() {
             repo_url="${'$'}1"
             clone_dest="${'$'}2"

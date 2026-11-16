@@ -17,7 +17,7 @@ internal class ProotCommand(private val paths: RuntimePaths) {
 
     /** 在容器里用 /bin/sh 执行脚本：先重置 PATH、HOME 等 Debian 环境变量，再执行脚本正文。 */
     fun commandLine(script: ContainerScript): List<String> =
-        prootArguments(script.workingDirectory) +
+        prootArguments(script.workingDirectory, script.extraBinds) +
             listOf("/bin/sh", "-c", "${shellPrelude()} ${if (script.pinToSmallCores) pinSmallCoresPrelude() else ""} ${script.body}")
 
     /**
@@ -47,28 +47,44 @@ internal class ProotCommand(private val paths: RuntimePaths) {
     fun syncTimeZone(): String? =
         runCatching { ContainerTimeZone.sync(paths.rootfsDir, TimeZone.getDefault()) }.getOrNull()
 
-    private fun prootArguments(workingDirectory: String): List<String> {
+    private fun prootArguments(
+        workingDirectory: String,
+        extraBinds: List<ContainerBindMount> = emptyList()
+    ): List<String> {
         paths.termuxTmpDir.mkdirs()
         ensureFakeProcFiles()
         // 每条容器命令启动前都对一次时区：手机在应用没跑时改过时区，下次拉起的进程也能用上新时区。
         syncTimeZone()
-        return listOf(
-            paths.prootExecutable.absolutePath,
-            "--link2symlink",
-            "-0",
-            "-r", paths.rootfsDir.absolutePath,
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "${paths.fakeProcStat.absolutePath}:/proc/stat",
-            "-b", "${paths.fakeProcLoadAvg.absolutePath}:/proc/loadavg",
-            "-b", "${paths.fakeProcVmStat.absolutePath}:/proc/vmstat",
-            "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
-            "-b", "${paths.fakeProcLocks.absolutePath}:/proc/locks",
-            "-b", "/sys",
-            "-b", "/sdcard",
-            "-b", "${paths.termuxTmpDir.absolutePath}:/tmp",
-            "-w", workingDirectory
-        )
+        return buildList {
+            addAll(
+                listOf(
+                    paths.prootExecutable.absolutePath,
+                    "--link2symlink",
+                    "-0",
+                    "-r", paths.rootfsDir.absolutePath,
+                    "-b", "/dev",
+                    "-b", "/proc",
+                    "-b", "${paths.fakeProcStat.absolutePath}:/proc/stat",
+                    "-b", "${paths.fakeProcLoadAvg.absolutePath}:/proc/loadavg",
+                    "-b", "${paths.fakeProcVmStat.absolutePath}:/proc/vmstat",
+                    "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
+                    "-b", "${paths.fakeProcLocks.absolutePath}:/proc/locks",
+                    "-b", "/sys",
+                    "-b", "/sdcard",
+                    "-b", "${paths.termuxTmpDir.absolutePath}:/tmp"
+                )
+            )
+            // 仅在宿主机已有对应覆盖文件时注入 proot 绑定（如 NapCat 覆盖 QQ 的 package.json），不修改磁盘原文件。
+            for (bind in extraBinds) {
+                val source = File(paths.rootfsDir, bind.rootfsRelativeSource)
+                if (source.exists()) {
+                    add("-b")
+                    add("${source.absolutePath}:${bind.containerTarget}")
+                }
+            }
+            add("-w")
+            add(workingDirectory)
+        }
     }
 
     private fun shellPrelude(): String =

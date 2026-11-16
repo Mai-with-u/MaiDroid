@@ -35,5 +35,7 @@ class GitHubMirrorsTest {
 
         assertTrue(shell.contains("'ghfast.top|https://ghfast.top'"))
         assertTrue(shell.contains("'${GitHubMirrors.DIRECT_NAME}|'"))
+        assertTrue(shell.contains("maidroid_download_urls()"))
+        assertTrue(shell.contains("https://github.com/*|https://api.github.com/*"))
     }
 }
