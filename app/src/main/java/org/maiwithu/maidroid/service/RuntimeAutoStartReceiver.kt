@@ -13,10 +13,10 @@ import org.maiwithu.maidroid.terminal.TerminalLog
  * Android 8+ 要求应用安装后被用户手动打开过一次，开机广播才会送达；升级广播（MY_PACKAGE_REPLACED）
  * 只在本应用被覆盖安装后发给本应用，不用任何权限。7x24 使用里升级不该让麦麦断线等用户手动打开。
  */
-class BootCompletedReceiver : BroadcastReceiver() {
+class RuntimeAutoStartReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val TAG = "BootCompletedReceiver"
+        private const val TAG = "RuntimeAutoStartReceiver"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -27,7 +27,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
         }
 
         val settings = context.appDependencies.settings
-        if (!settings.autoStartOnBoot) {
+        if (!settings.autoStartService) {
             Log.d(TAG, "Received $reason broadcast, but service auto-resume is disabled")
             return
         }

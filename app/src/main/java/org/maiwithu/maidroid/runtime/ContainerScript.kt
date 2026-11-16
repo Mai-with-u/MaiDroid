@@ -18,8 +18,8 @@ internal data class ContainerBindMount(
 internal data class ContainerScript(
     val body: String,
     val workingDirectory: String = "/",
-    /** true 时把这条命令的整棵进程树钉在「非最高频 CPU 簇」上省电（见 ProotCommand.pinSmallCoresPrelude）。 */
-    val pinToSmallCores: Boolean = false,
+    /** true 时排除最高频 CPU 簇，让这条命令的整棵进程树留在中小核上省电（见 ProotCommand.excludeTopCpuClusterPrelude）。 */
+    val excludeTopCpuCluster: Boolean = false,
     /** 需要由 proot 额外挂载进容器的文件或目录列表（文件不存在时自动跳过）。 */
     val extraBinds: List<ContainerBindMount> = emptyList()
 )

@@ -70,7 +70,7 @@ internal object NapCatScripts {
     fun launch(): ContainerScript = ContainerScript(
         body = "cd /root && exec bash /root/launcher.sh",
         workingDirectory = "/root",
-        pinToSmallCores = true,
+        excludeTopCpuCluster = true,
         extraBinds = listOf(
             ContainerBindMount(
                 rootfsRelativeSource = QQ_PACKAGE_JSON_OVERRIDE_REL,

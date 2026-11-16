@@ -1,13 +1,14 @@
 package org.maiwithu.maidroid.runtime
 
 import android.system.OsConstants
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 
-class HostProcessToolsTest {
+class OwnChildProcessesTest {
 
     @Rule
     @JvmField
@@ -27,7 +28,7 @@ class HostProcessToolsTest {
     }
 
     @Test
-    fun `kills matching processes with sigterm first and sigkill only for survivors`() {
+    fun `kills matching processes with sigterm first and sigkill only for survivors`() = runBlocking {
         val procRoot = tempFolder.newFolder("proc")
         val exitsGracefully = writeFakeProc(procRoot, pid = 201, uid = 10217, cmdline = "python\u0000-m\u0000src.runtime")
         writeFakeProc(procRoot, pid = 202, uid = 10217, cmdline = "python\u0000-m\u0000src.plugin_runtime.runner.runner_main")

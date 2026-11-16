@@ -208,13 +208,17 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         val candidates = backgroundSettingsCandidates(brand)
         for (component in candidates) {
             try {
-                activity.startActivity(Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                activity.startActivity(Intent().setComponent(component))
                 return
             } catch (_: Exception) {
                 // 部分 ROM 对非导出页面抛 SecurityException 或无此页面抛 ActivityNotFoundException，继续尝试下一个
             }
         }
-        activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri()))
+        runCatching {
+            activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri()))
+        }.onFailure {
+            toast("无法打开系统应用设置，请手动前往系统设置开启", long = true)
+        }
     }
 
     private fun backgroundSettingsCandidates(brand: String): List<ComponentName> = when {

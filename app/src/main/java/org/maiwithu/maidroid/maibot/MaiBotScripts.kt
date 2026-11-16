@@ -278,7 +278,7 @@ internal object MaiBotScripts {
             "exec ${shellQuote("$MAIBOT_DIR/.venv/bin/python")} bot.py; " +
             "else exec uv run python bot.py; fi",
         workingDirectory = MAIBOT_DIR,
-        pinToSmallCores = true
+        excludeTopCpuCluster = true
     )
 
     /**
@@ -302,24 +302,8 @@ internal object MaiBotScripts {
         processName = "MaiBot"
     )
 
-    /**
-     * 结束上次异常退出留下的 MaiBot 进程（启动前），以及强杀 proot 后脱离出来的 MaiBot 进程（停止后），避免 WebUI 端口被占。
-     * 每一层都要认得出：Runner、bootstrap、gate/process、Worker 和插件运行器。
-     */
-    fun cleanupStaleProcesses(): ContainerScript = ContainerScript(
-        listOf(
-            "set +e",
-            killMatchingProcessesScript(
-                pattern = STALE_PROCESS_PATTERN,
-                processName = "stale MaiBot process",
-                logPrefix = "[MaiBot] "
-            ),
-            "exit 0"
-        ).joinToString("\n")
-    )
-
-    // cleanupStaleProcesses 按命令行匹配的进程正则。覆盖旧版脚本与新版 MaiBot 的 bootstrap/process 进程；
-    // 中间用点号替代路径斜杠，保证宿主机 Regex 与容器 awk '/.../' 均无转义冲突。
+    // 宿主侧清理遗留 MaiBot 进程（MaiBotProcessSupervisor.cleanupStaleProcesses）按命令行匹配的正则。
+    // 覆盖旧版脚本与新版 MaiBot 的 bootstrap/process 进程；中间用点号替代路径斜杠，避免正则转义冲突。
     const val STALE_PROCESS_PATTERN =
         "python[0-9.]* bot[.]py|src[.]host[.]bootstrap|src.host.process[.]py|python[0-9.]* -m src[.]runtime|src[.]plugin_runtime[.]runner[.]runner_main"
 

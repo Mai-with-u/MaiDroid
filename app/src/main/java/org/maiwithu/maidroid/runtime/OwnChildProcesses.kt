@@ -3,10 +3,11 @@ package org.maiwithu.maidroid.runtime
 import android.os.Process as AndroidProcess
 import android.system.Os
 import android.system.OsConstants
+import kotlinx.coroutines.delay
 import java.io.File
 
 /**
- * 宿主机侧进程巡检与清理工具：直接读取同 UID 在 /proc 下的进程目录，
+ * 宿主机侧进程巡检与清理：直接读取同 UID 在 /proc 下的进程目录，
  * 避免为了数进程或清残留又专门拉起一次 proot（每次拉起会额外消耗幻影进程名额和 SELinux 审计开销）。
  */
 
@@ -35,10 +36,10 @@ internal fun logUnexpectedSigkill(
 
 /**
  * 按命令行正则结束本应用名下遗留的子进程：先发 SIGTERM 让它们有机会收尾 ->
- * 有命中时等一秒再扫一遍，对仍存活且匹配的进程补发 SIGKILL 强制清场。
+ * 有命中时挂起等一秒（不阻塞 IO 线程池）再扫一遍，对仍存活且匹配的进程补发 SIGKILL 强制清场。
  * 不经过 proot/ps/awk，零幻影进程脉冲。
  */
-internal fun killOwnMatchingProcesses(
+internal suspend fun killOwnMatchingProcesses(
     pattern: Regex,
     processName: String,
     logPrefix: String = "",
@@ -56,7 +57,7 @@ internal fun killOwnMatchingProcesses(
         onLog("${logPrefix}stopping $processName $pid")
         runCatching { signalSender(pid, OsConstants.SIGTERM) }
     }
-    if (signalDelayMs > 0L) Thread.sleep(signalDelayMs)
+    if (signalDelayMs > 0L) delay(signalDelayMs)
 
     val remainingTargets = findMatchingPids(procRoot, myUid, myPid, pattern)
     remainingTargets.forEach { pid ->

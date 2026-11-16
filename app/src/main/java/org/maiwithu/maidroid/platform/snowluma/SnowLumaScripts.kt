@@ -120,7 +120,7 @@ internal object SnowLumaScripts {
     fun launch(): ContainerScript = ContainerScript(
         body = "cd /root && exec bash $LAUNCHER",
         workingDirectory = "/root",
-        pinToSmallCores = true
+        excludeTopCpuCluster = true
     )
 
     /** 停止时先请 SnowLuma 保存好数据退出（QQ 不会因此下线）。结果用 requestedExitOf 读。 */

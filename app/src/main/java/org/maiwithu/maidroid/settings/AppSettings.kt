@@ -49,8 +49,8 @@ internal class AppSettings(
             kv.encode(KEY_AUTHORIZATION_ACCEPTED, value)
         }
 
-    /** 开机后是否自动拉起 MaiBot。目前没有界面开关，默认开启。 */
-    val autoStartOnBoot: Boolean
+    /** 开机或应用覆盖升级后是否自动拉起 MaiBot 前台服务。目前没有界面开关，默认开启。 */
+    val autoStartService: Boolean
         get() = kv.decodeBool(KEY_SERVICE_AUTO_START, true)
 
     var containerSshEnabled: Boolean

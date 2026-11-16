@@ -65,7 +65,7 @@ class MaiBotRuntimeService : Service() {
         /** 重启 MaiBot（以及没在跑的 QQ 协议端），用于装好或改了平台适配器之后让 MaiBot 重新加载插件。 */
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
 
-        /** 只按设置启停容器 sshd，不碰 MaiBot 和 NapCat。 */
+        /** 只按设置启停容器 sshd，不碰 MaiBot 和 QQ 协议端。 */
         const val ACTION_SYNC_CONTAINER_SSH = "org.maiwithu.maidroid.action.SYNC_CONTAINER_SSH"
 
         /** 安全退出：让所有长驻进程正常退出，停完后关闭 MaiDroid。只由 SafeExitManager.request 发出。 */
@@ -85,7 +85,7 @@ class MaiBotRuntimeService : Service() {
 
         /**
          * 拉起（或唤醒已在运行的）前台服务。
-         * 不带 action 时启动 NapCat 和 MaiBot（已在运行的不会重复启动）；action 取值见上面几个常量。
+         * 不带 action 时启动已启用的 QQ 协议端和 MaiBot（已在运行的不会重复启动）；action 取值见上面几个常量。
          * minSdk 为 26，后台拉起服务只能走前台服务入口，服务会在 onStartCommand 里立刻挂上常驻通知。
          */
         fun start(context: Context, action: String? = null) {
@@ -122,7 +122,7 @@ class MaiBotRuntimeService : Service() {
     // 安全退出把服务都停完、服务停掉自己之后，在 onDestroy 里关闭 MaiDroid。
     private var closeAppOnDestroy = false
 
-    // 收到过拉起 MaiBot、NapCat、sshd 的请求（不只是首次引导的 ACTION_SETUP_HOLD）；为 false 时停服务不用去停它们。
+    // 收到过拉起 MaiBot、QQ 协议端、sshd 的请求（不只是首次引导的 ACTION_SETUP_HOLD）；为 false 时停服务不用去停它们。
     private var runtimeRequested = false
 
     // 电量低暂停着（见 onBatteryChanged）；只在主线程读写。lowBatteryPauseJob 是这次暂停“请它们退出”的那一轮，
@@ -180,7 +180,7 @@ class MaiBotRuntimeService : Service() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
         instance = this
-        acquireWakeLock()
+        acquireKeepAliveLocks()
         ContextCompat.registerReceiver(
             this,
             timeZoneReceiver,
@@ -202,7 +202,7 @@ class MaiBotRuntimeService : Service() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )?.let(::onBatteryChanged)
         // 手机换了网络（Wi-Fi 和移动数据切换、断网后恢复）：等网络稳定两秒，按新网络重写容器的 DNS，
-        // 跑着的麦麦、NapCat 下次解析域名就用上新的（glibc 发现 resolv.conf 变了会重读），不用重启它们
+        // 跑着的麦麦和 QQ 协议端下次解析域名就用上新的（glibc 发现 resolv.conf 变了会重读），不用重启它们
         serviceScope.launch {
             appDependencies.networkMonitor.changes.collectLatest {
                 delay(NETWORK_SETTLE_MS)
@@ -305,13 +305,13 @@ class MaiBotRuntimeService : Service() {
         serviceScope.cancel()
         // 只为首次引导开的服务：没有拉起过任何容器进程，不用去停
         if (!runtimeRequested) {
-            releaseWakeLock()
+            releaseKeepAliveLocks()
             super.onDestroy()
             return
         }
         if (closeAppOnDestroy) {
             // 安全退出已经把服务都停好了。onDestroy 返回后系统才记下服务已经停止，所以放到主线程下一轮再关闭应用。
-            releaseWakeLock()
+            releaseKeepAliveLocks()
             super.onDestroy()
             Handler(Looper.getMainLooper()).post { closeMaiDroid(applicationContext) }
             return
@@ -320,7 +320,7 @@ class MaiBotRuntimeService : Service() {
         napCatProcess.stop()
         snowLumaProcess.stop()
         maiBotProcess.stop()
-        releaseWakeLock()
+        releaseKeepAliveLocks()
         super.onDestroy()
     }
 
@@ -362,9 +362,9 @@ class MaiBotRuntimeService : Service() {
     }
 
     // 电量低：常驻通知改成说明暂停了 -> 麦麦和 QQ 同时请它们保存好数据退出（之后的启动请求都被拦下）->
-    // 都停下后还没插上电就放掉唤醒锁，让手机能睡下省电。服务和通知留着，插上电时才能接着拉起来。
+    // 都停下后还没插上电就放掉保活锁，让手机能睡下省电。服务和通知留着，插上电时才能接着拉起来。
     private fun pauseForLowBattery(percent: Int?) {
-        Log.d(TAG, "Battery low ($percent%), pausing MaiBot and NapCat")
+        Log.d(TAG, "Battery low ($percent%), pausing MaiBot and QQ client")
         TerminalLog.append("")
         TerminalLog.append("[MaiDroid] 电量只剩 $percent%，又没在充电：先让麦麦和 QQ 保存好数据停下，插上充电后自动启动")
         refreshRuntimeNotification()
@@ -376,17 +376,17 @@ class MaiBotRuntimeService : Service() {
                     launch { snowLumaProcess.pauseForLowBattery() }
                 }
             }
-            if (lowBatteryPaused) releaseWakeLock()
+            if (lowBatteryPaused) releaseKeepAliveLocks()
         }
     }
 
-    // 插上电或电量回升：拿回唤醒锁 -> 解除两边的拦截 -> 等暂停那一轮停完 ->
-    // 服务本来在托管麦麦（不只是为首次引导开的）就像平常一样拉起 NapCat 和麦麦。
+    // 插上电或电量回升：拿回保活锁 -> 解除各平台拦截 -> 等暂停那一轮停完 ->
+    // 服务本来在托管麦麦（不只是为首次引导开的）就像平常一样拉起已启用的 QQ 协议端和麦麦。
     private fun resumeAfterLowBattery(pluggedIn: Boolean, percent: Int?) {
         Log.d(TAG, "Battery recovered ($percent%, plugged=$pluggedIn), resuming")
         val reason = if (pluggedIn) "插上电了" else "电量回到 $percent%"
         TerminalLog.append("[MaiDroid] $reason，麦麦和 QQ 不用再停着" + if (runtimeRequested) "，重新启动它们" else "")
-        acquireWakeLock()
+        acquireKeepAliveLocks()
         maiBotProcess.resumeAfterLowBattery()
         napCatProcess.resumeAfterLowBattery()
         snowLumaProcess.resumeAfterLowBattery()
@@ -459,7 +459,7 @@ class MaiBotRuntimeService : Service() {
 
     // 同时持有 CPU 部分唤醒锁与低延迟 Wi-Fi 锁：拔电息屏后保持容器与网络活跃（防 Wi-Fi 深睡导致 QQ 断线），
     // 低电量暂停与服务销毁时再一并放开让设备节能。已经拿着就不再新建。
-    private fun acquireWakeLock() {
+    private fun acquireKeepAliveLocks() {
         if (wakeLock?.isHeld != true) {
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(
@@ -494,7 +494,7 @@ class MaiBotRuntimeService : Service() {
         }
     }
 
-    private fun releaseWakeLock() {
+    private fun releaseKeepAliveLocks() {
         wakeLock?.let {
             if (it.isHeld) {
                 it.release()

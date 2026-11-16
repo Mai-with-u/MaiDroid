@@ -96,12 +96,10 @@
 
         <!-- 开机自启 / 覆盖安装后自动恢复：OOBE 完成且没关自启时拉起前台服务 -->
         <receiver
-            android:name=".service.BootCompletedReceiver"
-            android:exported="true"
-            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            android:name=".service.RuntimeAutoStartReceiver"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <!-- 只由系统发给本应用，不需要独立权限 -->
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>

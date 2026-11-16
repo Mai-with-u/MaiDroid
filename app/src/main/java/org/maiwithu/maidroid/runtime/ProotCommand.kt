@@ -15,10 +15,10 @@ internal class ProotCommand(private val paths: RuntimePaths) {
         const val DEBIAN_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     }
 
-    /** 在容器里用 /bin/sh 执行脚本：先重置 PATH、HOME 等 Debian 环境变量，再执行脚本正文。 */
+    /** 在容器里用 /bin/sh 执行脚本：先重置 PATH、HOME 等 Debian 环境变量，按需挂载 extraBinds 与排除最高频 CPU 簇，再执行脚本正文。 */
     fun commandLine(script: ContainerScript): List<String> =
         prootArguments(script.workingDirectory, script.extraBinds) +
-            listOf("/bin/sh", "-c", "${shellPrelude()} ${if (script.pinToSmallCores) pinSmallCoresPrelude() else ""} ${script.body}")
+            listOf("/bin/sh", "-c", "${shellPrelude()} ${if (script.excludeTopCpuCluster) excludeTopCpuClusterPrelude() else ""} ${script.body}")
 
     /**
      * proot 进程本身的环境变量：PROOT_LOADER 和 LD_LIBRARY_PATH 指向 APK 内置的 loader 与依赖库，
@@ -101,9 +101,9 @@ internal class ProotCommand(private val paths: RuntimePaths) {
      * 注：紧连的 -pc 在 util-linux 2.38 的 Debian rootfs 实测可用；
      * 分开写的「-c 列表 -p pid」会把 -p 当成待执行程序（实测报 failed to execute -p）。
      */
-    private fun pinSmallCoresPrelude(): String =
+    private fun excludeTopCpuClusterPrelude(): String =
         """
-        maidroid_pin_small_cores() {
+        maidroid_exclude_top_cpu_cluster() {
             command -v taskset >/dev/null 2>&1 || return 0
             max_freq=0
             cpus=''
@@ -135,15 +135,15 @@ internal class ProotCommand(private val paths: RuntimePaths) {
                 echo "[maidroid] CPU affinity pinned to cpus ${'$'}mask (excluding top cluster ${'$'}max_freq kHz)"
             fi
         }
-        maidroid_pin_small_cores
-        unset -f maidroid_pin_small_cores;
+        maidroid_exclude_top_cpu_cluster
+        unset -f maidroid_exclude_top_cpu_cluster;
         """.trimIndent()
 
     /**
      * Android 不允许普通应用读 /proc/stat、/proc/loadavg、/proc/vmstat、/proc/uptime，
      * psutil、uv 等程序读不到会直接报错。这里写一份全零的假文件，由 proot 绑定到对应位置；
      * 开机时间按“一分钟前”填，内容不变时不重写，避免每条命令都触发一次磁盘写入。
-     * /proc/locks 同样读不了，它的替身由用到它的 SnowLuma 启动脚本填内容（见 InContainerPaths.PROC_LOCKS_STAND_IN）。
+     * /proc/locks 同样读不了，它的替身在 SnowLuma 运行期间由宿主侧 QqProcLocksSync 采集填内容（见 InContainerPaths.PROC_LOCKS_STAND_IN）。
      */
     private fun ensureFakeProcFiles() {
         val bootTimeSeconds = (System.currentTimeMillis() / 1000L) - 60L
@@ -181,7 +181,7 @@ internal class ProotCommand(private val paths: RuntimePaths) {
             """.trimIndent() + "\n"
         )
         writeIfChanged(paths.fakeProcUptime, "60.00 60.00\n")
-        // /proc/locks 的替身只在没有时建一个空的：SnowLuma 运行期间容器里会不断重写它，这里不能覆盖
+        // /proc/locks 的替身只在没有时建一个空的：SnowLuma 运行期间由宿主侧 QqProcLocksSync 定时刷新它，这里不能覆盖
         if (!paths.fakeProcLocks.isFile) {
             paths.fakeProcLocks.parentFile?.mkdirs()
             paths.fakeProcLocks.writeText("")
