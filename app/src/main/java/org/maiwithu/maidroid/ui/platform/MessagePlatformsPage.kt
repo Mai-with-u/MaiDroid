@@ -190,6 +190,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     // QQ 卡片默认选中最左边的官方机器人；用户切到 NapCat 等其他选项后，本次页面内记住所选。
     var selectedAccessMethods by remember { mutableStateOf(mapOf("QQ" to AccessMethod.QqOfficial)) }
     // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
+    var showNapCatInstall by rememberSaveable { mutableStateOf(false) }
     var showNapCatQrCode by rememberSaveable { mutableStateOf(false) }
     var showNapCatConfig by rememberSaveable { mutableStateOf(false) }
     var showQqLogoutConfirm by rememberSaveable { mutableStateOf(false) }
@@ -202,6 +203,9 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     var showSnowLumaConfig by rememberSaveable { mutableStateOf(false) }
     var showSnowLumaRestart by rememberSaveable { mutableStateOf(false) }
     var qqClientSwitchTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    // 已安装配置弹窗触发的“从自定义地址重新安装”二次确认状态。
+    var pendingReinstallClient by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingReinstallUrl by rememberSaveable { mutableStateOf("") }
     val categories = listOf("全部", "国内", "海外", "其他")
     val installedPlatforms = installedPlatformCards(napCatState, snowLumaState, qqOfficialState)
     val openWebPage: (String) -> Unit = { url ->
@@ -234,7 +238,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             napCatState = napCatState,
             snowLumaState = snowLumaState,
             qqOfficialState = qqOfficialState,
-            onNapCatInstall = { napCatManager.installNapCat() },
+            // NapCat 未安装点下载先弹出自定义仓库填报与风险确认弹窗，不写死第三方 fork。
+            onNapCatInstall = { showNapCatInstall = true },
             onNapCatSettings = {
                 napCatManager.refresh()
                 // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
@@ -485,10 +490,33 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
+        // 未安装时点 NapCat 先让用户填写自定义仓库或 .zip 直链并确认风险，再后台下载安装。
+        if (showNapCatInstall) {
+            NapCatInstallDialog(
+                state = napCatState,
+                snowLumaInstalled = snowLumaState.installed,
+                onConfirm = { repoUrl ->
+                    showNapCatInstall = false
+                    napCatManager.installNapCat(repoUrl)
+                    Toast.makeText(context, "正在安装 NapCat 和 QQ", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showNapCatInstall = false }
+            )
+        }
+
         if (showNapCatConfig) {
             NapCatConfigDialog(
                 state = napCatState,
                 onRefresh = { napCatManager.refresh() },
+                onSaveRepoUrl = { repoUrl ->
+                    val error = napCatManager.saveCustomRepoUrl(repoUrl)
+                    val tip = error ?: "自定义仓库地址已保存"
+                    Toast.makeText(context, tip, Toast.LENGTH_SHORT).show()
+                },
+                onReinstallFromRepoUrl = { repoUrl ->
+                    pendingReinstallClient = QqClient.NapCat.wireValue
+                    pendingReinstallUrl = repoUrl
+                },
                 onLogoutQq = { showQqLogoutConfirm = true },
                 onDismiss = { showNapCatConfig = false }
             )
@@ -519,13 +547,14 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
-        // 装 SnowLuma 前先看协议：同意后才开始装，进度显示在卡片的进度环上
+        // 装 SnowLuma 前先填自定义源、看协议并确认风险：同意后才开始装，进度显示在卡片的进度环上
         if (showSnowLumaAgreement) {
             SnowLumaAgreementDialog(
+                state = snowLumaState,
                 napCatInstalled = napCatState.installed,
-                onConfirm = {
+                onConfirm = { repoUrl ->
                     showSnowLumaAgreement = false
-                    snowLumaManager.installSnowLuma()
+                    snowLumaManager.installSnowLuma(repoUrl)
                     Toast.makeText(context, "正在安装 SnowLuma 和 QQ", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showSnowLumaAgreement = false }
@@ -563,6 +592,15 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     showQqWindow = true
                 },
                 onOpenWebUi = { openWebPage(snowLumaManager.webUiPageUrl()) },
+                onSaveRepoUrl = { repoUrl ->
+                    val error = snowLumaManager.saveCustomRepoUrl(repoUrl)
+                    val tip = error ?: "自定义仓库地址已保存"
+                    Toast.makeText(context, tip, Toast.LENGTH_SHORT).show()
+                },
+                onReinstallFromRepoUrl = { repoUrl ->
+                    pendingReinstallClient = QqClient.SnowLuma.wireValue
+                    pendingReinstallUrl = repoUrl
+                },
                 onRestartQq = { showSnowLumaRestart = true },
                 onDismiss = { showSnowLumaConfig = false }
             )
@@ -581,7 +619,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
-        // 两种协议端只能启用一个：切过去前先确认。目标装好了就直接切；NapCat 没装就装，装完自动切过去
+        // 两种协议端只能启用一个：切过去前先确认。目标装好了就直接切；NapCat 没装就弹出安装填写窗口，不跳过风险确认
         qqClientSwitchTarget?.let { wireValue ->
             val target = QqClient.fromWireValue(wireValue)
             val targetInstalled = when (target) {
@@ -594,12 +632,44 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 onConfirm = {
                     qqClientSwitchTarget = null
                     when (target) {
-                        QqClient.NapCat -> napCatManager.installNapCat()
-                        QqClient.SnowLuma -> snowLumaManager.activate()
+                        QqClient.NapCat -> if (napCatState.installed) {
+                            napCatManager.installNapCat()
+                            Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            showNapCatInstall = true
+                        }
+                        QqClient.SnowLuma -> {
+                            snowLumaManager.activate()
+                            Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { qqClientSwitchTarget = null }
+            )
+        }
+
+        // 配置弹窗触发“从自定义地址重新安装”前的二次风险确认。
+        pendingReinstallClient?.let { wireValue ->
+            val target = QqClient.fromWireValue(wireValue)
+            CustomSourceReinstallConfirmDialog(
+                client = target,
+                repoUrl = pendingReinstallUrl,
+                onConfirm = {
+                    val targetUrl = pendingReinstallUrl
+                    pendingReinstallClient = null
+                    when (target) {
+                        QqClient.NapCat -> {
+                            showNapCatConfig = false
+                            napCatManager.installNapCat(targetUrl, forceReinstall = true)
+                        }
+                        QqClient.SnowLuma -> {
+                            showSnowLumaConfig = false
+                            snowLumaManager.installSnowLuma(targetUrl, forceReinstall = true)
+                        }
+                    }
+                    Toast.makeText(context, "正在从自定义地址重新安装 ${target.label}", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { pendingReinstallClient = null }
             )
         }
 

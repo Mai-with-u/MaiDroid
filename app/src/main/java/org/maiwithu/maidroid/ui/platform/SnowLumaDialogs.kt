@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.ui.platform
 
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,7 +24,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,12 +36,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqOneBot
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
+import org.maiwithu.maidroid.platform.qq.snowLumaDocUrl
 import org.maiwithu.maidroid.platform.snowluma.QqScreenFrame
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaHookPhase
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
@@ -54,54 +63,96 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// QQ（SnowLuma）这一路的弹窗：安装前的协议说明、QQ 窗口、配置详情，以及切换协议端、重启 QQ 的二次确认。
-
-private const val SNOWLUMA_EULA_URL = "https://github.com/SnowLuma/SnowLuma/blob/v${SnowLumaScripts.VERSION}/EULA.md"
-private const val SNOWLUMA_PRIVACY_URL = "https://github.com/SnowLuma/SnowLuma/blob/v${SnowLumaScripts.VERSION}/PRIVACY.md"
+// QQ（SnowLuma）这一路的弹窗：安装前的协议与自定义源说明、QQ 窗口、配置详情，以及切换协议端、重启 QQ 的二次确认。
 
 /**
- * 装 SnowLuma 之前的说明：它是什么、要下载什么、闭源组件只能非商业使用，以及它的用户协议和隐私政策。
- * SnowLuma 启动时 MaiDroid 会替用户确认这两份协议（免得它的管理页拦着），所以必须先让用户看过、点了同意。
+ * 装 SnowLuma 之前的说明：要求填写自定义 fork 仓库或发行包直链，警示 SHA-256 不一致的风险，
+ * 说明闭源组件只能非商业使用以及用户协议和隐私政策（按钮链接动态指向当前填入的仓库）。
  * 已经装着 NapCat 时说清楚：装好后 NapCat 停用、不卸载。
  */
 @Composable
 internal fun SnowLumaAgreementDialog(
+    state: SnowLumaPlatformState,
     napCatInstalled: Boolean,
-    onConfirm: () -> Unit,
+    onConfirm: (repoUrl: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    var repoUrlText by rememberSaveable { mutableStateOf(state.customRepoUrl) }
+    val validSource = parseQqCustomSource(QqClient.SnowLuma, repoUrlText) as? QqSourceParseResult.Valid
+
+    fun openRepoDoc(fileName: String) {
+        val docUrl = snowLumaDocUrl(repoUrlText, fileName)
+        if (docUrl != null) {
+            uriHandler.openUri(docUrl)
+        } else {
+            Toast.makeText(
+                context,
+                "原上游仓库已无法访问，请先在上方填写 fork 仓库地址后再查看对应协议文件",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { DialogTitle("安装 SnowLuma") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                state.failure?.let { failure ->
+                    Text(
+                        text = "上次安装失败：${failure.message}",
+                        color = StatusDanger,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 15.sp
+                    )
+                    FailureNotice(failure = failure)
+                }
+
                 DialogBody(
-                    "SnowLuma 是另一种登录个人 QQ 的方式：MaiDroid 会在容器里装 LinuxQQ ${SnowLumaScripts.QQ_VERSION} " +
-                        "和 SnowLuma ${SnowLumaScripts.VERSION}（要下载约 200 MB，装好后约占 1 GB），" +
-                        "装好后在 QQ 窗口里扫码登录。"
+                    "SnowLuma 是另一种登录个人 QQ 的方式：原上游仓库已不可用，" +
+                        "请填写 SnowLuma 的 fork 仓库地址（优先尝试 v${SnowLumaScripts.VERSION}，找不到则回退最新 Release 的 linux-arm64 发行包）" +
+                        "或 .tar.gz 直链。MaiDroid 会在容器里安装 LinuxQQ ${SnowLumaScripts.QQ_VERSION} 和 SnowLuma" +
+                        "（要下载约 200 MB，装好后约占 1 GB）。"
                 )
                 if (napCatInstalled) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     DialogBody("装好后改用 SnowLuma 登录 QQ，NapCat 会停用（不卸载，随时可以切回）。")
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+
+                CustomSourceTextField(
+                    client = QqClient.SnowLuma,
+                    value = repoUrlText,
+                    onValueChange = { repoUrlText = it }
+                )
+
                 DialogBody(
                     "SnowLuma 含有闭源的原生组件，只能用于非商业用途。" +
-                        "点“同意并安装”即表示你已阅读并同意 SnowLuma 的用户协议和隐私政策。"
+                        "点“了解风险，同意并安装”即表示你已阅读并同意对应仓库内的用户协议和隐私政策。"
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { uriHandler.openUri(SNOWLUMA_EULA_URL) }) {
+                    TextButton(onClick = { openRepoDoc("EULA.md") }) {
                         Text(text = "用户协议", color = BrandOrange, fontWeight = FontWeight.Bold)
                     }
-                    TextButton(onClick = { uriHandler.openUri(SNOWLUMA_PRIVACY_URL) }) {
+                    TextButton(onClick = { openRepoDoc("PRIVACY.md") }) {
                         Text(text = "隐私政策", color = BrandOrange, fontWeight = FontWeight.Bold)
                     }
                 }
+
+                CustomSourceRiskNotice(clientLabel = "SnowLuma")
             }
         },
         dismissButton = { SecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = { PrimaryButton(text = "同意并安装", onClick = onConfirm) },
+        confirmButton = {
+            PrimaryButton(
+                text = "了解风险，同意并安装",
+                enabled = validSource != null && !state.isInstalling,
+                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
+            )
+        },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -231,13 +282,15 @@ private fun QqWindowImage(
     }
 }
 
-/** SnowLuma 配置详情：连接状态、当前账号、MaiBot 连的地址、版本和配置文件位置，以及查看 QQ 窗口、管理页、重启 QQ。 */
+/** SnowLuma 配置详情：连接状态、当前账号、监听与配置文件信息、自定义仓库设置，以及查看 QQ 窗口、管理页、重启 QQ。 */
 @Composable
 internal fun SnowLumaConfigDialog(
     state: SnowLumaPlatformState,
     onRefresh: () -> Unit,
     onShowQqWindow: () -> Unit,
     onOpenWebUi: () -> Unit,
+    onSaveRepoUrl: (String) -> Unit,
+    onReinstallFromRepoUrl: (String) -> Unit,
     onRestartQq: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -250,6 +303,17 @@ internal fun SnowLumaConfigDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                state.failure?.let { failure ->
+                    Text(
+                        text = "上次操作失败：${failure.message}",
+                        color = StatusDanger,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FailureNotice(failure = failure)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
                 ConfigValueRow(
                     label = "连接状态",
                     value = when {
@@ -266,6 +330,14 @@ internal fun SnowLumaConfigDialog(
                 ConfigValueRow("SnowLuma 版本", SnowLumaScripts.VERSION)
                 ConfigValueRow("LinuxQQ 版本", SnowLumaScripts.QQ_VERSION)
                 ConfigValueRow("配置文件", "${SnowLumaScripts.DATA_DIR}/config/onebot.json")
+
+                CustomSourceEditorSection(
+                    client = QqClient.SnowLuma,
+                    savedUrl = state.customRepoUrl,
+                    installing = state.isInstalling,
+                    onSaveUrl = onSaveRepoUrl,
+                    onRequestReinstall = onReinstallFromRepoUrl
+                )
 
                 Spacer(modifier = Modifier.height(12.dp))
                 WideButton(text = "查看 QQ 窗口", enabled = state.active, onClick = onShowQqWindow)
@@ -335,10 +407,16 @@ private fun DialogBody(text: String) {
 }
 
 @Composable
-private fun PrimaryButton(text: String, onClick: () -> Unit) {
+private fun PrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     Button(
         onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = TextPrimary)
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = BrandOrange,
+            contentColor = TextPrimary,
+            disabledContainerColor = CardBorder,
+            disabledContentColor = TextFaint
+        )
     ) {
         Text(text = text, fontWeight = FontWeight.Bold)
     }

@@ -5,9 +5,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.platform.napcat.NapCatInstallPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
+import org.maiwithu.maidroid.platform.snowluma.SnowLumaInstallPhase
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
 
 class QqClientButtonTest {
@@ -68,5 +72,33 @@ class QqClientButtonTest {
         assertEquals("123456 在线", snowLuma.account)
         assertTrue(snowLuma.running)
         assertNull(installedPlatformCards(napCatMissing, snowLumaMissing, QqOfficialPlatformState()).firstOrNull())
+    }
+
+    @Test
+    fun `failed installs keep failed state and reopen install source dialogs on click`() {
+        val napCatFailed = napCatMissing.copy(
+            phase = NapCatInstallPhase.Failed,
+            failure = Failure(FailureStep.NapCatInstall, "404")
+        )
+        val snowLumaFailed = snowLumaMissing.copy(
+            phase = SnowLumaInstallPhase.Failed,
+            failure = Failure(FailureStep.SnowLumaInstall, "404")
+        )
+        val targets = PlatformInstallTargets(
+            napCatState = napCatFailed,
+            snowLumaState = snowLumaFailed,
+            qqOfficialState = QqOfficialPlatformState(),
+            onNapCatInstall = {},
+            onNapCatSettings = {},
+            onSnowLumaInstall = {},
+            onSnowLumaSettings = {},
+            onSwitchQqClient = {},
+            onQqOfficialSettings = {},
+            onUnsupportedInstall = {}
+        )
+        assertTrue(platformInstallAction(AccessMethod.NapCat, targets).state.failed)
+        assertTrue(platformInstallAction(AccessMethod.SnowLumaClient, targets).state.failed)
+        assertEquals("napcat-install", click(AccessMethod.NapCat, napCatFailed, snowLumaMissing))
+        assertEquals("snowluma-agreement", click(AccessMethod.SnowLumaClient, napCatMissing, snowLumaFailed))
     }
 }

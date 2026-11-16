@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.platform
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +43,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.platform.napcat.NapCatLoginPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
+import org.maiwithu.maidroid.platform.napcat.NapCatScripts
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -52,7 +59,104 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// QQ（NapCat）这一路的三个弹窗：登录二维码、NapCat 配置详情、退出 QQ 登录的二次确认。
+// QQ（NapCat）这一路的四个弹窗：安装自定义源、登录二维码、NapCat 配置详情、退出 QQ 登录的二次确认。
+
+/**
+ * 安装 NapCat 前的自定义仓库填写与安全风险确认弹窗：
+ * 上游仓库不可用后默认留空，由用户自行输入 fork 仓库地址或 NapCat.Shell.zip 直链并确认风险后开始安装。
+ */
+@Composable
+internal fun NapCatInstallDialog(
+    state: NapCatPlatformState,
+    snowLumaInstalled: Boolean,
+    onConfirm: (repoUrl: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var repoUrlText by rememberSaveable { mutableStateOf(state.customRepoUrl) }
+    val validSource = parseQqCustomSource(QqClient.NapCat, repoUrlText) as? QqSourceParseResult.Valid
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "安装 NapCat",
+                color = TextPrimary,
+                fontSize = TextSizes.TitleLarge,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 22.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                state.failure?.let { failure ->
+                    Text(
+                        text = "上次安装失败：${failure.message}",
+                        color = StatusDanger,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 15.sp
+                    )
+                    FailureNotice(failure = failure)
+                }
+
+                Text(
+                    text = "原上游仓库已不可用，请填写 NapCat 的 fork 仓库地址（从 Release 下载 NapCat.Shell.zip）" +
+                        "或安装包 .zip 直链。MaiDroid 会在容器里安装官方 LinuxQQ ${NapCatScripts.QQ_VERSION} 与 NapCat（约占 1 GB）。",
+                    color = TextMuted,
+                    fontSize = TextSizes.Body,
+                    lineHeight = 18.sp
+                )
+
+                if (snowLumaInstalled) {
+                    Text(
+                        text = "装好后改用 NapCat 登录 QQ，SnowLuma 会停用（不卸载，随时可以切回）。",
+                        color = TextMuted,
+                        fontSize = TextSizes.Body,
+                        lineHeight = 18.sp
+                    )
+                }
+
+                CustomSourceTextField(
+                    client = QqClient.NapCat,
+                    value = repoUrlText,
+                    onValueChange = { repoUrlText = it }
+                )
+
+                CustomSourceRiskNotice(clientLabel = "NapCat")
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CardBorder,
+                    contentColor = TextPrimary
+                )
+            ) {
+                Text(text = "取消", fontWeight = FontWeight.Bold)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } },
+                enabled = validSource != null && !state.isInstalling,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BrandOrange,
+                    contentColor = TextPrimary,
+                    disabledContainerColor = CardBorder,
+                    disabledContentColor = TextFaint
+                )
+            ) {
+                Text(text = "了解风险并安装", fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = CardSurface,
+        titleContentColor = TextPrimary,
+        textContentColor = TextMuted
+    )
+}
 
 /** 退出 QQ 会让 MaiBot 断开 QQ，先让用户确认。 */
 @Composable
@@ -309,11 +413,13 @@ internal fun napCatQrLoginHint(state: NapCatPlatformState): String? = when {
     else -> null
 }
 
-/** NapCat 配置详情：连接状态、当前账号、OneBot WebSocket 服务端的各项配置，以及“退出 QQ 登录”按钮。 */
+/** NapCat 配置详情：连接状态、当前账号、OneBot WebSocket 服务端配置、自定义仓库设置与“退出 QQ 登录”按钮。 */
 @Composable
 internal fun NapCatConfigDialog(
     state: NapCatPlatformState,
     onRefresh: () -> Unit,
+    onSaveRepoUrl: (String) -> Unit,
+    onReinstallFromRepoUrl: (String) -> Unit,
     onLogoutQq: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -331,12 +437,23 @@ internal fun NapCatConfigDialog(
             )
         },
         text = {
-            // 配置项加上退出按钮后小屏放不下，内容区允许滚动。
+            // 配置项加上自定义来源和退出按钮后小屏放不下，内容区允许滚动。
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                state.failure?.let { failure ->
+                    Text(
+                        text = "上次操作失败：${failure.message}",
+                        color = StatusDanger,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FailureNotice(failure = failure)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
                 ConfigValueRow(
                     label = "连接状态",
                     value = when {
@@ -359,6 +476,14 @@ internal fun NapCatConfigDialog(
                 ConfigValueRow("心跳间隔", config?.heartInterval?.let { "${it}ms" } ?: "-")
                 ConfigValueRow("调试模式", config?.debug.toEnabledText())
                 ConfigValueRow("配置文件", config?.configPath ?: "/root/napcat/config/onebot11.json")
+
+                CustomSourceEditorSection(
+                    client = QqClient.NapCat,
+                    savedUrl = state.customRepoUrl,
+                    installing = state.isInstalling,
+                    onSaveUrl = onSaveRepoUrl,
+                    onRequestReinstall = onReinstallFromRepoUrl
+                )
 
                 // 退出 QQ：先弹二次确认，确认后清自动登录并重启 NapCat；进行中禁用，避免重复重启。
                 Spacer(modifier = Modifier.height(12.dp))
