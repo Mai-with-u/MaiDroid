@@ -27,6 +27,7 @@ import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.countOwnChildProcesses
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
@@ -59,7 +60,6 @@ internal class DiagnosticsManager(
 
         val generatedAtFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss xxx")
         val fileNameFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
-        val exitTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")
     }
 
     private val appContext = context.applicationContext
@@ -204,7 +204,8 @@ internal class DiagnosticsManager(
             "QQ（NapCat）" to qqClientState(QqClient.NapCat, NapCatFiles(paths).isNapCatReady()),
             "QQ（SnowLuma）" to qqClientState(QqClient.SnowLuma, SnowLumaFiles(paths).isSnowLumaReady()),
             "QQ 官方机器人适配器" to if (QqOfficialAdapterFiles(paths).isInstalled()) "已安装" else "未安装",
-            "容器 SSH" to if (settings.containerSshEnabled) "已开启" else "未开启"
+            "容器 SSH" to if (settings.containerSshEnabled) "已开启" else "未开启",
+            "当前本应用子进程数" to "${countOwnChildProcesses()}"
         ))
     }
 
@@ -220,7 +221,7 @@ internal class DiagnosticsManager(
         }.getOrDefault(emptyList())
         if (reasons.isEmpty()) return ReportSection("最近几次进程结束", listOf("记录" to "没有记录"))
         return ReportSection("最近几次进程结束", reasons.map { info ->
-            val time = exitTimeFormat.withZone(zone).format(Instant.ofEpochMilli(info.timestamp))
+            val time = EXIT_TIME_FORMAT.withZone(zone).format(Instant.ofEpochMilli(info.timestamp))
             time to listOfNotNull(exitReasonLabel(info.reason), info.description?.takeIf { it.isNotBlank() })
                 .joinToString("：")
         })
@@ -311,6 +312,29 @@ private fun readGitHead(gitDir: File): Pair<String?, String?> {
 
 // 诊断报告列出、以及找原生闪退时看的进程结束记录条数
 private const val MAX_EXIT_REASONS = 5
+private val EXIT_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")
+
+/**
+ * 进程刚启动时查一次最近的系统进程结束记录（Android 11+）并打进 TerminalLog，
+ * 以便用户遇到后台莫名被杀后，下次打开时在日志里直接看清原因、importance 与内存占用。
+ */
+internal fun logLatestProcessExitSummary(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+    val info = runCatching {
+        val reasons = context.getSystemService(ActivityManager::class.java)
+            ?.getHistoricalProcessExitReasons(context.packageName, 0, MAX_EXIT_REASONS)
+            .orEmpty()
+        reasons.firstOrNull { it.processName == context.packageName } ?: reasons.firstOrNull()
+    }.getOrNull() ?: return
+    val time = EXIT_TIME_FORMAT.withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(info.timestamp))
+    val pssMb = info.pss / 1024L
+    val detail = info.description?.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty()
+    val targetLabel = if (info.processName == context.packageName) "主进程" else "进程(${info.processName})"
+    TerminalLog.append(
+        "[MaiDroid] 上次${targetLabel}退出记录($time): ${exitReasonLabel(info.reason)} " +
+            "importance=${info.importance} pss=${pssMb}MB$detail"
+    )
+}
 
 /**
  * 系统记下的最近几次原生代码闪退和应用无响应（Android 11 起才有），给 CrashRecorder 补上它自己记不到的闪退。

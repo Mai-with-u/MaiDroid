@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.service
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,13 +9,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -108,6 +113,7 @@ class MaiBotRuntimeService : Service() {
     private val snowLumaProcess get() = appDependencies.snowLumaProcess
     private val safeExit get() = appDependencies.safeExit
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     // 安全退出用：执行退出、刷新通知的协程跑在主线程，服务销毁时取消。
     private val serviceScope = backgroundScope("前台服务", Dispatchers.Main.immediate)
@@ -221,7 +227,7 @@ class MaiBotRuntimeService : Service() {
         Log.d(TAG, "Service onStartCommand: ${intent?.action}")
         val settings = appDependencies.settings
         if (intent?.action == ACTION_SAFE_EXIT || safeExit.started || (intent == null && settings.userExited)) {
-            startForeground(NOTIFICATION_ID, buildSafeExitNotification(safeExit.state.value))
+            promoteToForeground(buildSafeExitNotification(safeExit.state.value))
             runSafeExit()
             // 退出途中进程若被杀，不要让系统重建服务把麦麦拉起来。
             return START_NOT_STICKY
@@ -230,7 +236,7 @@ class MaiBotRuntimeService : Service() {
         // 首次引导装东西期间撑住进程：挂上“正在配置”的通知，不拉起任何容器进程（已经在托管麦麦时照旧用运行中的通知）；
         // 请求送到之前首次引导已经 release 了（这一步很快就结束了），挂完通知立刻停掉。
         if (intent?.action == ACTION_SETUP_HOLD) {
-            startForeground(NOTIFICATION_ID, if (runtimeRequested) buildNotification() else buildSetupNotification())
+            promoteToForeground(if (runtimeRequested) buildNotification() else buildSetupNotification())
             if (!SetupKeepAlive.wanted) stopIfOnlyHoldingSetup()
             return if (runtimeRequested) START_STICKY else START_NOT_STICKY
         }
@@ -238,7 +244,7 @@ class MaiBotRuntimeService : Service() {
         // 其余启动请求都来自应用里（打开主页、唤醒、装平台、开 SSH、更新结束）或开机自启：用户又在用了，不再算“已退出”。
         settings.userExited = false
         runtimeRequested = true
-        startForeground(NOTIFICATION_ID, buildNotification())
+        promoteToForeground(buildNotification())
 
         containerSsh.syncWithSettings()
         if (intent?.action == ACTION_SYNC_CONTAINER_SSH) {
@@ -260,6 +266,35 @@ class MaiBotRuntimeService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    // Android 14+ 若系统认为当前前台服务类型触发了运行时限，收到回调后主动停止服务避免触发系统强杀与异常。
+    override fun onTimeout(startId: Int) {
+        handleForegroundTimeout(startId, fgsType = null)
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        handleForegroundTimeout(startId, fgsType = fgsType)
+    }
+
+    private fun handleForegroundTimeout(startId: Int, fgsType: Int?) {
+        Log.w(TAG, "Foreground service timeout (startId=$startId, fgsType=$fgsType)")
+        TerminalLog.append("[MaiDroid] 系统通知前台服务超时，安全停止前台服务避免进程被强杀")
+        stopSelf(startId)
+    }
+
+    // API 34+ 显式传入 specialUse 类型以匹配清单声明，旧系统沿用两参 startForeground。
+    private fun promoteToForeground(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
 
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy")
@@ -422,18 +457,41 @@ class MaiBotRuntimeService : Service() {
         return PendingIntent.getActivity(this, 0, intent, flags)
     }
 
-    // 部分唤醒锁只保持 CPU 运行，屏幕照常熄灭；不计数，重复 acquire 也只需释放一次。已经拿着就不再新建（低电量恢复时会再调）。
+    // 同时持有 CPU 部分唤醒锁与低延迟 Wi-Fi 锁：拔电息屏后保持容器与网络活跃（防 Wi-Fi 深睡导致 QQ 断线），
+    // 低电量暂停与服务销毁时再一并放开让设备节能。已经拿着就不再新建。
     private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "MaiDroid:MaiBotRuntimeService"
-        ).apply {
-            setReferenceCounted(false)
-            acquire()
+        if (wakeLock?.isHeld != true) {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "MaiDroid:MaiBotRuntimeService"
+            ).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            Log.d(TAG, "WakeLock acquired")
         }
-        Log.d(TAG, "WakeLock acquired")
+        acquireWifiLock()
+    }
+
+    private fun acquireWifiLock() {
+        if (wifiLock?.isHeld == true) return
+        runCatching {
+            val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager ?: return
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION")
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            wifiLock = wifiManager.createWifiLock(mode, "MaiDroid:MaiBotRuntimeService").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            Log.d(TAG, "WifiLock acquired")
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to acquire WifiLock", error)
+        }
     }
 
     private fun releaseWakeLock() {
@@ -444,5 +502,20 @@ class MaiBotRuntimeService : Service() {
             }
         }
         wakeLock = null
+        releaseWifiLock()
+    }
+
+    private fun releaseWifiLock() {
+        runCatching {
+            wifiLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "WifiLock released")
+                }
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to release WifiLock", error)
+        }
+        wifiLock = null
     }
 }

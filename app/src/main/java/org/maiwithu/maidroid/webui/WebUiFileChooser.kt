@@ -22,6 +22,9 @@ internal class WebUiFileChooser(private val logTag: String) {
 
     private var pendingCallback: ValueCallback<Array<Uri>>? = null
 
+    /** 是否仍有尚未收到系统选文件结果的回调（退后台休眠前用于防误销毁）。 */
+    val hasPending: Boolean get() = pendingCallback != null
+
     /**
      * 打开系统选文件页。返回 true 表示已经接手（无论成功与否都会且只会回调一次 callback）。
      * 上一次的回调还没回复时先按取消结束它：WebView 在收到回复前不会再弹新的选择器。

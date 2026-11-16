@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.terminal.TerminalLog
 
 /**
  * 开机 / 应用升级广播：OOBE 已完成、自动恢复没关、用户上次没有安全退出时，拉起 MaiBotRuntimeService。
@@ -43,6 +44,11 @@ class BootCompletedReceiver : BroadcastReceiver() {
         }
 
         Log.d(TAG, "Received $reason broadcast — starting MaiBotRuntimeService")
-        MaiBotRuntimeService.start(context)
+        runCatching { MaiBotRuntimeService.start(context) }
+            .onFailure { error ->
+                // 个别系统限制后台拉起前台服务时只记录日志，避免广播接收器未捕获异常崩掉进程
+                Log.w(TAG, "Failed to start MaiBotRuntimeService on $reason", error)
+                TerminalLog.append("[MaiDroid] 自启动前台服务失败（$reason）：${error.message ?: error.javaClass.simpleName}")
+            }
     }
 }

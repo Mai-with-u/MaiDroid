@@ -50,6 +50,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
@@ -73,10 +77,16 @@ import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
 import org.maiwithu.maidroid.webui.discardWebView
 
+/** 主页退后台连续空闲这么久后销毁 WebView，释放沙箱渲染进程与 GPU 显存；回到前台立即按需唤醒。 */
+internal const val WEB_UI_HIBERNATE_DELAY_MS = 3 * 60_000L
+private const val WEB_UI_HIBERNATE_RETRY_MS = 60_000L
+
 /**
  * WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。
  * 网页的渲染进程没了时（见 WebUiWebViewClient.onRenderProcessGone）用 createWebView 换一个新的 WebView：
  * 旧的拿下来销毁 -> 建新的 -> 页签按新 WebView 重新挂上并加载；短时间内反复崩溃就停下，等用户点“重试”。
+ * 应用退到后台空闲超过 [WEB_UI_HIBERNATE_DELAY_MS] 且无挂起的选文件/另存为回调时销毁 WebView 休眠省内存，
+ * 回到前台自动重建重新连接本机 WebUI。
  */
 internal class WebUiTabState internal constructor(
     val fileChooser: WebUiFileChooser,
@@ -86,10 +96,10 @@ internal class WebUiTabState internal constructor(
     private val renderCrashGuard = WebUiRenderCrashGuard()
     private val created = createWebView(this)
 
-    /** 现在挂在页签上的 WebView；渲染进程没了之后换成新建的那个，页签据此重新挂上。 */
-    var webView by mutableStateOf(created.first)
+    /** 现在挂在页签上的 WebView；退后台休眠期间为 null，回到前台或刷新时按需重建。 */
+    var webView by mutableStateOf<WebView?>(created.first)
         private set
-    var webViewClient: WebUiWebViewClient = created.second
+    var webViewClient: WebUiWebViewClient? = created.second
         private set
 
     var webViewError by mutableStateOf<String?>(null)
@@ -103,29 +113,60 @@ internal class WebUiTabState internal constructor(
     /** 网页自己的底色（见 WebUiPageBackground）；还没报上来或加载失败时为 null。横屏时涂在侧栏底下让出的那一条。 */
     var pageBackground by mutableStateOf<Color?>(null)
 
-    /** 清掉错误提示并重新加载：换一个加载令牌，页签的 update 看到令牌变了就按当前尺寸重新 loadUrl。 */
+    /** 清掉错误提示并重新加载：若处于休眠态则先唤醒建新实例，再换加载令牌触发重新加载。 */
     fun reload() {
+        ensureAwake()
         webViewError = null
         autoLoadPaused = false
         reloadToken += 1
     }
 
+    /**
+     * 退后台空闲超时后销毁 WebView 让沙箱渲染进程退出释放内存；
+     * 若此时用户正在系统选文件或“另存为”界面中（hasPending），暂不休眠，交由调用方稍后重试。
+     */
+    internal fun hibernateIfIdle(): Boolean {
+        val current = webView ?: return false
+        if (fileChooser.hasPending || downloads.hasPending) return false
+        downloads.detachFrom(current)
+        discardWebView(current)
+        webView = null
+        webViewClient = null
+        webViewHasSize = false
+        pageBackground = null
+        Log.d(MaiBotWebUi.LOG_TAG, "WebView 退后台空闲超时，已休眠释放渲染进程")
+        return true
+    }
+
+    /** 回到前台或需要重新加载时唤醒已休眠的 WebView：重置尺寸与背景标记，让页签排好版后自动重连。 */
+    internal fun ensureAwake() {
+        if (webView != null) return
+        attachFreshWebView()
+        webViewError = null
+        Log.d(MaiBotWebUi.LOG_TAG, "WebView 已从休眠恢复")
+    }
+
     // 渲染进程没了：这个 WebView 已经不能用，换一个新的。两分钟里崩了三次以上就不自动加载，显示“重试”。
     internal fun replaceDeadWebView(dead: WebView) {
         if (dead !== webView) return
+        downloads.detachFrom(dead)
         discardWebView(dead)
-        val (newWebView, newClient) = createWebView(this)
-        webViewClient = newClient
-        // 新 WebView 还没排版、尺寸是 0：等它挂上去量出尺寸再加载（和第一次加载一样），不按 0x0 决定排版
-        webViewHasSize = false
-        webView = newWebView
-        pageBackground = null
+        attachFreshWebView()
         if (renderCrashGuard.shouldAutoReopen()) {
             webViewError = null
         } else {
             autoLoadPaused = true
             webViewError = "网页进程反复崩溃，已暂停自动加载"
         }
+    }
+
+    // 重建并挂载一个新的 WebView：尺寸和背景标记同步清零，让页签量出真实视口尺寸后再加载。
+    private fun attachFreshWebView() {
+        val (newWebView, newClient) = createWebView(this)
+        webViewClient = newClient
+        webViewHasSize = false
+        pageBackground = null
+        webView = newWebView
     }
 }
 
@@ -199,13 +240,44 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         state.downloads.launcher = downloadLauncher
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isStarted by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+    DisposableEffect(lifecycleOwner, state) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    isStarted = true
+                    state.ensureAwake()
+                }
+                Lifecycle.Event.ON_STOP -> isStarted = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 退到后台持续满 3 分钟再休眠，避免用户短暂切去聊天软件或选文件时反复销毁重建 WebView。
+    LaunchedEffect(isStarted, state) {
+        if (isStarted) {
+            state.ensureAwake()
+        } else {
+            delay(WEB_UI_HIBERNATE_DELAY_MS)
+            while (state.webView != null && !state.hibernateIfIdle()) {
+                delay(WEB_UI_HIBERNATE_RETRY_MS)
+            }
+        }
+    }
+
     DisposableEffect(state) {
         onDispose {
-            // 先把没回复的选文件请求按取消结束、丢掉还没选位置的下载，再销毁 WebView。
+            // 先把没回复的选文件请求按取消结束、丢掉还没选位置的下载，再销毁仍在存活的 WebView。
             state.fileChooser.launcher = null
             state.fileChooser.cancelPending()
             state.downloads.release()
-            state.webView.destroy()
+            state.webView?.destroy()
         }
     }
 
@@ -261,43 +333,47 @@ internal fun WebUiTabPage(
             .padding(start = startClearance)
             .background(PageBackground)
     ) {
-        // 换了新 WebView（渲染进程没了）时 key 变了，旧的 AndroidView 撤掉、按新的重新挂上并加载。
-        key(state.webView) {
-            AndroidView(
-                factory = {
-                    (state.webView.parent as? ViewGroup)?.removeView(state.webView)
-                    state.webView
-                },
-                update = { webView ->
-                    val launchUrl = MaiBotWebUi.launchUrl(
-                        paths = webView.context.appDependencies.runtimePaths,
-                        terminalLogs = terminalLogs,
-                        baseUrl = url
-                    )
-                    val loadRequest = "$launchUrl#${state.reloadToken}"
-                    if (state.webViewHasSize && !state.autoLoadPaused && webView.tag != loadRequest) {
-                        webView.tag = loadRequest
-                        state.webViewError = null
-                        // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
-                        // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
-                        state.webViewClient.applyDesktopViewport(webView)
-                        Log.d(
-                            MaiBotWebUi.LOG_TAG,
-                            "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                                "${webView.width}x${webView.height}, " +
-                                "desktop width=${state.webViewClient.desktopLayoutWidthCss}"
+        // 换了新 WebView（渲染进程没了或休眠唤醒）时 key 变了，旧的 AndroidView 撤掉、按新的重新挂上并加载。
+        val activeWebView = state.webView
+        val activeClient = state.webViewClient
+        if (activeWebView != null && activeClient != null) {
+            key(activeWebView) {
+                AndroidView(
+                    factory = {
+                        (activeWebView.parent as? ViewGroup)?.removeView(activeWebView)
+                        activeWebView
+                    },
+                    update = { webView ->
+                        val launchUrl = MaiBotWebUi.launchUrl(
+                            paths = webView.context.appDependencies.runtimePaths,
+                            terminalLogs = terminalLogs,
+                            baseUrl = url
                         )
-                        webView.loadUrl(launchUrl)
-                    }
-                },
-                modifier = Modifier
-                    .padding(top = statusBarTop)
-                    .windowInsetsPadding(imeClearance)
-                    .fillMaxSize()
-                    .onSizeChanged { size ->
-                        state.webViewHasSize = size.width > 0 && size.height > 0
-                    }
-            )
+                        val loadRequest = "$launchUrl#${state.reloadToken}"
+                        if (state.webViewHasSize && !state.autoLoadPaused && webView.tag != loadRequest) {
+                            webView.tag = loadRequest
+                            state.webViewError = null
+                            // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                            // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
+                            activeClient.applyDesktopViewport(webView)
+                            Log.d(
+                                MaiBotWebUi.LOG_TAG,
+                                "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
+                                    "${webView.width}x${webView.height}, " +
+                                    "desktop width=${activeClient.desktopLayoutWidthCss}"
+                            )
+                            webView.loadUrl(launchUrl)
+                        }
+                    },
+                    modifier = Modifier
+                        .padding(top = statusBarTop)
+                        .windowInsetsPadding(imeClearance)
+                        .fillMaxSize()
+                        .onSizeChanged { size ->
+                            state.webViewHasSize = size.width > 0 && size.height > 0
+                        }
+                )
+            }
         }
 
         if (state.webViewError != null) {

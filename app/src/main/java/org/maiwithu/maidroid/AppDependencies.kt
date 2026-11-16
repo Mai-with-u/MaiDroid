@@ -11,6 +11,7 @@ import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
 import org.maiwithu.maidroid.diagnostics.recentSystemCrashes
 import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
+import org.maiwithu.maidroid.diagnostics.logLatestProcessExitSummary
 import org.maiwithu.maidroid.maibot.MaiBotLogHousekeeper
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
@@ -52,7 +53,10 @@ internal class AppDependencies(context: Context) {
     val terminalLogRecorder = TerminalLogRecorder(
         TerminalLogFiles(diagnosticsFiles.logsDir),
         startBanner = "===== MaiDroid ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) 启动，进程 ${Process.myPid()} ====="
-    )
+    ).also {
+        // 日志落盘通道就绪后立即补记上次进程退出摘要，防止莫名被杀后缺少取证记录
+        runCatching { logLatestProcessExitSummary(appContext) }
+    }
     // MaiDroid 自己闪退时记下堆栈和闪退前的终端输出，MaiDroidApplication 创建完依赖就接管未捕获异常
     val crashRecorder = CrashRecorder(
         diagnosticsFiles.crashesDir,

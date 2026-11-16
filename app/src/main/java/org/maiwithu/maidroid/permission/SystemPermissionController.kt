@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.permission
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -79,7 +80,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         requestStorage = ::requestStorage,
         enableNotification = ::requestNotification,
         ignoreBatteryOptimization = ::requestIgnoreBatteryOptimizations,
-        openAutoStartSettings = { openAppDetails("请在系统设置中为 MaiDroid 开启自启动和后台活动") },
+        openAutoStartSettings = { openBackgroundActivitySettings(forEnable = true) },
         showTaskLockHint = { toast("请在系统多任务界面将 MaiDroid 加锁", long = true) },
         openAccessibilitySettings = ::openAccessibilitySettings,
         openDeviceAdminSettings = ::openDeviceAdminSettings
@@ -92,7 +93,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         disableNotification = ::openNotificationSettings,
         ignoreBatteryOptimization = ::requestIgnoreBatteryOptimizations,
         restoreBatteryOptimization = ::openBatteryOptimizationSettings,
-        openAutoStartSettings = { openAppDetails("请在系统设置中为 MaiDroid 开启或关闭自启动和后台活动") },
+        openAutoStartSettings = { openBackgroundActivitySettings(forEnable = false) },
         showTaskLockHint = { toast("请在系统多任务界面为 MaiDroid 开启或关闭加锁", long = true) },
         openAccessibilitySettings = ::openAccessibilitySettings,
         openDeviceAdminSettings = ::openDeviceAdminSettings
@@ -189,10 +190,53 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         )
     }
 
-    // 自启动和后台活动是厂商自己的设置，没有统一入口，只能打开应用详情页并提示用户自己找。
-    private fun openAppDetails(message: String) {
+    // 优先跳各厂商“应用启动管理 / 后台活动”专属设置页，全部打不开再退回系统应用详情页。
+    private fun openBackgroundActivitySettings(forEnable: Boolean) {
+        val brand = "${Build.MANUFACTURER} ${Build.BRAND}".lowercase()
+        val message = when {
+            "honor" in brand || "huawei" in brand ->
+                if (forEnable) {
+                    "请在应用启动管理中关闭自动管理，并开启允许自启动、关联启动和后台活动"
+                } else {
+                    "请在应用启动管理中调整 MaiDroid 的自启动、关联启动与后台活动"
+                }
+            forEnable -> "请在系统设置中为 MaiDroid 开启自启动和后台活动"
+            else -> "请在系统设置中为 MaiDroid 开启或关闭自启动和后台活动"
+        }
         toast(message, long = true)
+
+        val candidates = backgroundSettingsCandidates(brand)
+        for (component in candidates) {
+            try {
+                activity.startActivity(Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
+            } catch (_: Exception) {
+                // 部分 ROM 对非导出页面抛 SecurityException 或无此页面抛 ActivityNotFoundException，继续尝试下一个
+            }
+        }
         activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri()))
+    }
+
+    private fun backgroundSettingsCandidates(brand: String): List<ComponentName> = when {
+        "honor" in brand || "huawei" in brand -> listOf(
+            ComponentName("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+            ComponentName("com.hihonor.systemmanager", "com.hihonor.systemmanager.appcontrol.activity.StartupAppControlActivity"),
+            ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.appcontrol.activity.StartupAppControlActivity"),
+            ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+            ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")
+        )
+        "xiaomi" in brand || "redmi" in brand || "poco" in brand -> listOf(
+            ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+        )
+        "oppo" in brand || "oneplus" in brand || "realme" in brand -> listOf(
+            ComponentName("com.oplus.safecenter", "com.oplus.safecenter.permission.startup.StartupAppListActivity"),
+            ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")
+        )
+        "vivo" in brand || "iqoo" in brand -> listOf(
+            ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"),
+            ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")
+        )
+        else -> emptyList()
     }
 
     private fun openAccessibilitySettings() {
