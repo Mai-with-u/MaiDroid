@@ -3,12 +3,11 @@ package org.maiwithu.maidroid.ui.platform
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,8 +25,6 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
@@ -60,15 +57,7 @@ internal fun QqOfficialConfigDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "QQ 官方机器人",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("QQ 官方机器人") },
         text = {
             Column(
                 modifier = Modifier
@@ -77,7 +66,7 @@ internal fun QqOfficialConfigDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (state.installed) {
-                    ConfigValueRow(
+                    StackedConfigValueRow(
                         label = "连接状态",
                         value = qqOfficialStatusDetail(state),
                         valueColor = qqOfficialStatusColor(state)
@@ -122,38 +111,47 @@ internal fun QqOfficialConfigDialog(
                 )
             }
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
         confirmButton = {
-            Button(
-                onClick = { onConfirm(appIdText, appSecretText) },
+            PlatformPrimaryButton(
+                text = if (state.installed) "保存" else "安装并启用",
                 enabled = canConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary,
-                    disabledContainerColor = CardBorder,
-                    disabledContentColor = TextFaint
-                )
-            ) {
-                Text(
-                    text = if (state.installed) "保存" else "安装并启用",
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                onClick = { onConfirm(appIdText, appSecretText) }
+            )
         },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
+}
+
+/** 上下两行的键值对展示（仅用于 QQ 官方机器人凭据弹窗，区别于协议配置弹窗的左右行 ConfigKeyValueRow）。 */
+@Composable
+private fun StackedConfigValueRow(
+    label: String,
+    value: String,
+    valueColor: Color = TextMuted
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+    ) {
+        Text(
+            text = label,
+            color = TextFaint,
+            fontSize = TextSizes.Caption,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 14.sp
+        )
+        Text(
+            text = value,
+            color = valueColor,
+            fontSize = TextSizes.Body,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 18.sp
+        )
+    }
 }
 
 // 弹窗里比卡片多说一句：连接失败带上原因，“已启用”说明是按没有报错推断的。

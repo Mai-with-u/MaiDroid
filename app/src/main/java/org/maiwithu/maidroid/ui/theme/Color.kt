@@ -46,6 +46,11 @@ val IconRoseAlert = Color(0xFFF25C69)
 val PlatformDiscord = Color(0xFF5865F2)
 val PlatformSignal = Color(0xFF3B82F6)
 
+// ── 启动页与扫码画布专用色 ───────────────────────────────────────────────
+val QrCanvasBackground = Color.White          // 二维码与远程桌面画布光学白底，确保扫码识别率
+val SplashEdgeShade = Color(0x24000000)       // 14% 黑：横屏启动页插画左右边缘柔和过渡渐变
+val SplashSideBlurOverlay = Color(0x0F000000) // 6% 黑：横屏启动页两侧留白模糊压暗遮罩
+
 // ── 状态色 ───────────────────────────────────────────────────────
 val StatusOnline = Color(0xFF30D158)   // 在线、已开启、已是最新
 val StatusWarning = Color(0xFFE8A064)  // 离线、未授权、启动失败

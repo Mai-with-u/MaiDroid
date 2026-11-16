@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,16 +65,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
+import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -87,43 +91,71 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// 消息平台各配置弹窗共用的扁平外壳与结构化小部件。
+// 消息平台各配置弹窗与二级确认框共用的扁平外壳与结构化小部件。
 
 private val SectionInnerSurface = PageBackground.copy(alpha = 0.55f)
 
-/** 保留给 QQ 官方机器人弹窗使用的单行键值对展示。 */
 @Composable
-internal fun ConfigValueRow(
-    label: String,
-    value: String,
-    valueColor: Color = TextMuted
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
+internal fun PlatformDialogTitle(text: String) {
+    Text(
+        text = text,
+        color = TextPrimary,
+        fontSize = TextSizes.TitleLarge,
+        fontWeight = FontWeight.Bold,
+        lineHeight = 22.sp
+    )
+}
+
+@Composable
+internal fun PlatformDialogBody(text: String) {
+    Text(text = text, color = TextMuted, fontSize = TextSizes.Body, lineHeight = 18.sp)
+}
+
+@Composable
+internal fun PlatformPrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = BrandOrange,
+            contentColor = TextPrimary,
+            disabledContainerColor = CardBorder,
+            disabledContentColor = TextFaint
+        )
     ) {
-        Text(
-            text = label,
-            color = TextFaint,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 14.sp
+        Text(text = text, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+internal fun PlatformSecondaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = CardBorder,
+            contentColor = TextPrimary,
+            disabledContainerColor = CardBorder,
+            disabledContentColor = TextFaint
         )
-        Text(
-            text = value,
-            color = valueColor,
-            fontSize = TextSizes.Body,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 18.sp
-        )
+    ) {
+        Text(text = text, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+internal fun PlatformDangerButton(text: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = StatusDanger, contentColor = TextPrimary)
+    ) {
+        Text(text = text, fontWeight = FontWeight.Bold)
     }
 }
 
 /**
  * 协议端配置详情的统一扁平卡片弹窗壳：
- * 固定顶栏显示标题、状态圆点摘要与右上角刷新/关闭圆形按钮，与下方独立弹性滚动内容区用细线隔开，
- * 避免长内容滚动时文字在顶栏边缘被腰斩，也去掉底部多余的大红大橙按钮块。
+ * 固定顶栏显示标题、状态圆点摘要与右上角刷新/关闭圆形按钮，与下方独立弹性滚动内容区用细线隔开。
  */
 @Composable
 internal fun PlatformConfigDialogShell(
@@ -151,6 +183,7 @@ internal fun PlatformConfigDialogShell(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 全屏遮罩仅响应点击卡片外区域关闭弹窗，不显示按压水波纹
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -163,11 +196,8 @@ internal fun PlatformConfigDialogShell(
                     .fillMaxWidth(0.92f)
                     .widthIn(max = 420.dp)
                     .heightIn(max = maxDialogHeight)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
+                    // 吞掉卡片空白处的点击事件防止穿透到外层关闭遮罩，同时避免无障碍树暴露无效可点节点
+                    .pointerInput(Unit) { detectTapGestures { } },
                 shape = RoundedCornerShape(Corners.Card),
                 color = CardSurface,
                 contentColor = TextPrimary
@@ -291,17 +321,17 @@ internal fun ConfigCardGroup(
 }
 
 @Composable
-internal fun ConfigGroupDivider(startPaddingDp: Int = 14) {
+internal fun ConfigGroupDivider(startPadding: Dp = 14.dp) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = startPaddingDp.dp, end = 14.dp)
+            .padding(start = startPadding, end = 14.dp)
             .height(0.5.dp)
             .background(CardDivider)
     )
 }
 
-/** 快捷操作行：左侧彩色扁平圆形图标 + 标题说明 + 右箭头，取代堆在底部的全宽灰按钮。 */
+/** 快捷操作行：左侧彩色扁平圆形图标 + 标题说明 + 右箭头。 */
 @Composable
 internal fun ConfigQuickActionRow(
     icon: ImageVector,
@@ -454,10 +484,9 @@ private fun SmallInlineIconButton(
 internal fun ConfigFoldableSection(
     title: String,
     summary: String? = null,
-    initiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
@@ -519,7 +548,7 @@ internal fun ConfigFoldableSection(
             )
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                ConfigGroupDivider(startPaddingDp = 14)
+                ConfigGroupDivider()
                 content()
             }
         }

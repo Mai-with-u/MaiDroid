@@ -5,14 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -22,48 +19,13 @@ import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.SwitchThumbUnchecked
-import org.maiwithu.maidroid.ui.theme.SwitchTrackUnchecked
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 
-private val PureWhite = Color.White
-private val SoftWhite = Color.White.copy(alpha = 0.56f)
+private val IconForeground = TextPrimary
+private val IconSecondary = TextPrimary.copy(alpha = 0.56f)
 
 /**
- * 扁平无边框开关：移除 Material3 默认暗色模式自带的粗描边，用柔灰轨道和品牌橙区分状态，消除廉价塑料感。
- */
-@Composable
-internal fun FlatSwitch(
-    checked: Boolean,
-    onCheckedChange: ((Boolean) -> Unit)?,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true
-) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        modifier = modifier,
-        enabled = enabled,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = TextPrimary,
-            checkedTrackColor = BrandOrange,
-            checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = SwitchThumbUnchecked,
-            uncheckedTrackColor = SwitchTrackUnchecked,
-            uncheckedBorderColor = Color.Transparent,
-            disabledCheckedThumbColor = TextPrimary.copy(alpha = 0.6f),
-            disabledCheckedTrackColor = BrandOrange.copy(alpha = 0.45f),
-            disabledCheckedBorderColor = Color.Transparent,
-            disabledUncheckedThumbColor = SwitchThumbUnchecked.copy(alpha = 0.5f),
-            disabledUncheckedTrackColor = SwitchTrackUnchecked.copy(alpha = 0.5f),
-            disabledUncheckedBorderColor = Color.Transparent
-        )
-    )
-}
-
-/**
- * 清新扁平圆形功能图标徽章：明快实色圆底搭配双层柔白+纯白圆润几何图标，替代暗沉半透明方框和机械线框。
+ * 清新扁平圆形功能图标徽章：明快实色圆底搭配双层柔白+纯白圆润几何图标。
  */
 @Composable
 internal fun FlatFeatureIconBadge(
@@ -72,14 +34,13 @@ internal fun FlatFeatureIconBadge(
     modifier: Modifier = Modifier,
     size: Dp = 38.dp,
     iconSize: Dp = 25.dp,
-    shape: Shape = CircleShape,
     dimmed: Boolean = false
 ) {
-    val bg = if (dimmed) Color.White.copy(alpha = 0.12f) else backgroundColor
+    val bg = if (dimmed) TextPrimary.copy(alpha = 0.12f) else backgroundColor
     Box(
         modifier = modifier
             .size(size)
-            .clip(shape)
+            .clip(CircleShape)
             .background(bg),
         contentAlignment = Alignment.Center
     ) {
@@ -100,8 +61,8 @@ internal object FlatFeatureIcons {
 
     val WebUi: ImageVector by lazy {
         flatVector("FlatWebUi") {
-            fillLayer(SoftWhite) { roundedRectPath(2.8f, 4.0f, 21.2f, 20.0f, 4.2f) }
-            fillLayer(PureWhite) {
+            fillLayer(IconSecondary) { roundedRectPath(2.8f, 4.0f, 21.2f, 20.0f, 4.2f) }
+            fillLayer(IconForeground) {
                 roundedRectPath(5.6f, 6.5f, 14.0f, 8.5f, 1.0f)
                 circlePath(17.6f, 7.5f, 1.05f)
                 sparklePath(12.0f, 14.3f, 4.7f, 1.6f)
@@ -109,15 +70,55 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** 协议端管理页或内置网页控制台入口图标（独立于专指麦麦的 WebUi）。 */
+    val BrowserConsole: ImageVector by lazy {
+        flatVector("FlatBrowserConsole") {
+            fillLayer(IconSecondary) { roundedRectPath(2.8f, 4.0f, 21.2f, 20.0f, 4.0f) }
+            fillLayer(IconForeground) {
+                circlePath(6.0f, 7.0f, 1.0f)
+                circlePath(9.0f, 7.0f, 1.0f)
+                circlePath(12.0f, 7.0f, 1.0f)
+                roundedRectPath(5.4f, 10.2f, 18.6f, 17.2f, 2.2f)
+            }
+        }
+    }
+
+    /** 虚拟桌面或远程应用窗口查看图标（用于 SnowLuma 查看 QQ 窗口）。 */
+    val DesktopWindow: ImageVector by lazy {
+        flatVector("FlatDesktopWindow") {
+            fillLayer(IconSecondary) { roundedRectPath(2.8f, 4.2f, 21.2f, 17.8f, 3.4f) }
+            fillLayer(IconForeground) {
+                roundedRectPath(5.4f, 7.0f, 18.6f, 15.0f, 2.0f)
+                roundedRectPath(8.6f, 19.0f, 15.4f, 20.8f, 0.9f)
+            }
+        }
+    }
+
+    /** 首次引导后台保活总卡片图标：圆环常驻轮廓配前景能量闪电。 */
+    val BackgroundKeepAlive: ImageVector by lazy {
+        flatVector("FlatBackgroundKeepAlive") {
+            fillLayer(IconSecondary) { circlePath(12.0f, 12.0f, 9.2f) }
+            fillLayer(IconForeground) {
+                moveTo(13.2f, 6.2f)
+                lineTo(8.3f, 12.8f)
+                lineTo(11.6f, 12.8f)
+                lineTo(10.5f, 17.8f)
+                lineTo(15.7f, 11.2f)
+                lineTo(12.3f, 11.2f)
+                close()
+            }
+        }
+    }
+
     val MaiBotUpdate: ImageVector by lazy {
         flatVector("FlatMaiBotUpdate") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 circlePath(7.3f, 12.8f, 3.9f)
                 circlePath(12.2f, 9.0f, 4.8f)
                 circlePath(16.8f, 12.6f, 3.7f)
                 roundedRectPath(3.4f, 10.2f, 20.6f, 16.8f, 3.2f)
             }
-            strokeLayer(PureWhite, width = 2.5f) {
+            strokeLayer(IconForeground, width = 2.5f) {
                 moveTo(12.0f, 20.0f)
                 lineTo(12.0f, 10.8f)
                 moveTo(8.8f, 13.9f)
@@ -129,8 +130,8 @@ internal object FlatFeatureIcons {
 
     val ContainerSsh: ImageVector by lazy {
         flatVector("FlatContainerSsh") {
-            fillLayer(SoftWhite) { roundedRectPath(2.6f, 4.2f, 21.4f, 19.8f, 4.2f) }
-            strokeLayer(PureWhite, width = 2.4f) {
+            fillLayer(IconSecondary) { roundedRectPath(2.6f, 4.2f, 21.4f, 19.8f, 4.2f) }
+            strokeLayer(IconForeground, width = 2.4f) {
                 moveTo(6.8f, 9.0f)
                 lineTo(10.8f, 12.0f)
                 lineTo(6.8f, 15.0f)
@@ -142,7 +143,7 @@ internal object FlatFeatureIcons {
 
     val MaiBotFiles: ImageVector by lazy {
         flatVector("FlatMaiBotFiles") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 moveTo(2.8f, 7.0f)
                 curveTo(2.8f, 5.5f, 4.0f, 4.4f, 5.4f, 4.4f)
                 lineTo(9.4f, 4.4f)
@@ -153,14 +154,14 @@ internal object FlatFeatureIcons {
                 lineTo(2.8f, 17.0f)
                 close()
             }
-            fillLayer(PureWhite) { roundedRectPath(2.8f, 8.6f, 21.2f, 19.4f, 2.8f) }
+            fillLayer(IconForeground) { roundedRectPath(2.8f, 8.6f, 21.2f, 19.4f, 2.8f) }
         }
     }
 
     val Permissions: ImageVector by lazy {
         flatVector("FlatPermissions") {
-            fillLayer(SoftWhite) { shieldPath() }
-            strokeLayer(PureWhite, width = 2.6f) {
+            fillLayer(IconSecondary) { shieldPath() }
+            strokeLayer(IconForeground, width = 2.6f) {
                 moveTo(8.0f, 12.2f)
                 lineTo(10.8f, 15.0f)
                 lineTo(16.2f, 9.2f)
@@ -170,11 +171,11 @@ internal object FlatFeatureIcons {
 
     val Platforms: ImageVector by lazy {
         flatVector("FlatPlatforms") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 roundedRectPath(8.8f, 3.8f, 21.4f, 14.0f, 4.5f)
                 circlePath(19.2f, 13.8f, 1.7f)
             }
-            fillLayer(PureWhite) {
+            fillLayer(IconForeground) {
                 roundedRectPath(2.6f, 8.2f, 16.8f, 18.2f, 4.5f)
                 moveTo(5.0f, 16.2f)
                 lineTo(3.6f, 20.2f)
@@ -186,23 +187,23 @@ internal object FlatFeatureIcons {
 
     val AppVersion: ImageVector by lazy {
         flatVector("FlatAppVersion") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 sparklePath(18.0f, 5.8f, 3.3f, 1.15f)
                 circlePath(4.8f, 6.4f, 1.35f)
             }
-            fillLayer(PureWhite) { sparklePath(10.2f, 13.4f, 7.2f, 2.45f) }
+            fillLayer(IconForeground) { sparklePath(10.2f, 13.4f, 7.2f, 2.45f) }
         }
     }
 
     val Feedback: ImageVector by lazy {
         flatVector("FlatFeedback") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 moveTo(10.2f, 13.5f)
                 lineTo(11.0f, 19.2f)
                 lineTo(14.3f, 15.8f)
                 close()
             }
-            fillLayer(PureWhite) {
+            fillLayer(IconForeground) {
                 moveTo(3.0f, 11.2f)
                 lineTo(20.6f, 3.8f)
                 lineTo(10.0f, 13.3f)
@@ -218,19 +219,19 @@ internal object FlatFeatureIcons {
     val Cleanup: ImageVector by lazy {
         flatVector("FlatCleanup") {
             // 斜置小扫帚手柄与闪烁星点用柔白层，前景圆头束腰和扇形扫头用纯白层
-            strokeLayer(SoftWhite, width = 2.6f) {
+            strokeLayer(IconSecondary, width = 2.6f) {
                 moveTo(14.0f, 11.0f)
                 lineTo(19.6f, 5.4f)
             }
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 sparklePath(6.0f, 6.4f, 2.5f, 0.85f)
                 sparklePath(17.6f, 17.4f, 2.3f, 0.8f)
             }
-            strokeLayer(PureWhite, width = 2.4f) {
+            strokeLayer(IconForeground, width = 2.4f) {
                 moveTo(11.0f, 9.2f)
                 lineTo(14.8f, 13.0f)
             }
-            fillLayer(PureWhite) {
+            fillLayer(IconForeground) {
                 moveTo(9.3f, 10.9f)
                 lineTo(13.1f, 14.7f)
                 curveTo(11.7f, 17.4f, 10.3f, 19.3f, 8.8f, 20.2f)
@@ -243,7 +244,7 @@ internal object FlatFeatureIcons {
 
     val Storage: ImageVector by lazy {
         flatVector("FlatStorage") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 moveTo(6.2f, 3.0f)
                 lineTo(14.8f, 3.0f)
                 lineTo(19.6f, 7.8f)
@@ -255,7 +256,7 @@ internal object FlatFeatureIcons {
                 curveTo(3.8f, 4.1f, 4.9f, 3.0f, 6.2f, 3.0f)
                 close()
             }
-            fillLayer(PureWhite) {
+            fillLayer(IconForeground) {
                 roundedRectPath(7.8f, 6.0f, 9.4f, 9.8f, 0.8f)
                 roundedRectPath(11.0f, 6.0f, 12.6f, 9.8f, 0.8f)
                 roundedRectPath(14.2f, 7.0f, 15.8f, 9.8f, 0.8f)
@@ -266,11 +267,11 @@ internal object FlatFeatureIcons {
 
     val NotificationKeepAlive: ImageVector by lazy {
         flatVector("FlatNotificationKeepAlive") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 circlePath(12.0f, 4.2f, 1.55f)
                 roundedRectPath(9.4f, 17.8f, 14.6f, 20.2f, 1.2f)
             }
-            fillLayer(PureWhite) {
+            fillLayer(IconForeground) {
                 moveTo(12.0f, 5.0f)
                 curveTo(8.1f, 5.0f, 5.8f, 7.7f, 5.8f, 11.2f)
                 lineTo(5.8f, 14.3f)
@@ -288,11 +289,11 @@ internal object FlatFeatureIcons {
 
     val BatteryOptimization: ImageVector by lazy {
         flatVector("FlatBatteryOptimization") {
-            fillLayer(SoftWhite) {
+            fillLayer(IconSecondary) {
                 roundedRectPath(9.4f, 2.8f, 14.6f, 4.6f, 0.9f)
                 roundedRectPath(6.0f, 5.0f, 18.0f, 20.8f, 3.3f)
             }
-            fillLayer(PureWhite) {
+            fillLayer(IconForeground) {
                 moveTo(13.3f, 8.2f)
                 lineTo(8.8f, 13.6f)
                 lineTo(12.0f, 13.6f)
@@ -306,8 +307,8 @@ internal object FlatFeatureIcons {
 
     val AutoStart: ImageVector by lazy {
         flatVector("FlatAutoStart") {
-            fillLayer(SoftWhite) { circlePath(12.0f, 12.0f, 9.2f) }
-            fillLayer(PureWhite) {
+            fillLayer(IconSecondary) { circlePath(12.0f, 12.0f, 9.2f) }
+            fillLayer(IconForeground) {
                 moveTo(9.3f, 7.8f)
                 curveTo(9.3f, 6.8f, 10.4f, 6.2f, 11.2f, 6.8f)
                 lineTo(17.2f, 11.0f)
@@ -321,14 +322,14 @@ internal object FlatFeatureIcons {
 
     val TaskLock: ImageVector by lazy {
         flatVector("FlatTaskLock") {
-            strokeLayer(SoftWhite, width = 2.6f) {
+            strokeLayer(IconSecondary, width = 2.6f) {
                 moveTo(7.8f, 10.2f)
                 lineTo(7.8f, 7.5f)
                 arcTo(4.2f, 4.2f, 0f, false, true, 16.2f, 7.5f)
                 lineTo(16.2f, 10.2f)
             }
             path(
-                fill = SolidColor(PureWhite),
+                fill = SolidColor(IconForeground),
                 pathFillType = PathFillType.EvenOdd
             ) {
                 roundedRectPath(5.0f, 10.0f, 19.0f, 20.4f, 3.6f)
@@ -339,15 +340,15 @@ internal object FlatFeatureIcons {
 
     val Accessibility: ImageVector by lazy {
         flatVector("FlatAccessibility") {
-            fillLayer(SoftWhite) { circlePath(12.0f, 12.0f, 8.8f) }
-            fillLayer(PureWhite) { circlePath(12.0f, 12.0f, 4.3f) }
+            fillLayer(IconSecondary) { circlePath(12.0f, 12.0f, 8.8f) }
+            fillLayer(IconForeground) { circlePath(12.0f, 12.0f, 4.3f) }
         }
     }
 
     val DeviceAdmin: ImageVector by lazy {
         flatVector("FlatDeviceAdmin") {
-            fillLayer(SoftWhite) { shieldPath() }
-            fillLayer(PureWhite) { sparklePath(12.0f, 12.0f, 4.7f, 1.65f) }
+            fillLayer(IconSecondary) { shieldPath() }
+            fillLayer(IconForeground) { sparklePath(12.0f, 12.0f, 4.7f, 1.65f) }
         }
     }
 }

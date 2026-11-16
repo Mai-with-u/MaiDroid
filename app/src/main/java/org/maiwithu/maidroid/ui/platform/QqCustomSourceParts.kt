@@ -237,25 +237,14 @@ internal fun CustomSourceReinstallConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "重新安装 ${client.label}？",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("重新安装 ${client.label}？") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = "将从以下地址重新下载并覆盖 ${client.label} 程序文件（保留现有配置与 QQ 登录数据），期间会暂时停止 QQ：",
-                    color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    lineHeight = 18.sp
+                PlatformDialogBody(
+                    "将从以下地址重新下载并覆盖 ${client.label} 程序文件（保留现有配置与 QQ 登录数据），期间会暂时停止 QQ："
                 )
                 Text(
                     text = sourceUrl,
@@ -266,28 +255,8 @@ internal fun CustomSourceReinstallConfirmDialog(
                 CustomSourceRiskNotice(clientLabel = client.label)
             }
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = StatusDanger,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "了解风险并重装", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
+        confirmButton = { PlatformDangerButton(text = "了解风险并重装", onClick = onConfirm) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted

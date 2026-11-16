@@ -19,8 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,11 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,11 +45,10 @@ import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.QrCanvasBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -79,15 +74,7 @@ internal fun NapCatInstallDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "安装 NapCat",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("安装 NapCat") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -103,21 +90,13 @@ internal fun NapCatInstallDialog(
                     FailureNotice(failure = failure)
                 }
 
-                Text(
-                    text = "原上游仓库已不可用，请填写 NapCat 的 fork 仓库地址（从 Release 下载 NapCat.Shell.zip）" +
-                        "或安装包 .zip 直链。MaiDroid 会在容器里安装官方 LinuxQQ ${NapCatScripts.QQ_VERSION} 与 NapCat（约占 1 GB）。",
-                    color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    lineHeight = 18.sp
+                PlatformDialogBody(
+                    "原上游仓库已不可用，请填写 NapCat 的 fork 仓库地址（从 Release 下载 NapCat.Shell.zip）" +
+                        "或安装包 .zip 直链。MaiDroid 会在容器里安装官方 LinuxQQ ${NapCatScripts.QQ_VERSION} 与 NapCat（约占 1 GB）。"
                 )
 
                 if (snowLumaInstalled) {
-                    Text(
-                        text = "装好后改用 NapCat 登录 QQ，SnowLuma 会停用（不卸载，随时可以切回）。",
-                        color = TextMuted,
-                        fontSize = TextSizes.Body,
-                        lineHeight = 18.sp
-                    )
+                    PlatformDialogBody("装好后改用 NapCat 登录 QQ，SnowLuma 会停用（不卸载，随时可以切回）。")
                 }
 
                 CustomSourceTextField(
@@ -129,30 +108,13 @@ internal fun NapCatInstallDialog(
                 CustomSourceRiskNotice(clientLabel = "NapCat")
             }
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
         confirmButton = {
-            Button(
-                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } },
+            PlatformPrimaryButton(
+                text = "了解风险并安装",
                 enabled = validSource != null && !state.isInstalling,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary,
-                    disabledContainerColor = CardBorder,
-                    disabledContentColor = TextFaint
-                )
-            ) {
-                Text(text = "了解风险并安装", fontWeight = FontWeight.Bold)
-            }
+                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
+            )
         },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
@@ -168,45 +130,12 @@ internal fun QqLogoutConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "退出 QQ 登录？",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("退出 QQ 登录？") },
         text = {
-            Text(
-                text = "将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。",
-                color = TextMuted,
-                fontSize = TextSizes.Body,
-                lineHeight = 18.sp
-            )
+            PlatformDialogBody("将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。")
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = StatusDanger,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "退出登录", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
+        confirmButton = { PlatformDangerButton(text = "退出登录", onClick = onConfirm) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -240,15 +169,7 @@ internal fun NapCatQrCodeDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "QQ 登录二维码",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("QQ 登录二维码") },
         text = {
             // 竖排（二维码在上、说明在下）放得下就竖排；手机横屏时弹窗只有一两百 dp 高，
             // 改成二维码在左、说明在右，二维码按可用高度缩小，说明文字太长时可以滚动。
@@ -287,33 +208,13 @@ internal fun NapCatQrCodeDialog(
         },
         dismissButton = {
             // 刷新请求进行中禁用按钮，避免连点把 QQ 登录服务打成频繁出码。
-            Button(
-                onClick = onRefresh,
+            PlatformSecondaryButton(
+                text = if (state.qrRefreshing) "刷新中…" else "刷新",
                 enabled = !state.qrRefreshing,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary,
-                    disabledContainerColor = CardBorder,
-                    disabledContentColor = TextFaint
-                )
-            ) {
-                Text(
-                    text = if (state.qrRefreshing) "刷新中…" else "刷新",
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                onClick = onRefresh
+            )
         },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "关闭", fontWeight = FontWeight.Bold)
-            }
-        },
+        confirmButton = { PlatformPrimaryButton(text = "关闭", onClick = onDismiss) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -339,7 +240,7 @@ private fun QrCodeImage(
             modifier = modifier
                 .size(size)
                 .clip(RoundedCornerShape(Corners.Control))
-                .background(Color.White)
+                .background(QrCanvasBackground)
                 .padding(10.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -424,7 +325,7 @@ internal fun NapCatConfigDialog(
     onReinstallFromSourceUrl: (String) -> Unit,
     onLogoutQq: () -> Unit,
     onDismiss: () -> Unit,
-    onOpenManagement: (() -> Unit)? = null
+    onOpenManagement: () -> Unit
 ) {
     val config = state.oneBotConfig
     val statusText = when {
@@ -458,17 +359,15 @@ internal fun NapCatConfigDialog(
             }
         }
 
-        if (onOpenManagement != null) {
-            ConfigCardGroup {
-                ConfigQuickActionRow(
-                    icon = FlatFeatureIcons.WebUi,
-                    iconColor = IconSkyBlue,
-                    title = "打开管理页 / 登录二维码",
-                    subtitle = "已登录直接进入控制台，未登录展示扫码二维码",
-                    enabled = state.active && state.canOpenSettings,
-                    onClick = onOpenManagement
-                )
-            }
+        ConfigCardGroup {
+            ConfigQuickActionRow(
+                icon = FlatFeatureIcons.BrowserConsole,
+                iconColor = IconSkyBlue,
+                title = "打开管理页 / 登录二维码",
+                subtitle = "已登录直接进入控制台，未登录展示扫码二维码",
+                enabled = state.active && state.canOpenSettings,
+                onClick = onOpenManagement
+            )
         }
 
         ConfigCardGroup {
@@ -491,7 +390,7 @@ internal fun NapCatConfigDialog(
 
         ConfigFoldableSection(
             title = "连接与配置详情",
-            summary = "8 项参数"
+            summary = "9 项参数"
         ) {
             ConfigKeyValueRow(
                 label = "Token",

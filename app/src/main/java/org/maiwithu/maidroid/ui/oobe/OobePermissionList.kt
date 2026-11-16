@@ -158,7 +158,7 @@ private fun BackgroundKeepAliveCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             FlatFeatureIconBadge(
-                icon = FlatFeatureIcons.BatteryOptimization,
+                icon = FlatFeatureIcons.BackgroundKeepAlive,
                 backgroundColor = IconPeachOrange,
                 size = 48.dp,
                 iconSize = 31.dp

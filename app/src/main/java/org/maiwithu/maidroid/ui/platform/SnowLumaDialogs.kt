@@ -19,8 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -54,11 +51,11 @@ import org.maiwithu.maidroid.platform.snowluma.snowLumaLoginHint
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.QrCanvasBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -100,7 +97,7 @@ internal fun SnowLumaAgreementDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { DialogTitle("安装 SnowLuma") },
+        title = { PlatformDialogTitle("安装 SnowLuma") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -116,14 +113,14 @@ internal fun SnowLumaAgreementDialog(
                     FailureNotice(failure = failure)
                 }
 
-                DialogBody(
+                PlatformDialogBody(
                     "SnowLuma 是另一种登录个人 QQ 的方式：原上游仓库已不可用，" +
                         "请填写 SnowLuma 的 fork 仓库地址（优先尝试 v${SnowLumaScripts.VERSION}，找不到则回退最新 Release 的 linux-arm64 发行包）" +
                         "或 .tar.gz 直链。MaiDroid 会在容器里安装 LinuxQQ ${SnowLumaScripts.QQ_VERSION} 和 SnowLuma" +
                         "（要下载约 200 MB，装好后约占 1 GB）。"
                 )
                 if (napCatInstalled) {
-                    DialogBody("装好后改用 SnowLuma 登录 QQ，NapCat 会停用（不卸载，随时可以切回）。")
+                    PlatformDialogBody("装好后改用 SnowLuma 登录 QQ，NapCat 会停用（不卸载，随时可以切回）。")
                 }
 
                 CustomSourceTextField(
@@ -132,7 +129,7 @@ internal fun SnowLumaAgreementDialog(
                     onValueChange = { sourceUrlText = it }
                 )
 
-                DialogBody(
+                PlatformDialogBody(
                     "SnowLuma 含有闭源的原生组件，只能用于非商业用途。" +
                         "点“了解风险，同意并安装”即表示你已阅读并同意对应仓库内的用户协议和隐私政策。"
                 )
@@ -148,9 +145,9 @@ internal fun SnowLumaAgreementDialog(
                 CustomSourceRiskNotice(clientLabel = "SnowLuma")
             }
         },
-        dismissButton = { SecondaryButton(text = "取消", onClick = onDismiss) },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
         confirmButton = {
-            PrimaryButton(
+            PlatformPrimaryButton(
                 text = "了解风险，同意并安装",
                 enabled = validSource != null && !state.isInstalling,
                 onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
@@ -181,15 +178,15 @@ internal fun QqClientSwitchDialog(
     val install = if (targetInstalled) "" else "${target.label} 还没装，确认后开始下载安装。"
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { DialogTitle("改用 ${target.label} 登录 QQ？") },
+        title = { PlatformDialogTitle("改用 ${target.label} 登录 QQ？") },
         text = {
-            DialogBody(
+            PlatformDialogBody(
                 "${other.label} 会停下（不卸载，随时可以切回），QQ 先下线，再由 ${target.label} 重新启动，" +
                     "期间麦麦收发不了 QQ 消息。$login$install"
             )
         },
-        dismissButton = { SecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = { PrimaryButton(text = if (targetInstalled) "切换" else "安装并切换", onClick = onConfirm) },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
+        confirmButton = { PlatformPrimaryButton(text = if (targetInstalled) "切换" else "安装并切换", onClick = onConfirm) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -210,7 +207,7 @@ internal fun QqWindowDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { DialogTitle("QQ 窗口") },
+        title = { PlatformDialogTitle("QQ 窗口") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -237,7 +234,7 @@ internal fun QqWindowDialog(
                 }
             }
         },
-        confirmButton = { PrimaryButton(text = "关闭", onClick = onDismiss) },
+        confirmButton = { PlatformPrimaryButton(text = "关闭", onClick = onDismiss) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -268,7 +265,7 @@ private fun QqWindowImage(
             .heightIn(max = 420.dp)
             .aspectRatio(frame.width.toFloat() / frame.height.toFloat())
             .clip(RoundedCornerShape(Corners.Control))
-            .background(Color.White)
+            .background(QrCanvasBackground)
             // 点下去的位置按这块区域的比例换算，画面和区域同宽高比，比例就是 QQ 窗口里的位置
             .pointerInput(frame.signature) {
                 detectTapGestures { offset ->
@@ -336,16 +333,16 @@ internal fun SnowLumaConfigDialog(
 
         ConfigCardGroup {
             ConfigQuickActionRow(
-                icon = FlatFeatureIcons.Platforms,
+                icon = FlatFeatureIcons.DesktopWindow,
                 iconColor = IconPeachOrange,
                 title = "查看 QQ 窗口",
                 subtitle = "点击查看虚拟桌面画面，完成扫码或快捷登录",
                 enabled = state.active,
                 onClick = onShowQqWindow
             )
-            ConfigGroupDivider(startPaddingDp = 60)
+            ConfigGroupDivider(startPadding = 60.dp)
             ConfigQuickActionRow(
-                icon = FlatFeatureIcons.WebUi,
+                icon = FlatFeatureIcons.BrowserConsole,
                 iconColor = IconSkyBlue,
                 title = "打开 SnowLuma 管理页",
                 subtitle = "在内置浏览器中查看协议端面板与日志",
@@ -410,65 +407,16 @@ internal fun SnowLumaRestartQqDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { DialogTitle("重启 QQ？") },
+        title = { PlatformDialogTitle("重启 QQ？") },
         text = {
-            DialogBody(
+            PlatformDialogBody(
                 "QQ 会先下线再重新启动，MaiBot 暂时收发不了 QQ 消息。之后在 QQ 窗口里重新登录，也可以换别的账号。"
             )
         },
-        dismissButton = { SecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = StatusDanger, contentColor = TextPrimary)
-            ) {
-                Text(text = "重启 QQ", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
+        confirmButton = { PlatformDangerButton(text = "重启 QQ", onClick = onConfirm) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
     )
-}
-
-@Composable
-private fun DialogTitle(text: String) {
-    Text(
-        text = text,
-        color = TextPrimary,
-        fontSize = TextSizes.TitleLarge,
-        fontWeight = FontWeight.Bold,
-        lineHeight = 22.sp
-    )
-}
-
-@Composable
-private fun DialogBody(text: String) {
-    Text(text = text, color = TextMuted, fontSize = TextSizes.Body, lineHeight = 18.sp)
-}
-
-@Composable
-private fun PrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = BrandOrange,
-            contentColor = TextPrimary,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        )
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun SecondaryButton(text: String, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
 }
