@@ -51,11 +51,14 @@ import org.maiwithu.maidroid.platform.snowluma.SnowLumaHookPhase
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaScripts
 import org.maiwithu.maidroid.platform.snowluma.snowLumaLoginHint
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconPeachOrange
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -282,7 +285,7 @@ private fun QqWindowImage(
     }
 }
 
-/** SnowLuma 配置详情：连接状态、当前账号、监听与配置文件信息、自定义仓库设置，以及查看 QQ 窗口、管理页、重启 QQ。 */
+/** SnowLuma 配置详情：固定顶栏展示账号与状态，置顶 QQ 窗口和管理页入口，技术细节与自定义源默认折叠。 */
 @Composable
 internal fun SnowLumaConfigDialog(
     state: SnowLumaPlatformState,
@@ -294,71 +297,109 @@ internal fun SnowLumaConfigDialog(
     onRestartQq: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { DialogTitle("SnowLuma 配置") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                state.failure?.let { failure ->
-                    Text(
-                        text = "上次操作失败：${failure.message}",
-                        color = StatusDanger,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 15.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    FailureNotice(failure = failure)
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-                ConfigValueRow(
-                    label = "连接状态",
-                    value = when {
-                        !state.active -> "已停用，现在用 NapCat"
-                        state.oneBotReachable -> "OneBot 已监听，MaiBot 可连接"
-                        else -> snowLumaLoginHint(state)
-                    },
-                    valueColor = if (state.active && state.oneBotReachable) StatusOnline else TextMuted
-                )
-                ConfigValueRow("账号", state.accountDisplayName ?: "-")
-                ConfigValueRow("服务类型", "WebSocket Server")
-                ConfigValueRow("监听地址", "${QqOneBot.HOST}:${QqOneBot.PORT}")
-                ConfigValueRow("Token", "和 NapCat 共用一个")
-                ConfigValueRow("SnowLuma 版本", SnowLumaScripts.VERSION)
-                ConfigValueRow("LinuxQQ 版本", SnowLumaScripts.QQ_VERSION)
-                ConfigValueRow("配置文件", "${SnowLumaScripts.DATA_DIR}/config/onebot.json")
+    val statusText = when {
+        !state.active -> "已停用（当前使用 NapCat）"
+        state.oneBotReachable -> "${state.accountDisplayName ?: "QQ"} 在线"
+        state.hookPhase == SnowLumaHookPhase.WaitingLogin && state.accountDetected -> "QQ 已登录，等待接管"
+        state.hookPhase == SnowLumaHookPhase.WaitingLogin -> "等待在 QQ 窗口登录"
+        state.hookPhase == SnowLumaHookPhase.Failed -> "SnowLuma 接入失败"
+        state.running -> "SnowLuma 启动中"
+        else -> "未运行"
+    }
+    val connectionSummary = when {
+        !state.active -> "已停用（使用 NapCat）"
+        state.oneBotReachable -> "OneBot 已监听，可连接"
+        state.hookPhase == SnowLumaHookPhase.WaitingLogin -> "请在 QQ 窗口扫码或登录"
+        state.hookPhase == SnowLumaHookPhase.Failed -> "接入失败，请查看终端"
+        state.running -> "启动中…"
+        else -> "未运行"
+    }
 
-                CustomSourceEditorSection(
-                    client = QqClient.SnowLuma,
-                    savedUrl = state.customRepoUrl,
-                    installing = state.isInstalling,
-                    onSaveUrl = onSaveRepoUrl,
-                    onRequestReinstall = onReinstallFromRepoUrl
+    PlatformConfigDialogShell(
+        title = "SnowLuma 配置",
+        statusText = statusText,
+        statusOnline = state.active && state.oneBotReachable,
+        onRefresh = onRefresh,
+        onDismiss = onDismiss
+    ) {
+        state.failure?.let { failure ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "上次操作失败：${failure.message}",
+                    color = StatusDanger,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 15.sp
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-                WideButton(text = "查看 QQ 窗口", enabled = state.active, onClick = onShowQqWindow)
-                Spacer(modifier = Modifier.height(8.dp))
-                WideButton(text = "打开 SnowLuma 管理页", enabled = state.active && state.running, onClick = onOpenWebUi)
-                Spacer(modifier = Modifier.height(8.dp))
-                // 重启 QQ：先弹二次确认；进行中禁用，避免重复重启
-                WideButton(
-                    text = if (state.qqRestarting) "正在重启…" else "重启 QQ",
-                    enabled = state.active && !state.qqRestarting,
-                    danger = true,
-                    onClick = onRestartQq
-                )
+                FailureNotice(failure = failure)
             }
-        },
-        dismissButton = { SecondaryButton(text = "刷新", onClick = onRefresh) },
-        confirmButton = { PrimaryButton(text = "关闭", onClick = onDismiss) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+
+        ConfigCardGroup {
+            ConfigQuickActionRow(
+                icon = FlatFeatureIcons.Platforms,
+                iconColor = IconPeachOrange,
+                title = "查看 QQ 窗口",
+                subtitle = "点击查看虚拟桌面画面，完成扫码或快捷登录",
+                enabled = state.active,
+                onClick = onShowQqWindow
+            )
+            ConfigGroupDivider(startPaddingDp = 60)
+            ConfigQuickActionRow(
+                icon = FlatFeatureIcons.WebUi,
+                iconColor = IconSkyBlue,
+                title = "打开 SnowLuma 管理页",
+                subtitle = "在内置浏览器中查看协议端面板与日志",
+                enabled = state.active && state.running,
+                onClick = onOpenWebUi
+            )
+        }
+
+        ConfigCardGroup {
+            ConfigKeyValueRow(
+                label = "连接状态",
+                value = connectionSummary,
+                valueColor = if (state.active && state.oneBotReachable) StatusOnline else TextMuted
+            )
+            ConfigGroupDivider()
+            ConfigKeyValueRow("监听地址", "${QqOneBot.HOST}:${QqOneBot.PORT}")
+            ConfigGroupDivider()
+            ConfigKeyValueRow(
+                label = "组件版本",
+                value = "SnowLuma ${SnowLumaScripts.VERSION} · QQ ${SnowLumaScripts.QQ_VERSION}",
+                valueColor = TextMuted
+            )
+        }
+
+        ConfigFoldableSection(
+            title = "连接与配置详情",
+            summary = "3 项参数"
+        ) {
+            ConfigKeyValueRow("服务类型", "WebSocket Server")
+            ConfigGroupDivider()
+            ConfigKeyValueRow("Token", "和 NapCat 共用一个", valueColor = TextMuted)
+            ConfigGroupDivider()
+            ConfigKeyValueRow(
+                label = "配置文件",
+                value = "${SnowLumaScripts.DATA_DIR}/config/onebot.json",
+                valueColor = TextMuted
+            )
+        }
+
+        CustomSourceEditorSection(
+            client = QqClient.SnowLuma,
+            savedUrl = state.customRepoUrl,
+            installing = state.isInstalling,
+            onSaveUrl = onSaveRepoUrl,
+            onRequestReinstall = onReinstallFromRepoUrl
+        )
+
+        // 重启 QQ：先弹二次确认；进行中禁用，避免重复重启
+        ConfigSoftDangerButton(
+            text = if (state.qqRestarting) "正在重启…" else "重启 QQ",
+            enabled = state.active && !state.qqRestarting,
+            onClick = onRestartQq
+        )
+    }
 }
 
 /** 重启 QQ 会让 MaiBot 暂时断开 QQ，先让用户确认。SnowLuma 没有退出登录的接口，换号也是重启后在 QQ 窗口里换。 */
@@ -427,23 +468,6 @@ private fun SecondaryButton(text: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun WideButton(text: String, enabled: Boolean, onClick: () -> Unit, danger: Boolean = false) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (danger) StatusDanger else CardBorder,
-            contentColor = TextPrimary,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        )
     ) {
         Text(text = text, fontWeight = FontWeight.Bold)
     }

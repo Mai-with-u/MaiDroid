@@ -213,6 +213,17 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     val openWebPage: (String) -> Unit = { url ->
         context.startActivity(Intent(context, WebUiActivity::class.java).apply { putExtra(WebUiActivity.EXTRA_URL, url) })
     }
+    // 发现卡片入口和 NapCat 配置弹窗共用的登录/控制台分流动作：已登录进管理页，未登录弹二维码。
+    val openNapCatConsole: () -> Unit = {
+        napCatManager.refresh()
+        uiScope.launch {
+            if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
+                openWebPage(napCatManager.webUiPageUrl())
+            } else {
+                showNapCatQrCode = true
+            }
+        }
+    }
     val runningCount = installedPlatforms.count { it.running }
     val onSearchClick: () -> Unit = { if (searchOpen) closeSearch() else searchOpen = true }
 
@@ -242,19 +253,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             qqOfficialState = qqOfficialState,
             // NapCat 未安装点下载先弹出自定义仓库填报与风险确认弹窗，不写死第三方 fork。
             onNapCatInstall = { showNapCatInstall = true },
-            onNapCatSettings = {
-                napCatManager.refresh()
-                // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
-                // 不能只看 OneBot 端口：登录后端口还没起来或 WsServer 被关掉时，
-                // 会弹出二维码又因“已登录”立刻关掉，永远进不了管理页去修。
-                uiScope.launch {
-                    if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
-                        openWebPage(napCatManager.webUiPageUrl())
-                    } else {
-                        showNapCatQrCode = true
-                    }
-                }
-            },
+            onNapCatSettings = openNapCatConsole,
             // SnowLuma 没装时先看协议，同意后才装
             onSnowLumaInstall = { showSnowLumaAgreement = true },
             onSnowLumaSettings = {
@@ -533,7 +532,11 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     pendingReinstallUrl = repoUrl
                 },
                 onLogoutQq = { showQqLogoutConfirm = true },
-                onDismiss = { showNapCatConfig = false }
+                onDismiss = { showNapCatConfig = false },
+                onOpenManagement = {
+                    showNapCatConfig = false
+                    openNapCatConsole()
+                }
             )
         }
 
