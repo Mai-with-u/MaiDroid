@@ -56,7 +56,7 @@ internal fun OobePermissionCard(
     val cardColor = if (granted) OobeSurface.copy(alpha = 0.62f) else OobeSurface
     val primaryTextColor = if (granted) OobeTextSecondary else OobeTextPrimary
     val secondaryTextColor = if (granted) OobeTextSecondary.copy(alpha = 0.72f) else OobeTextSecondary
-    val badgeBackground = if (granted) Color.White.copy(alpha = 0.1f) else BrandOrangeMuted
+    val badgeBackground = if (granted) OobeTextPrimary.copy(alpha = 0.1f) else BrandOrangeMuted
 
     Box(
         modifier = modifier
@@ -129,7 +129,7 @@ internal fun OobePermissionCard(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandOrangeMuted,
                     contentColor = OnBrandOrange,
-                    disabledContainerColor = Color.White.copy(alpha = 0.12f),
+                    disabledContainerColor = OobeTextPrimary.copy(alpha = 0.12f),
                     disabledContentColor = OobeTextSecondary
                 ),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)

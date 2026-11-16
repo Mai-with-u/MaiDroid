@@ -25,16 +25,12 @@ val JetBrainsMono = FontFamily(
 )
 
 /**
- * Typography matching the Figma design system.
- *
- * Design fonts:
- * - Douyin Sans Bold → used for section titles, weight 700
- * - HarmonyOS Sans SC → used for body text, weights 400/500/700
- *
- * All sizes mapped from the 428pt design width.
+ * 全局字体排版系统：
+ * - DouyinSans（Bold，700）：用于页面与区块主标题
+ * - HarmonyOS Sans SC（400/500/700）：用于正文、说明与标签文字
  */
 val MaiDroidTypography = Typography(
-    // Section title: "授予权限" 32sp
+    // 页面主标题：32sp
     headlineLarge = TextStyle(
         fontFamily = DouyinSans,
         fontWeight = FontWeight.Bold,
@@ -42,7 +38,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 35.sp,
         letterSpacing = 0.sp
     ),
-    // Subtitle: 20sp
+    // 次级标题：20sp
     headlineMedium = TextStyle(
         fontFamily = DouyinSans,
         fontWeight = FontWeight.Bold,
@@ -50,7 +46,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
-    // Card title: "存储权限" 24sp
+    // 卡片标题：24sp
     titleLarge = TextStyle(
         fontFamily = DouyinSans,
         fontWeight = FontWeight.Bold,
@@ -58,7 +54,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),
-    // Body text: 18sp
+    // 强调正文：18sp
     titleMedium = TextStyle(
         fontFamily = HarmonySans,
         fontWeight = FontWeight.Medium,
@@ -66,7 +62,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 22.sp,
         letterSpacing = 0.sp
     ),
-    // Button text: "下一步" 36sp
+    // 醒目大按钮文字：36sp
     displaySmall = TextStyle(
         fontFamily = DouyinSans,
         fontWeight = FontWeight.Bold,
@@ -74,7 +70,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 38.sp,
         letterSpacing = 0.sp
     ),
-    // Action button: "去授权" 20sp
+    // 操作按钮文字：20sp
     labelLarge = TextStyle(
         fontFamily = HarmonySans,
         fontWeight = FontWeight.Bold,
@@ -82,7 +78,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 21.sp,
         letterSpacing = 0.sp
     ),
-    // Tag: "必须"/"可选" 12sp
+    // 小型标签（如“必须”“可选”）：12sp
     labelSmall = TextStyle(
         fontFamily = HarmonySans,
         fontWeight = FontWeight.Bold,
@@ -90,7 +86,7 @@ val MaiDroidTypography = Typography(
         lineHeight = 12.sp,
         letterSpacing = 0.6.sp
     ),
-    // Default body
+    // 默认正文：16sp
     bodyLarge = TextStyle(
         fontFamily = HarmonySans,
         fontWeight = FontWeight.Normal,

@@ -117,11 +117,9 @@ internal fun messagePlatformsLayout(widthDp: Float, heightDp: Float): PlatformsL
 }
 
 /**
- * Chooses the largest practical card layout for the available content width.
- *
- * Cards stay between 272dp and 420dp whenever the viewport can satisfy both
- * constraints. For in-between widths where that is impossible, fewer columns
- * are preferred so controls inside a card are not squeezed.
+ * 按可用内容宽度挑出最合适的多栏列数。
+ * 只要视口允许，每张平台卡片宽度保持在 272dp ~ 420dp 之间；处于尴尬中间宽度时宁可少放一列，
+ * 避免压缩卡片内部的开关、输入框和按钮。
  */
 internal fun calculatePlatformGridColumnCount(availableWidthDp: Float): Int {
     val safeWidth = availableWidthDp.coerceAtLeast(0f)
@@ -180,7 +178,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     LaunchedEffect(snowLumaManager) {
         snowLumaManager.refresh()
     }
-    var selectedCategory by remember { mutableStateOf("全部") }
+    var selectedCategory by rememberSaveable { mutableStateOf("全部") }
     // 右上角搜索：点开后标题下出现搜索框，按名称和简介筛选当前分类；再点一次或按返回键收起并清空关键字。
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -288,12 +286,10 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         val statusBarTop = statusBarTopInset()
         val bottomClearance = LocalBottomNavigationClearance.current
         val pageWidth = maxWidth
-        // Grow the generous portrait spacing back gradually instead of jumping
-        // at a breakpoint when a landscape window is resized.
+        // 横屏窗口高度逐步拉大时平滑过渡回竖屏间距，避免跨过断点时界面突然跳变
         val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f))
             .coerceIn(0f, 1f)
-        // The previous 64dp top slot assumed a roughly 24dp status bar. Keep its
-        // visual breathing room separate from the inset reported by the system.
+        // 原 64dp 顶部留白默认按约 24dp 状态栏估算，这里把视觉呼吸感与系统安全区内边距拆开计算
         val topSpacing = 8.dp + 32.dp * verticalExpansion
         val sectionSpacing = 8.dp + 16.dp * verticalExpansion
 
@@ -723,8 +719,7 @@ private fun PlatformGrid(
         val availableWidth = (maxWidth - PlatformGridHorizontalPadding * 2f)
             .coerceAtLeast(0.dp)
         val widthBasedColumnCount = calculatePlatformGridColumnCount(availableWidth.value)
-        // Do not reserve empty columns when a category has fewer results; the
-        // resulting narrower grid stays centered by the parent container.
+        // 当前分类结果数量不足以填满整行时，不保留空列占位，让实际渲染的窄网格由父容器居中
         val columnCount = minOf(widthBasedColumnCount, platforms.size.coerceAtLeast(1))
         val maximumGridWidth = PlatformGridMaxCardWidthDp.dp * columnCount.toFloat() +
             PlatformGridSpacingDp.dp * (columnCount - 1).toFloat()
@@ -790,7 +785,7 @@ private fun MessagePlatformsHeader(
             Text(
                 text = "消息平台",
                 color = TextPrimary,
-                fontSize = if (compact) 27.sp else TextSizes.Display,
+                fontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
                 fontWeight = FontWeight.Bold,
                 lineHeight = if (compact) 30.sp else 34.sp
             )

@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.permission.PermissionActions
@@ -182,7 +183,7 @@ private fun BackgroundKeepAliveCard(
                         text = "可选",
                         backgroundColor = BrandOrangeMuted,
                         width = 48.dp,
-                        textSize = 12
+                        fontSize = TextSizes.Caption
                     )
                 }
 
@@ -280,7 +281,7 @@ private fun KeepAlivePermissionRow(
             text = tagText,
             backgroundColor = if (destructive) StatusDanger else BrandOrange,
             width = if (destructive) 42.dp else 32.dp,
-            textSize = 10
+            fontSize = TextSizes.Tag
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -330,7 +331,7 @@ private fun KeepAliveTag(
     text: String,
     backgroundColor: Color,
     width: Dp,
-    textSize: Int
+    fontSize: TextUnit
 ) {
     Box(
         modifier = Modifier
@@ -341,11 +342,11 @@ private fun KeepAliveTag(
     ) {
         Text(
             text = text,
-            fontSize = textSize.sp,
+            fontSize = fontSize,
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
             maxLines = 1,
-            lineHeight = textSize.sp
+            lineHeight = fontSize
         )
     }
 }

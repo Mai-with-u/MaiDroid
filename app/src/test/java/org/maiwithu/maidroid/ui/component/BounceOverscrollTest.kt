@@ -1,6 +1,9 @@
 package org.maiwithu.maidroid.ui.component
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -47,5 +50,49 @@ class BounceOverscrollTest {
             maxOffsetPx = 400f
         )
         assertEquals(-positive, negative, 0.001f)
+    }
+
+    @Test
+    fun `applyToScroll accumulates top overscroll and pulls back one to one before scrolling content`() {
+        val effect = BounceOverscrollEffect(maxOverscrollPx = 500f, splitTopHeader = true)
+
+        val consumedPull = effect.applyToScroll(
+            delta = Offset(0f, 100f),
+            source = NestedScrollSource.UserInput,
+            performScroll = { Offset.Zero }
+        )
+        assertEquals(Offset(0f, 100f), consumedPull)
+        assertEquals(56f, effect.overscrollY, 0.01f)
+        assertEquals(56f, effect.topOverscrollPx, 0.01f)
+        assertTrue(effect.isInProgress)
+
+        var forwardedToList = Offset.Zero
+        val consumedPushBack = effect.applyToScroll(
+            delta = Offset(0f, -80f),
+            source = NestedScrollSource.UserInput,
+            performScroll = { remaining ->
+                forwardedToList = remaining
+                remaining
+            }
+        )
+        assertEquals(0f, effect.overscrollY, 0.001f)
+        assertEquals(-24f, forwardedToList.y, 0.01f)
+        assertEquals(-80f, consumedPushBack.y, 0.01f)
+        assertFalse(effect.isInProgress)
+    }
+
+    @Test
+    fun `applyToScroll ignores non user input leftover deltas`() {
+        val effect = BounceOverscrollEffect(maxOverscrollPx = 400f)
+
+        val consumed = effect.applyToScroll(
+            delta = Offset(0f, 120f),
+            source = NestedScrollSource.SideEffect,
+            performScroll = { Offset.Zero }
+        )
+
+        assertEquals(Offset.Zero, consumed)
+        assertEquals(0f, effect.overscrollY, 0.001f)
+        assertFalse(effect.isInProgress)
     }
 }

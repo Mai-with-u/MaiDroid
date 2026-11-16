@@ -49,10 +49,8 @@ internal fun computeRubberBandStep(
     val ratio = (abs(clampedCurrent) / maxOffsetPx).coerceIn(0f, 1f)
     // 二次衰减增益：刚到边界时阻尼轻快，接近极限时趋近于零，避免生硬撞墙。
     val damping = RubberBandBaseFactor * (1f - ratio) * (1f - ratio)
-    return (clampedCurrent + deltaPx * damping).coerceIn(-maxOverscrollSafe(maxOffsetPx), maxOverscrollSafe(maxOffsetPx))
+    return (clampedCurrent + deltaPx * damping).coerceIn(-maxOffsetPx, maxOffsetPx)
 }
-
-private fun maxOverscrollSafe(maxOffsetPx: Float): Float = maxOffsetPx.coerceAtLeast(0f)
 
 /**
  * 通用弹性阻尼越界滚动效果：用真实的橡胶阻力平移 + 临界阻尼弹簧回弹替代 Android 12+ 的画面拉伸变形。
@@ -238,7 +236,7 @@ internal class BounceOverscrollEffect(
     }
 
     private fun setAxisOffset(isVertical: Boolean, value: Float) {
-        val cleanValue = if (abs(value) <= 0.1f && value != 0f) 0f else value
+        val cleanValue = if (abs(value) <= OverscrollSettleThresholdPx && value != 0f) 0f else value
         if (isVertical) {
             overscrollY = cleanValue
         } else {

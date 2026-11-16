@@ -123,18 +123,18 @@ internal fun SettingsPage(
     val runningPlatformCount = remember(napCatState, snowLumaState, qqOfficialState) {
         installedPlatformCards(napCatState, snowLumaState, qqOfficialState).count { it.running }
     }
-    var showSshDialog by remember { mutableStateOf(false) }
+    var showSshDialog by rememberSaveable { mutableStateOf(false) }
     // 安全退出的二次确认；转屏重建时保留，免得用户刚点开就没了
     var showSafeExitConfirm by rememberSaveable { mutableStateOf(false) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
     // 反馈弹窗里要去系统“另存为”选位置，回来时 Activity 可能被重建，开关要能保存下来
     var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
     var showCleanupDialog by rememberSaveable { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
     var selectedDetail by rememberSaveable { mutableStateOf<String?>(null) }
-    var sshPortText by remember { mutableStateOf(sshState.port.toString()) }
-    var sshPasswordText by remember { mutableStateOf("") }
+    var sshPortText by rememberSaveable { mutableStateOf(sshState.port.toString()) }
+    var sshPasswordText by rememberSaveable { mutableStateOf("") }
 
     // 进入设置页时读取一次当前 MaiBot 版本，供“MaiBot 更新”一行显示。
     LaunchedEffect(updateManager) {
@@ -406,9 +406,9 @@ private fun SettingsNavigationPane(
                 Text(
                     text = "设置",
                     color = TextPrimary,
-                    fontSize = if (compact) 27.sp else 34.sp,
+                    fontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = if (compact) 30.sp else 38.sp
+                    lineHeight = if (compact) 30.sp else 34.sp
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))

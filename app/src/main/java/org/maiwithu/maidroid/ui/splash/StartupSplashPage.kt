@@ -56,6 +56,8 @@ import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.HarmonySans
+import org.maiwithu.maidroid.ui.theme.SplashEdgeShade
+import org.maiwithu.maidroid.ui.theme.SplashSideBlurOverlay
 import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
 import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -277,7 +279,7 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
             )
         }
 
-        val edgeShade = Color.Black.copy(alpha = 0.14f)
+        val edgeShade = SplashEdgeShade
         if (artLeft > 0f) {
             drawRect(
                 brush = Brush.horizontalGradient(
@@ -394,7 +396,7 @@ private fun StartupSideBlur(
     BackdropBlurView(
         blurTarget = blurTarget,
         blurRadius = StartupSplashSideBlurRadius,
-        overlayColor = Color.Black.copy(alpha = 0.06f),
+        overlayColor = SplashSideBlurOverlay,
         modifier = modifier
     )
 }

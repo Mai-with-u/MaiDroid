@@ -77,7 +77,7 @@ internal fun PermissionManagementPage(
     showBackButton: Boolean = true
 ) {
     val statusBarTop = statusBarTopInset()
-    // 顶部下拉到顶时由大标题与卡片层各自按比例位移，营造图二到图三的弹性过冲空间感
+    // 顶部下拉到顶时，大标题微幅跟随后停稳、卡片列表继续下沉拉开呼吸空间，营造自然视差弹性
     val overscroll = rememberSplitHeaderOverscrollEffect()
 
     Box(
