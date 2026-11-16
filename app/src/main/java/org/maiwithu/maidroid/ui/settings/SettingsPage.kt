@@ -73,6 +73,9 @@ import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.overscrollBody
+import org.maiwithu.maidroid.ui.component.overscrollHeader
+import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
@@ -378,11 +381,14 @@ private fun SettingsNavigationPane(
     // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
     // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
     val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
+    // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
+    val overscroll = rememberSplitHeaderOverscrollEffect()
 
     LazyColumn(
         modifier = modifier
             .background(PageBackground)
             .padding(top = statusBarTop),
+        overscrollEffect = overscroll,
         contentPadding = PaddingValues(
             top = if (compact) compactTop else 44.dp,
             start = if (compact) 12.dp else 18.dp,
@@ -392,7 +398,11 @@ private fun SettingsNavigationPane(
         verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
     ) {
         item {
-            Column(modifier = Modifier.padding(horizontal = if (compact) 4.dp else 2.dp)) {
+            Column(
+                modifier = Modifier
+                    .overscrollHeader(overscroll)
+                    .padding(horizontal = if (compact) 4.dp else 2.dp)
+            ) {
                 Text(
                     text = "设置",
                     color = TextPrimary,
@@ -413,7 +423,10 @@ private fun SettingsNavigationPane(
         }
 
         item {
-            SettingsSection(title = "服务") {
+            SettingsSection(
+                title = "服务",
+                modifier = Modifier.overscrollBody(overscroll)
+            ) {
                 SettingsNavigationRow(
                     icon = Icons.Outlined.Settings,
                     title = "WebUI",
@@ -503,7 +516,10 @@ private fun SettingsNavigationPane(
         }
 
         item {
-            SettingsSection(title = "系统") {
+            SettingsSection(
+                title = "系统",
+                modifier = Modifier.overscrollBody(overscroll)
+            ) {
                 SettingsNavigationRow(
                     icon = Icons.Outlined.Security,
                     title = "权限管理",
@@ -531,7 +547,10 @@ private fun SettingsNavigationPane(
         }
 
         item {
-            SettingsSection(title = "应用") {
+            SettingsSection(
+                title = "应用",
+                modifier = Modifier.overscrollBody(overscroll)
+            ) {
                 SettingsNavigationRow(
                     icon = Icons.Outlined.Notifications,
                     title = "消息平台",
@@ -575,7 +594,10 @@ private fun SettingsNavigationPane(
 
         // 出了问题时的入口：收集诊断信息（打过码）后去 GitHub 反馈，或者保存成诊断包；手机空间不够时清掉下载缓存
         item {
-            SettingsSection(title = "帮助") {
+            SettingsSection(
+                title = "帮助",
+                modifier = Modifier.overscrollBody(overscroll)
+            ) {
                 SettingsNavigationRow(
                     icon = Icons.Outlined.BugReport,
                     title = "反馈问题",
@@ -618,7 +640,9 @@ private fun SettingsNavigationPane(
         item {
             SafeExitButton(
                 onClick = onSafeExitClick,
-                modifier = Modifier.padding(top = if (compact) 4.dp else 8.dp)
+                modifier = Modifier
+                    .overscrollBody(overscroll)
+                    .padding(top = if (compact) 4.dp else 8.dp)
             )
         }
     }
@@ -627,9 +651,13 @@ private fun SettingsNavigationPane(
 @Composable
 private fun SettingsSection(
     title: String,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text(
             text = title,
             color = TextMuted,

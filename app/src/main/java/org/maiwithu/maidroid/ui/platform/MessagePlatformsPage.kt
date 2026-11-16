@@ -71,6 +71,9 @@ import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.overscrollBody
+import org.maiwithu.maidroid.ui.component.overscrollHeader
+import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -364,24 +367,33 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 
         when (messagePlatformsLayout(maxWidth.value, maxHeight.value)) {
             PlatformsLayout.List -> {
-                // 手机竖屏：页头 -> 已连接 -> 发现，整页一起滚动，底部给浮动导航栏留出空间。
+                // 手机竖屏：页头微幅下沉，下方“已连接”与“发现”卡片弹性拉开留白，消除拉伸变形。
+                val listOverscroll = rememberSplitHeaderOverscrollEffect()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState(), overscrollEffect = listOverscroll)
                         .padding(horizontal = PlatformGridHorizontalPadding)
                         .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    listHeader(false)
-                    installedSection()
-                    discoverSection(false)
+                    Box(modifier = Modifier.overscrollHeader(listOverscroll)) {
+                        listHeader(false)
+                    }
+                    Column(
+                        modifier = Modifier.overscrollBody(listOverscroll),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        installedSection()
+                        discoverSection(false)
+                    }
                 }
             }
 
             PlatformsLayout.TwoPane -> {
-                // 手机横屏：左栏页头和已连接，右栏发现；两栏各自滚动，一屏能看到全部平台。
+                // 手机横屏：左栏页头和已连接同样走视差过冲，右栏发现随默认弹性工厂平滑平移；两栏各自滚动。
                 val leftPaneWidth = (pageWidth * 0.4f).coerceIn(220.dp, 320.dp)
+                val leftOverscroll = rememberSplitHeaderOverscrollEffect()
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
@@ -391,13 +403,17 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .width(leftPaneWidth)
                             .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(rememberScrollState(), overscrollEffect = leftOverscroll)
                             .padding(start = PlatformGridHorizontalPadding, end = 8.dp)
                             .padding(top = topSpacing, bottom = bottomClearance),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        listHeader(true)
-                        installedSection()
+                        Box(modifier = Modifier.overscrollHeader(leftOverscroll)) {
+                            listHeader(true)
+                        }
+                        Box(modifier = Modifier.overscrollBody(leftOverscroll)) {
+                            installedSection()
+                        }
                     }
 
                     Column(

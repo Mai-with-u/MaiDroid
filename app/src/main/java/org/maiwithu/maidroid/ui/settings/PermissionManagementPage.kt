@@ -49,6 +49,9 @@ import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.overscrollBody
+import org.maiwithu.maidroid.ui.component.overscrollHeader
+import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -75,6 +78,8 @@ internal fun PermissionManagementPage(
     showBackButton: Boolean = true
 ) {
     val statusBarTop = statusBarTopInset()
+    // 顶部下拉到顶时由大标题与卡片层各自按比例位移，营造图二到图三的弹性过冲空间感
+    val overscroll = rememberSplitHeaderOverscrollEffect()
 
     Box(
         modifier = modifier
@@ -85,6 +90,7 @@ internal fun PermissionManagementPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = statusBarTop),
+            overscrollEffect = overscroll,
             contentPadding = PaddingValues(
                 top = 40.dp,
                 start = 16.dp,
@@ -97,6 +103,7 @@ internal fun PermissionManagementPage(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .overscrollHeader(overscroll)
                         .padding(bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -135,7 +142,9 @@ internal fun PermissionManagementPage(
                     fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
-                    modifier = Modifier.padding(top = 4.dp, start = 2.dp)
+                    modifier = Modifier
+                        .overscrollBody(overscroll)
+                        .padding(top = 4.dp, start = 2.dp)
                 )
             }
 
@@ -147,7 +156,8 @@ internal fun PermissionManagementPage(
                     badgeText = "必须",
                     granted = state.storageGranted,
                     actionText = if (state.storageGranted) "已授权" else "去授权",
-                    onAction = actions.requestStorage
+                    onAction = actions.requestStorage,
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
 
@@ -158,7 +168,9 @@ internal fun PermissionManagementPage(
                     fontSize = TextSizes.Body,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 15.sp,
-                    modifier = Modifier.padding(top = 8.dp, start = 2.dp)
+                    modifier = Modifier
+                        .overscrollBody(overscroll)
+                        .padding(top = 8.dp, start = 2.dp)
                 )
             }
 
@@ -174,7 +186,8 @@ internal fun PermissionManagementPage(
                         } else {
                             actions.disableNotification()
                         }
-                    }
+                    },
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
 
@@ -190,7 +203,8 @@ internal fun PermissionManagementPage(
                         } else {
                             actions.restoreBatteryOptimization()
                         }
-                    }
+                    },
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
 
@@ -199,7 +213,8 @@ internal fun PermissionManagementPage(
                     icon = Icons.Outlined.Settings,
                     title = "自启动和后台活动",
                     description = "在系统应用详情或厂商后台设置中管理。",
-                    onClick = actions.openAutoStartSettings
+                    onClick = actions.openAutoStartSettings,
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
 
@@ -208,7 +223,8 @@ internal fun PermissionManagementPage(
                     icon = Icons.Outlined.Lock,
                     title = "多任务加锁",
                     description = "在系统多任务界面中手动开启或关闭。",
-                    onClick = actions.showTaskLockHint
+                    onClick = actions.showTaskLockHint,
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
 
@@ -219,7 +235,8 @@ internal fun PermissionManagementPage(
                     description = "高风险权限，仅在确实需要时开启。",
                     badgeText = "不建议",
                     destructive = true,
-                    onClick = actions.openAccessibilitySettings
+                    onClick = actions.openAccessibilitySettings,
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
 
@@ -230,7 +247,8 @@ internal fun PermissionManagementPage(
                     description = "高风险权限，请在系统安全设置中管理。",
                     badgeText = "不建议",
                     destructive = true,
-                    onClick = actions.openDeviceAdminSettings
+                    onClick = actions.openDeviceAdminSettings,
+                    modifier = Modifier.overscrollBody(overscroll)
                 )
             }
         }
