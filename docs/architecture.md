@@ -24,9 +24,11 @@ flowchart TB
 
     subgraph Modules["功能模块（由 AppDependencies 创建）"]
         MaiBot["MaiBotProcessSupervisor\nMaiBot 进程"]
+        LogRotator["MaiBotConsoleLogRotator\n控制台日志轮转"]
         Update["MaiBotUpdateManager\n在线更新"]
         AppUpdate["AppUpdateManager\n应用自更新"]
         NapCat["NapCatPlatformManager\nNapCatProcessSupervisor"]
+        SnowLuma["SnowLumaPlatformManager\nSnowLumaProcessSupervisor"]
         QqOfficial["QqOfficialPlatformManager"]
         Ssh["ContainerSshManager"]
     end
@@ -45,6 +47,7 @@ flowchart TB
     VM --> OobeMgr
     Home --> VM
     Platforms --> NapCat
+    Platforms --> SnowLuma
     Platforms --> QqOfficial
     Settings --> Update
     Settings --> AppUpdate
@@ -53,12 +56,14 @@ flowchart TB
     VM -->|OOBE 完成后拉起| Service
     Service --> MaiBot
     Service --> NapCat
+    Service --> SnowLuma
     Service --> Ssh
 
     OobeMgr --> Runner
     MaiBot --> Runner
     Update --> Runner
     NapCat --> Runner
+    SnowLuma --> Runner
     QqOfficial --> Runner
     Ssh --> Runner
     Runner --> Scripts
@@ -67,9 +72,9 @@ flowchart TB
 
 从下往上：
 
-1. **容器运行时**（`runtime/`）只知道“文件在哪、东西齐没齐、怎么在容器里跑一段 shell 脚本”，不知道 MaiBot、NapCat 是什么。
+1. **容器运行时**（`runtime/`）只知道“文件在哪、东西齐没齐、怎么在容器里跑一段 shell 脚本”，不知道 MaiBot、NapCat、SnowLuma 是什么。
 2. **功能模块**（`maibot/`、`platform/`、`ssh/`）各自写好自己的容器脚本（`*Scripts`，返回 `ContainerScript`），交给 `ContainerCommandRunner` 执行，并把结果整理成界面要的状态（`StateFlow`）。
-3. **前台服务**（`service/`）托管长驻进程：MaiBot、NapCat、sshd。所有“把 MaiBot 拉起来 / 重启”的入口都经 `MaiBotRuntimeService.start(...)`。
+3. **前台服务**（`service/`）托管长驻进程：MaiBot、NapCat、SnowLuma、sshd。所有“把 MaiBot 拉起来 / 重启”的入口都经 `MaiBotRuntimeService.start(...)`。
 4. **界面**只读状态、调用模块的方法，不直接跑命令。
 
 ## 包结构
@@ -80,32 +85,32 @@ flowchart TB
 | `settings` | MMKV 持久化的应用设置 | `AppSettings` |
 | `terminal` | 全应用共享的终端输出，以及把 ANSI 控制序列解析成带颜色的行 | `TerminalLog`、`AnsiText` |
 | `permission` | 存储、通知、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
-| `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 和 apt 镜像、容器 DNS 和时区、手机网络状态 | `RuntimePaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`、`ContainerCommandRunner`、`RuntimeAssetInstaller`、`GitHubMirrors`、`AptMirrors`、`ContainerSetupScripts`、`ContainerDns`、`ContainerTimeZone`、`NetworkStatus` |
+| `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本与挂载定义、子进程巡检与终止、原子落盘与 dpkg 修复、存储空间、GitHub 和 apt 镜像、容器 DNS 和时区、手机网络状态 | `RuntimePaths`、`InContainerPaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`（含 `ContainerBindMount`）、`ContainerCommandRunner`、`OwnChildProcesses.kt`、`ProcessTermination.kt`、`DurableFiles`、`DpkgState`、`StorageSpace`、`RuntimeAssetInstaller`、`GitHubMirrors`、`AptMirrors`、`ContainerSetupScripts`、`ContainerDns`、`ContainerTimeZone`、`NetworkStatus` |
 | `diagnostics` | 出了问题时帮用户说清楚：终端输出落盘、MaiDroid 闪退记录、失败的错误码和认原因的规则表、诊断报告（打码）与诊断包、预填好的 GitHub Issue 链接 | `DiagnosticsManager`、`FailureCodes.kt`（`Failure`、`FailureStep`、`FailureCause`）、`FailureRules.kt`、`LogRedactor`、`DiagnosticReport.kt`、`TerminalLogRecorder`、`TerminalLogFiles`、`CrashRecorder`、`DiagnosticsFiles` |
 | `cleanup` | 清理空间：量容器里各类缓存占多少，删掉勾选的 | `StorageCleanupManager`、`StorageCleanupScripts`（含 `CleanupItem`） |
-| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管与启动判断、协议 hash、读版本号、插件查找、插件 config.toml 逐行读写 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotStartup.kt`、`MaiBotAgreement`、`MaiBotProjectVersion.kt`、`MaiBotPlugins.kt`、`PluginConfigToml` |
-| `maibot.update` | MaiBot 在线更新：手动更新、启动时检查、MaiDroid 更新后的自动升级 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport` |
+| `maibot` | MaiBot 本体：安装与启动脚本、依赖安装步骤、进程监管与启动判断、控制台日志轮转、协议 hash、读版本号、插件查找、插件 config.toml 逐行读写 | `MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotConsoleLogRotator`、`MaiBotStartup.kt`、`MaiBotAgreement`、`MaiBotProjectVersion.kt`、`MaiBotPlugins.kt`、`PluginConfigToml` |
+| `maibot.update` | MaiBot 在线更新：手动更新、启动时检查、MaiDroid 更新后的自动升级、正式/测试通道切换 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport`、`MaiBotChannel` |
 | `appupdate` | MaiDroid 应用本体的在线更新：查 GitHub 最新 Release（`AppRelease.kt` 解析）、经镜像下载 APK（`AppUpdateClient`）、校验（`AppPackageCheck.kt`）后交给系统安装器 | `AppUpdateManager`、`AppUpdateClient`、`AppRelease.kt`、`AppUpdateFiles`、`AppPackageCheck.kt` |
-| `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步 | `OobeSetupManager`、`OobeSetupState`、`OobeStep` |
+| `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步与失败自动重试 | `OobeSetupManager`、`OobeSetupState`、`OobeStep`、`OobeAutoRetry` |
 | `files` | 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等文件管理器，以及打开它的入口 | `ContainerDocumentsProvider`、`ContainerDocuments.kt`、`openMaiBotInFileManager` |
-| `service` | 前台服务、开机广播、设置页的安全退出、低电量暂停 | `MaiBotRuntimeService`、`BootCompletedReceiver`、`SafeExitManager`、`LowBatteryPolicy` |
+| `service` | 前台服务、开机与覆盖安装自启广播、OOBE 通知保活、设置页的安全退出、低电量暂停 | `MaiBotRuntimeService`、`RuntimeAutoStartReceiver`、`SetupKeepAlive`、`SafeExitManager`、`LowBatteryPolicy` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
-| `platform.qq` | 两种 QQ 协议端（NapCat、SnowLuma 客户端）共用的部分：启用哪一种和切换、OneBot 地址与 token、MaiBot 侧连它们的 SnowLuma 适配器（`SnowLumaAdapter*`） | `QqClient.kt`（`QqClient`、`QqClientChoice`）、`QqClientSwitcher`、`QqOneBot`、`QqAdapterFiles`、`QqAdapterUpkeep`、`SnowLumaAdapterScripts`、`SnowLumaAdapterInstaller`、`SnowLumaAdapterConfig` |
+| `platform.qq` | 两种 QQ 协议端（NapCat、SnowLuma 客户端）共用的部分：启用哪一种和切换、自定义来源解析、OneBot 地址与 token、MaiBot 侧连它们的 SnowLuma 适配器（`SnowLumaAdapter*`） | `QqClient.kt`（`QqClient`、`QqClientChoice`）、`QqClientSwitcher`、`QqCustomSource.kt`、`QqOneBot`、`QqAdapterFiles`、`QqAdapterUpkeep`、`SnowLumaAdapterScripts`、`SnowLumaAdapterInstaller`、`SnowLumaAdapterConfig` |
 | `platform.napcat` | QQ（NapCat）接入：NapCat 本体 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh.kt` |
-| `platform.snowluma` | QQ（SnowLuma 客户端）接入：在 Xvfb 上跑 LinuxQQ、让 SnowLuma 注入，读 Xvfb 的屏幕文件把 QQ 窗口显示给用户 | `SnowLumaPlatformManager`、`SnowLumaProcessSupervisor`、`SnowLumaWebUiClient.kt`、`SnowLumaScripts`、`SnowLumaFiles`、`SnowLumaPlatformState.kt`、`QqScreen.kt` |
+| `platform.snowluma` | QQ（SnowLuma 客户端）接入：在 Xvfb 上跑 LinuxQQ、让 SnowLuma 注入、宿主维护文件锁替身，读 Xvfb 的屏幕文件把 QQ 窗口显示给用户 | `SnowLumaPlatformManager`、`SnowLumaProcessSupervisor`、`QqProcLocksSync`、`SnowLumaWebUiClient.kt`、`SnowLumaScripts`、`SnowLumaFiles`、`SnowLumaPlatformState.kt`、`QqScreen.kt` |
 | `platform.qqofficial` | QQ 官方机器人接入（MaiBot 侧是 MaiBot-QQ-Adapter） | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors.kt`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
 | `webui` | 嵌入 MaiBot WebUI：地址与令牌、WebView 创建、请求改写、注入脚本、横屏桌面版、两指滚动、网页底色上报、网页选文件、网页下载 | `MaiBotWebUi`、`createWebUiWebView`、`WebUiWebViewClient`、`WebUiChromeClient`、`WebUiResponseRewriter`、`WebUiInjectedScripts`、`WebUiDesktopViewport`、`WebUiTwoFingerScroll`、`WebUiPageBackground`、`WebUiFileChooser`、`WebUiDownloads`、`WebUiDownloadNames.kt`、`WebUiDownloadScripts`、`WebUiBlobReceiver` |
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts.kt`、`OobePermissionList.kt`、`OobeTaskList.kt`、`OobeAuthorizationDialog` |
-| `ui.home` | 主页外壳、唤醒页（开机自检画面）、底部导航与横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`WakeBootLog.kt`、`HomeBottomNavigation`（含底栏和侧栏共用的 `HomeTab`、标签按钮、终端按钮）、`HomeNavigationRail`、`WebUiTab.kt` |
-| `ui.platform` | 消息平台页及其弹窗 | `MessagePlatformsPage`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`NapCatDialogs.kt`、`SnowLumaDialogs.kt`、`QqOfficialConfigDialog` |
+| `ui.home` | 主页外壳、唤醒页（开机自检画面）、竖屏底栏与 WebUI 侧边胶囊双向形变及倾角阻尼、横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`WakeBootLog.kt`、`HomePortraitNavigation`、`HomeNavigationParts.kt`（含底栏、胶囊和侧栏共用的 `HomeTab`、标签按钮、终端按钮）、`PillTiltDamper.kt`、`HomeNavigationRail`、`WebUiTab.kt` |
+| `ui.platform` | 消息平台页及其弹窗、协议端弹窗公共壳体与自定义源表单 | `MessagePlatformsPage`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`PlatformConfigDialogParts.kt`、`QqCustomSourceParts.kt`、`NapCatDialogs.kt`、`SnowLumaDialogs.kt`、`QqOfficialConfigDialog` |
 | `ui.diagnostics` | 失败提示（错误码、原因、建议和按钮）、反馈问题弹窗、闪退后的询问 | `FailureNotice`、`FeedbackDialog`、`CrashPromptDialog` |
 | `ui.cleanup` | 清理空间弹窗 | `StorageCleanupDialog` |
 | `ui.settings` | 设置页、权限管理、MaiBot 与应用的更新弹窗、容器 SSH 设置、安全退出的按钮与弹窗 | `SettingsPage`、`PermissionManagementPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings.kt`、`SafeExitDialogs.kt` |
 | `ui.terminal` | 全屏终端输出页与 OOBE 平板布局里的嵌入面板，两者共用同一个终端查看器 | `TerminalViewer.kt`（`TerminalOutputScreen`、`TerminalOutputPanel`）、`TerminalLogList`、`TerminalViewerState` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |
-| `ui.component` | 跨页面的小组件 | `BackdropBlurView`、`BlurTargetHost`、`horizontalSlideTransition`、`statusBarTopInset` |
-| `ui.theme` | 配色、字体、Material 主题 | `Color.kt`、`Type.kt`、`MaiDroidTheme` |
+| `ui.component` | 跨页面的小组件与动效 | `BackdropBlurView`、`BlurTargetHost`、`BounceOverscroll.kt`（`BounceOverscrollEffect`）、`FlatFeatureIcons.kt`、`FlatSwitch`、`horizontalSlideTransition`、`statusBarTopInset` |
+| `ui.theme` | 配色、字号与圆角阶梯、字体、Material 主题 | `Color.kt`、`Dimens.kt`（`TextSizes`、`Corners`）、`Type.kt`、`MaiDroidTheme` |
 
 表里带 `.kt` 的是文件名（里面是一组顶层函数或几个相关的小类型），其余是类、对象或函数名。
 
@@ -115,7 +120,7 @@ flowchart TB
 
 所有长生命周期的组件都在 `AppDependencies` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appDependencies.xxx` 用同一份实例：
 
-- 立即创建：`settings`、`diagnosticsFiles`、`terminalLogRecorder`（一创建就开始把终端输出写进文件）、`crashRecorder`（`MaiDroidApplication` 随后装上闪退记录）、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
+- 立即创建：`settings`、`diagnosticsFiles`、`terminalLogRecorder`（一创建就开始把终端输出写进文件）、`crashRecorder`（`MaiDroidApplication` 随后装上闪退记录）、`maiBotConsoleLogRotator`（后台定时按大小轮转容器内的 `worker-console.log`）、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
 - 第一次用时创建（`lazy`）：`maiBotProcess`、`containerSsh`、`qqClientSwitcher`、`napCatProcess`、`snowLumaProcess`、`napCat`、`snowLuma`、`qqOfficial`、`maiBotUpdater`、`appUpdater`、`safeExit`、`diagnostics`、`storageCleanup`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat、SnowLuma 和两边启动前换装共用一个，迁移配置靠它的锁串行）、`qqAdapterUpkeep`、`qqClientChoice`。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
 
 新增模块时在这里加一个属性，构造函数里写清依赖，不要再写 `get(context)` 式的单例。
@@ -136,7 +141,7 @@ flowchart TB
    - 走到哪一步存在 `AppSettings.oobeStep`，闪退、强杀后重开回到那一步接着做；初始化期间挂着保活的前台服务（见“扛得住暴力测试”）。
 5. OOBE 完成后（之后每次打开应用都一样），`MainViewModel` 依次：检查一次 MaiDroid 新版本（`AppUpdateManager.checkOnLaunch`）->（MaiDroid 刚更新过、设置里没关自动升级时）先在唤醒页上把 MaiBot 升级到上游最新（`MaiBotUpdateManager.updateAfterAppUpgrade`，期间拦住麦麦的启动）-> 拉起 `MaiBotRuntimeService` ->（没自动升级时）检查一次 MaiBot 新版本（`MaiBotUpdateManager.checkOnLaunch`，只拉取上游提交、不动源码）-> 每 1.5 秒（在线后每 5 秒）探测一次 WebUI（自己的 MaiBot 在跑、端口又能连上才算在线），顺带每分钟看一次剩余空间。查到新版本时 `MaiDroidApp` 在主页上弹更新提醒，两个都有时先弹 MaiDroid 的。“刚更新过”按 `AppSettings.lastLaunchedVersionCode` 判断，判定完立刻记下当前版本号，同一版本只自动升级一次。
 6. 主页在 WebUI 第一次在线前显示唤醒页（开机自检画面，`WakeMaiPage`），每 30 秒自动唤醒一次；上线后切到三栏外壳（WebUI、消息平台、设置）。
-7. 开机后，`BootCompletedReceiver` 在 OOBE 已完成、开机自启没关、用户上次没有安全退出时拉起前台服务。
+7. 开机（`ACTION_BOOT_COMPLETED`）或应用覆盖升级（`ACTION_MY_PACKAGE_REPLACED`）后，`RuntimeAutoStartReceiver` 在 OOBE 已完成、`AppSettings.autoStartService` 没关、用户上次没有安全退出时自动拉起前台服务。
 
 ## 前台服务与长驻进程
 
@@ -157,8 +162,10 @@ flowchart TB
 - **MaiBot**（`MaiBotProcessSupervisor`）：启动、停止、重启都在同一把锁里串行执行，避免同时拉起两个抢端口。意外退出后按 5 秒起、翻倍、最长 1 分钟退避重启，每轮拉起前都在宿主机按同 UID 清理残留 Python 进程（不额外起 proot）。`runWhileStopped { }` 停住 MaiBot 做维护（在线更新），期间所有启动请求被拦下；低电量暂停期间同样拦下（`pauseForLowBattery`），状态里标出 `lowBatteryPaused`。运行状态在 `status`（`MaiBotProcessStatus`）：是否在跑、意外退出的累计次数和最后退出码（主动停止、重启不算）、启动前检查没过时被拦下的原因。OOBE 等 WebUI 时据此判断 MaiBot 是还在起、起来就崩还是根本没拉起，规则在 `MaiBotStartup`。每次拉起前先看 WebUI 端口：自己的 MaiBot 没在跑、端口上却有程序在听，就是被别的程序占着，这时不拉起、在状态里标出 `webUiPortTaken`（OOBE 和唤醒页据此报 `PORT-BUSY`），每 5 秒再看一次，空出来就启动。
 - 启动前台服务的入口（OOBE、主页唤醒）都兜住了系统拒绝：应用在后台时 Android 12+ 不让新开前台服务，这时直接让 `MaiBotProcessSupervisor` 启动，回到前台进入主页时再拉服务。
 - **NapCat**（`NapCatProcessSupervisor`）：意外退出时按 5 秒起、翻倍、最长 1 分钟退避整树重启，最多连续 3 次（用尽后停在终端日志等手动处理，避免反复强制重登要求重新扫码），稳定运行满 10 分钟计数清零。退出 QQ 登录时只重启它。每次启动前检查 MaiBot 侧的适配器，早期版本装的 MaiBot-Napcat-Adapter 会换成 SnowLuma 适配器（MaiBot-SnowLuma-Adapter），换完重启 MaiBot（见 platforms.md）。只有启用的是 NapCat 才启动（`QqClientChoice`）。
-- **SnowLuma**（`SnowLumaProcessSupervisor`）：和 NapCat 二选一，只有启用的是 SnowLuma 才启动；容器启动脚本内由 `wait -n` 事件驱动保育节点（node 挂掉时原地重启、保住 QQ 登录态，连续失败 3 次再请 QQ 退出走整树重启），宿主侧按退避整树重启并在连续 3 次用尽后冷却 10 分钟再自动重试；`/proc/locks` 替身由宿主协程 `ProcLocksSync` 维护。启动前同样检查适配器（两边共用 `QqAdapterUpkeep`）。“重启 QQ”时只重启它。WebUI 默认端口被别的程序占着时换一个空端口启动。
+- **SnowLuma**（`SnowLumaProcessSupervisor`）：和 NapCat 二选一，只有启用的是 SnowLuma 才启动；容器启动脚本内由 `wait -n` 事件驱动保育节点（node 挂掉时原地重启、保住 QQ 登录态，连续失败 3 次再请 QQ 退出走整树重启），宿主侧按退避整树重启并在连续 3 次用尽后冷却 10 分钟再自动重试；`/proc/locks` 替身（`RuntimePaths.procLocksStandIn`）由宿主协程 `QqProcLocksSync` 维护。启动前同样检查适配器（两边共用 `QqAdapterUpkeep`）。“重启 QQ”时只重启它。WebUI 默认端口被别的程序占着时换一个空端口启动。
 - **sshd**（`ContainerSshManager`）：按设置启停，失败原因显示在设置页。
+
+容器内的长驻进程（MaiBot、NapCat、SnowLuma）通过 `ContainerScript.excludeTopCpuCluster` 排除最高频 CPU 簇以留在中小核省电降温。当长驻容器进程非主动停止却收到 `SIGKILL(137)` 时，`OwnChildProcesses.logUnexpectedSigkill` 会打一行当前应用子进程水位日志协助判断是否逼近系统幻影进程上限；`DiagnosticsManager` 也会在 Android 11+ 读取 `ApplicationExitInfo` 补充上次进程退出原因。
 
 停止长驻进程（停止、重启、在线更新前、安全退出、服务销毁）时要在容器里直接给进程发信号：宿主侧 `Process.destroy()` 只能给 proot 发 SIGTERM，而 proot 会忽略它，信号到不了容器里的进程；proot 被强杀后容器里的进程也不会跟着结束，而是脱离 proot 接着跑（2026-11 真机实测）。所以停止流程是：用 `requestExitScript` 在容器里请进程自己退出 -> 等它保存好数据 -> 兜底用 `Process.killProot()` 强杀还没退的 proot -> 清理残留进程。启动前也会先清一遍上次异常退出留下的残留。
 
@@ -214,6 +221,10 @@ flowchart TB
 | `maibot_auto_update_disabled` | 关闭 MaiDroid 更新后的 MaiBot 自动升级（设置页“应用版本”弹窗底部的开关） | false |
 | `user_exited` | 用户在设置页安全退出了、之后还没再用过 MaiDroid；为 true 时开机不自动拉起 | false |
 | `oobe_step` | OOBE 走到哪一步（`OobeStep` 的名字），闪退、强杀后重开回到这一步 | 空 |
+| `napcat_custom_source_url` | 用户保存的 NapCat 自定义仓库或 `.zip` 直链 | 空 |
+| `snowluma_custom_source_url` | 用户保存的 SnowLuma 自定义仓库或 `.tar.gz`/`.tgz` 直链 | 空 |
+| `webui_pill_dock_right` | 竖屏 WebUI 侧边悬浮胶囊是否停靠在右侧（默认左侧） | false |
+| `webui_pill_vertical_bias` | 竖屏 WebUI 侧边悬浮胶囊的纵向位置比例（0~1） | 0.65 |
 
 其余状态都从文件系统现读（容器是否就绪、平台是否已装、凭据），不另存一份，避免两边不一致。MMKV 文件损坏（断电时写到一半）由 `AppSettingsRecovery` 让 MMKV 丢掉坏的部分接着用，不闪退。
 
@@ -316,7 +327,7 @@ WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接访问。打开�
 
 WebView 由 `createWebUiWebView` 统一创建，装了两指滚动（`WebUiTwoFingerScroll`）：第二根手指按下时给网页补一个 CANCEL，之后两指的竖直位移交给注入的脚本，从两指中点往外找可滚动的容器，先滚外层、外层到头再滚里层，松手按系统的 OverScroller 甩出惯性。用来越过占满屏幕、会吃掉单指滑动的子块。
 
-竖屏时 WebUI 页签里 APP 底栏默认收成右下角的小按钮（`CollapsedHomeNavigationButton`），网页自己的底部导航贴着屏幕底边，所以页签和全屏 `WebUiActivity` 都不传让位高度。点小按钮会盖一层遮罩并弹出完整底栏，点遮罩、按返回键、切换标签或打开终端时收起；这个状态在 `HomeTabsShell` 里。
+竖屏时由 `HomePortraitNavigation` 统一承载主页导航：在非 WebUI 页签展示底部毛玻璃导航栏；切入 WebUI 页签时平滑形变为侧边悬浮毛玻璃胶囊（默认停靠左侧，支持上下拖拽并避让输入法，还能通过 `PillTiltDamper` 监听手机左右倾斜做三级阻尼自动换边，平放时维持当前边），网页自己的底部导航贴着屏幕底边，所以页签和全屏 `WebUiActivity` 都不传让位高度。点击胶囊会铺开遮罩并展开完整操作面板（切页签、刷新网页或打开终端），点遮罩、按返回键、切换标签或打开终端时平滑收起。
 
 窗口宽大于高时主页导航改成左侧竖栏（`HomeNavigationRail`），和竖屏底栏一样悬浮在 `BlurTargetHost` 上做实时模糊：页面仍铺满整宽，内容左边让出侧栏宽度（`HomeNavigationRailWidth`），切换标签时整页从玻璃底下滑过；WebUI 页签让出的那一条涂网页自己的底色，网页加载完注入 `WebUiPageBackground` 的脚本，换主题时经 console 把底色报给 `WebUiChromeClient`。WebUI 的刷新按钮也挪进侧栏；各页面列表末尾的留白从 `LocalBottomNavigationClearance` 取，侧栏模式下由外壳换成很小的值。横屏时 `MainActivity` 和 `WebUiActivity` 都隐藏状态栏和导航栏（`applySystemBars`），挖孔转到屏幕左右两侧，主页外壳统一按 `safeDrawing` 左右让开。
 

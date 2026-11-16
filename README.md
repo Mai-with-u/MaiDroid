@@ -37,8 +37,8 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
    - 安装 MaiBot：下载源码，装 Python 依赖，启动并等 WebUI 能打开。这一步最久，取决于网速和手机性能。
 4. 进入主页后，WebUI 页签里就是 MaiBot 的管理界面，模型、人设这些配置在这里完成，具体含义见 [MaiBot](https://github.com/Mai-with-u/MaiBot) 的文档。
 5. 想让麦麦上 QQ，切到“消息平台”页签，选一种方式安装。
-   - NapCat：下载安装后会弹出二维码，用 QQ 扫码登录。QQ 掉线后需要重新扫码。它对 MaiBot 的版本有最低要求，版本低时先去“设置 > MaiBot 更新”升级。
-   - SnowLuma：先看一遍 SnowLuma 的用户协议和隐私政策，同意后才下载安装。装好后点设置会打开 QQ 窗口，画面就是容器里 QQ 的登录窗口，用 QQ 扫上面的二维码登录，窗口里的按钮也能直接点。和 NapCat 只能用一个，点另一个时会先问要不要切换；对 MaiBot 版本的要求和 NapCat 一样。
+   - NapCat：首次安装前需先填入自定义仓库地址或 `NapCat.Shell.zip` 直链，确认提示后自动安装。装好后点击设置会弹出二维码，用 QQ 扫码登录；掉线或换号可重新扫码，安装源也可在配置弹窗里更换或覆盖重装。对 MaiBot 有最低版本要求，版本低时先去“设置 > MaiBot 更新”升级。
+   - SnowLuma：同样由你填入自定义仓库地址或 `linux-arm64` 的 `.tar.gz`/`.tgz` 直链，并先看过 SnowLuma 的用户协议、隐私政策与来源确认后再下载安装。装好后点设置会打开 QQ 窗口，画面就是容器里 QQ 的登录窗口，用 QQ 扫上面的二维码登录，窗口里的按钮也能直接点。和 NapCat 只能用一个，点另一个时会先问要不要切换；对 MaiBot 版本的要求和 NapCat 一样。
    - QQ 官方机器人：先到 [q.qq.com](https://q.qq.com) 申请机器人，把 AppID 和 AppSecret 填进弹窗。群聊里要 @机器人 才会收到消息，这是 QQ 开放平台的规则。连接失败时，卡片上会写具体原因，比如 IP 不在白名单、凭据错误。
 6. 国产系统常在后台杀应用。到“设置 > 权限管理”把通知、关闭电池优化、自启动和后台活动、多任务加锁都设上，麦麦才能一直在线。
 
@@ -98,8 +98,8 @@ flowchart TB
 | 进程 | 位置 | 端口 | 谁看守 |
 | --- | --- | --- | --- |
 | MaiBot | 容器的 `/opt/MaiBot`，用 `uv run python bot.py` 启动 | WebUI 在 `127.0.0.1:8001` | `MaiBotProcessSupervisor`：意外退出后隔 5 秒重启，之后翻倍，最长隔 1 分钟 |
-| NapCat 和 LinuxQQ | 容器的 `/root/napcat` | OneBot WebSocket 在 `127.0.0.1:8095`，NapCat 自己的管理页在 `127.0.0.1:6099` | `NapCatProcessSupervisor`：退出后不自动重启，因为 QQ 掉线后要重新扫码 |
-| SnowLuma 和 LinuxQQ（和 NapCat 二选一） | 容器的 `/root/snowluma` | OneBot WebSocket 同样在 `127.0.0.1:8095`，SnowLuma 管理页默认在 `127.0.0.1:5099` | `SnowLumaProcessSupervisor`：同样不自动重启 |
+| NapCat 和 LinuxQQ | 容器的 `/root/napcat` | OneBot WebSocket 在 `127.0.0.1:8095`，NapCat 自己的管理页在 `127.0.0.1:6099` | `NapCatProcessSupervisor`：意外退出按 5 秒起翻倍整树重启，连续 3 次仍不稳后停下等手动处理 |
+| SnowLuma 和 LinuxQQ（和 NapCat 二选一） | 容器的 `/root/snowluma` | OneBot WebSocket 同样在 `127.0.0.1:8095`，SnowLuma 管理页默认在 `127.0.0.1:5099` | `SnowLumaProcessSupervisor`：容器内先尝试原地重启 Node 保登录态，整树意外退出按 5 秒起翻倍重启，连续 3 次后挂起冷却 10 分钟再自动重试 |
 | sshd | 容器内，设置页打开才启动 | 默认 2222 | `ContainerSshManager` |
 
 这些进程都由前台服务托管，服务销毁时依次停掉 sshd、NapCat、SnowLuma、MaiBot。
@@ -161,7 +161,9 @@ sequenceDiagram
 | 容器怎么搭、命令怎么跑 | `runtime/`：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 镜像、DNS、时区 |
 | MaiBot 的安装、启动、更新 | `maibot/`，在线更新在 `maibot/update/` |
 | QQ 接入 | `platform/napcat/`、`platform/snowluma/`、两者共用的 `platform/qq/`、`platform/qqofficial/` |
-| 前台服务、开机自启、安全退出 | `service/` |
+| 前台服务、开机/升级自启、安全退出 | `service/` |
+| 错误码、打码诊断与闪退记录 | `diagnostics/` |
+| 容器缓存清理 | `cleanup/` |
 | 嵌入的 MaiBot WebUI | `webui/`：令牌、WebView、请求改写、注入脚本、横屏桌面版、两指滚动、上传、下载 |
 | 容器 SSH | `ssh/` |
 | 系统“文件”应用里的 MaiBot 目录 | `files/` |
@@ -186,13 +188,13 @@ MaiBot 在设置页的“MaiBot 更新”里更新，弹窗底部还能在正式
 
 ### 国内网络装不上怎么办？
 
-MaiBot 源码、适配器、uv 和 Python 会依次尝试多个 GitHub 镜像和直连，系统包用清华源。NapCat 的安装器目前仍然直连 GitHub，网络不通时会失败，换个网络再试。SnowLuma 的发行包经 GitHub 镜像下载，它要的那一版 LinuxQQ 先从 QQ 官方下载。
+MaiBot 源码、适配器、uv、Python 以及来自 GitHub 的自定义 QQ 协议端仓库或发行包，都会依次尝试多个 GitHub 镜像和直连，系统包用清华源。非 GitHub 直链走直连。LinuxQQ 在 NapCat 路径下从腾讯官方地址下载，SnowLuma 路径下先从腾讯官方下载、失败时再经 GitHub 镜像兜底。
 
 ### 出问题了怎么反馈？
 
-打开主页的终端输出页（竖屏时在右下角，横屏时在左侧导航栏底部），复制日志，到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交，贴日志前请把令牌、API Key、QQ 号这类信息打码。
+打开主页的终端输出页（竖屏在底栏右侧或 WebUI 侧边悬浮胶囊展开菜单内，横屏在左侧导航栏底部）复制日志，或直接在“设置 > 反馈问题”导出脱敏诊断包，然后到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交；若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
 
-MaiBot相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请去 [NapCatQQ](https://github.com/NapNeko/NapCatQQ/issues) 或 [SnowLuma](https://github.com/SnowLuma/SnowLuma/issues)，看你用的是哪一个。
+MaiBot 相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请提交到你所用 QQ 协议端的对应仓库，看你用的是哪一个。
 
 ## 现状
 
@@ -202,7 +204,7 @@ MaiBot相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)�
 - 稳定的消息闭环、健康检查和错误提示还需要补齐。
 - 无障碍、输入法、通知监听这类手机侧的能力还没有全部落地。
 - 消息平台目前只接入了 QQ。Discord、WhatsApp、Signal 在界面里标着“暂未适配”。
-- SnowLuma 还是实验性的，问题请随时反馈。它装的是固定版本的 SnowLuma 和 LinuxQQ（组件绑着 QQ 的版本），跟着 MaiDroid 的版本升级。
+- SnowLuma 还是实验性的，问题请随时反馈。SnowLuma 发行包由用户通过自定义仓库或直链指定，其配套 LinuxQQ 因注入组件兼容限制仍绑定固定版本。
 
 ## 开发
 
@@ -236,17 +238,16 @@ MaiBot相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)�
 
 MaiDroid 以 [GNU General Public License v3.0](https://github.com/Mai-with-u/MaiDroid/blob/main/LICENSE)（GPL-3.0）发布，完整条款见仓库根目录的 [LICENSE](https://github.com/Mai-with-u/MaiDroid/blob/main/LICENSE)。
 
-- 运行时由 MaiDroid 在设备上安装的 [MaiBot](https://github.com/Mai-with-u/MaiBot)（GPL-3.0）、[NapCatQQ](https://github.com/NapNeko/NapCatQQ)、[MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)（插件清单声明为 GPL-3.0 或更高版本）和 [MaiBot-QQ-Adapter](https://github.com/Mai-with-u/MaiBot-QQ-Adapter)（MIT）不随 APK 分发，各自遵循其仓库中的许可证。NapCatQQ 使用自己的受限再分发许可，限制非商业使用，使用前请先阅读其 [LICENSE](https://github.com/NapNeko/NapCatQQ/blob/main/LICENSE)。
-- [SnowLuma](https://github.com/SnowLuma/SnowLuma) 含有闭源的专有组件，只能用于非商业用途。MaiDroid 经其作者书面授权，在用户同意 SnowLuma 的[用户协议](https://github.com/SnowLuma/SnowLuma/blob/main/EULA.md)和[隐私政策](https://github.com/SnowLuma/SnowLuma/blob/main/PRIVACY.md)后从官方 Release 下载安装，不随 APK 分发。
+- 运行时在设备上安装的 [MaiBot](https://github.com/Mai-with-u/MaiBot)（GPL-3.0）、[MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)（插件清单声明为 GPL-3.0 或更高版本）和 [MaiBot-QQ-Adapter](https://github.com/Mai-with-u/MaiBot-QQ-Adapter)（MIT）不随 APK 分发，各自遵循其仓库中的许可证。
+- NapCatQQ 与 SnowLuma（含其闭源专有组件）均不随 APK 分发，也不在应用内写死第三方下载源；仅在用户自行填写仓库或发行包直链并确认协议与来源提示后下载部署到设备容器，各自遵循其上游许可证与使用条款（限非商业用途的条款请在使用前自行确认）。
 - APK 内置的容器运行资源（Termux bootstrap、[PRoot](https://github.com/proot-me/proot) 及相关依赖包、Debian rootfs）同样保留各自的许可证。
 - 唤醒页使用的等宽字体 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) 随 APK 分发，以 [SIL Open Font License 1.1](https://openfontlicense.org) 发布。
 
 ## 致谢
 
 - [MaiBot](https://github.com/Mai-with-u/MaiBot)：MaiDroid 要在手机上运行的 AI 智能体本体
-- [NapCatQQ](https://github.com/NapNeko/NapCatQQ)：提供 QQ 协议侧能力，让 MaiBot 通过 OneBot 接入 QQ
-- [SnowLuma](https://github.com/SnowLuma/SnowLuma)：另一种 QQ 协议端，注入原版 LinuxQQ 后让 MaiBot 通过 OneBot 接入 QQ，并授权 MaiDroid 自动部署
-- [MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)：MaiBot 的 SnowLuma 适配器（界面上叫“QQ 适配器”），通过 NapCat 或 SnowLuma 接入个人 QQ 时都用它收发消息
+- [NapCatQQ](https://github.com/NapNeko/NapCatQQ) 与 SnowLuma 生态：由用户自主配置协议端来源，让 MaiBot 通过 OneBot 接入 QQ
+- [MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)：MaiBot 的 SnowLuma 适配器（界面上叫“QQ 适配器”），通过 OneBot 接入个人 QQ 时用它收发消息
 - [MaiBot-QQ-Adapter](https://github.com/Mai-with-u/MaiBot-QQ-Adapter)：直连 QQ 开放平台的 MaiBot 适配器，提供 QQ 官方机器人接入
 - [Termux](https://github.com/termux/termux-packages)：容器引导环境（bootstrap）与 proot 相关软件包的来源
 - [PRoot](https://github.com/proot-me/proot)：无需 root 即可在 Android 上运行 Debian 容器
