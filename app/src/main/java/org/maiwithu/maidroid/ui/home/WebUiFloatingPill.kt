@@ -24,11 +24,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -160,8 +166,15 @@ internal fun WebUiFloatingPill(
     }
 
     val statusBarTop = statusBarTopInset()
+    // 弹出软键盘时跟着把胶囊可用区域抬到键盘上方，避免聊天页打字时胶囊被键盘拦腰遮住
+    @OptIn(ExperimentalLayoutApi::class)
+    val imeBottomInset = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .windowInsetsPadding(imeBottomInset)
+    ) {
         // 展开时在背面铺一层全透明点击捕获区，不压暗网页，点击空白处或按返回键立即收起
         if (expanded) {
             Box(
