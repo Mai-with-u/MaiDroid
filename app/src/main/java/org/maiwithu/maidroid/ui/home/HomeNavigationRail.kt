@@ -126,11 +126,11 @@ private fun AnimatedHomeTabRail(
     BoxWithConstraints(
         modifier = modifier
             .shadow(
-                elevation = 18.dp,
+                elevation = 14.dp,
                 shape = shape,
                 clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.32f),
-                spotColor = Color.Black.copy(alpha = 0.32f)
+                ambientColor = Color.Black.copy(alpha = 0.24f),
+                spotColor = Color.Black.copy(alpha = 0.24f)
             )
             .clip(shape)
             .border(1.dp, GlassStroke, shape)

@@ -68,7 +68,7 @@ private const val StartupSplashInfoOffsetY = 773f
 private const val StartupSplashInfoWidth = 314f
 private const val StartupSplashInfoHeight = 96f
 private const val StartupSplashInfoHorizontalMargin = 16f
-private const val StartupSplashSideBlurRadius = 24f
+private const val StartupSplashSideBlurRadius = 18f
 
 /** 宽度不小于 600dp 或横屏时插画按高度铺满、两侧留白模糊；否则按设计稿比例铺满竖屏。 */
 internal fun startupSplashUsesAdaptiveLayout(widthDp: Float, heightDp: Float): Boolean =

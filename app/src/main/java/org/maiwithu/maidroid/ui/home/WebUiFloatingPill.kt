@@ -293,7 +293,7 @@ internal fun HomePortraitNavigation(
         )
     }
 
-    // 仅 WebUI 收起态静置 3 秒后柔和降透明减少遮挡；展开、拖动、点按或底栏态立刻全亮不透明
+    // 仅 WebUI 收起态静置 3 秒后柔和收敛前景透明度减少视觉打扰；毛玻璃背景层始终保持 100% 合成，绝不透出未模糊原图
     var idleDimmed by remember { mutableStateOf(false) }
     LaunchedEffect(isWebUi, expanded, isDragging, interactionTick) {
         idleDimmed = false
@@ -302,10 +302,10 @@ internal fun HomePortraitNavigation(
             idleDimmed = true
         }
     }
-    val pillAlpha by animateFloatAsState(
-        targetValue = if (idleDimmed) 0.76f else 1f,
+    val foregroundIdleAlpha by animateFloatAsState(
+        targetValue = if (idleDimmed) 0.84f else 1f,
         animationSpec = tween(durationMillis = 360),
-        label = "WebUiPillAlpha"
+        label = "WebUiPillForegroundAlpha"
     )
 
     val triggerRefresh = {
@@ -466,13 +466,12 @@ internal fun HomePortraitNavigation(
             modifier = Modifier
                 .offset { IntOffset(frame.capsuleLeftDp.dp.roundToPx(), frame.capsuleTopDp.dp.roundToPx()) }
                 .size(width = frame.capsuleWidthDp.dp, height = frame.capsuleHeightDp.dp)
-                .graphicsLayer { alpha = pillAlpha }
                 .shadow(
-                    elevation = 18.dp,
+                    elevation = 14.dp,
                     shape = pillShape,
                     clip = false,
-                    ambientColor = Color.Black.copy(alpha = 0.34f),
-                    spotColor = Color.Black.copy(alpha = 0.34f)
+                    ambientColor = Color.Black.copy(alpha = 0.24f),
+                    spotColor = Color.Black.copy(alpha = 0.24f)
                 )
                 .clip(pillShape)
                 .border(1.dp, GlassStroke, pillShape)
@@ -524,6 +523,7 @@ internal fun HomePortraitNavigation(
                 modifier = Modifier
                     .offset { IntOffset(indicatorX.dp.roundToPx(), indicatorY.dp.roundToPx()) }
                     .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
+                    .graphicsLayer { alpha = foregroundIdleAlpha }
                     .clip(pillShape)
                     .background(GlassSelectedIndicator)
             )
@@ -549,7 +549,7 @@ internal fun HomePortraitNavigation(
                             width = ExpandedPillWidth - PillOuterPadding * 2,
                             height = ExpandedDividerSlotHeight + ExpandedActionButtonHeight * 2
                         )
-                        .graphicsLayer { alpha = expandedExtraAlpha }
+                        .graphicsLayer { alpha = expandedExtraAlpha * foregroundIdleAlpha }
                 )
             }
 
@@ -564,7 +564,7 @@ internal fun HomePortraitNavigation(
                         .zIndex(if (isWebUi && !expanded) 1f else 0f)
                         .offset { IntOffset(PillOuterPadding.roundToPx(), CollapsedRefreshTopDp.dp.roundToPx()) }
                         .size(width = CollapsedPillWidth - PillOuterPadding * 2, height = CollapsedRefreshButtonHeight)
-                        .graphicsLayer { alpha = collapsedRefreshAlpha }
+                        .graphicsLayer { alpha = collapsedRefreshAlpha * foregroundIdleAlpha }
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Refresh,
@@ -586,7 +586,7 @@ internal fun HomePortraitNavigation(
                             .zIndex(if (!isWebUi || expanded) 2f else 0f)
                             .offset { IntOffset(pos.first.dp.roundToPx(), pos.second.dp.roundToPx()) }
                             .size(width = frame.tabWidthDp.dp, height = HomeTabButtonHeight)
-                            .graphicsLayer { alpha = secondaryTabsAlpha },
+                            .graphicsLayer { alpha = secondaryTabsAlpha * foregroundIdleAlpha },
                         contentAlignment = Alignment.Center
                     ) {
                         HomeTabButton(
@@ -614,7 +614,7 @@ internal fun HomePortraitNavigation(
                 1f,
                 if (selectedTab == HomeTab.WebUi) 1f else 0.76f,
                 clampedBottomProgress
-            )
+            ) * foregroundIdleAlpha
             val primaryIconGap = lerpFloat(
                 lerpFloat(3f, 4f, clampedExpandedProgress),
                 4f,

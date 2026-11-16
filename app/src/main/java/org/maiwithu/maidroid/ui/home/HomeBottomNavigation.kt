@@ -45,8 +45,8 @@ internal enum class HomeTab(val label: String) {
     Settings("设置")
 }
 
-/** 导航栏毛玻璃的模糊半径。 */
-internal const val NavigationBlurRadius = 22f
+/** 导航栏毛玻璃的模糊半径（配合 3x 硬件缩放对应 ~33px 轻柔透光模糊）。 */
+internal const val NavigationBlurRadius = 11f
 
 /** 悬浮底栏本体高度（标签栏与终端按钮同高）。 */
 internal val HomeBottomNavigationBarHeight = 64.dp
@@ -78,11 +78,11 @@ internal fun HomeTerminalButton(
     Box(
         modifier = modifier
             .shadow(
-                elevation = 18.dp,
+                elevation = 14.dp,
                 shape = CircleShape,
                 clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.35f),
-                spotColor = Color.Black.copy(alpha = 0.35f)
+                ambientColor = Color.Black.copy(alpha = 0.24f),
+                spotColor = Color.Black.copy(alpha = 0.24f)
             )
             .clip(CircleShape)
             .border(1.dp, GlassStroke, CircleShape)

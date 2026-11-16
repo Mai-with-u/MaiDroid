@@ -52,13 +52,13 @@ val StatusOnline = Color(0xFF30D158)   // 在线、已开启、已是最新
 val StatusWarning = Color(0xFFE8A064)  // 离线、未授权、启动失败
 val StatusDanger = Color(0xFFFF453A)   // 危险操作按钮（退出登录等）
 
-// ── 毛玻璃：悬浮导航栏、刷新按钮、授权弹窗、启动页信息卡 ──────────────────
-val GlassSurface = Color(0x8C222328)
-val GlassStroke = Color(0x1FFFFFFF)             // 12% 柔和微光描边，避免刺眼塑料边
-val SubtleGlassSurface = Color(0x332B2B2B)
-val GlassButtonSurface = Color(0x552B2B2B)      // 圆形小按钮、启动页信息卡的半透明底
-val GlassSelectedIndicator = Color(0x33FFFFFF)  // 悬浮底栏里选中标签的滑块
-const val SubtleGlassBlurRadius = 6f
+// ── 毛玻璃：悬浮导航栏、侧边胶囊、授权弹窗、启动页信息卡 ──────────────────
+val GlassSurface = Color(0x471E2026)            // ~28% 清透冷灰遮罩，避免高不透明发闷遮住折射光
+val GlassStroke = Color(0x29FFFFFF)             // 16% 微光折射玻璃边，透亮且暗底轮廓分明
+val SubtleGlassSurface = Color(0x2E202228)      // ~18% 轻透冷灰遮罩
+val GlassButtonSurface = Color(0x40202228)      // ~25% 清透圆形小按钮与信息卡边框底
+val GlassSelectedIndicator = Color(0x26FFFFFF)  // 15% 轻透选中胶囊滑块，保持背景透光感
+const val SubtleGlassBlurRadius = 8f
 
 // ── 终端输出 ─────────────────────────────────────────────────────
 val TerminalBackground = Color(0xFF0B0B0C)  // 日志区底色，比卡片更黑一档
