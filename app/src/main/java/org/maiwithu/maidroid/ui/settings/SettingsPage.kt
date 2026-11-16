@@ -680,7 +680,7 @@ private fun SettingsNavigationRow(
             icon = icon,
             backgroundColor = iconColor,
             size = 38.dp,
-            iconSize = 20.dp
+            iconSize = 25.dp
         )
 
         Spacer(modifier = Modifier.width(13.dp))

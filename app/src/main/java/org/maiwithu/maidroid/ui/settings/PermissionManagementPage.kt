@@ -391,7 +391,7 @@ private fun PermissionBaseCard(
             icon = icon,
             backgroundColor = iconColor,
             size = 40.dp,
-            iconSize = 22.dp
+            iconSize = 26.dp
         )
 
         Spacer(modifier = Modifier.width(14.dp))

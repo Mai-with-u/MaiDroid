@@ -74,7 +74,7 @@ internal fun OobePermissionCard(
                 icon = icon,
                 backgroundColor = iconColor,
                 size = 46.dp,
-                iconSize = 25.dp,
+                iconSize = 30.dp,
                 dimmed = granted
             )
 

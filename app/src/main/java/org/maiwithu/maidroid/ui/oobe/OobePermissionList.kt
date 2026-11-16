@@ -161,7 +161,7 @@ private fun BackgroundKeepAliveCard(
                 icon = FlatFeatureIcons.BatteryOptimization,
                 backgroundColor = IconPeachOrange,
                 size = 48.dp,
-                iconSize = 26.dp
+                iconSize = 31.dp
             )
 
             Spacer(modifier = Modifier.width(16.dp))
