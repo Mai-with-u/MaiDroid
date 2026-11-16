@@ -21,16 +21,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -97,14 +94,34 @@ private val CollapsedPillHeight = CollapsedPillHeightDp.dp
 private val ExpandedPillWidth = ExpandedPillWidthDp.dp
 private val ExpandedPillHeight = ExpandedPillHeightDp.dp
 
-private val PillOuterPadding = 4.dp
-private val PillButtonGap = 4.dp
-private val CollapsedExpandButtonHeight = 54.dp
+private const val PillInnerInsetDp = 4f
+private const val CollapsedExpandHeightDp = 54f
+private const val CollapsedRefreshTopDp = 62f
+private const val ExpandedActionsTopDp = 172f
+
+private val PillOuterPadding = PillInnerInsetDp.dp
 private val CollapsedRefreshButtonHeight = 52.dp
 private val ExpandedDividerSlotHeight = 9.dp
 private val ExpandedActionButtonHeight = 54.dp
 private val PillEdgeMargin = 10.dp
 private val PillBottomClearance = 84.dp
+
+/**
+ * 竖屏统一导航在任意过渡帧的二维几何描述（单位 dp）：
+ * 既描述侧边/底部共用的主毛玻璃胶囊外框及内部 3 颗标签位置，也描述独立圆形终端按钮的分离/融入轨迹。
+ */
+internal data class PortraitNavFrame(
+    val capsuleLeftDp: Float,
+    val capsuleTopDp: Float,
+    val capsuleWidthDp: Float,
+    val capsuleHeightDp: Float,
+    val tabWidthDp: Float,
+    val tabPositionsDp: List<Pair<Float, Float>>,
+    val terminalLeftDp: Float,
+    val terminalTopDp: Float,
+    val terminalAlpha: Float,
+    val terminalScale: Float
+)
 
 /** 限制胶囊垂直停靠比例在 `[0f, 1f]` 安全区内。 */
 internal fun clampPillVerticalBias(bias: Float): Float = bias.coerceIn(0f, 1f)
@@ -134,17 +151,78 @@ internal fun computeDockedPillTopDp(
 }
 
 /**
- * WebUI 竖屏专属侧边灵动导航胶囊：
- * - 收起态放大至更易点击的 64×118dp，视觉完全对齐底栏与横屏侧栏毛玻璃（麦麦头像 +「导航」与一键「刷新」）；
- * - 展开态直接在原处平滑扩展为横屏侧栏同款竖排导航（WebUI / 消息平台 / 设置 + 细分隔线 + 刷新 / 终端）；
- * - 默认停靠屏幕左侧，并结合重力传感器做低通滤波、持续驻留与冷却三级阻尼切换（平放保持原位），同时支持全向拖拽。
+ * 计算侧边胶囊（左或右侧停靠）与底部导航栏之间的连续二维形变插值几何：
+ * - [bottomProgress] 为 0 时处于侧边胶囊态，为 1 时精确对齐底部三标签 + 右下终端按钮布局；
+ * - 位移使用未夹紧的 [bottomProgress] 保留阻尼弹簧缓冲，外框尺寸与透明度按 [0, 1] 夹紧严防越界。
+ */
+internal fun computePortraitNavFrame(
+    maxWidthDp: Float,
+    maxHeightDp: Float,
+    sideLeftDp: Float,
+    sideTopDp: Float,
+    sideWidthDp: Float,
+    sideHeightDp: Float,
+    expandedProgress: Float,
+    bottomProgress: Float
+): PortraitNavFrame {
+    val e = expandedProgress.coerceIn(0f, 1f)
+    val b = bottomProgress.coerceIn(0f, 1f)
+
+    val bottomTabBarWidth = computeBottomTabBarWidthDp(maxWidthDp)
+    val bottomBarHeight = HomeBottomNavigationBarHeight.value
+    val bottomBarTop = (maxHeightDp - HomeBottomNavigationBottomPadding.value - bottomBarHeight).coerceAtLeast(0f)
+    val bottomBarLeft = HomeBottomNavigationHorizontalPadding.value
+    val bottomSingleTabWidth = (bottomTabBarWidth - PillInnerInsetDp * 2f) / HomeTab.entries.size
+    val bottomTerminalLeft = maxWidthDp - HomeBottomNavigationHorizontalPadding.value - bottomBarHeight
+
+    // 主胶囊位置保留微幅弹簧缓冲；宽高严守 [0, 1] 防止过冲缩出负数尺寸
+    val capsuleLeft = lerpFloat(sideLeftDp, bottomBarLeft, bottomProgress)
+    val capsuleTop = lerpFloat(sideTopDp, bottomBarTop, bottomProgress)
+    val capsuleWidth = lerpFloat(sideWidthDp, bottomTabBarWidth, b)
+    val capsuleHeight = lerpFloat(sideHeightDp, bottomBarHeight, b)
+
+    val tabWidth = lerpFloat(sideWidthDp - PillInnerInsetDp * 2f, bottomSingleTabWidth, b)
+    val tabPositions = HomeTab.entries.indices.map { index ->
+        val sideSlotY = PillInnerInsetDp + (HomeTabButtonHeight.value * index) * e
+        val tabX = lerpFloat(PillInnerInsetDp, PillInnerInsetDp + bottomSingleTabWidth * index, b)
+        val tabY = lerpFloat(sideSlotY, PillInnerInsetDp, b)
+        tabX to tabY
+    }
+
+    val sideTerminalAnchorLeft = sideLeftDp + (sideWidthDp - bottomBarHeight) * 0.5f
+    val sideTerminalAnchorTop = sideTopDp + sideHeightDp - bottomBarHeight
+    val terminalLeft = lerpFloat(sideTerminalAnchorLeft, bottomTerminalLeft, bottomProgress)
+    val terminalTop = lerpFloat(sideTerminalAnchorTop, bottomBarTop, bottomProgress)
+    val terminalAlpha = ((b - 0.08f) / 0.72f).coerceIn(0f, 1f)
+    val terminalScale = 0.82f + 0.18f * b
+
+    return PortraitNavFrame(
+        capsuleLeftDp = capsuleLeft,
+        capsuleTopDp = capsuleTop,
+        capsuleWidthDp = capsuleWidth,
+        capsuleHeightDp = capsuleHeight,
+        tabWidthDp = tabWidth,
+        tabPositionsDp = tabPositions,
+        terminalLeftDp = terminalLeft,
+        terminalTopDp = terminalTop,
+        terminalAlpha = terminalAlpha,
+        terminalScale = terminalScale
+    )
+}
+
+/**
+ * 竖屏一体化毛玻璃导航：
+ * - 在 WebUI 页签展现为可左右停靠（默认左缘）+ 重力传感器三级阻尼换边 + 全向拖拽的灵动胶囊；
+ * - 切往消息平台/设置时，同一块毛玻璃胶囊从所在左/右侧边缘平滑滑移并扇形展开成底部三栏导航，右下圆形终端钮同步分离就位；
+ * - 切回 WebUI 时沿对称轨迹从底栏收拢飞回离开前的同一侧边缘，实现无缝空间连续过渡。
  */
 @Composable
-internal fun WebUiFloatingPill(
+internal fun HomePortraitNavigation(
+    selectedTab: HomeTab,
     blurTarget: BlurTarget?,
     onRefreshWebUi: () -> Unit,
-    onSelectTab: (HomeTab) -> Unit,
-    onOpenTerminal: () -> Unit,
+    onTabSelected: (HomeTab) -> Unit,
+    onTerminalClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -154,6 +232,8 @@ internal fun WebUiFloatingPill(
         context.getSharedPreferences(PillPrefsName, Context.MODE_PRIVATE)
     }
 
+    val isWebUi = selectedTab == HomeTab.WebUi
+
     var dockRight by rememberSaveable {
         mutableStateOf(prefs.getBoolean(PrefKeyDockRight, DefaultDockRight))
     }
@@ -161,32 +241,63 @@ internal fun WebUiFloatingPill(
         mutableFloatStateOf(clampPillVerticalBias(prefs.getFloat(PrefKeyVerticalBias, DefaultVerticalBias)))
     }
     var expanded by rememberSaveable { mutableStateOf(false) }
+    // 从展开态切离 WebUI 时保留侧边展开锚点直至动画抵达底栏，确保扇形展开与滑移起始尺寸完全吻合
+    var leavingFromExpanded by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
     var interactionTick by remember { mutableIntStateOf(0) }
     val refreshSpin = remember { Animatable(0f) }
     val tiltDamper = remember { PillTiltDamper() }
 
-    BackHandler(enabled = expanded) { expanded = false }
+    BackHandler(enabled = isWebUi && expanded) { expanded = false }
 
-    // 绑定手机倾斜传感器：平放时维持当前边，持续左/右倾经过阻尼积分后再丝滑换边并持久记忆
-    BindPillTiltSensor(
-        currentDockRight = dockRight,
-        interactionPaused = expanded || isDragging,
-        damper = tiltDamper,
-        onDockSideChanged = { nextDockRight ->
-            dockRight = nextDockRight
-            interactionTick++
-            prefs.edit()
-                .putBoolean(PrefKeyDockRight, nextDockRight)
-                .apply()
-        }
+    // 侧边形态与底部形态连续形变进度：0f=WebUI 侧边胶囊，1f=其余页面底部导航栏
+    val bottomProgress by animateFloatAsState(
+        targetValue = if (isWebUi) 0f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.85f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "PortraitNavBottomProgress"
     )
 
-    // 静置 3 秒后柔和降低透明度减少遮挡感；拖动、展开、点按或换边瞬间立刻恢复完全不透明
+    LaunchedEffect(isWebUi) {
+        if (isWebUi) {
+            leavingFromExpanded = false
+        } else {
+            expanded = false
+            isDragging = false
+        }
+    }
+
+    LaunchedEffect(isWebUi, bottomProgress) {
+        if (!isWebUi && bottomProgress >= 0.997f) {
+            leavingFromExpanded = false
+        }
+    }
+
+    val effectiveSideExpanded = if (isWebUi) expanded else leavingFromExpanded
+
+    // 仅停留在 WebUI 页时启用重力传感器阻尼切换；切换至底栏期间暂停采集，切回时保持离开前那一侧
+    if (isWebUi) {
+        BindPillTiltSensor(
+            currentDockRight = dockRight,
+            interactionPaused = expanded || isDragging || bottomProgress > 0.05f,
+            damper = tiltDamper,
+            onDockSideChanged = { nextDockRight ->
+                dockRight = nextDockRight
+                interactionTick++
+                prefs.edit()
+                    .putBoolean(PrefKeyDockRight, nextDockRight)
+                    .apply()
+            }
+        )
+    }
+
+    // 仅 WebUI 收起态静置 3 秒后柔和降透明减少遮挡；展开、拖动、点按或底栏态立刻全亮不透明
     var idleDimmed by remember { mutableStateOf(false) }
-    LaunchedEffect(expanded, isDragging, interactionTick) {
+    LaunchedEffect(isWebUi, expanded, isDragging, interactionTick) {
         idleDimmed = false
-        if (!expanded && !isDragging) {
+        if (isWebUi && !expanded && !isDragging) {
             delay(PillIdleFadeDelayMs)
             idleDimmed = true
         }
@@ -207,17 +318,16 @@ internal fun WebUiFloatingPill(
     }
 
     val statusBarTop = statusBarTopInset()
-    // 弹出软键盘时跟着把胶囊可用区域抬到键盘上方，避免聊天页打字时胶囊被键盘拦腰遮住
+    // 仅把软键盘最终高度用于抬升侧边胶囊安全区；外层容器维持全屏坐标，确保消息平台/设置页弹出输入法时底栏纹丝不动
     @OptIn(ExperimentalLayoutApi::class)
-    val imeBottomInset = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
+    val imeBottomDp = with(density) { WindowInsets.imeAnimationTarget.getBottom(this).toDp().value }
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .windowInsetsPadding(imeBottomInset)
-    ) {
-        // 展开时在背面铺一层全透明点击捕获区，不压暗网页，点击空白处立即收起
-        if (expanded) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val maxWidthDp = maxWidth.value
+        val maxHeightDp = maxHeight.value
+
+        // WebUI 展开时在背面铺一层全透明点击捕获区，不压暗网页，点击空白处立即收起
+        if (isWebUi && expanded) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -232,20 +342,20 @@ internal fun WebUiFloatingPill(
             )
         }
 
-        val targetWidth = if (expanded) ExpandedPillWidth else CollapsedPillWidth
-        val targetHeight = if (expanded) ExpandedPillHeight else CollapsedPillHeight
+        val sideTargetWidth = if (effectiveSideExpanded) ExpandedPillWidth else CollapsedPillWidth
+        val sideTargetHeight = if (effectiveSideExpanded) ExpandedPillHeight else CollapsedPillHeight
 
-        // 用显式无过冲临界阻尼弹簧直接驱动外框宽高：从 293dp 单调缩回 118dp，彻底根治旧版关闭瞬间叠加变长的缺陷
-        val animatedWidth by animateDpAsState(
-            targetValue = targetWidth,
+        // 用显式无过冲临界阻尼弹簧直接驱动侧边锚点宽高：从 293dp 单调缩回 118dp，消除关闭瞬间叠加变长缺陷
+        val sideAnimatedWidth by animateDpAsState(
+            targetValue = sideTargetWidth,
             animationSpec = spring(
                 dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMedium
             ),
             label = "WebUiPillWidth"
         )
-        val animatedHeight by animateDpAsState(
-            targetValue = targetHeight,
+        val sideAnimatedHeight by animateDpAsState(
+            targetValue = sideTargetHeight,
             animationSpec = spring(
                 dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMedium
@@ -253,50 +363,50 @@ internal fun WebUiFloatingPill(
             label = "WebUiPillHeight"
         )
 
-        // 交叉淡入淡出进度：让收起与展开两套固定尺寸内容在稳定版式内渐变交替，避免文字在过渡宽度里被挤换行
-        val expandedProgress by animateFloatAsState(
-            targetValue = if (expanded) 1f else 0f,
+        val expandedSideProgress by animateFloatAsState(
+            targetValue = if (effectiveSideExpanded) 1f else 0f,
             animationSpec = tween(durationMillis = 160),
             label = "WebUiPillContentCrossfade"
         )
 
-        val minTop = statusBarTop + 16.dp
-        val dockedTop = computeDockedPillTopDp(
-            minTopDp = minTop.value,
-            maxHeightDp = maxHeight.value,
+        val minTopDp = statusBarTop.value + 16f
+        val sideMaxHeightDp = (maxHeightDp - imeBottomDp).coerceAtLeast(minTopDp + CollapsedPillHeightDp)
+        val sideDockedTop = computeDockedPillTopDp(
+            minTopDp = minTopDp,
+            maxHeightDp = sideMaxHeightDp,
             bottomClearanceDp = PillBottomClearance.value,
             collapsedHeightDp = CollapsedPillHeight.value,
-            currentHeightDp = targetHeight.value,
+            currentHeightDp = sideTargetHeight.value,
             verticalBias = verticalBias
         ).dp
-        val dockedLeft = if (dockRight) maxWidth - targetWidth - PillEdgeMargin else PillEdgeMargin
+        val sideDockedLeft = if (dockRight) maxWidth - sideTargetWidth - PillEdgeMargin else PillEdgeMargin
 
         val maxWidthPx = with(density) { maxWidth.toPx() }
-        val minTopPx = with(density) { minTop.toPx() }
+        val minTopPx = with(density) { minTopDp.dp.toPx() }
         val maxTopCollapsedPx = with(density) {
-            (maxHeight - CollapsedPillHeight - PillBottomClearance).coerceAtLeast(minTop).toPx()
+            (sideMaxHeightDp - CollapsedPillHeight.value - PillBottomClearance.value)
+                .coerceAtLeast(minTopDp).dp.toPx()
         }
-        val pillWidthPx = with(density) { targetWidth.toPx() }
+        val sideWidthPx = with(density) { sideTargetWidth.toPx() }
 
         var dragLeftPx by remember { mutableFloatStateOf(0f) }
         var dragTopPx by remember { mutableFloatStateOf(0f) }
-        val latestDockedLeftPx by rememberUpdatedState(with(density) { dockedLeft.toPx() })
-        val latestDockedTopPx by rememberUpdatedState(with(density) { dockedTop.toPx() })
+        val latestSideDockedLeftPx by rememberUpdatedState(with(density) { sideDockedLeft.toPx() })
+        val latestSideDockedTopPx by rememberUpdatedState(with(density) { sideDockedTop.toPx() })
 
-        val targetLeftDp = if (isDragging) with(density) { dragLeftPx.toDp() } else dockedLeft
-        val targetTopDp = if (isDragging) with(density) { dragTopPx.toDp() } else dockedTop
+        val targetSideLeftDp = if (isDragging) with(density) { dragLeftPx.toDp() } else sideDockedLeft
+        val targetSideTopDp = if (isDragging) with(density) { dragTopPx.toDp() } else sideDockedTop
 
-        // 拖动时零延迟跟手；松手吸附及传感器自动换边采用柔和偏低刚度阻尼弹簧，视觉过渡温润自然不生硬
-        val animatedLeft by animateDpAsState(
-            targetValue = targetLeftDp,
+        val sideAnimatedLeft by animateDpAsState(
+            targetValue = targetSideLeftDp,
             animationSpec = if (isDragging) snap() else spring(
                 dampingRatio = 0.86f,
                 stiffness = 260f
             ),
             label = "WebUiPillX"
         )
-        val animatedTop by animateDpAsState(
-            targetValue = targetTopDp,
+        val sideAnimatedTop by animateDpAsState(
+            targetValue = targetSideTopDp,
             animationSpec = if (isDragging) snap() else spring(
                 dampingRatio = 0.86f,
                 stiffness = Spring.StiffnessMediumLow
@@ -304,38 +414,86 @@ internal fun WebUiFloatingPill(
             label = "WebUiPillY"
         )
 
+        val frame = computePortraitNavFrame(
+            maxWidthDp = maxWidthDp,
+            maxHeightDp = maxHeightDp,
+            sideLeftDp = sideAnimatedLeft.value,
+            sideTopDp = sideAnimatedTop.value,
+            sideWidthDp = sideAnimatedWidth.value,
+            sideHeightDp = sideAnimatedHeight.value,
+            expandedProgress = expandedSideProgress,
+            bottomProgress = bottomProgress
+        )
+
+        // 选中滑块在侧边纵向格与底栏横向格之间同步插值，保持与底栏原版完全相同的弹簧手感
+        val selectedOrdinalFloat by animateFloatAsState(
+            targetValue = selectedTab.ordinal.toFloat(),
+            animationSpec = spring(
+                dampingRatio = 0.78f,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "HomeTabIndicatorOrdinal"
+        )
+        val clampedBottomProgress = bottomProgress.coerceIn(0f, 1f)
+        val clampedExpandedProgress = expandedSideProgress.coerceIn(0f, 1f)
+        val bottomTabBarWidth = computeBottomTabBarWidthDp(maxWidthDp)
+        val bottomSingleTabWidth = (bottomTabBarWidth - PillInnerInsetDp * 2f) / HomeTab.entries.size
+        val clampedSelectedOrdinal = selectedOrdinalFloat.coerceIn(0f, (HomeTab.entries.size - 1).toFloat())
+
+        val indicatorX = lerpFloat(
+            PillInnerInsetDp,
+            PillInnerInsetDp + bottomSingleTabWidth * clampedSelectedOrdinal,
+            clampedBottomProgress
+        )
+        val indicatorY = lerpFloat(
+            PillInnerInsetDp + HomeTabButtonHeight.value * clampedSelectedOrdinal * clampedExpandedProgress,
+            PillInnerInsetDp,
+            clampedBottomProgress
+        )
+        val indicatorHeight = lerpFloat(
+            lerpFloat(CollapsedExpandHeightDp, HomeTabButtonHeight.value, clampedExpandedProgress),
+            HomeTabButtonHeight.value,
+            clampedBottomProgress
+        )
+
+        val navLabelAlpha = ((1f - clampedExpandedProgress) * (1f - clampedBottomProgress * 2f)).coerceIn(0f, 1f)
+        val collapsedRefreshAlpha = ((1f - clampedExpandedProgress) * (1f - clampedBottomProgress)).coerceIn(0f, 1f)
+        val expandedExtraAlpha = (clampedExpandedProgress * (1f - clampedBottomProgress * 1.8f)).coerceIn(0f, 1f)
+        val secondaryTabsAlpha = maxOf(clampedExpandedProgress, clampedBottomProgress)
         val pillShape = RoundedCornerShape(Corners.Pill)
 
         Box(
             modifier = Modifier
-                .offset { IntOffset(animatedLeft.roundToPx(), animatedTop.roundToPx()) }
-                .size(width = animatedWidth, height = animatedHeight)
+                .offset { IntOffset(frame.capsuleLeftDp.dp.roundToPx(), frame.capsuleTopDp.dp.roundToPx()) }
+                .size(width = frame.capsuleWidthDp.dp, height = frame.capsuleHeightDp.dp)
                 .graphicsLayer { alpha = pillAlpha }
                 .shadow(
                     elevation = 18.dp,
                     shape = pillShape,
                     clip = false,
-                    ambientColor = Color.Black.copy(alpha = 0.36f),
-                    spotColor = Color.Black.copy(alpha = 0.36f)
+                    ambientColor = Color.Black.copy(alpha = 0.34f),
+                    spotColor = Color.Black.copy(alpha = 0.34f)
                 )
                 .clip(pillShape)
                 .border(1.dp, GlassStroke, pillShape)
-                .pointerInput(maxWidthPx, minTopPx, maxTopCollapsedPx, pillWidthPx) {
+                .pointerInput(isWebUi, maxWidthPx, minTopPx, maxTopCollapsedPx, sideWidthPx) {
+                    // 仅处于 WebUI 侧边胶囊模式时开放拖动，进入底栏后锁定位置避免误拖
+                    if (!isWebUi) return@pointerInput
                     detectDragGestures(
                         onDragStart = {
-                            dragLeftPx = latestDockedLeftPx
-                            dragTopPx = latestDockedTopPx
+                            dragLeftPx = latestSideDockedLeftPx
+                            dragTopPx = latestSideDockedTopPx
                             isDragging = true
                             interactionTick++
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            val maxLeft = (maxWidthPx - pillWidthPx - 4f).coerceAtLeast(4f)
+                            val maxLeft = (maxWidthPx - sideWidthPx - 4f).coerceAtLeast(4f)
                             dragLeftPx = (dragLeftPx + dragAmount.x).coerceIn(4f, maxLeft)
                             dragTopPx = (dragTopPx + dragAmount.y).coerceIn(minTopPx, maxTopCollapsedPx)
                         },
                         onDragEnd = {
-                            val centerX = dragLeftPx + pillWidthPx * 0.5f
+                            val centerX = dragLeftPx + sideWidthPx * 0.5f
                             dockRight = shouldDockPillRight(centerX, maxWidthPx)
                             val span = (maxTopCollapsedPx - minTopPx).coerceAtLeast(1f)
                             verticalBias = clampPillVerticalBias((dragTopPx - minTopPx) / span)
@@ -361,152 +519,189 @@ internal fun WebUiFloatingPill(
                 modifier = Modifier.matchParentSize()
             )
 
+            // 当前选中页签或收起态主导航的高光滑块，随形变过程连续滑向目标槽位
             Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                // 收起态固定版式层：!expanded 时提升 zIndex 在最顶层响应点击，退场期降到底层不拦截新展开菜单的点击
-                if (expandedProgress < 0.99f) {
-                    CollapsedPillContent(
-                        spinDegrees = refreshSpin.value,
-                        clickableEnabled = !expanded,
-                        onExpand = {
-                            interactionTick++
-                            expanded = true
-                        },
-                        onRefresh = { triggerRefresh() },
-                        modifier = Modifier
-                            .zIndex(if (expanded) 0f else 1f)
-                            .wrapContentSize(align = Alignment.TopCenter, unbounded = true)
-                            .size(width = CollapsedPillWidth, height = CollapsedPillHeight)
-                            .graphicsLayer { alpha = 1f - expandedProgress }
-                    )
-                }
+                modifier = Modifier
+                    .offset { IntOffset(indicatorX.dp.roundToPx(), indicatorY.dp.roundToPx()) }
+                    .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
+                    .clip(pillShape)
+                    .background(GlassSelectedIndicator)
+            )
 
-                // 展开态固定版式层：复刻横屏侧栏竖排页签与辅助动作，expanded 时置于最顶层响应点击
-                if (expandedProgress > 0.01f) {
-                    ExpandedPillContent(
-                        spinDegrees = refreshSpin.value,
-                        onSelectTab = { tab ->
-                            expanded = false
-                            if (tab != HomeTab.WebUi) {
-                                onSelectTab(tab)
-                            }
-                        },
-                        onRefresh = {
-                            triggerRefresh()
-                            expanded = false
-                        },
-                        onOpenTerminal = {
-                            expanded = false
-                            onOpenTerminal()
-                        },
+            // 展开态下半区附加操作（细分隔线 + 刷新 + 终端）：切至底栏期间随退场平滑收束隐藏
+            if (expandedExtraAlpha > 0.01f) {
+                ExpandedExtraActions(
+                    spinDegrees = refreshSpin.value,
+                    enabled = isWebUi && expanded && clampedBottomProgress < 0.15f,
+                    onRefresh = {
+                        triggerRefresh()
+                        expanded = false
+                    },
+                    onOpenTerminal = {
+                        expanded = false
+                        onTerminalClick()
+                    },
+                    modifier = Modifier
+                        .zIndex(if (isWebUi && expanded) 1f else 0f)
+                        .offset { IntOffset(PillOuterPadding.roundToPx(), ExpandedActionsTopDp.dp.roundToPx()) }
+                        .wrapContentSize(align = Alignment.TopStart, unbounded = true)
+                        .size(
+                            width = ExpandedPillWidth - PillOuterPadding * 2,
+                            height = ExpandedDividerSlotHeight + ExpandedActionButtonHeight * 2
+                        )
+                        .graphicsLayer { alpha = expandedExtraAlpha }
+                )
+            }
+
+            // 收起态下方的一键「刷新」按钮，退场期间自动降低层级与透明度
+            if (collapsedRefreshAlpha > 0.01f) {
+                PillLabeledButton(
+                    label = "刷新",
+                    contentAlpha = 0.84f,
+                    enabled = isWebUi && !expanded && clampedBottomProgress < 0.15f,
+                    onClick = { triggerRefresh() },
+                    modifier = Modifier
+                        .zIndex(if (isWebUi && !expanded) 1f else 0f)
+                        .offset { IntOffset(PillOuterPadding.roundToPx(), CollapsedRefreshTopDp.dp.roundToPx()) }
+                        .size(width = CollapsedPillWidth - PillOuterPadding * 2, height = CollapsedRefreshButtonHeight)
+                        .graphicsLayer { alpha = collapsedRefreshAlpha }
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = "刷新 WebUI",
+                        tint = TextPrimary,
                         modifier = Modifier
-                            .zIndex(if (expanded) 1f else 0f)
-                            .wrapContentSize(align = Alignment.TopCenter, unbounded = true)
-                            .size(width = ExpandedPillWidth, height = ExpandedPillHeight)
-                            .graphicsLayer { alpha = expandedProgress }
+                            .size(22.dp)
+                            .graphicsLayer { rotationZ = refreshSpin.value }
                     )
                 }
             }
-        }
-    }
-}
 
-/** 收起态两颗大触控圆角钮：上方麦麦头像+「导航」展开展开菜单，下方一键「刷新」。 */
-@Composable
-private fun CollapsedPillContent(
-    spinDegrees: Float,
-    clickableEnabled: Boolean,
-    onExpand: () -> Unit,
-    onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val itemShape = RoundedCornerShape(Corners.Pill)
-    Column(
-        modifier = modifier.padding(PillOuterPadding),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        PillLabeledButton(
-            label = "导航",
-            contentAlpha = 1f,
-            enabled = clickableEnabled,
-            onClick = onExpand,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(CollapsedExpandButtonHeight)
-                .clip(itemShape)
-                .background(GlassSelectedIndicator)
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_maibot),
-                contentDescription = "展开导航菜单",
-                modifier = Modifier.size(24.dp)
+            // 消息平台与设置标签：随胶囊形变在纵向侧栏与横向底栏位置间扇形平滑移动
+            if (secondaryTabsAlpha > 0.01f) {
+                listOf(HomeTab.Platforms, HomeTab.Settings).forEach { tab ->
+                    val pos = frame.tabPositionsDp[tab.ordinal]
+                    Box(
+                        modifier = Modifier
+                            .zIndex(if (!isWebUi || expanded) 2f else 0f)
+                            .offset { IntOffset(pos.first.dp.roundToPx(), pos.second.dp.roundToPx()) }
+                            .size(width = frame.tabWidthDp.dp, height = HomeTabButtonHeight)
+                            .graphicsLayer { alpha = secondaryTabsAlpha },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        HomeTabButton(
+                            tab = tab,
+                            selected = selectedTab == tab,
+                            enabled = !isWebUi || expanded,
+                            onClick = {
+                                if (isWebUi) {
+                                    leavingFromExpanded = true
+                                    expanded = false
+                                }
+                                onTabSelected(tab)
+                            },
+                            modifier = Modifier
+                                .wrapContentSize(align = Alignment.Center, unbounded = true)
+                                .size(width = maxOf(frame.tabWidthDp, 66f).dp, height = HomeTabButtonHeight)
+                        )
+                    }
+                }
+            }
+
+            // 首格常驻按钮：麦麦头像全程零跳动固定居中，文字在「导航」与「WebUI」间交叉渐显
+            val primaryPos = frame.tabPositionsDp[HomeTab.WebUi.ordinal]
+            val primaryContentAlpha = lerpFloat(
+                1f,
+                if (selectedTab == HomeTab.WebUi) 1f else 0.76f,
+                clampedBottomProgress
             )
-        }
-
-        Spacer(modifier = Modifier.height(PillButtonGap))
-
-        PillLabeledButton(
-            label = "刷新",
-            contentAlpha = 0.84f,
-            enabled = clickableEnabled,
-            onClick = onRefresh,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(CollapsedRefreshButtonHeight)
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Refresh,
-                contentDescription = "刷新 WebUI",
-                tint = TextPrimary,
+            val primaryIconGap = lerpFloat(
+                lerpFloat(3f, 4f, clampedExpandedProgress),
+                4f,
+                clampedBottomProgress
+            ).dp
+            Box(
                 modifier = Modifier
-                    .size(22.dp)
-                    .graphicsLayer { rotationZ = spinDegrees }
+                    .zIndex(3f)
+                    .offset { IntOffset(primaryPos.first.dp.roundToPx(), primaryPos.second.dp.roundToPx()) }
+                    .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
+                    .clip(pillShape)
+                    .clickable {
+                        if (isWebUi) {
+                            interactionTick++
+                            expanded = !expanded
+                        } else {
+                            onTabSelected(HomeTab.WebUi)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.graphicsLayer { alpha = primaryContentAlpha }
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_maibot),
+                        contentDescription = if (isWebUi && !expanded) "展开导航菜单" else HomeTab.WebUi.label,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(primaryIconGap))
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "导航",
+                            color = TextPrimary,
+                            fontSize = TextSizes.Caption,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 12.sp,
+                            maxLines = 1,
+                            modifier = Modifier.graphicsLayer { alpha = navLabelAlpha }
+                        )
+                        Text(
+                            text = HomeTab.WebUi.label,
+                            color = TextPrimary,
+                            fontSize = TextSizes.Caption,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 12.sp,
+                            maxLines = 1,
+                            modifier = Modifier.graphicsLayer { alpha = 1f - navLabelAlpha }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 右下角独立圆形终端按钮：切离 WebUI 时从侧边胶囊底部平滑分离就位，切回 WebUI 时顺畅融入胶囊
+        if (frame.terminalAlpha > 0.02f) {
+            HomeTerminalButton(
+                blurTarget = blurTarget,
+                onClick = onTerminalClick,
+                enabled = !isWebUi,
+                modifier = Modifier
+                    .offset { IntOffset(frame.terminalLeftDp.dp.roundToPx(), frame.terminalTopDp.dp.roundToPx()) }
+                    .size(HomeBottomNavigationBarHeight)
+                    .graphicsLayer {
+                        alpha = frame.terminalAlpha
+                        scaleX = frame.terminalScale
+                        scaleY = frame.terminalScale
+                    }
             )
         }
     }
 }
 
-/** 展开态横屏侧栏同款竖排胶囊：三颗统一页签钮（当前 WebUI 高亮） + 细分隔线 + 刷新与终端。 */
+/** 展开态下半区附加操作：细分隔线 + 全局「刷新」与「终端」入口。 */
 @Composable
-private fun ExpandedPillContent(
+private fun ExpandedExtraActions(
     spinDegrees: Float,
-    onSelectTab: (HomeTab) -> Unit,
+    enabled: Boolean,
     onRefresh: () -> Unit,
     onOpenTerminal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val selectedShape = RoundedCornerShape(Corners.Pill)
     Column(
-        modifier = modifier.padding(PillOuterPadding),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        HomeTab.entries.forEach { tab ->
-            val isSelected = tab == HomeTab.WebUi
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(HomeTabButtonHeight)
-                    .then(
-                        if (isSelected) {
-                            Modifier
-                                .clip(selectedShape)
-                                .background(GlassSelectedIndicator)
-                        } else {
-                            Modifier
-                        }
-                    )
-            ) {
-                HomeTabButton(
-                    tab = tab,
-                    selected = isSelected,
-                    onClick = { onSelectTab(tab) },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -525,7 +720,7 @@ private fun ExpandedPillContent(
         PillLabeledButton(
             label = "刷新",
             contentAlpha = 0.82f,
-            enabled = true,
+            enabled = enabled,
             onClick = onRefresh,
             modifier = Modifier
                 .fillMaxWidth()
@@ -544,7 +739,7 @@ private fun ExpandedPillContent(
         PillLabeledButton(
             label = "终端",
             contentAlpha = 0.82f,
-            enabled = true,
+            enabled = enabled,
             onClick = onOpenTerminal,
             modifier = Modifier
                 .fillMaxWidth()
@@ -593,3 +788,6 @@ private fun PillLabeledButton(
         }
     }
 }
+
+private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float =
+    start + (stop - start) * fraction

@@ -1,11 +1,6 @@
 package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -241,34 +236,15 @@ private fun HomeTabsShell(
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
             } else {
-                // 竖屏：消息平台和设置页显示底部悬浮导航栏；WebUI 页改用侧边可拖动/原地展开的灵动胶囊，不遮网页底栏与右上角按钮。
-                AnimatedVisibility(
-                    visible = selectedTab != HomeTab.WebUi,
-                    enter = fadeIn() + slideInVertically { height -> height / 2 },
-                    exit = fadeOut() + slideOutVertically { height -> height / 2 },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    HomeBottomNavigation(
-                        selectedTab = selectedTab,
-                        blurTarget = blurTarget,
-                        onTabSelected = selectTab,
-                        onTerminalClick = openTerminal
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = selectedTab == HomeTab.WebUi,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
+                // 竖屏一体化导航：在 WebUI 页签展示侧边可拖拽/传感器换边的灵动胶囊，切向消息平台或设置时直接形变飞入底部栏（终端按钮同步分离就位），切回时原路飞回离开前所在侧。
+                HomePortraitNavigation(
+                    selectedTab = selectedTab,
+                    blurTarget = blurTarget,
+                    onRefreshWebUi = webUiTabState::reload,
+                    onTabSelected = selectTab,
+                    onTerminalClick = openTerminal,
                     modifier = Modifier.matchParentSize()
-                ) {
-                    WebUiFloatingPill(
-                        blurTarget = blurTarget,
-                        onRefreshWebUi = webUiTabState::reload,
-                        onSelectTab = selectTab,
-                        onOpenTerminal = openTerminal
-                    )
-                }
+                )
             }
         }
 

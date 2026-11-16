@@ -1,26 +1,16 @@
 package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,14 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.Corners
-import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -60,65 +48,32 @@ internal enum class HomeTab(val label: String) {
 /** 导航栏毛玻璃的模糊半径。 */
 internal const val NavigationBlurRadius = 22f
 
-/** 悬浮导航栏本体高度（标签栏与终端按钮同高）。 */
-private val HomeBottomNavigationBarHeight = 64.dp
+/** 悬浮底栏本体高度（标签栏与终端按钮同高）。 */
+internal val HomeBottomNavigationBarHeight = 64.dp
 
-/** 悬浮导航栏离容器底边的留白。 */
-private val HomeBottomNavigationBottomPadding = 16.dp
+/** 悬浮底栏离容器底边的留白。 */
+internal val HomeBottomNavigationBottomPadding = 16.dp
 
-/** 单个标签按钮的高度（底栏、侧栏通用）。 */
+/** 悬浮底栏与容器左右边缘的留白。 */
+internal val HomeBottomNavigationHorizontalPadding = 28.dp
+
+/** 单个标签按钮的高度（竖屏底栏、侧边胶囊、横屏侧栏通用）。 */
 internal val HomeTabButtonHeight = 56.dp
 
-/** 竖屏时悬浮在页面底部的毛玻璃导航：左边三个标签（选中块带弹性滑动），右边圆形终端按钮。 */
-@Composable
-internal fun HomeBottomNavigation(
-    selectedTab: HomeTab,
-    blurTarget: BlurTarget?,
-    onTabSelected: (HomeTab) -> Unit,
-    onTerminalClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = HomeBottomNavigationBottomPadding)
-    ) {
-        val horizontalPadding = 28.dp
-        val availableWidth = maxWidth - horizontalPadding * 2
-        val fabSize = HomeBottomNavigationBarHeight
-        val tabBarWidth = minOf(249.dp, availableWidth - fabSize - 16.dp).coerceAtLeast(216.dp)
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = horizontalPadding),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AnimatedHomeTabBar(
-                selectedTab = selectedTab,
-                blurTarget = blurTarget,
-                onTabSelected = onTabSelected,
-                modifier = Modifier
-                    .width(tabBarWidth)
-                    .height(HomeBottomNavigationBarHeight)
-            )
-
-            HomeTerminalButton(
-                blurTarget = blurTarget,
-                onClick = onTerminalClick,
-                modifier = Modifier.size(fabSize)
-            )
-        }
-    }
+/** 计算竖屏底部三栏标签胶囊的目标宽度（dp），为右下角圆形终端按钮与左右留白让出间距。 */
+internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
+    val availableWidthDp = maxWidthDp - HomeBottomNavigationHorizontalPadding.value * 2f
+    val fabSizeDp = HomeBottomNavigationBarHeight.value
+    return minOf(249f, availableWidthDp - fabSizeDp - 16f).coerceAtLeast(216f)
 }
 
-/** 圆形毛玻璃终端按钮，点开终端输出；底栏右端和横屏侧栏底部共用，尺寸由调用方给。 */
+/** 圆形毛玻璃终端按钮，点开终端输出；竖屏底栏右端与横屏侧栏底部共用，尺寸由调用方给。 */
 @Composable
 internal fun HomeTerminalButton(
     blurTarget: BlurTarget?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     Box(
         modifier = modifier
@@ -131,7 +86,7 @@ internal fun HomeTerminalButton(
             )
             .clip(CircleShape)
             .border(1.dp, GlassStroke, CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         BackdropBlurView(
@@ -150,81 +105,14 @@ internal fun HomeTerminalButton(
     }
 }
 
-@Composable
-private fun AnimatedHomeTabBar(
-    selectedTab: HomeTab,
-    blurTarget: BlurTarget?,
-    onTabSelected: (HomeTab) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(Corners.Pill)
-
-    BoxWithConstraints(
-        modifier = modifier
-            .shadow(
-                elevation = 18.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.32f),
-                spotColor = Color.Black.copy(alpha = 0.32f)
-            )
-            .clip(shape)
-            .border(1.dp, GlassStroke, shape)
-    ) {
-        val tabCount = HomeTab.entries.size
-        val tabWidth = (maxWidth - 8.dp) / tabCount
-        val indicatorOffset by animateDpAsState(
-            targetValue = 4.dp + tabWidth * selectedTab.ordinal.toFloat(),
-            animationSpec = spring(
-                dampingRatio = 0.78f,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "HomeTabIndicatorOffset"
-        )
-
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = NavigationBlurRadius,
-            overlayColor = GlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
-
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(indicatorOffset.roundToPx(), 4.dp.roundToPx()) }
-                .width(tabWidth)
-                .height(HomeTabButtonHeight)
-                .clip(RoundedCornerShape(Corners.Pill))
-                .background(GlassSelectedIndicator)
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            HomeTab.entries.forEach { tab ->
-                HomeTabButton(
-                    tab = tab,
-                    selected = selectedTab == tab,
-                    onClick = { onTabSelected(tab) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(HomeTabButtonHeight)
-                )
-            }
-        }
-    }
-}
-
 /** 单个标签按钮：图标在上、文字在下，选中时不透明、未选中略淡；大小由调用方的 modifier 决定。 */
 @Composable
 internal fun HomeTabButton(
     tab: HomeTab,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     val contentAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0.76f,
@@ -238,7 +126,7 @@ internal fun HomeTabButton(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(Corners.Pill))
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(
