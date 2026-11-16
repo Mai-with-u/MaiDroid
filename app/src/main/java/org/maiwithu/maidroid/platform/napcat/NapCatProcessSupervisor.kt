@@ -21,6 +21,7 @@ import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.killProot
+import org.maiwithu.maidroid.runtime.logUnexpectedSigkill
 import org.maiwithu.maidroid.runtime.requestedExitOf
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.util.concurrent.TimeUnit
@@ -258,6 +259,7 @@ internal class NapCatProcessSupervisor(
             val exitCode = currentProcess.waitFor()
             // launcher 随 QQ 退出：只要不是被下令停掉，都交给监管循环整树重启。
             TerminalLog.append("[NapCat] 进程退出码: $exitCode")
+            logUnexpectedSigkill(exitCode, shouldStopSupervising()) { TerminalLog.append(it) }
             return true
         } catch (e: Exception) {
             TerminalLog.append("[NapCat] 启动异常: ${e.message.orEmpty()}")

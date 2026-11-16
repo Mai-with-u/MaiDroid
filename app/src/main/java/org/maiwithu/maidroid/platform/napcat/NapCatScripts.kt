@@ -64,14 +64,11 @@ internal object NapCatScripts {
     fun prepareRuntime(): ContainerScript = ContainerScript(prepareRuntimeBody(), workingDirectory = "/root")
 
     /**
-     * 前台运行 launcher.sh（Xvfb + LinuxQQ）。通过 extraBinds 把覆盖后的 qq-package.json 挂载到 QQ 安装目录，
-     * 既能让 QQ 直接导入 NapCat，又不破坏磁盘上的原始 package.json（与 SnowLuma 共用 /opt/QQ 互不影响）。
+     * 前台直接以 exec bash 接管 /root/launcher.sh（Xvfb + LinuxQQ），省掉额外 sh 与 script 伪终端进程。
+     * 通过 extraBinds 把覆盖后的 qq-package.json 挂载到 QQ 安装目录，既能导入 NapCat 又不破坏原始文件。
      */
     fun launch(): ContainerScript = ContainerScript(
-        body = "cd /root && " +
-            "if command -v script >/dev/null 2>&1; then " +
-            "script -q -c ${shellQuote("bash /root/launcher.sh")} /dev/null; " +
-            "else bash /root/launcher.sh; fi",
+        body = "cd /root && exec bash /root/launcher.sh",
         workingDirectory = "/root",
         pinToSmallCores = true,
         extraBinds = listOf(

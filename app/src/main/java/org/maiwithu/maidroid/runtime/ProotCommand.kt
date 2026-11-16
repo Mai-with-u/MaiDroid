@@ -95,8 +95,11 @@ internal class ProotCommand(private val paths: RuntimePaths) {
     /**
      * 把整棵进程树钉在「非最高频簇」的 CPU 上（能效优化，通用规则不是机型特调）：
      * 从 /sys 分簇，频率最高的簇（大小核机型的大核；三簇机型的 prime 簇）不进亲和掩码，
-     * 其余全部保留；检测失败、 Cliff 全同频（单簇）或没有 taskset 时不钉。子进程继承亲和性，
+     * 其余全部保留；检测失败、全同频（单簇）或没有 taskset 时不钉。子进程继承亲和性，
      * 所以钉住这一条 sh，proot 里的 MaiBot/QQ/node/worker 全都会跟着留在中小核上。
+     *
+     * 注：紧连的 -pc 在 util-linux 2.38 的 Debian rootfs 实测可用；
+     * 分开写的「-c 列表 -p pid」会把 -p 当成待执行程序（实测报 failed to execute -p）。
      */
     private fun pinSmallCoresPrelude(): String =
         """
@@ -128,14 +131,12 @@ internal class ProotCommand(private val paths: RuntimePaths) {
             if [ -z "${'$'}mask" ]; then
                 return 0
             fi
-            // 紧连的 -pc 在 util-linux 2.38 的 Debian rootfs 实测可用；
-            // 分开写的「-c 列表 -p pid」会把 -p 当成待执行程序（实测报 failed to execute -p）。
             if taskset -pc "${'$'}mask" ${'$'}${'$'} >/dev/null 2>&1; then
                 echo "[maidroid] CPU affinity pinned to cpus ${'$'}mask (excluding top cluster ${'$'}max_freq kHz)"
             fi
         }
         maidroid_pin_small_cores
-        unset -f maidroid_pin_small_cores
+        unset -f maidroid_pin_small_cores;
         """.trimIndent()
 
     /**

@@ -93,21 +93,25 @@ class SnowLumaScriptsTest {
         assertTrue(launcher.contains("> /tmp/.maidroid-snowluma-webui-port"))
         // 只有用户同意过协议才替用户确认
         assertTrue(launcher.indexOf("if [ -f /root/.maidroid/snowluma_consent ]; then") < launcher.indexOf("export SNOWLUMA_ACCEPT_EULA=1"))
-        // SnowLuma 的工作目录是数据目录，QQ 不带 WebUI 密码
+        // SnowLuma 的工作目录是数据目录，QQ 不带 WebUI 密码且不禁用 zygote
         assertTrue(launcher.contains("(cd /root/snowluma/data && exec /root/snowluma/app/node /root/snowluma/app/index.mjs) 2>&1 &"))
-        assertTrue(launcher.contains("env -u SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD -u NODE_OPTIONS qq --no-sandbox --disable-gpu --disable-dev-shm-usage"))
+        assertTrue(launcher.contains("env -u SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD -u NODE_OPTIONS qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1 &"))
+        assertFalse(launcher.contains("--no-zygote"))
     }
 
     @Test
-    fun `launcher rebuilds the lock table from qq fdinfo while qq runs`() {
-        val loop = launcher.indexOf("for qq_pid in \$(pgrep -x qq); do")
-        assertTrue(loop in 0 until launcher.indexOf("Launching LinuxQQ"))
-        assertTrue(launcher.contains("grep -h '^lock:' /proc/\$qq_pid/fdinfo/* 2>/dev/null"))
-        assertTrue(launcher.contains("done | sed 's/^lock:[[:space:]]*//' > /tmp/.maidroid-proc-locks.new"))
-        assertTrue(launcher.contains("mv -f /tmp/.maidroid-proc-locks.new /tmp/.maidroid-proc-locks"))
-        assertTrue(launcher.indexOf("kill \"\$locks_pid\"") > launcher.indexOf("qq exited with code"))
+    fun `launcher uses exec bash and wait -n supervision without polling child processes`() {
+        val launch = SnowLumaScripts.launch().body
+        assertEquals("cd /root && exec bash /root/snowluma-launcher.sh", launch)
+        assertFalse(launch.contains("script -q"))
+
+        // 宿主机 ProcLocksSync 接管 /proc/locks，节点保育留在主脚本内由 wait -n 阻塞等待
+        assertFalse(launcher.contains("pgrep -x qq"))
+        assertFalse(launcher.contains("oom_score_adj"))
+        assertTrue(launcher.contains("wait -n -p exited_pid \"\$qq_pid\" \"\$snowluma_pid\""))
+        assertTrue(launcher.indexOf(": > /tmp/.maidroid-proc-locks") > launcher.indexOf("qq exited with code"))
         // QQ 退出后最后结束 Xvfb，proot 才会跟着退出
-        assertTrue(launcher.indexOf("kill \"\$xvfb_pid\"") > launcher.indexOf("kill -TERM \"\$snowluma_pid\""))
+        assertTrue(launcher.indexOf("kill \"\$xvfb_pid\"") > launcher.indexOf("pkill -TERM -f \"snowluma.app.index[.]mjs\""))
         // 清理时只清空替身，不删：proot 每条命令都要绑定它
         val cleanup = SnowLumaScripts.cleanup().body
         assertTrue(cleanup.contains(": > /tmp/.maidroid-proc-locks"))

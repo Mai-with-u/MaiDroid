@@ -21,6 +21,7 @@ import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.killProot
+import org.maiwithu.maidroid.runtime.logUnexpectedSigkill
 import org.maiwithu.maidroid.runtime.requestedExitOf
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.net.InetAddress
@@ -66,6 +67,9 @@ internal class SnowLumaProcessSupervisor(
         // 预算用尽后的冷却时长：歇这么久再把计数清零重新拉起，而不是停手等手动处理。
         // 10 分钟 = 每小时最多 ~6 组重启尝试，重启风暴也罩得住，又不会长时间扔下麦麦。
         const val RESTART_COOLDOWN_MS = 10 * 60 * 1000L
+
+        // 宿主侧轮询 QQ fdinfo 并更新 /proc/locks 替身的间隔（毫秒）。
+        const val PROC_LOCKS_SYNC_INTERVAL_MS = 2_000L
     }
 
     private val files = SnowLumaFiles(paths)
@@ -250,6 +254,7 @@ internal class SnowLumaProcessSupervisor(
         TerminalLog.append("[SnowLuma] 启动: bash ${SnowLumaScripts.LAUNCHER}")
         val ownJob = currentCoroutineContext()[Job]
         var startedProcess: Process? = null
+        var procLocksJob: Job? = null
         try {
             val currentProcess = commandRunner.start(
                 SnowLumaScripts.launch(),
@@ -267,6 +272,13 @@ internal class SnowLumaProcessSupervisor(
                 currentProcess.killProot()
                 return false
             }
+            // SnowLuma 进程已就位：启动宿主侧 /proc/locks 同步协程，代替容器内 bash 子循环以省掉幻影名额。
+            procLocksJob = scope.launch {
+                while (currentCoroutineContext().isActive) {
+                    runCatching { ProcLocksSync.writeProcLocksSnapshot(paths.fakeProcLocks) }
+                    delay(PROC_LOCKS_SYNC_INTERVAL_MS)
+                }
+            }
             currentProcess.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { rawLine ->
                     TerminalLog.append("[SnowLuma] ${rawLine.trimEnd('\r')}")
@@ -275,12 +287,15 @@ internal class SnowLumaProcessSupervisor(
             val exitCode = currentProcess.waitFor()
             // QQ 在前台跑（启动脚本随 QQ 退出）：不管退出码是几，只要不是被下令停掉，都交给监管循环整树重启。
             TerminalLog.append("[SnowLuma] 进程退出码: $exitCode")
+            logUnexpectedSigkill(exitCode, shouldStopSupervising()) { TerminalLog.append(it) }
             return true
         } catch (e: Exception) {
             TerminalLog.append("[SnowLuma] 启动异常: ${e.message.orEmpty()}")
             // 宿主侧命令没跑成（proot 拉不起来等）：还允许监管循环按退避重试几次，别把一次抖动当永久失败。
             return true
         } finally {
+            procLocksJob?.cancel()
+            ProcLocksSync.clear(paths.fakeProcLocks)
             // 只清自己这一轮的引用，迟迟收尾的旧一轮不能把重启后新进程的引用清掉。
             synchronized(lock) {
                 if (process === startedProcess) process = null

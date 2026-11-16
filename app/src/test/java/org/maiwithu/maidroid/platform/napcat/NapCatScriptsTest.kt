@@ -70,6 +70,11 @@ class NapCatScriptsTest {
             launch.extraBinds
         )
         assertEquals(2, Regex("(?m)^EOF$").findAll(launcher).count())
+        assertEquals("cd /root && exec bash /root/launcher.sh", launch.body)
+        assertFalse(launch.body.contains("script -q"))
+        assertFalse(launcher.contains("oom_score_adj"))
+        assertTrue(launcher.contains("qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1"))
+        assertFalse(launcher.contains("--no-zygote"))
     }
 
     @Test

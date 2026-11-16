@@ -9,24 +9,22 @@ import org.maiwithu.maidroid.platform.napcat.NapCatScripts
 
 class RequestExitScriptTest {
 
-    // 2026-11 在调试机上 ps 抓到的容器进程命令行（MaiBot 1.3.19 + NapCat），proot 那行只保留开头和结尾。
+    // 在调试机上 ps 抓到的容器进程命令行（含新版直启 .venv 与旧版 uv run 形态），proot 那行只保留开头和结尾。
     private val maiBotProcesses = listOf(
         "libproot_exec.so --link2symlink -0 -r /data/user/0/org.maiwithu.maidroid/files/debian -w /opt/MaiBot " +
-            "/bin/sh -c unset LD_LIBRARY_PATH; cd '/opt/MaiBot' && if command -v script >/dev/null 2>&1; then " +
-            "script -q -c 'uv run python bot.py' /dev/null; else uv run python bot.py; fi",
-        "sh -c unset LD_LIBRARY_PATH; cd '/opt/MaiBot' && if command -v script >/dev/null 2>&1; then " +
-            "script -q -c 'uv run python bot.py' /dev/null; else uv run python bot.py; fi",
-        "script -q -c uv run python bot.py /dev/null",
-        "sh -c uv run python bot.py",
+            "/bin/sh -c unset LD_LIBRARY_PATH; cd '/opt/MaiBot' && if [ -x '/opt/MaiBot/.venv/bin/python' ]; then " +
+            "exec '/opt/MaiBot/.venv/bin/python' bot.py; else exec uv run python bot.py; fi",
+        "sh -c unset LD_LIBRARY_PATH; cd '/opt/MaiBot' && if [ -x '/opt/MaiBot/.venv/bin/python' ]; then " +
+            "exec '/opt/MaiBot/.venv/bin/python' bot.py; else exec uv run python bot.py; fi",
         "uv run python bot.py",
+        "/opt/MaiBot/.venv/bin/python bot.py",
         "python bot.py",
-        "python -m src.runtime",
+        "python -X utf8 -m src.host.bootstrap /opt/MaiBot",
+        "python -u /opt/MaiBot/src/host/process.py --gate -m src.runtime",
         "python -m src.plugin_runtime.runner.runner_main"
     )
 
     private val napCatProcesses = listOf(
-        "script -q -c bash /root/launcher.sh /dev/null",
-        "sh -c bash /root/launcher.sh",
         "bash /root/launcher.sh",
         "Xvfb :1 -screen 0 1x1x8 +extension GLX +render",
         "qq --no-sandbox --disable-gpu --disable-dev-shm-usage",
@@ -40,8 +38,11 @@ class RequestExitScriptTest {
         Regex(pattern).containsMatchIn(args) && !Regex(exclude).containsMatchIn(args) && !args.contains("awk")
 
     @Test
-    fun `maibot exit goes only to the runner, not the sh script uv layers or the worker`() {
-        assertEquals(listOf("python bot.py"), maiBotProcesses.filter { MaiBotScripts.EXIT_TARGET.selects(it) })
+    fun `maibot exit goes only to the runner, not the proot sh uv layers or the worker`() {
+        assertEquals(
+            listOf("/opt/MaiBot/.venv/bin/python bot.py", "python bot.py"),
+            maiBotProcesses.filter { MaiBotScripts.EXIT_TARGET.selects(it) }
+        )
     }
 
     @Test

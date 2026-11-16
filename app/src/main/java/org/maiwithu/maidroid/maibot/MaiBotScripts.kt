@@ -266,24 +266,27 @@ internal object MaiBotScripts {
         "$UV_NOT_FIXABLE_PATTERN|No solution found|unsatisfiable|Failed to build|Build backend failed"
 
     /**
-     * 前台运行 MaiBot。有 script 命令时套一层伪终端，让 MaiBot 的彩色日志按行刷新到终端页；
-     * 启动前需要注入 MaiBotAgreement 的协议 hash，否则 MaiBot 会停在 EULA 确认。
+     * 前台运行 MaiBot：优先直接执行 .venv/bin/python 并用 exec 原地替换外层 /bin/sh，
+     * 省掉 script 伪终端与 uv 包装进程占用的幻影进程名额；依赖 PYTHONUNBUFFERED=1 按行实时刷新输出。
+     * 仅在 .venv 缺失时回退 exec uv run python bot.py；启动前需要注入 MaiBotAgreement 的协议 hash。
      */
     fun launch(): ContainerScript = ContainerScript(
         body = "${uvPrelude()}; cd ${shellQuote(MAIBOT_DIR)} && " +
-            "if command -v script >/dev/null 2>&1; then " +
-            "script -q -c ${shellQuote("uv run python bot.py")} /dev/null; " +
-            "else uv run python bot.py; fi",
+            "export PYTHONUNBUFFERED=1 VIRTUAL_ENV=${shellQuote("$MAIBOT_DIR/.venv")} " +
+            "PATH=${shellQuote("$MAIBOT_DIR/.venv/bin")}:\"\$PATH\"; " +
+            "if [ -x ${shellQuote("$MAIBOT_DIR/.venv/bin/python")} ]; then " +
+            "exec ${shellQuote("$MAIBOT_DIR/.venv/bin/python")} bot.py; " +
+            "else exec uv run python bot.py; fi",
         workingDirectory = MAIBOT_DIR,
         pinToSmallCores = true
     )
 
     /**
-     * 停止、重启和安全退出时，请 MaiBot 的 Runner（uv 拉起的 python bot.py）自己退出，最多等 EXIT_TIMEOUT_SECONDS 秒。
+     * 停止、重启和安全退出时，请 MaiBot 的 Runner（python bot.py）自己退出，最多等 EXIT_TIMEOUT_SECONDS 秒。
      * Runner 收到 SIGTERM 后转给 Worker（python -m src.runtime）并等它走完优雅关闭
      * （停插件运行时、持久化 A_Memorix 记忆、关数据库），Worker 退出后 Runner 跟着退出，
-     * uv、script、sh 随之依次退出，proot 也就结束了。2026-11 真机实测 MaiBot 1.3.19 空闲时约 3 秒关完。
-     * 只给 Runner 发，这是 MaiBot 自己的停止入口；外面几层 sh、script、uv 的命令行里也带着 bot.py，用 uv run 排除掉。
+     * proot 也就结束了。2026-11 真机实测 MaiBot 1.3.19 空闲时约 3 秒关完。
+     * 只给 Runner 发，这是 MaiBot 自己的停止入口；外层 proot/sh 包装命令行及旧式 uv run 用 exclude 排除掉。
      */
     fun requestExit(): ContainerScript = ContainerScript(
         listOf(
@@ -292,12 +295,16 @@ internal object MaiBotScripts {
         ).joinToString("\n")
     )
 
-    /** requestExit 要请其退出的进程：Runner（python bot.py），排除外面几层命令行带 uv run 的 sh、script、uv。 */
-    val EXIT_TARGET = ExitTarget(pattern = "python[0-9.]* bot[.]py", exclude = "uv run", processName = "MaiBot")
+    /** requestExit 要请其退出的进程：Runner（python bot.py 或 .venv/bin/python bot.py），排除外层 proot/sh 包装与 uv run。 */
+    val EXIT_TARGET = ExitTarget(
+        pattern = "python[0-9.]* bot[.]py",
+        exclude = "libproot_exec|sh -c|uv run",
+        processName = "MaiBot"
+    )
 
     /**
      * 结束上次异常退出留下的 MaiBot 进程（启动前），以及强杀 proot 后脱离出来的 MaiBot 进程（停止后），避免 WebUI 端口被占。
-     * 每一层都要认得出：外面的 sh、script、uv（命令行带 bot.py）、Runner、Worker 和插件运行器。
+     * 每一层都要认得出：Runner、bootstrap、gate/process、Worker 和插件运行器。
      */
     fun cleanupStaleProcesses(): ContainerScript = ContainerScript(
         listOf(
@@ -311,10 +318,10 @@ internal object MaiBotScripts {
         ).joinToString("\n")
     )
 
-    // cleanupStaleProcesses 按命令行匹配的 awk 正则。Runner 的命令行是 python bot.py（以前写成 python3 bot.py，
-    // 匹配不上），Worker 是 python -m src.runtime；Runner 忽略 SIGHUP，伪终端关掉也不会自己退出，必须点名清掉。
+    // cleanupStaleProcesses 按命令行匹配的进程正则。覆盖旧版脚本与新版 MaiBot 的 bootstrap/process 进程；
+    // 中间用点号替代路径斜杠，保证宿主机 Regex 与容器 awk '/.../' 均无转义冲突。
     const val STALE_PROCESS_PATTERN =
-        "python[0-9.]* bot[.]py|python[0-9.]* -m src[.]runtime|src[.]plugin_runtime[.]runner[.]runner_main"
+        "python[0-9.]* bot[.]py|src[.]host[.]bootstrap|src.host.process[.]py|python[0-9.]* -m src[.]runtime|src[.]plugin_runtime[.]runner[.]runner_main"
 
     // 同一份环境变量同时作用于 uv sync、uv run 和在线更新：先限定 Python 版本，再跳过 dev 依赖，
     // 保证“安装依赖”和“启动时 uv run 自动同步”用同一套参数，不会因为参数不一致反复重建 .venv。
