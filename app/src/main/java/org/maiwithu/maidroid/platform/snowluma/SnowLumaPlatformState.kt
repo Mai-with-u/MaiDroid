@@ -43,7 +43,9 @@ internal data class SnowLumaPlatformState(
     /** 正在从 NapCat 切到 SnowLuma（等 NapCat 的 QQ 下线）。 */
     val switching: Boolean = false,
     /** 用户保存的自定义 SnowLuma 仓库或发行包直链，默认留空。 */
-    val customRepoUrl: String = ""
+    val customSourceUrl: String = "",
+    /** 实际安装的 SnowLuma 版本号（从包内 package.json 读出）；未读到时为 null。 */
+    val installedVersion: String? = null
 ) {
     val isInstalling: Boolean = phase == SnowLumaInstallPhase.Installing
     val errorMessage: String? get() = failure?.message
@@ -56,14 +58,20 @@ internal data class SnowLumaPlatformState(
     val loggedIn: Boolean = oneBotReachable || hookPhase == SnowLumaHookPhase.LoggedIn
 
     companion object {
-        fun initial(installed: Boolean, active: Boolean, customRepoUrl: String = "") = SnowLumaPlatformState(
+        fun initial(
+            installed: Boolean,
+            active: Boolean,
+            customSourceUrl: String = "",
+            installedVersion: String? = null
+        ) = SnowLumaPlatformState(
             phase = if (installed) SnowLumaInstallPhase.Installed else SnowLumaInstallPhase.Idle,
             installed = installed,
             active = active,
             progress = if (installed) 1f else 0f,
             progressDescription = if (installed) "SnowLuma 已安装" else "等待安装",
             failure = null,
-            customRepoUrl = customRepoUrl
+            customSourceUrl = customSourceUrl,
+            installedVersion = installedVersion
         )
     }
 }

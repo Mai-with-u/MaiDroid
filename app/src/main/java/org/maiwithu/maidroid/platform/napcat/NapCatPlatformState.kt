@@ -36,7 +36,7 @@ internal data class NapCatPlatformState(
     // 用户点了“退出 QQ 登录”，正在清自动登录并重启 NapCat。
     val qqLoggingOut: Boolean = false,
     /** 用户保存的自定义 NapCat 仓库或安装包直链，默认留空。 */
-    val customRepoUrl: String = ""
+    val customSourceUrl: String = ""
 ) {
     val isInstalling: Boolean = phase == NapCatInstallPhase.Installing
     val errorMessage: String? get() = failure?.message
@@ -54,7 +54,7 @@ internal data class NapCatPlatformState(
             installed: Boolean,
             qrCodePath: String?,
             qrCodeLastModified: Long,
-            customRepoUrl: String = ""
+            customSourceUrl: String = ""
         ) =
             NapCatPlatformState(
                 phase = if (installed) NapCatInstallPhase.Installed else NapCatInstallPhase.Idle,
@@ -68,7 +68,7 @@ internal data class NapCatPlatformState(
                 oneBotConfig = null,
                 accountId = null,
                 accountName = null,
-                customRepoUrl = customRepoUrl
+                customSourceUrl = customSourceUrl
             )
     }
 }

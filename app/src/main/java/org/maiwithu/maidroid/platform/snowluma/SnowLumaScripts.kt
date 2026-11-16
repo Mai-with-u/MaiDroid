@@ -62,7 +62,7 @@ internal object SnowLumaScripts {
     // proot -0 下 QQ 看到的是 0、Android 上真实的是应用 uid，两边会对不上。路径要短，套接字路径有 108 字节上限。
     private const val HOOK_RUNTIME_DIR = "/tmp/snowluma-hook"
 
-    // /proc/locks 的替身，启动脚本往里填 QQ 的文件锁，原因见启动脚本里的注释
+    // /proc/locks 的替身，SnowLuma 运行期间由宿主侧 QqProcLocksSync 定时采集原子更新
     private const val PROC_LOCKS = InContainerPaths.PROC_LOCKS_STAND_IN
     private const val DOWNLOAD_DIR = "/root/.cache/maidroid-snowluma"
 
@@ -153,7 +153,7 @@ internal object SnowLumaScripts {
                 logPrefix = "[SnowLuma] "
             ),
             "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* $DISPLAY_FILE $SCREEN_FILE $PROC_LOCKS.new $NODE_STOP_MARKER",
-            // 拼锁表的循环随启动脚本一起被清掉；替身文件留着（proot 绑定要用），只清空内容
+            // 停止时清空替身内容而不删文件，proot 每条命令启动都会绑定该路径
             ": > $PROC_LOCKS",
             "exit 0"
         ).joinToString("\n"),
@@ -276,6 +276,7 @@ internal object SnowLumaScripts {
             maidroid_progress 0.40 "Install LinuxQQ"
             # NapCat 装过别的版本时要允许降级；本地 deb 的依赖照常从软件源装
             if ! maidroid_apt_install --allow-downgrades $DOWNLOAD_DIR/$QQ_PACKAGE; then
+                rm -f $DOWNLOAD_DIR/$QQ_PACKAGE
                 printf "LinuxQQ 安装失败（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
                 exit 1
             fi
@@ -327,7 +328,7 @@ internal object SnowLumaScripts {
         # 不开 SnowLuma 默认的 HTTP 3000、WS 3001。#sl 状态命令关掉，免得群里有人发 #sl 时机器人自动回一条状态。
         # QQ 登录后 SnowLuma 以这份为底另存 onebot_<QQ号>.json。
         maidroid_progress 0.85 "Write SnowLuma OneBot config"
-        cat > $DATA_DIR/config/onebot.json <<EOF
+        cat > $DATA_DIR/config/onebot.json.tmp <<EOF
         {
           "networks": {
             "httpServers": [],
@@ -350,9 +351,14 @@ internal object SnowLumaScripts {
           "statusCommand": { "enabled": false }
         }
         EOF
+        mv -f $DATA_DIR/config/onebot.json.tmp $DATA_DIR/config/onebot.json
 
         maidroid_progress 0.88 "Record SnowLuma install state"
-        printf "%s\n" $VERSION > $READY_MARKER
+        # 优先从实际解压出来的 package.json 提取真实版本号写入标记，读不到再回退默认目标版本
+        installed_ver="${'$'}(jq -r '.version // empty' $APP_DIR/package.json 2>/dev/null | head -n 1)"
+        [ -n "${'$'}installed_ver" ] || installed_ver=${shellQuote(VERSION)}
+        printf "%s\n" "${'$'}installed_ver" > $READY_MARKER.tmp
+        mv -f $READY_MARKER.tmp $READY_MARKER
         """.trimIndent()
 
     /**
@@ -375,7 +381,7 @@ internal object SnowLumaScripts {
             val listReleaseFilter =
                 "[.[]?.assets[]? | select((.name | test(\"linux-arm64.*\\\\.tar\\\\.gz\$\"; \"i\")) and ((.name | test(\"-lite\"; \"i\")) | not)) | .browser_download_url][0] // empty"
             if (source.pinnedTag != null) {
-                val pinnedVer = source.pinnedTag.removePrefix("v")
+                val pinnedVer = source.pinnedTag.substringAfterLast('/').removePrefix("v")
                 val pinnedUrl = "${source.repoBaseUrl}/releases/download/${source.pinnedTag}/SnowLuma-v$pinnedVer-linux-arm64.tar.gz"
                 val apiFallback = source.gitHubRepoSlug?.let { slug ->
                     val tagApiUrl = "https://api.github.com/repos/$slug/releases/tags/${source.pinnedTag}"
@@ -467,7 +473,7 @@ internal object SnowLumaScripts {
         export DISPLAY=":${'$'}display"
 
         # Android 不让应用读 /proc/locks，SnowLuma 却要靠它认出 QQ 登录了哪个号（看 QQ 锁着哪个账号的 nt_msg.db）。
-        # 现在由宿主协程 ProcLocksSync 直接读取同 UID 下 QQ 的 /proc/<pid>/fdinfo 原子更新 $PROC_LOCKS，
+        # 现在由宿主协程 QqProcLocksSync 直接读取同 UID 下 QQ 的 /proc/<pid>/fdinfo 原子更新 $PROC_LOCKS，
         # 不再在容器内每 2 秒起一轮 bash/pgrep/grep/sed 子进程（省去幻影进程名额和 SELinux 审计刷屏）。
 
         # SnowLuma 放在后台跑，工作目录是数据目录（config/、data/、logs/ 都放在工作目录下）：

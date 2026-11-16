@@ -509,9 +509,9 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             NapCatInstallDialog(
                 state = napCatState,
                 snowLumaInstalled = snowLumaState.installed,
-                onConfirm = { repoUrl ->
+                onConfirm = { sourceUrl ->
                     showNapCatInstall = false
-                    napCatManager.installNapCat(repoUrl)
+                    napCatManager.installNapCat(sourceUrl)
                     Toast.makeText(context, "正在安装 NapCat 和 QQ", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showNapCatInstall = false }
@@ -522,14 +522,14 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             NapCatConfigDialog(
                 state = napCatState,
                 onRefresh = { napCatManager.refresh() },
-                onSaveRepoUrl = { repoUrl ->
-                    val error = napCatManager.saveCustomRepoUrl(repoUrl)
-                    val tip = error ?: "自定义仓库地址已保存"
+                onSaveSourceUrl = { sourceUrl ->
+                    val error = napCatManager.saveCustomSourceUrl(sourceUrl)
+                    val tip = error ?: "自定义安装包来源已保存"
                     Toast.makeText(context, tip, Toast.LENGTH_SHORT).show()
                 },
-                onReinstallFromRepoUrl = { repoUrl ->
+                onReinstallFromSourceUrl = { sourceUrl ->
                     pendingReinstallClient = QqClient.NapCat.wireValue
-                    pendingReinstallUrl = repoUrl
+                    pendingReinstallUrl = sourceUrl
                 },
                 onLogoutQq = { showQqLogoutConfirm = true },
                 onDismiss = { showNapCatConfig = false },
@@ -570,9 +570,9 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             SnowLumaAgreementDialog(
                 state = snowLumaState,
                 napCatInstalled = napCatState.installed,
-                onConfirm = { repoUrl ->
+                onConfirm = { sourceUrl ->
                     showSnowLumaAgreement = false
-                    snowLumaManager.installSnowLuma(repoUrl)
+                    snowLumaManager.installSnowLuma(sourceUrl)
                     Toast.makeText(context, "正在安装 SnowLuma 和 QQ", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showSnowLumaAgreement = false }
@@ -610,14 +610,14 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     showQqWindow = true
                 },
                 onOpenWebUi = { openWebPage(snowLumaManager.webUiPageUrl()) },
-                onSaveRepoUrl = { repoUrl ->
-                    val error = snowLumaManager.saveCustomRepoUrl(repoUrl)
-                    val tip = error ?: "自定义仓库地址已保存"
+                onSaveSourceUrl = { sourceUrl ->
+                    val error = snowLumaManager.saveCustomSourceUrl(sourceUrl)
+                    val tip = error ?: "自定义安装包来源已保存"
                     Toast.makeText(context, tip, Toast.LENGTH_SHORT).show()
                 },
-                onReinstallFromRepoUrl = { repoUrl ->
+                onReinstallFromSourceUrl = { sourceUrl ->
                     pendingReinstallClient = QqClient.SnowLuma.wireValue
-                    pendingReinstallUrl = repoUrl
+                    pendingReinstallUrl = sourceUrl
                 },
                 onRestartQq = { showSnowLumaRestart = true },
                 onDismiss = { showSnowLumaConfig = false }
@@ -671,7 +671,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             val target = QqClient.fromWireValue(wireValue)
             CustomSourceReinstallConfirmDialog(
                 client = target,
-                repoUrl = pendingReinstallUrl,
+                sourceUrl = pendingReinstallUrl,
                 onConfirm = {
                     val targetUrl = pendingReinstallUrl
                     pendingReinstallClient = null

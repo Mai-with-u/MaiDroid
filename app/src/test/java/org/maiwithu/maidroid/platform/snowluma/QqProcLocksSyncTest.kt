@@ -7,7 +7,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 
-class ProcLocksSyncTest {
+class QqProcLocksSyncTest {
 
     @Rule
     @JvmField
@@ -52,15 +52,15 @@ class ProcLocksSyncTest {
             fdInfos = mapOf("1" to "lock:\t1: POSIX  ADVISORY  WRITE 203 103:3a:777 0 EOF\n")
         )
 
-        val collected = ProcLocksSync.collectQqLockLines(procRoot, myUid = 10217, myPid = 100)
+        val collected = QqProcLocksSync.collectQqLockLines(procRoot, myUid = 10217, myPid = 100)
         assertEquals(listOf("1: POSIX  ADVISORY  WRITE 201 103:3a:417347 0 EOF"), collected)
 
         val target = File(tempFolder.newFolder("tmp"), ".maidroid-proc-locks")
         target.writeText("stale content")
-        ProcLocksSync.writeProcLocksSnapshot(target, procRoot, myUid = 10217, myPid = 100)
+        QqProcLocksSync.writeProcLocksSnapshot(target, procRoot, myUid = 10217, myPid = 100)
         assertEquals("1: POSIX  ADVISORY  WRITE 201 103:3a:417347 0 EOF\n", target.readText())
 
-        ProcLocksSync.clear(target)
+        QqProcLocksSync.clear(target)
         assertTrue(target.isFile)
         assertEquals("", target.readText())
     }

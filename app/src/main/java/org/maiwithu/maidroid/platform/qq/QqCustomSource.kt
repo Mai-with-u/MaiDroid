@@ -62,7 +62,9 @@ internal fun parseQqCustomSource(client: QqClient, input: String): QqSourceParse
     when (client) {
         QqClient.NapCat -> {
             if (cleanPath.endsWith(".zip", ignoreCase = true)) {
-                return QqSourceParseResult.Valid(QqCustomSource.DirectArchive(trimmed))
+                return QqSourceParseResult.Valid(
+                    QqCustomSource.DirectArchive(normalizeArchiveUrl(uri, scheme, host))
+                )
             }
             if (cleanPath.endsWith(".tar.gz", ignoreCase = true) || cleanPath.endsWith(".tgz", ignoreCase = true)) {
                 return QqSourceParseResult.Invalid("NapCat 需要填写仓库地址或 .zip 安装包直链（如 NapCat.Shell.zip）")
@@ -70,7 +72,9 @@ internal fun parseQqCustomSource(client: QqClient, input: String): QqSourceParse
         }
         QqClient.SnowLuma -> {
             if (cleanPath.endsWith(".tar.gz", ignoreCase = true) || cleanPath.endsWith(".tgz", ignoreCase = true)) {
-                return QqSourceParseResult.Valid(QqCustomSource.DirectArchive(trimmed))
+                return QqSourceParseResult.Valid(
+                    QqCustomSource.DirectArchive(normalizeArchiveUrl(uri, scheme, host))
+                )
             }
             if (cleanPath.endsWith(".zip", ignoreCase = true)) {
                 return QqSourceParseResult.Invalid("SnowLuma 在容器里需要 linux-arm64 的 .tar.gz 直链或仓库地址，不能使用 .zip 包")
@@ -144,4 +148,14 @@ internal fun snowLumaDocUrl(input: String, docFileName: String): String? {
 private fun directArchiveHint(client: QqClient): String = when (client) {
     QqClient.NapCat -> "直链需指向 .zip 安装包（如 NapCat.Shell.zip），或改填仓库主页地址"
     QqClient.SnowLuma -> "直链需指向 linux-arm64 的 .tar.gz 安装包，或改填仓库主页地址"
+}
+
+/** 规范化直链协议头小写与 www.github.com 域名，保证 GitHubMirrors 能识别加速候选；保留原始编码路径与查询串。 */
+private fun normalizeArchiveUrl(uri: URI, scheme: String, host: String): String {
+    val portSuffix = if (uri.port != -1) ":${uri.port}" else ""
+    val normalizedHost = if (host == "www.github.com") "github.com" else host
+    val path = uri.rawPath.orEmpty()
+    val query = uri.rawQuery?.let { "?$it" }.orEmpty()
+    val fragment = uri.rawFragment?.let { "#$it" }.orEmpty()
+    return "$scheme://$normalizedHost$portSuffix$path$query$fragment"
 }

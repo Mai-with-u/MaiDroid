@@ -2,6 +2,8 @@ package org.maiwithu.maidroid.platform.snowluma
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -275,7 +277,7 @@ internal class SnowLumaProcessSupervisor(
             // SnowLuma 进程已就位：启动宿主侧 /proc/locks 同步协程，代替容器内 bash 子循环以省掉幻影名额。
             procLocksJob = scope.launch {
                 while (currentCoroutineContext().isActive) {
-                    runCatching { ProcLocksSync.writeProcLocksSnapshot(paths.fakeProcLocks) }
+                    runCatching { QqProcLocksSync.writeProcLocksSnapshot(paths.procLocksStandIn) }
                     delay(PROC_LOCKS_SYNC_INTERVAL_MS)
                 }
             }
@@ -294,8 +296,11 @@ internal class SnowLumaProcessSupervisor(
             // 宿主侧命令没跑成（proot 拉不起来等）：还允许监管循环按退避重试几次，别把一次抖动当永久失败。
             return true
         } finally {
-            procLocksJob?.cancel()
-            ProcLocksSync.clear(paths.fakeProcLocks)
+            // 先等正在运行的 IO 快照写入彻底结束，再清空替身文件，防止退出后又写回陈旧锁行
+            withContext(NonCancellable) {
+                procLocksJob?.cancelAndJoin()
+                QqProcLocksSync.clear(paths.procLocksStandIn)
+            }
             // 只清自己这一轮的引用，迟迟收尾的旧一轮不能把重启后新进程的引用清掉。
             synchronized(lock) {
                 if (process === startedProcess) process = null

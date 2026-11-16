@@ -12,7 +12,7 @@ import java.nio.file.StandardCopyOption
  * 宿主进程与容器同属一个应用 UID，可直接遍历 /proc/<qq_pid>/fdinfo 里的 lock: 记录并原子写入替身文件，
  * 省掉在容器内每 2 秒起一轮 bash/pgrep/grep/sed 子进程带来的 4 个幻影进程脉冲与审计刷屏。
  */
-internal object ProcLocksSync {
+internal object QqProcLocksSync {
 
     /** 采集同 UID 下所有名为 qq 的进程持有的文件锁行，去掉 "lock:" 前缀恢复为 /proc/locks 格式。 */
     fun collectQqLockLines(

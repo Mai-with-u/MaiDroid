@@ -68,7 +68,7 @@ internal class ProotCommand(private val paths: RuntimePaths) {
                     "-b", "${paths.fakeProcLoadAvg.absolutePath}:/proc/loadavg",
                     "-b", "${paths.fakeProcVmStat.absolutePath}:/proc/vmstat",
                     "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
-                    "-b", "${paths.fakeProcLocks.absolutePath}:/proc/locks",
+                    "-b", "${paths.procLocksStandIn.absolutePath}:/proc/locks",
                     "-b", "/sys",
                     "-b", "/sdcard",
                     "-b", "${paths.termuxTmpDir.absolutePath}:/tmp"
@@ -182,9 +182,9 @@ internal class ProotCommand(private val paths: RuntimePaths) {
         )
         writeIfChanged(paths.fakeProcUptime, "60.00 60.00\n")
         // /proc/locks 的替身只在没有时建一个空的：SnowLuma 运行期间由宿主侧 QqProcLocksSync 定时刷新它，这里不能覆盖
-        if (!paths.fakeProcLocks.isFile) {
-            paths.fakeProcLocks.parentFile?.mkdirs()
-            paths.fakeProcLocks.writeText("")
+        if (!paths.procLocksStandIn.isFile) {
+            paths.procLocksStandIn.parentFile?.mkdirs()
+            paths.procLocksStandIn.writeText("")
         }
     }
 

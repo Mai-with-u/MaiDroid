@@ -71,11 +71,11 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 internal fun NapCatInstallDialog(
     state: NapCatPlatformState,
     snowLumaInstalled: Boolean,
-    onConfirm: (repoUrl: String) -> Unit,
+    onConfirm: (sourceUrl: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var repoUrlText by rememberSaveable { mutableStateOf(state.customRepoUrl) }
-    val validSource = parseQqCustomSource(QqClient.NapCat, repoUrlText) as? QqSourceParseResult.Valid
+    var sourceUrlText by rememberSaveable { mutableStateOf(state.customSourceUrl) }
+    val validSource = parseQqCustomSource(QqClient.NapCat, sourceUrlText) as? QqSourceParseResult.Valid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -122,8 +122,8 @@ internal fun NapCatInstallDialog(
 
                 CustomSourceTextField(
                     client = QqClient.NapCat,
-                    value = repoUrlText,
-                    onValueChange = { repoUrlText = it }
+                    value = sourceUrlText,
+                    onValueChange = { sourceUrlText = it }
                 )
 
                 CustomSourceRiskNotice(clientLabel = "NapCat")
@@ -420,8 +420,8 @@ internal fun napCatQrLoginHint(state: NapCatPlatformState): String? = when {
 internal fun NapCatConfigDialog(
     state: NapCatPlatformState,
     onRefresh: () -> Unit,
-    onSaveRepoUrl: (String) -> Unit,
-    onReinstallFromRepoUrl: (String) -> Unit,
+    onSaveSourceUrl: (String) -> Unit,
+    onReinstallFromSourceUrl: (String) -> Unit,
     onLogoutQq: () -> Unit,
     onDismiss: () -> Unit,
     onOpenManagement: (() -> Unit)? = null
@@ -522,10 +522,10 @@ internal fun NapCatConfigDialog(
 
         CustomSourceEditorSection(
             client = QqClient.NapCat,
-            savedUrl = state.customRepoUrl,
+            savedUrl = state.customSourceUrl,
             installing = state.isInstalling,
-            onSaveUrl = onSaveRepoUrl,
-            onRequestReinstall = onReinstallFromRepoUrl
+            onSaveUrl = onSaveSourceUrl,
+            onRequestReinstall = onReinstallFromSourceUrl
         )
 
         // 退出 QQ：先弹二次确认，确认后清自动登录并重启 NapCat；进行中禁用，避免重复重启。

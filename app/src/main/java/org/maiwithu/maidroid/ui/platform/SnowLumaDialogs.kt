@@ -77,16 +77,16 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 internal fun SnowLumaAgreementDialog(
     state: SnowLumaPlatformState,
     napCatInstalled: Boolean,
-    onConfirm: (repoUrl: String) -> Unit,
+    onConfirm: (sourceUrl: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    var repoUrlText by rememberSaveable { mutableStateOf(state.customRepoUrl) }
-    val validSource = parseQqCustomSource(QqClient.SnowLuma, repoUrlText) as? QqSourceParseResult.Valid
+    var sourceUrlText by rememberSaveable { mutableStateOf(state.customSourceUrl) }
+    val validSource = parseQqCustomSource(QqClient.SnowLuma, sourceUrlText) as? QqSourceParseResult.Valid
 
-    fun openRepoDoc(fileName: String) {
-        val docUrl = snowLumaDocUrl(repoUrlText, fileName)
+    fun openSourceDoc(fileName: String) {
+        val docUrl = snowLumaDocUrl(sourceUrlText, fileName)
         if (docUrl != null) {
             uriHandler.openUri(docUrl)
         } else {
@@ -128,8 +128,8 @@ internal fun SnowLumaAgreementDialog(
 
                 CustomSourceTextField(
                     client = QqClient.SnowLuma,
-                    value = repoUrlText,
-                    onValueChange = { repoUrlText = it }
+                    value = sourceUrlText,
+                    onValueChange = { sourceUrlText = it }
                 )
 
                 DialogBody(
@@ -137,10 +137,10 @@ internal fun SnowLumaAgreementDialog(
                         "点“了解风险，同意并安装”即表示你已阅读并同意对应仓库内的用户协议和隐私政策。"
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { openRepoDoc("EULA.md") }) {
+                    TextButton(onClick = { openSourceDoc("EULA.md") }) {
                         Text(text = "用户协议", color = BrandOrange, fontWeight = FontWeight.Bold)
                     }
-                    TextButton(onClick = { openRepoDoc("PRIVACY.md") }) {
+                    TextButton(onClick = { openSourceDoc("PRIVACY.md") }) {
                         Text(text = "隐私政策", color = BrandOrange, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -292,8 +292,8 @@ internal fun SnowLumaConfigDialog(
     onRefresh: () -> Unit,
     onShowQqWindow: () -> Unit,
     onOpenWebUi: () -> Unit,
-    onSaveRepoUrl: (String) -> Unit,
-    onReinstallFromRepoUrl: (String) -> Unit,
+    onSaveSourceUrl: (String) -> Unit,
+    onReinstallFromSourceUrl: (String) -> Unit,
     onRestartQq: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -365,7 +365,7 @@ internal fun SnowLumaConfigDialog(
             ConfigGroupDivider()
             ConfigKeyValueRow(
                 label = "组件版本",
-                value = "SnowLuma ${SnowLumaScripts.VERSION} · QQ ${SnowLumaScripts.QQ_VERSION}",
+                value = "SnowLuma ${state.installedVersion ?: SnowLumaScripts.VERSION} · QQ ${SnowLumaScripts.QQ_VERSION}",
                 valueColor = TextMuted
             )
         }
@@ -387,10 +387,10 @@ internal fun SnowLumaConfigDialog(
 
         CustomSourceEditorSection(
             client = QqClient.SnowLuma,
-            savedUrl = state.customRepoUrl,
+            savedUrl = state.customSourceUrl,
             installing = state.isInstalling,
-            onSaveUrl = onSaveRepoUrl,
-            onRequestReinstall = onReinstallFromRepoUrl
+            onSaveUrl = onSaveSourceUrl,
+            onRequestReinstall = onReinstallFromSourceUrl
         )
 
         // 重启 QQ：先弹二次确认；进行中禁用，避免重复重启

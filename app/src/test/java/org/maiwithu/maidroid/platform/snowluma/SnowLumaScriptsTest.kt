@@ -45,6 +45,15 @@ class SnowLumaScriptsTest {
         val taggedInstall = SnowLumaScripts.install(token = "tok", webUiPassword = "pass-1234", source = taggedRepo).body
         assertTrue(taggedInstall.contains("https://github.com/owner/SnowLuma/releases/download/v2.5.0/SnowLuma-v2.5.0-linux-arm64.tar.gz"))
         assertTrue(taggedInstall.contains("https://api.github.com/repos/owner/SnowLuma/releases/tags/v2.5.0"))
+
+        val slashTaggedRepo = (parseQqCustomSource(QqClient.SnowLuma, "https://github.com/owner/SnowLuma/releases/tag/release/v2.5.1")
+            as QqSourceParseResult.Valid).source
+        val slashTaggedInstall = SnowLumaScripts.install(token = "tok", webUiPassword = "pass-1234", source = slashTaggedRepo).body
+        assertTrue(
+            slashTaggedInstall.contains(
+                "https://github.com/owner/SnowLuma/releases/download/release/v2.5.1/SnowLuma-v2.5.1-linux-arm64.tar.gz"
+            )
+        )
     }
 
     @Test
@@ -64,7 +73,7 @@ class SnowLumaScriptsTest {
 
     @Test
     fun `onebot config serves maibot on the shared port with the shared token`() {
-        val config = install.substringAfter("cat > /root/snowluma/data/config/onebot.json <<EOF").substringBefore("\nEOF\n")
+        val config = install.substringAfter("cat > /root/snowluma/data/config/onebot.json.tmp <<EOF").substringBefore("\nEOF\n")
 
         assertTrue(config.contains("\"host\": \"127.0.0.1\""))
         assertTrue(config.contains("\"port\": 8095"))
@@ -74,6 +83,9 @@ class SnowLumaScriptsTest {
         assertTrue(config.contains("\"statusCommand\": { \"enabled\": false }"))
         // token 和 NapCat 共用，写配置前已经读出来
         assertTrue(install.indexOf("onebot_token=\"${'$'}(cat /root/.maidroid/napcat_token)\"") < install.indexOf("onebot.json"))
+        // 优先从解压后的 package.json 读取实际版本原子写完成标记
+        assertTrue(install.contains("jq -r '.version // empty' /root/snowluma/app/package.json"))
+        assertTrue(install.contains("mv -f /root/.maidroid/snowluma_ready.tmp /root/.maidroid/snowluma_ready"))
     }
 
     @Test
@@ -105,7 +117,7 @@ class SnowLumaScriptsTest {
         assertEquals("cd /root && exec bash /root/snowluma-launcher.sh", launch)
         assertFalse(launch.contains("script -q"))
 
-        // 宿主机 ProcLocksSync 接管 /proc/locks，节点保育留在主脚本内由 wait -n 阻塞等待
+        // 宿主机 QqProcLocksSync 接管 /proc/locks，节点保育留在主脚本内由 wait -n 阻塞等待
         assertFalse(launcher.contains("pgrep -x qq"))
         assertFalse(launcher.contains("oom_score_adj"))
         assertTrue(launcher.contains("wait -n -p exited_pid \"\$qq_pid\" \"\$snowluma_pid\""))

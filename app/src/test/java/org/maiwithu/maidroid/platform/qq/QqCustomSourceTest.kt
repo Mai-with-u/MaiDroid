@@ -59,6 +59,16 @@ class QqCustomSourceTest {
 
         val snowLumaTgz = parseQqCustomSource(QqClient.SnowLuma, "https://example.com/snowluma.tgz")
         assertTrue((snowLumaTgz as QqSourceParseResult.Valid).source is QqCustomSource.DirectArchive)
+
+        // 大写协议头与 www.github.com 应归一化为小写 https://github.com/...，确保镜像候选生成器可匹配
+        val normalizedArchive = parseQqCustomSource(
+            QqClient.NapCat,
+            "HTTPS://www.github.com/owner/NapCatQQ/releases/download/v1.0/NapCat.Shell.zip?token=a%20b"
+        ) as QqSourceParseResult.Valid
+        assertEquals(
+            "https://github.com/owner/NapCatQQ/releases/download/v1.0/NapCat.Shell.zip?token=a%20b",
+            normalizedArchive.source.rawUrl
+        )
     }
 
     @Test

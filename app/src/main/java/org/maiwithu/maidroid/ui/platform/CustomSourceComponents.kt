@@ -231,7 +231,7 @@ internal fun CustomSourceEditorSection(
 @Composable
 internal fun CustomSourceReinstallConfirmDialog(
     client: QqClient,
-    repoUrl: String,
+    sourceUrl: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -258,7 +258,7 @@ internal fun CustomSourceReinstallConfirmDialog(
                     lineHeight = 18.sp
                 )
                 Text(
-                    text = repoUrl,
+                    text = sourceUrl,
                     color = TextPrimary,
                     fontSize = TextSizes.Caption,
                     lineHeight = 16.sp

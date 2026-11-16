@@ -284,7 +284,7 @@ internal object NapCatScripts {
 
         maidroid_progress 0.80 "Write NapCat OneBot11 WebSocket config"
         mkdir -p "${'$'}HOME/napcat/config"
-        cat > "${'$'}HOME/napcat/config/onebot11.json" <<EOF
+        cat > "${'$'}HOME/napcat/config/onebot11.json.tmp" <<EOF
         {
           "network": {
             "websocketServers": [
@@ -308,10 +308,12 @@ internal object NapCatScripts {
           "parseMultMsg": false
         }
         EOF
+        mv -f "${'$'}HOME/napcat/config/onebot11.json.tmp" "${'$'}HOME/napcat/config/onebot11.json"
 
         maidroid_progress 0.86 "Record NapCat install state"
         mkdir -p "${'$'}HOME/.maidroid"
-        printf "ready\n" > "${'$'}HOME/.maidroid/napcat_ready"
+        printf "ready\n" > "${'$'}HOME/.maidroid/napcat_ready.tmp"
+        mv -f "${'$'}HOME/.maidroid/napcat_ready.tmp" "${'$'}HOME/.maidroid/napcat_ready"
         """.trimIndent()
 
     /**
