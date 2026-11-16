@@ -31,7 +31,7 @@ private val MaiDroidColorScheme = darkColorScheme(
     surfaceVariant = OobeSurfaceVariant,
     onSurfaceVariant = OobeTextSecondary,
     outline = CardBorder,
-    outlineVariant = CardBorder.copy(alpha = 0.5f)
+    outlineVariant = CardDivider
 )
 
 /** 全应用主题：深色配色 + 抖音美好体 / 鸿蒙黑体字体 + 全局弹性阻尼越界滚动，所有界面都包在它里面。 */
