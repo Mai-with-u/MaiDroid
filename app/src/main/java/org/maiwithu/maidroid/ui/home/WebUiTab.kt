@@ -197,8 +197,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
             val webViewClient = WebUiWebViewClient(
                 logTag = MaiBotWebUi.LOG_TAG,
-                // APP 底栏在 WebUI 页签默认收成右下角的小按钮（横屏时是左侧悬浮的侧栏，网页已让出它的宽度），
-                // 网页底部不用再给它留白；展开时底栏连同遮罩一起盖在网页上，不需要网页让位。
+                // 竖屏下导航收敛在边缘可拖拽的灵动胶囊中，横屏为左侧悬浮侧栏（网页已让出侧栏宽度），网页底部均无需额外留白。
                 // 加载成功 -> 清掉错误提示，注入底色脚本，网页随即报上底色（之后换主题再报）；加载失败 -> 底色作废。
                 onPageFinishedCallback = { view, _ ->
                     tabState.webViewError = null
@@ -294,8 +293,6 @@ internal fun WebUiTabPage(
     startClearance: Dp = 0.dp
 ) {
     val statusBarTop = statusBarTopInset()
-    // 右上角已移除常驻刷新球，顶部横幅保持左右对称留白
-    val bannerEndPadding = 16.dp
 
     // 弹出键盘时 WebView 底部让出键盘的高度。主界面是全面屏（edge-to-edge），清单里的 adjustResize 不再缩小窗口，
     // 不让的话 WebView 一直是全高，键盘直接盖住网页下半截（聊天页的输入栏首当其冲）。
@@ -374,49 +371,18 @@ internal fun WebUiTabPage(
                 onAction = state::reload,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 16.dp)
             )
         } else if (!webUiOnline) {
-            Row(
+            // 电量低暂停着时麦麦是主动保存数据停下的，横幅直接说明原因
+            WebUiStatusBanner(
+                message = if (lowBatteryPaused) "电量低，麦麦已暂停" else "WebUI 离线",
+                action = "唤醒",
+                onAction = onWakeMai,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(Corners.Chip))
-                    .background(CardSurface.copy(alpha = 0.92f))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(StatusWarning)
-                )
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                // 电量低暂停着：WebUI 是麦麦自己保存好数据停下的，不是出了问题，横幅直接说明原因
-                Text(
-                    text = if (lowBatteryPaused) "电量低，麦麦已暂停" else "WebUI 离线",
-                    color = TextPrimary,
-                    fontSize = TextSizes.Body,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Text(
-                    text = "唤醒",
-                    color = BrandOrange,
-                    fontSize = TextSizes.Body,
-                    fontWeight = FontWeight.Bold,
-                    // 文字按钮：裁成圆角再加内边距，按下的水波纹有个按钮的样子，也更好点中。
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(Corners.Control))
-                        .clickable(onClick = onWakeMai)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 16.dp)
+            )
         }
     }
 }
@@ -459,6 +425,7 @@ private fun WebUiStatusBanner(
             color = BrandOrange,
             fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
+            // 文字按钮：裁成圆角再加内边距，按下的水波纹有个按钮的样子，也更好点中
             modifier = Modifier
                 .clip(RoundedCornerShape(Corners.Control))
                 .clickable(onClick = onAction)

@@ -7,7 +7,6 @@ import androidx.compose.ui.graphics.Color
 // ── 品牌橙：按钮、选中态、标题强调 ─────────────────────────────────
 val BrandOrange = Color(0xFFE97F0F)
 val BrandOrangeMuted = Color(0xCCE97F0F)  // 80% 不透明，OOBE 的按钮和图标底色
-val BrandOrangeFaint = Color(0x66E97F0F)  // 40% 不透明，只用于 Material 描边
 val OnBrandOrange = Color.White
 
 // ── OOBE（首次引导）页面：底色更亮一档，卡片是灰色块 ───────────────────
@@ -58,6 +57,7 @@ val GlassStroke = Color(0x29FFFFFF)             // 16% 微光折射玻璃边，�
 val SubtleGlassSurface = Color(0x2E202228)      // ~18% 轻透冷灰遮罩
 val GlassButtonSurface = Color(0x40202228)      // ~25% 清透圆形小按钮与信息卡边框底
 val GlassSelectedIndicator = Color(0x26FFFFFF)  // 15% 轻透选中胶囊滑块，保持背景透光感
+val GlassShadow = Color(0x3D000000)             // 24% 柔和黑阴影，用于悬浮毛玻璃导航条轮廓衬托
 const val SubtleGlassBlurRadius = 8f
 
 // ── 终端输出 ─────────────────────────────────────────────────────

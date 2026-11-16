@@ -41,7 +41,8 @@ internal const val WakeRetryIntervalMillis = 30_000L
 
 /**
  * OOBE 完成后的主页。WebUI 第一次上线前盖着唤醒页（开机自检画面，每 30 秒自动唤醒一次 MaiBot），
- * 自检走完或点 SKIP 后切到三栏外壳：WebUI、消息平台、设置；竖屏导航在底部（右下角按钮打开终端输出），横屏导航在左侧。
+ * 自检走完或点 SKIP 后切到三栏外壳（WebUI、消息平台、设置）：竖屏在 WebUI 页签展现为侧边可拖拽与重力换边的灵动胶囊，
+ * 切到其余页签时平滑形变为底栏 + 右下角终端按钮；横屏导航固定在左侧。
  */
 @Composable
 internal fun HomeScreen(
@@ -64,7 +65,7 @@ internal fun HomeScreen(
     // 组合后不再撤掉，WebUI 短暂掉线也不会让 WebView 重新加载。
     var shellComposed by rememberSaveable { mutableStateOf(false) }
     var selectedTab by rememberSaveable { mutableStateOf(HomeTab.WebUi) }
-    var showTerminalOutput by remember { mutableStateOf(false) }
+    var showTerminalOutput by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(webUiOnline) {
         if (webUiOnline) shellComposed = true

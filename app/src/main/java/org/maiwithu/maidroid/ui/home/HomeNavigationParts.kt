@@ -23,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +32,7 @@ import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.GlassShadow
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -48,23 +48,26 @@ internal enum class HomeTab(val label: String) {
 /** 导航栏毛玻璃的模糊半径（配合 3x 硬件缩放对应 ~33px 轻柔透光模糊）。 */
 internal const val NavigationBlurRadius = 11f
 
-/** 悬浮底栏本体高度（标签栏与终端按钮同高）。 */
-internal val HomeBottomNavigationBarHeight = 64.dp
+/** 竖屏底部导航栏与独立圆形终端按钮的统一高度。 */
+internal val PortraitBottomBarHeight = 64.dp
 
-/** 悬浮底栏离容器底边的留白。 */
-internal val HomeBottomNavigationBottomPadding = 16.dp
+/** 竖屏底部导航栏离容器底边的留白。 */
+internal val PortraitBottomBarBottomPadding = 16.dp
 
-/** 悬浮底栏与容器左右边缘的留白。 */
-internal val HomeBottomNavigationHorizontalPadding = 28.dp
+/** 竖屏底部导航栏与容器左右边缘的留白。 */
+internal val PortraitBottomBarHorizontalPadding = 28.dp
+
+/** 单个标签按钮高度（dp 数值常量，同时供竖屏侧边胶囊几何计算复用）。 */
+internal const val HomeTabButtonHeightDp = 56f
 
 /** 单个标签按钮的高度（竖屏底栏、侧边胶囊、横屏侧栏通用）。 */
-internal val HomeTabButtonHeight = 56.dp
+internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
 
 /** 计算竖屏底部三栏标签胶囊的目标宽度（dp），为右下角圆形终端按钮与左右留白让出间距。 */
 internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
-    val availableWidthDp = maxWidthDp - HomeBottomNavigationHorizontalPadding.value * 2f
-    val fabSizeDp = HomeBottomNavigationBarHeight.value
-    return minOf(249f, availableWidthDp - fabSizeDp - 16f).coerceAtLeast(216f)
+    val availableWidthDp = maxWidthDp - PortraitBottomBarHorizontalPadding.value * 2f
+    val terminalButtonSizeDp = PortraitBottomBarHeight.value
+    return minOf(249f, availableWidthDp - terminalButtonSizeDp - 16f).coerceAtLeast(216f)
 }
 
 /** 圆形毛玻璃终端按钮，点开终端输出；竖屏底栏右端与横屏侧栏底部共用，尺寸由调用方给。 */
@@ -81,8 +84,8 @@ internal fun HomeTerminalButton(
                 elevation = 14.dp,
                 shape = CircleShape,
                 clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.24f),
-                spotColor = Color.Black.copy(alpha = 0.24f)
+                ambientColor = GlassShadow,
+                spotColor = GlassShadow
             )
             .clip(CircleShape)
             .border(1.dp, GlassStroke, CircleShape)

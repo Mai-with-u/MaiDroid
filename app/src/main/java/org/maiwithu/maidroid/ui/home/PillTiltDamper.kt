@@ -20,6 +20,15 @@ import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
+/** 竖屏 WebUI 侧边胶囊在屏幕左右缘的停靠边枚举。 */
+internal enum class PillDockSide {
+    Left,
+    Right
+}
+
+/** 竖屏初次进入 WebUI 时悬浮胶囊默认停靠在左侧，符合右手滑屏时左手拇指与视觉习惯。 */
+internal val DefaultPillDockSide = PillDockSide.Left
+
 // 有效重力样本总模长下限与上限（m/s^2），用于过滤剧烈甩动导致加速度失真的采样帧
 private const val MinValidGravity = 5.0f
 private const val MaxValidGravity = 15.0f
@@ -70,7 +79,7 @@ internal class PillTiltDamper {
     private var awaitNeutralAfterManualDock = false
 
     /**
-     * 输入一帧重力（或加速度兜底）传感器样本，返回经过三级阻尼决策后的目标停靠侧（true=右，false=左）。
+     * 输入一帧重力（或加速度兜底）传感器样本，返回经过三级阻尼决策后的目标停靠侧（Left/Right）。
      */
     fun onSensorSample(
         rawX: Float,
@@ -78,16 +87,16 @@ internal class PillTiltDamper {
         rawZ: Float,
         timestampNanos: Long,
         surfaceRotation: Int = Surface.ROTATION_0,
-        currentDockRight: Boolean,
+        currentSide: PillDockSide,
         interactionPaused: Boolean = false
-    ): Boolean {
+    ): PillDockSide {
         val (screenGx, screenGy) = projectScreenGravity(rawX, rawY, surfaceRotation)
         val magnitude = sqrt(screenGx * screenGx + screenGy * screenGy + rawZ * rawZ)
 
         // 总模长偏离正常重力区间过大时说明正在猛烈摇晃，跳过该帧避免误判
         if (magnitude !in MinValidGravity..MaxValidGravity) {
             lastTimestampNanos = timestampNanos
-            return currentDockRight
+            return currentSide
         }
 
         if (!hasFilterState) {
@@ -96,7 +105,7 @@ internal class PillTiltDamper {
             filteredGz = rawZ
             lastTimestampNanos = timestampNanos
             hasFilterState = true
-            return currentDockRight
+            return currentSide
         }
 
         val dt = ((timestampNanos - lastTimestampNanos) / 1_000_000_000f).coerceIn(0.005f, 0.25f)
@@ -114,7 +123,7 @@ internal class PillTiltDamper {
         // 正在拖拽或菜单展开期间冻结自动换边，确保交互过程胶囊绝对稳固
         if (interactionPaused) {
             oppositeHoldSeconds = 0f
-            return currentDockRight
+            return currentSide
         }
 
         // 平放状态（正放桌面或反扣）优先保持上一次停靠位置，同时快速衰减残留的倾斜计时
@@ -124,33 +133,33 @@ internal class PillTiltDamper {
             if (awaitNeutralAfterManualDock) {
                 awaitNeutralAfterManualDock = false
             }
-            return currentDockRight
+            return currentSide
         }
 
-        // 左倾为正值目标停左 (false)，右倾为负值目标停右 (true)，死区内维持现状
-        val desiredDockRight = when {
-            filteredGx >= TiltTriggerThreshold -> false
-            filteredGx <= -TiltTriggerThreshold -> true
+        // 左倾为正值目标停左，右倾为负值目标停右，死区内维持现状
+        val desiredSide = when {
+            filteredGx >= TiltTriggerThreshold -> PillDockSide.Left
+            filteredGx <= -TiltTriggerThreshold -> PillDockSide.Right
             else -> null
         }
 
         // 手动拖拽刚把胶囊放到用户指定的边：必须等手机先回正/平放/同向倾斜一次再重新武装自动切换
         if (awaitNeutralAfterManualDock) {
-            if (desiredDockRight == null || desiredDockRight == currentDockRight) {
+            if (desiredSide == null || desiredSide == currentSide) {
                 awaitNeutralAfterManualDock = false
             } else {
                 oppositeHoldSeconds = 0f
-                return currentDockRight
+                return currentSide
             }
         }
 
-        if (desiredDockRight == null || desiredDockRight == currentDockRight) {
+        if (desiredSide == null || desiredSide == currentSide) {
             oppositeHoldSeconds = (oppositeHoldSeconds - dt * 2.0f).coerceAtLeast(0f)
-            return currentDockRight
+            return currentSide
         }
 
         if (cooldownRemaining > 0f) {
-            return currentDockRight
+            return currentSide
         }
 
         // 倾角越明显驻留积攒略快但仍有上限，既保留阻尼感又兼顾主动甩手切换时的跟手度
@@ -160,10 +169,10 @@ internal class PillTiltDamper {
         if (oppositeHoldSeconds >= DwellThresholdSeconds) {
             oppositeHoldSeconds = 0f
             cooldownRemaining = SwitchCooldownSeconds
-            return desiredDockRight
+            return desiredSide
         }
 
-        return currentDockRight
+        return currentSide
     }
 
     /** 用户手势拖拽停靠后调用，锁定当前反倾角并开启冷却期，绝不立刻自动弹回。 */
@@ -179,11 +188,11 @@ internal class PillTiltDamper {
  * 随生命周期 ON_RESUME 注册、ON_PAUSE 与退出组合立即注销，避免后台耗电与泄露。
  */
 @Composable
-internal fun BindPillTiltSensor(
-    currentDockRight: Boolean,
+internal fun bindPillTiltSensor(
+    currentSide: PillDockSide,
     interactionPaused: Boolean,
     damper: PillTiltDamper,
-    onDockSideChanged: (Boolean) -> Unit
+    onDockSideChanged: (PillDockSide) -> Unit
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -192,7 +201,7 @@ internal fun BindPillTiltSensor(
         context.getSystemService(SensorManager::class.java)
     }
 
-    val latestDockRight by rememberUpdatedState(currentDockRight)
+    val latestDockSide by rememberUpdatedState(currentSide)
     val latestPaused by rememberUpdatedState(interactionPaused)
     val latestOnDockChanged by rememberUpdatedState(onDockSideChanged)
 
@@ -211,14 +220,14 @@ internal fun BindPillTiltSensor(
                 val values = event.values
                 if (values.size < 3) return
                 val rotation = view.display?.rotation ?: Surface.ROTATION_0
-                val current = latestDockRight
+                val current = latestDockSide
                 val next = damper.onSensorSample(
                     rawX = values[0],
                     rawY = values[1],
                     rawZ = values[2],
                     timestampNanos = event.timestamp,
                     surfaceRotation = rotation,
-                    currentDockRight = current,
+                    currentSide = current,
                     interactionPaused = latestPaused
                 )
                 if (next != current) {

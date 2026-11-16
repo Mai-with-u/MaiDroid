@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.ui.home
 
-import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -49,7 +48,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -64,45 +62,48 @@ import eightbitlab.com.blurview.BlurTarget
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
+import org.maiwithu.maidroid.ui.theme.GlassShadow
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-private const val PillPrefsName = "maidroid_ui_prefs"
-private const val PrefKeyDockRight = "webui_pill_dock_right_v2"
-private const val PrefKeyVerticalBias = "webui_pill_vertical_bias"
-
-/** 竖屏初次进入 WebUI 时悬浮胶囊默认停靠在左侧（false），符合右手滑屏时左手拇指/视觉习惯。 */
-internal const val DefaultDockRight = false
-
-private const val DefaultVerticalBias = 0.65f
 private const val PillIdleFadeDelayMs = 3_000L
 
+private const val PillInnerInsetDp = 4f
+private const val CollapsedNavButtonHeightDp = 54f
+private const val CollapsedItemGapDp = 4f
+private const val CollapsedRefreshButtonHeightDp = 52f
+private const val CollapsedRefreshTopDp =
+    PillInnerInsetDp + CollapsedNavButtonHeightDp + CollapsedItemGapDp
+
 internal const val CollapsedPillWidthDp = 64f
-internal const val CollapsedPillHeightDp = 118f
+internal const val CollapsedPillHeightDp =
+    CollapsedRefreshTopDp + CollapsedRefreshButtonHeightDp + PillInnerInsetDp
+
+private const val ExpandedActionsTopDp = PillInnerInsetDp + HomeTabButtonHeightDp * 3f
+private const val ExpandedDividerSlotHeightDp = 9f
+private const val ExpandedActionButtonHeightDp = 54f
+
 internal const val ExpandedPillWidthDp = 74f
-internal const val ExpandedPillHeightDp = 293f
+internal const val ExpandedPillHeightDp =
+    ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedActionButtonHeightDp * 2f + PillInnerInsetDp
 
 private val CollapsedPillWidth = CollapsedPillWidthDp.dp
 private val CollapsedPillHeight = CollapsedPillHeightDp.dp
 private val ExpandedPillWidth = ExpandedPillWidthDp.dp
 private val ExpandedPillHeight = ExpandedPillHeightDp.dp
 
-private const val PillInnerInsetDp = 4f
-private const val CollapsedExpandHeightDp = 54f
-private const val CollapsedRefreshTopDp = 62f
-private const val ExpandedActionsTopDp = 172f
-
 private val PillOuterPadding = PillInnerInsetDp.dp
-private val CollapsedRefreshButtonHeight = 52.dp
-private val ExpandedDividerSlotHeight = 9.dp
-private val ExpandedActionButtonHeight = 54.dp
+private val CollapsedRefreshButtonHeight = CollapsedRefreshButtonHeightDp.dp
+private val ExpandedDividerSlotHeight = ExpandedDividerSlotHeightDp.dp
+private val ExpandedActionButtonHeight = ExpandedActionButtonHeightDp.dp
 private val PillEdgeMargin = 10.dp
 private val PillBottomClearance = 84.dp
 
@@ -127,8 +128,8 @@ internal data class PortraitNavFrame(
 internal fun clampPillVerticalBias(bias: Float): Float = bias.coerceIn(0f, 1f)
 
 /** 松手后根据胶囊中心横坐标与容器宽度中线比较，决定自动吸附到左侧还是右侧。 */
-internal fun shouldDockPillRight(centerX: Float, containerWidth: Float): Boolean =
-    centerX >= containerWidth * 0.5f
+internal fun resolvePillDockSide(centerX: Float, containerWidth: Float): PillDockSide =
+    if (centerX >= containerWidth * 0.5f) PillDockSide.Right else PillDockSide.Left
 
 /**
  * 计算停靠时的顶部纵坐标（dp）：
@@ -165,27 +166,27 @@ internal fun computePortraitNavFrame(
     expandedProgress: Float,
     bottomProgress: Float
 ): PortraitNavFrame {
-    val e = expandedProgress.coerceIn(0f, 1f)
-    val b = bottomProgress.coerceIn(0f, 1f)
+    val clampedExpanded = expandedProgress.coerceIn(0f, 1f)
+    val clampedBottom = bottomProgress.coerceIn(0f, 1f)
 
     val bottomTabBarWidth = computeBottomTabBarWidthDp(maxWidthDp)
-    val bottomBarHeight = HomeBottomNavigationBarHeight.value
-    val bottomBarTop = (maxHeightDp - HomeBottomNavigationBottomPadding.value - bottomBarHeight).coerceAtLeast(0f)
-    val bottomBarLeft = HomeBottomNavigationHorizontalPadding.value
+    val bottomBarHeight = PortraitBottomBarHeight.value
+    val bottomBarTop = (maxHeightDp - PortraitBottomBarBottomPadding.value - bottomBarHeight).coerceAtLeast(0f)
+    val bottomBarLeft = PortraitBottomBarHorizontalPadding.value
     val bottomSingleTabWidth = (bottomTabBarWidth - PillInnerInsetDp * 2f) / HomeTab.entries.size
-    val bottomTerminalLeft = maxWidthDp - HomeBottomNavigationHorizontalPadding.value - bottomBarHeight
+    val bottomTerminalLeft = maxWidthDp - PortraitBottomBarHorizontalPadding.value - bottomBarHeight
 
     // 主胶囊位置保留微幅弹簧缓冲；宽高严守 [0, 1] 防止过冲缩出负数尺寸
     val capsuleLeft = lerpFloat(sideLeftDp, bottomBarLeft, bottomProgress)
     val capsuleTop = lerpFloat(sideTopDp, bottomBarTop, bottomProgress)
-    val capsuleWidth = lerpFloat(sideWidthDp, bottomTabBarWidth, b)
-    val capsuleHeight = lerpFloat(sideHeightDp, bottomBarHeight, b)
+    val capsuleWidth = lerpFloat(sideWidthDp, bottomTabBarWidth, clampedBottom)
+    val capsuleHeight = lerpFloat(sideHeightDp, bottomBarHeight, clampedBottom)
 
-    val tabWidth = lerpFloat(sideWidthDp - PillInnerInsetDp * 2f, bottomSingleTabWidth, b)
+    val tabWidth = lerpFloat(sideWidthDp - PillInnerInsetDp * 2f, bottomSingleTabWidth, clampedBottom)
     val tabPositions = HomeTab.entries.indices.map { index ->
-        val sideSlotY = PillInnerInsetDp + (HomeTabButtonHeight.value * index) * e
-        val tabX = lerpFloat(PillInnerInsetDp, PillInnerInsetDp + bottomSingleTabWidth * index, b)
-        val tabY = lerpFloat(sideSlotY, PillInnerInsetDp, b)
+        val sideSlotY = PillInnerInsetDp + (HomeTabButtonHeight.value * index) * clampedExpanded
+        val tabX = lerpFloat(PillInnerInsetDp, PillInnerInsetDp + bottomSingleTabWidth * index, clampedBottom)
+        val tabY = lerpFloat(sideSlotY, PillInnerInsetDp, clampedBottom)
         tabX to tabY
     }
 
@@ -193,8 +194,8 @@ internal fun computePortraitNavFrame(
     val sideTerminalAnchorTop = sideTopDp + sideHeightDp - bottomBarHeight
     val terminalLeft = lerpFloat(sideTerminalAnchorLeft, bottomTerminalLeft, bottomProgress)
     val terminalTop = lerpFloat(sideTerminalAnchorTop, bottomBarTop, bottomProgress)
-    val terminalAlpha = ((b - 0.08f) / 0.72f).coerceIn(0f, 1f)
-    val terminalScale = 0.82f + 0.18f * b
+    val terminalAlpha = ((clampedBottom - 0.08f) / 0.72f).coerceIn(0f, 1f)
+    val terminalScale = 0.82f + 0.18f * clampedBottom
 
     return PortraitNavFrame(
         capsuleLeftDp = capsuleLeft,
@@ -212,7 +213,7 @@ internal fun computePortraitNavFrame(
 
 /**
  * 竖屏一体化毛玻璃导航：
- * - 在 WebUI 页签展现为可左右停靠（默认左缘）+ 重力传感器三级阻尼换边 + 全向拖拽的灵动胶囊；
+ * - 在 WebUI 页签展现为可左右停靠（默认左缘）+ 重力传感器三级阻尼换边 + 收起态全向拖拽的灵动胶囊；
  * - 切往消息平台/设置时，同一块毛玻璃胶囊从所在左/右侧边缘平滑滑移并扇形展开成底部三栏导航，右下圆形终端钮同步分离就位；
  * - 切回 WebUI 时沿对称轨迹从底栏收拢飞回离开前的同一侧边缘，实现无缝空间连续过渡。
  */
@@ -228,17 +229,15 @@ internal fun HomePortraitNavigation(
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val prefs = remember(context) {
-        context.getSharedPreferences(PillPrefsName, Context.MODE_PRIVATE)
-    }
+    val settings = remember(context) { context.appDependencies.settings }
 
     val isWebUi = selectedTab == HomeTab.WebUi
 
-    var dockRight by rememberSaveable {
-        mutableStateOf(prefs.getBoolean(PrefKeyDockRight, DefaultDockRight))
+    var dockSide by rememberSaveable {
+        mutableStateOf(if (settings.webuiPillDockRight) PillDockSide.Right else DefaultPillDockSide)
     }
     var verticalBias by rememberSaveable {
-        mutableFloatStateOf(clampPillVerticalBias(prefs.getFloat(PrefKeyVerticalBias, DefaultVerticalBias)))
+        mutableFloatStateOf(clampPillVerticalBias(settings.webuiPillVerticalBias))
     }
     var expanded by rememberSaveable { mutableStateOf(false) }
     // 从展开态切离 WebUI 时保留侧边展开锚点直至动画抵达底栏，确保扇形展开与滑移起始尺寸完全吻合
@@ -260,9 +259,11 @@ internal fun HomePortraitNavigation(
         label = "PortraitNavBottomProgress"
     )
 
-    LaunchedEffect(isWebUi) {
+    LaunchedEffect(isWebUi, expanded) {
         if (isWebUi) {
             leavingFromExpanded = false
+            // 展开菜单后立刻释放拖拽状态，避免与手势拖动状态叠加
+            if (expanded) isDragging = false
         } else {
             expanded = false
             isDragging = false
@@ -279,16 +280,14 @@ internal fun HomePortraitNavigation(
 
     // 仅停留在 WebUI 页时启用重力传感器阻尼切换；切换至底栏期间暂停采集，切回时保持离开前那一侧
     if (isWebUi) {
-        BindPillTiltSensor(
-            currentDockRight = dockRight,
+        bindPillTiltSensor(
+            currentSide = dockSide,
             interactionPaused = expanded || isDragging || bottomProgress > 0.05f,
             damper = tiltDamper,
-            onDockSideChanged = { nextDockRight ->
-                dockRight = nextDockRight
+            onDockSideChanged = { nextSide ->
+                dockSide = nextSide
                 interactionTick++
-                prefs.edit()
-                    .putBoolean(PrefKeyDockRight, nextDockRight)
-                    .apply()
+                settings.webuiPillDockRight = nextSide == PillDockSide.Right
             }
         )
     }
@@ -305,7 +304,7 @@ internal fun HomePortraitNavigation(
     val foregroundIdleAlpha by animateFloatAsState(
         targetValue = if (idleDimmed) 0.84f else 1f,
         animationSpec = tween(durationMillis = 360),
-        label = "WebUiPillForegroundAlpha"
+        label = "PortraitNavForegroundAlpha"
     )
 
     val triggerRefresh = {
@@ -326,7 +325,7 @@ internal fun HomePortraitNavigation(
         val maxWidthDp = maxWidth.value
         val maxHeightDp = maxHeight.value
 
-        // WebUI 展开时在背面铺一层全透明点击捕获区，不压暗网页，点击空白处立即收起
+        // WebUI 展开时在背面铺一层全透明点击捕获区，不压暗网页，点击空白处立即收起（因此禁用按压水波纹）
         if (isWebUi && expanded) {
             Box(
                 modifier = Modifier
@@ -345,14 +344,14 @@ internal fun HomePortraitNavigation(
         val sideTargetWidth = if (effectiveSideExpanded) ExpandedPillWidth else CollapsedPillWidth
         val sideTargetHeight = if (effectiveSideExpanded) ExpandedPillHeight else CollapsedPillHeight
 
-        // 用显式无过冲临界阻尼弹簧直接驱动侧边锚点宽高：从 293dp 单调缩回 118dp，消除关闭瞬间叠加变长缺陷
+        // 由单级无过冲临界阻尼弹簧直接驱动侧边锚点宽高，展开与收起保持单调连续过渡
         val sideAnimatedWidth by animateDpAsState(
             targetValue = sideTargetWidth,
             animationSpec = spring(
                 dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMedium
             ),
-            label = "WebUiPillWidth"
+            label = "PortraitNavSideWidth"
         )
         val sideAnimatedHeight by animateDpAsState(
             targetValue = sideTargetHeight,
@@ -360,13 +359,13 @@ internal fun HomePortraitNavigation(
                 dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMedium
             ),
-            label = "WebUiPillHeight"
+            label = "PortraitNavSideHeight"
         )
 
         val expandedSideProgress by animateFloatAsState(
             targetValue = if (effectiveSideExpanded) 1f else 0f,
             animationSpec = tween(durationMillis = 160),
-            label = "WebUiPillContentCrossfade"
+            label = "PortraitNavContentCrossfade"
         )
 
         val minTopDp = statusBarTop.value + 16f
@@ -379,7 +378,8 @@ internal fun HomePortraitNavigation(
             currentHeightDp = sideTargetHeight.value,
             verticalBias = verticalBias
         ).dp
-        val sideDockedLeft = if (dockRight) maxWidth - sideTargetWidth - PillEdgeMargin else PillEdgeMargin
+        val sideDockedLeft =
+            if (dockSide == PillDockSide.Right) maxWidth - sideTargetWidth - PillEdgeMargin else PillEdgeMargin
 
         val maxWidthPx = with(density) { maxWidth.toPx() }
         val minTopPx = with(density) { minTopDp.dp.toPx() }
@@ -403,7 +403,7 @@ internal fun HomePortraitNavigation(
                 dampingRatio = 0.86f,
                 stiffness = 260f
             ),
-            label = "WebUiPillX"
+            label = "PortraitNavSideX"
         )
         val sideAnimatedTop by animateDpAsState(
             targetValue = targetSideTopDp,
@@ -411,7 +411,7 @@ internal fun HomePortraitNavigation(
                 dampingRatio = 0.86f,
                 stiffness = Spring.StiffnessMediumLow
             ),
-            label = "WebUiPillY"
+            label = "PortraitNavSideY"
         )
 
         val frame = computePortraitNavFrame(
@@ -425,7 +425,7 @@ internal fun HomePortraitNavigation(
             bottomProgress = bottomProgress
         )
 
-        // 选中滑块在侧边纵向格与底栏横向格之间同步插值，保持与底栏原版完全相同的弹簧手感
+        // 选中滑块在侧边纵向格与底栏横向格之间同步插值，保持统一阻尼弹性手感
         val selectedOrdinalFloat by animateFloatAsState(
             targetValue = selectedTab.ordinal.toFloat(),
             animationSpec = spring(
@@ -451,7 +451,7 @@ internal fun HomePortraitNavigation(
             clampedBottomProgress
         )
         val indicatorHeight = lerpFloat(
-            lerpFloat(CollapsedExpandHeightDp, HomeTabButtonHeight.value, clampedExpandedProgress),
+            lerpFloat(CollapsedNavButtonHeightDp, HomeTabButtonHeight.value, clampedExpandedProgress),
             HomeTabButtonHeight.value,
             clampedBottomProgress
         )
@@ -470,14 +470,14 @@ internal fun HomePortraitNavigation(
                     elevation = 14.dp,
                     shape = pillShape,
                     clip = false,
-                    ambientColor = Color.Black.copy(alpha = 0.24f),
-                    spotColor = Color.Black.copy(alpha = 0.24f)
+                    ambientColor = GlassShadow,
+                    spotColor = GlassShadow
                 )
                 .clip(pillShape)
                 .border(1.dp, GlassStroke, pillShape)
-                .pointerInput(isWebUi, maxWidthPx, minTopPx, maxTopCollapsedPx, sideWidthPx) {
-                    // 仅处于 WebUI 侧边胶囊模式时开放拖动，进入底栏后锁定位置避免误拖
-                    if (!isWebUi) return@pointerInput
+                .pointerInput(isWebUi, expanded, maxWidthPx, minTopPx, maxTopCollapsedPx, sideWidthPx) {
+                    // 仅处于 WebUI 收起态侧边胶囊时开放拖拽，展开态和底栏模式锁定位置，避免越界或误拖
+                    if (!isWebUi || expanded) return@pointerInput
                     detectDragGestures(
                         onDragStart = {
                             dragLeftPx = latestSideDockedLeftPx
@@ -493,13 +493,11 @@ internal fun HomePortraitNavigation(
                         },
                         onDragEnd = {
                             val centerX = dragLeftPx + sideWidthPx * 0.5f
-                            dockRight = shouldDockPillRight(centerX, maxWidthPx)
+                            dockSide = resolvePillDockSide(centerX, maxWidthPx)
                             val span = (maxTopCollapsedPx - minTopPx).coerceAtLeast(1f)
                             verticalBias = clampPillVerticalBias((dragTopPx - minTopPx) / span)
-                            prefs.edit()
-                                .putBoolean(PrefKeyDockRight, dockRight)
-                                .putFloat(PrefKeyVerticalBias, verticalBias)
-                                .apply()
+                            settings.webuiPillDockRight = dockSide == PillDockSide.Right
+                            settings.webuiPillVerticalBias = verticalBias
                             // 手势指定新停靠侧后通知阻尼器锁定当前姿态，避免立刻被重力拉回对侧
                             tiltDamper.onManualDock()
                             isDragging = false
@@ -678,7 +676,7 @@ internal fun HomePortraitNavigation(
                 enabled = !isWebUi,
                 modifier = Modifier
                     .offset { IntOffset(frame.terminalLeftDp.dp.roundToPx(), frame.terminalTopDp.dp.roundToPx()) }
-                    .size(HomeBottomNavigationBarHeight)
+                    .size(PortraitBottomBarHeight)
                     .graphicsLayer {
                         alpha = frame.terminalAlpha
                         scaleX = frame.terminalScale
@@ -791,3 +789,4 @@ private fun PillLabeledButton(
 
 private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
+
