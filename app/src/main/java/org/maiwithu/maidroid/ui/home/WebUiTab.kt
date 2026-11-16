@@ -6,7 +6,6 @@ import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -24,9 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -58,11 +53,8 @@ import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
-import org.maiwithu.maidroid.ui.theme.GlassStroke
-import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -287,7 +279,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 /**
  * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），WebView 拿到非零尺寸后才开始加载。
  * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局宽度至少 1040），竖屏按手机版。
- * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”（电量低暂停着时说明是电量低）；竖屏时右上角是刷新按钮，横屏时刷新按钮在左侧导航栏里。
+ * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”（电量低暂停着时说明是电量低）；刷新操作统一在竖屏侧边灵动胶囊与横屏侧栏里提供，不再单独遮挡右上角。
  * startClearance：横屏时左侧悬浮侧栏的宽度，网页和横幅都让开它，让出的那一条涂网页自己的底色。
  */
 @Composable
@@ -299,12 +291,11 @@ internal fun WebUiTabPage(
     lowBatteryPaused: Boolean = false,
     terminalLogs: List<String> = emptyList(),
     url: String = MaiBotWebUi.URL,
-    showRefreshButton: Boolean = true,
     startClearance: Dp = 0.dp
 ) {
     val statusBarTop = statusBarTopInset()
-    // 横幅右侧给刷新按钮让出位置；刷新按钮挪进导航栏时左右对称留白。
-    val bannerEndPadding = if (showRefreshButton) 56.dp else 16.dp
+    // 右上角已移除常驻刷新球，顶部横幅保持左右对称留白
+    val bannerEndPadding = 16.dp
 
     // 弹出键盘时 WebView 底部让出键盘的高度。主界面是全面屏（edge-to-edge），清单里的 adjustResize 不再缩小窗口，
     // 不让的话 WebView 一直是全高，键盘直接盖住网页下半截（聊天页的输入栏首当其冲）。
@@ -392,7 +383,6 @@ internal fun WebUiTabPage(
                     .padding(top = statusBarTop + 8.dp, start = 16.dp, end = bannerEndPadding)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Corners.Chip))
-                    .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
                     .background(CardSurface.copy(alpha = 0.92f))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -428,45 +418,6 @@ internal fun WebUiTabPage(
                 )
             }
         }
-
-        if (showRefreshButton) {
-            WebUiRefreshButton(
-                onClick = state::reload,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = statusBarTop + 8.dp, end = 16.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun WebUiRefreshButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(32.dp)
-            .shadow(
-                elevation = 10.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.28f),
-                spotColor = Color.Black.copy(alpha = 0.28f)
-            )
-            .clip(CircleShape)
-            .border(1.dp, GlassStroke, CircleShape)
-            .background(GlassSurface)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Refresh,
-            contentDescription = "刷新 WebUI",
-            tint = TextPrimary,
-            modifier = Modifier.size(20.dp)
-        )
     }
 }
 
@@ -481,7 +432,6 @@ private fun WebUiStatusBanner(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Chip))
-            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
             .background(CardSurface.copy(alpha = 0.94f))
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically

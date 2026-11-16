@@ -1,17 +1,12 @@
 package org.maiwithu.maidroid.ui.home
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,7 +24,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
@@ -160,20 +154,12 @@ private fun HomeTabsShell(
     var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
     val webUiTabState = rememberWebUiTabState()
 
-    // 竖屏时 WebUI 页签里网页自带底部导航，APP 底栏再叠一层会占掉约五分之一屏幕：
-    // 在 WebUI 页签默认把 APP 底栏收成右下角的小按钮 -> 点开后盖一层暗色遮罩并弹出完整底栏 ->
-    // 点遮罩、按返回键、切换标签或打开终端都会收起。消息平台、设置页照常显示完整底栏。
-    // 横屏侧栏不挡网页，不需要收起。
-    var navExpanded by rememberSaveable { mutableStateOf(false) }
-
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(PageBackground)
     ) {
         val useRail = homeUsesNavigationRail(maxWidth.value, maxHeight.value)
-        val navCollapsible = !useRail && selectedTab == HomeTab.WebUi
-        BackHandler(enabled = navCollapsible && navExpanded) { navExpanded = false }
 
         val density = LocalDensity.current
         val layoutDirection = LocalLayoutDirection.current
@@ -181,11 +167,9 @@ private fun HomeTabsShell(
         val safeRight = with(density) { WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp() }
 
         val selectTab: (HomeTab) -> Unit = { tab ->
-            navExpanded = false
             onTabSelected(tab)
         }
         val openTerminal = {
-            navExpanded = false
             onTerminalClick()
         }
 
@@ -222,7 +206,6 @@ private fun HomeTabsShell(
                                 state = webUiTabState,
                                 lowBatteryPaused = lowBatteryPaused,
                                 terminalLogs = terminalLogs,
-                                showRefreshButton = !useRail,
                                 startClearance = pageStartClearance,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -258,28 +241,9 @@ private fun HomeTabsShell(
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
             } else {
-                // 展开时的遮罩：挡住网页的点击，点一下就收起底栏。
+                // 竖屏：消息平台和设置页显示底部悬浮导航栏；WebUI 页改用侧边可拖动/原地展开的灵动胶囊，不遮网页底栏与右上角按钮。
                 AnimatedVisibility(
-                    visible = navCollapsible && navExpanded,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier.matchParentSize()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            // 遮罩只负责收起底栏，不需要按压反馈。
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { navExpanded = false }
-                            )
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = !navCollapsible || navExpanded,
+                    visible = selectedTab != HomeTab.WebUi,
                     enter = fadeIn() + slideInVertically { height -> height / 2 },
                     exit = fadeOut() + slideOutVertically { height -> height / 2 },
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -293,16 +257,16 @@ private fun HomeTabsShell(
                 }
 
                 AnimatedVisibility(
-                    visible = navCollapsible && !navExpanded,
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut(),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = CollapsedHomeNavigationBottomPadding)
+                    visible = selectedTab == HomeTab.WebUi,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.matchParentSize()
                 ) {
-                    CollapsedHomeNavigationButton(
+                    WebUiFloatingPill(
                         blurTarget = blurTarget,
-                        onClick = { navExpanded = true }
+                        onRefreshWebUi = webUiTabState::reload,
+                        onSelectTab = selectTab,
+                        onOpenTerminal = openTerminal
                     )
                 }
             }

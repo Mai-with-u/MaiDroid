@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -44,7 +43,6 @@ import androidx.compose.ui.unit.sp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
-import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
@@ -70,12 +68,6 @@ private val HomeBottomNavigationBottomPadding = 16.dp
 
 /** 单个标签按钮的高度（底栏、侧栏通用）。 */
 internal val HomeTabButtonHeight = 56.dp
-
-/**
- * WebUI 页签里收起后的小按钮离底边的距离：网页自己的底部导航贴着屏幕底边，
- * 不同主题下连同底部留白高 64~76dp，按钮放在它上方再空出十几 dp，不挡网页导航的按钮。
- */
-internal val CollapsedHomeNavigationBottomPadding = 88.dp
 
 /** 竖屏时悬浮在页面底部的毛玻璃导航：左边三个标签（选中块带弹性滑动），右边圆形终端按钮。 */
 @Composable
@@ -154,47 +146,6 @@ internal fun HomeTerminalButton(
             contentDescription = "查看终端输出",
             tint = TextPrimary,
             modifier = Modifier.size(32.dp)
-        )
-    }
-}
-
-/**
- * WebUI 页签里底栏收起后留在右下角的按钮，点开弹出完整底栏。
- * 和终端按钮同样是毛玻璃底，描边换成品牌橙，叠在各种配色的网页上都能一眼找到。
- */
-@Composable
-internal fun CollapsedHomeNavigationButton(
-    blurTarget: BlurTarget?,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(48.dp)
-            .shadow(
-                elevation = 12.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.35f),
-                spotColor = Color.Black.copy(alpha = 0.35f)
-            )
-            .clip(CircleShape)
-            .border(1.5.dp, BrandOrange.copy(alpha = 0.85f), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = NavigationBlurRadius,
-            overlayColor = GlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
-
-        Icon(
-            imageVector = Icons.Outlined.Menu,
-            contentDescription = "展开底部导航",
-            tint = TextPrimary,
-            modifier = Modifier.size(24.dp)
         )
     }
 }

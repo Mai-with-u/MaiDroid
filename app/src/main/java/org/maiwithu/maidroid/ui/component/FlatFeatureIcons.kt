@@ -350,6 +350,46 @@ internal object FlatFeatureIcons {
             fillLayer(PureWhite) { sparklePath(12.0f, 12.0f, 4.7f, 1.65f) }
         }
     }
+
+    val GridMenu: ImageVector by lazy {
+        flatVector("FlatGridMenu") {
+            fillLayer(SoftWhite) {
+                roundedRectPath(13.4f, 3.8f, 20.2f, 10.6f, 2.6f)
+                circlePath(7.2f, 16.8f, 3.4f)
+            }
+            fillLayer(PureWhite) {
+                roundedRectPath(3.8f, 3.8f, 10.6f, 10.6f, 2.6f)
+                roundedRectPath(13.4f, 13.4f, 20.2f, 20.2f, 2.6f)
+            }
+        }
+    }
+
+    val SettingsGear: ImageVector by lazy {
+        flatVector("FlatSettingsGear") {
+            // 柔白圆齿外环，前景纯白同心圆环通过 EvenOdd 挖空圆心透出徽章底色
+            fillLayer(SoftWhite) {
+                val toothRadius = 7.6f
+                val toothSize = 1.9f
+                val diag = toothRadius * 0.7071f
+                circlePath(12.0f, 12.0f, 6.8f)
+                circlePath(12.0f, 12.0f - toothRadius, toothSize)
+                circlePath(12.0f, 12.0f + toothRadius, toothSize)
+                circlePath(12.0f - toothRadius, 12.0f, toothSize)
+                circlePath(12.0f + toothRadius, 12.0f, toothSize)
+                circlePath(12.0f - diag, 12.0f - diag, toothSize)
+                circlePath(12.0f + diag, 12.0f - diag, toothSize)
+                circlePath(12.0f - diag, 12.0f + diag, toothSize)
+                circlePath(12.0f + diag, 12.0f + diag, toothSize)
+            }
+            path(
+                fill = SolidColor(PureWhite),
+                pathFillType = PathFillType.EvenOdd
+            ) {
+                circlePath(12.0f, 12.0f, 5.5f)
+                circlePath(12.0f, 12.0f, 2.4f)
+            }
+        }
+    }
 }
 
 private inline fun flatVector(
