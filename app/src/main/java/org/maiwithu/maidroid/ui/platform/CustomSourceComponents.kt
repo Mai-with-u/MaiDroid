@@ -1,9 +1,10 @@
 package org.maiwithu.maidroid.ui.platform
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,7 +58,6 @@ internal fun CustomSourceRiskNotice(
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Control))
             .background(StatusDanger.copy(alpha = 0.12f))
-            .border(1.dp, StatusDanger.copy(alpha = 0.45f), RoundedCornerShape(Corners.Control))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -142,8 +142,8 @@ internal fun CustomSourceTextField(
 }
 
 /**
- * 已安装协议端配置弹窗底部的“自定义安装包来源”区域：
- * 允许修改并保存地址，或直接从填入的地址覆盖重装程序文件。
+ * 已安装协议端配置弹窗内的“自定义安装包来源”折叠区：
+ * 默认收起以保持首屏简洁，展开后允许保存新地址或一行触发覆盖重装。
  */
 @Composable
 internal fun CustomSourceEditorSection(
@@ -157,48 +157,73 @@ internal fun CustomSourceEditorSection(
     val parsed = parseQqCustomSource(client, draftUrl)
     val isValid = parsed is QqSourceParseResult.Valid
     val normalizedDraft = (parsed as? QqSourceParseResult.Valid)?.source?.rawUrl ?: draftUrl.trim()
+    val summaryText = if (savedUrl.isBlank()) "未配置" else savedUrl.removePrefix("https://").removePrefix("http://")
 
-    Spacer(modifier = Modifier.height(14.dp))
-    Text(
-        text = "自定义安装包来源",
-        color = TextMuted,
-        fontSize = TextSizes.Caption,
-        fontWeight = FontWeight.Bold,
-        lineHeight = 16.sp
-    )
-    Spacer(modifier = Modifier.height(6.dp))
-    CustomSourceTextField(
-        client = client,
-        value = draftUrl,
-        onValueChange = { draftUrl = it }
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Button(
-        onClick = { onSaveUrl(normalizedDraft) },
-        enabled = isValid && normalizedDraft != savedUrl,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = CardBorder,
-            contentColor = TextPrimary,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        )
+    ConfigFoldableSection(
+        title = "自定义安装包来源",
+        summary = summaryText
     ) {
-        Text(text = "保存自定义地址", fontWeight = FontWeight.Bold)
-    }
-    Spacer(modifier = Modifier.height(6.dp))
-    Button(
-        onClick = { onRequestReinstall(normalizedDraft) },
-        enabled = isValid && !installing,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = CardBorder,
-            contentColor = TextPrimary,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        )
-    ) {
-        Text(text = "从该地址重新安装", fontWeight = FontWeight.Bold)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            CustomSourceTextField(
+                client = client,
+                value = draftUrl,
+                onValueChange = { draftUrl = it }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onSaveUrl(normalizedDraft) },
+                    enabled = isValid && normalizedDraft != savedUrl,
+                    shape = RoundedCornerShape(Corners.Control),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CardBorder,
+                        contentColor = TextPrimary,
+                        disabledContainerColor = CardBorder.copy(alpha = 0.55f),
+                        disabledContentColor = TextFaint
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                ) {
+                    Text(
+                        text = "保存地址",
+                        fontSize = TextSizes.Caption,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+                Button(
+                    onClick = { onRequestReinstall(normalizedDraft) },
+                    enabled = isValid && !installing,
+                    shape = RoundedCornerShape(Corners.Control),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BrandOrange.copy(alpha = 0.16f),
+                        contentColor = BrandOrange,
+                        disabledContainerColor = CardBorder.copy(alpha = 0.55f),
+                        disabledContentColor = TextFaint
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                ) {
+                    Text(
+                        text = "覆盖重装",
+                        fontSize = TextSizes.Caption,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
     }
 }
 
