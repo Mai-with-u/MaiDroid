@@ -8,6 +8,10 @@ import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaHookPhase
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
+import org.maiwithu.maidroid.ui.theme.IconFreshGreen
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.PlatformDiscord
+import org.maiwithu.maidroid.ui.theme.PlatformSignal
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextMuted
 
@@ -65,7 +69,7 @@ internal val AvailablePlatforms = listOf(
     AvailablePlatform(
         name = "QQ",
         iconRes = R.drawable.ic_platform_qq,
-        iconColor = Color(0xCC0F3BE9),
+        iconColor = IconSkyBlue,
         // 服务方说明和简介共两行，说明一折行就会把简介挤掉，所以每条都要短到窄卡片上也能一行放下。
         provider = "将由 QQ 官方接口提供服务",
         description = "日常闲聊，水群必选平台",
@@ -81,7 +85,7 @@ internal val AvailablePlatforms = listOf(
     AvailablePlatform(
         name = "Discord",
         iconRes = R.drawable.ic_platform_discord,
-        iconColor = Color(0xCC5865F2),
+        iconColor = PlatformDiscord,
         // Discord 还没有适配器，点安装只会走"暂不支持"提示，所以不能写成已经有服务方，和 WhatsApp、Signal 保持一致。
         provider = "暂未适配",
         description = "游戏玩家必选平台",
@@ -90,7 +94,7 @@ internal val AvailablePlatforms = listOf(
     AvailablePlatform(
         name = "WhatsApp",
         iconRes = R.drawable.ic_platform_whatsapp,
-        iconColor = Color(0xCC25D366),
+        iconColor = IconFreshGreen,
         provider = "暂未适配",
         description = "海外主流的即时通讯应用",
         tags = listOf("海外", "常用")
@@ -98,7 +102,7 @@ internal val AvailablePlatforms = listOf(
     AvailablePlatform(
         name = "Signal",
         iconRes = R.drawable.ic_platform_signal,
-        iconColor = Color(0xCC3A76F0),
+        iconColor = PlatformSignal,
         provider = "暂未适配",
         description = "注重隐私的加密通讯应用",
         tags = listOf("海外", "常用")
@@ -137,7 +141,7 @@ private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlat
         name = "QQ（NapCat）",
         iconRes = R.drawable.ic_platform_qq,
         account = account,
-        iconColor = Color(0xCC0F3BE9),
+        iconColor = IconSkyBlue,
         statusColor = if (napCatState.oneBotReachable) StatusOnline else TextMuted,
         running = napCatState.oneBotReachable
     )
@@ -165,7 +169,7 @@ private fun snowLumaInstalledCard(state: SnowLumaPlatformState): InstalledPlatfo
         name = "QQ（SnowLuma）",
         iconRes = R.drawable.ic_platform_qq,
         account = account,
-        iconColor = Color(0xCC0F3BE9),
+        iconColor = IconSkyBlue,
         statusColor = if (state.active && state.loggedIn) StatusOnline else TextMuted,
         running = state.active && state.loggedIn
     )
@@ -183,7 +187,7 @@ private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPl
         name = "QQ 官方机器人",
         iconRes = R.drawable.ic_platform_qq,
         account = qqOfficialStatusText(state),
-        iconColor = Color(0xCC0F3BE9),
+        iconColor = IconSkyBlue,
         statusColor = qqOfficialStatusColor(state),
         running = state.presumedOnline
     )

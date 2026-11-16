@@ -28,19 +28,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconPeachOrange
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
@@ -122,7 +124,8 @@ private fun StoragePermissionCard(
     onAuthorize: () -> Unit
 ) {
     OobePermissionCard(
-        iconRes = R.drawable.ic_storage_hdd,
+        icon = FlatFeatureIcons.Storage,
+        iconColor = IconSkyBlue,
         title = "存储权限",
         description = "用于解包容器、保存 MaiBot 配置和访问外部文件。",
         required = true,
@@ -154,20 +157,12 @@ private fun BackgroundKeepAliveCard(
                 .height(71.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(Corners.Panel))
-                    .background(BrandOrangeMuted),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_job_run),
-                    contentDescription = null,
-                    tint = TextPrimary,
-                    modifier = Modifier.size(33.dp)
-                )
-            }
+            FlatFeatureIconBadge(
+                icon = FlatFeatureIcons.BatteryOptimization,
+                backgroundColor = IconPeachOrange,
+                size = 48.dp,
+                iconSize = 26.dp
+            )
 
             Spacer(modifier = Modifier.width(16.dp))
 

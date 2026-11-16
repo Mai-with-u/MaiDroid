@@ -1,7 +1,6 @@
 package org.maiwithu.maidroid.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,19 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.AdminPanelSettings
-import androidx.compose.material.icons.outlined.BatterySaver
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -48,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
@@ -57,6 +50,12 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconFreshGreen
+import org.maiwithu.maidroid.ui.theme.IconIrisBlue
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.IconSunnyAmber
+import org.maiwithu.maidroid.ui.theme.IconWarmCoral
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
@@ -139,18 +138,19 @@ internal fun PermissionManagementPage(
                 Text(
                     text = "必选权限",
                     color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 15.sp,
+                    fontSize = TextSizes.Caption,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 14.sp,
                     modifier = Modifier
                         .overscrollBody(overscroll)
-                        .padding(top = 4.dp, start = 2.dp)
+                        .padding(top = 4.dp, start = 4.dp)
                 )
             }
 
             item {
                 PermissionActionCard(
-                    icon = Icons.Outlined.Storage,
+                    icon = FlatFeatureIcons.Storage,
+                    iconColor = IconSkyBlue,
                     title = "存储权限",
                     description = "解包容器、保存 MaiBot 配置和访问外部文件。",
                     badgeText = "必须",
@@ -165,18 +165,19 @@ internal fun PermissionManagementPage(
                 Text(
                     text = "可选权限",
                     color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 15.sp,
+                    fontSize = TextSizes.Caption,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 14.sp,
                     modifier = Modifier
                         .overscrollBody(overscroll)
-                        .padding(top = 8.dp, start = 2.dp)
+                        .padding(top = 8.dp, start = 4.dp)
                 )
             }
 
             item {
                 PermissionSwitchCard(
-                    icon = Icons.Outlined.Notifications,
+                    icon = FlatFeatureIcons.NotificationKeepAlive,
+                    iconColor = IconWarmCoral,
                     title = "通知保活",
                     description = "允许前台服务通知，提升后台运行稳定性。",
                     checked = state.notificationGranted,
@@ -193,7 +194,8 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionSwitchCard(
-                    icon = Icons.Outlined.BatterySaver,
+                    icon = FlatFeatureIcons.BatteryOptimization,
+                    iconColor = IconFreshGreen,
                     title = "关闭电池优化",
                     description = "减少系统在后台挂起 MaiDroid 的机会。",
                     checked = state.batteryOptimizationIgnored,
@@ -210,7 +212,8 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionSystemSettingsCard(
-                    icon = Icons.Outlined.Settings,
+                    icon = FlatFeatureIcons.AutoStart,
+                    iconColor = IconIrisBlue,
                     title = "自启动和后台活动",
                     description = "在系统应用详情或厂商后台设置中管理。",
                     onClick = actions.openAutoStartSettings,
@@ -220,7 +223,8 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionSystemSettingsCard(
-                    icon = Icons.Outlined.Lock,
+                    icon = FlatFeatureIcons.TaskLock,
+                    iconColor = IconSunnyAmber,
                     title = "多任务加锁",
                     description = "在系统多任务界面中手动开启或关闭。",
                     onClick = actions.showTaskLockHint,
@@ -230,7 +234,8 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionSystemSettingsCard(
-                    icon = Icons.Outlined.TouchApp,
+                    icon = FlatFeatureIcons.Accessibility,
+                    iconColor = IconRoseAlert,
                     title = "无障碍服务",
                     description = "高风险权限，仅在确实需要时开启。",
                     badgeText = "不建议",
@@ -242,7 +247,8 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionSystemSettingsCard(
-                    icon = Icons.Outlined.AdminPanelSettings,
+                    icon = FlatFeatureIcons.DeviceAdmin,
+                    iconColor = IconRoseAlert,
                     title = "设备管理员",
                     description = "高风险权限，请在系统安全设置中管理。",
                     badgeText = "不建议",
@@ -258,6 +264,7 @@ internal fun PermissionManagementPage(
 @Composable
 private fun PermissionActionCard(
     icon: ImageVector,
+    iconColor: Color,
     title: String,
     description: String,
     badgeText: String,
@@ -268,6 +275,7 @@ private fun PermissionActionCard(
 ) {
     PermissionBaseCard(
         icon = icon,
+        iconColor = iconColor,
         title = title,
         description = description,
         badgeText = badgeText,
@@ -291,7 +299,7 @@ private fun PermissionActionCard(
             Text(
                 text = actionText,
                 fontSize = TextSizes.Caption,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1
             )
         }
@@ -301,6 +309,7 @@ private fun PermissionActionCard(
 @Composable
 private fun PermissionSwitchCard(
     icon: ImageVector,
+    iconColor: Color,
     title: String,
     description: String,
     checked: Boolean,
@@ -309,6 +318,7 @@ private fun PermissionSwitchCard(
 ) {
     PermissionBaseCard(
         icon = icon,
+        iconColor = iconColor,
         title = title,
         description = description,
         badgeText = "可选",
@@ -316,7 +326,7 @@ private fun PermissionSwitchCard(
         statusColor = if (checked) StatusOnline else TextMuted,
         modifier = modifier
     ) {
-        Switch(
+        FlatSwitch(
             checked = checked,
             onCheckedChange = onCheckedChange
         )
@@ -326,6 +336,7 @@ private fun PermissionSwitchCard(
 @Composable
 private fun PermissionSystemSettingsCard(
     icon: ImageVector,
+    iconColor: Color,
     title: String,
     description: String,
     onClick: () -> Unit,
@@ -335,6 +346,7 @@ private fun PermissionSystemSettingsCard(
 ) {
     PermissionBaseCard(
         icon = icon,
+        iconColor = iconColor,
         title = title,
         description = description,
         badgeText = badgeText,
@@ -346,8 +358,8 @@ private fun PermissionSystemSettingsCard(
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = TextMuted,
-            modifier = Modifier.size(28.dp)
+            tint = TextMuted.copy(alpha = 0.6f),
+            modifier = Modifier.size(22.dp)
         )
     }
 }
@@ -355,6 +367,7 @@ private fun PermissionSystemSettingsCard(
 @Composable
 private fun PermissionBaseCard(
     icon: ImageVector,
+    iconColor: Color,
     title: String,
     description: String,
     badgeText: String,
@@ -364,30 +377,22 @@ private fun PermissionBaseCard(
     badgeColor: Color = BrandOrange,
     trailingContent: @Composable () -> Unit
 ) {
+    // 取消硬质边框改用纯平圆角卡片，角标换为柔色底块避免塑料方砖感
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 92.dp)
-            .clip(RoundedCornerShape(Corners.Card))
-            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
+            .heightIn(min = 88.dp)
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(CardSurface)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(Corners.Control))
-                .background(BrandOrange.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = BrandOrange,
-                modifier = Modifier.size(24.dp)
-            )
-        }
+        FlatFeatureIconBadge(
+            icon = icon,
+            backgroundColor = iconColor,
+            size = 40.dp,
+            iconSize = 22.dp
+        )
 
         Spacer(modifier = Modifier.width(14.dp))
 
@@ -396,8 +401,8 @@ private fun PermissionBaseCard(
                 Text(
                     text = title,
                     color = TextPrimary,
-                    fontSize = TextSizes.Title,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = TextSizes.BodyLarge,
+                    fontWeight = FontWeight.Medium,
                     lineHeight = 19.sp,
                     // 标题较长时换到第二行，不截断成省略号。
                     maxLines = 2,
@@ -409,13 +414,13 @@ private fun PermissionBaseCard(
 
                 Text(
                     text = badgeText,
-                    color = TextPrimary,
+                    color = badgeColor,
                     fontSize = TextSizes.Tag,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     lineHeight = 12.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(Corners.Tag))
-                        .background(badgeColor)
+                        .background(badgeColor.copy(alpha = 0.16f))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
             }
@@ -437,7 +442,7 @@ private fun PermissionBaseCard(
                 text = statusText,
                 color = statusColor,
                 fontSize = TextSizes.Caption,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 lineHeight = 14.sp,
                 maxLines = 1
             )

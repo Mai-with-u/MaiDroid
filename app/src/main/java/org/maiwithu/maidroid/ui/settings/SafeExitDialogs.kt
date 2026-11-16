@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.ui.settings
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,17 +55,17 @@ internal fun SafeExitButton(onClick: () -> Unit, modifier: Modifier = Modifier) 
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // 去掉外圈微红硬描边，改为柔和低饱和纯平胶囊按钮
         Button(
             onClick = onClick,
-            shape = RoundedCornerShape(Corners.Card),
+            shape = RoundedCornerShape(Corners.Chip),
             colors = ButtonDefaults.buttonColors(
-                containerColor = StatusDanger.copy(alpha = 0.14f),
+                containerColor = StatusDanger.copy(alpha = 0.12f),
                 contentColor = StatusDanger
             ),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .border(1.dp, StatusDanger.copy(alpha = 0.4f), RoundedCornerShape(Corners.Card))
         ) {
             Icon(
                 imageVector = Icons.Outlined.PowerSettingsNew,
@@ -74,7 +73,7 @@ internal fun SafeExitButton(onClick: () -> Unit, modifier: Modifier = Modifier) 
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = "安全退出", fontSize = TextSizes.BodyLarge, fontWeight = FontWeight.Bold)
+            Text(text = "安全退出", fontSize = TextSizes.BodyLarge, fontWeight = FontWeight.Medium)
         }
 
         Spacer(modifier = Modifier.height(8.dp))

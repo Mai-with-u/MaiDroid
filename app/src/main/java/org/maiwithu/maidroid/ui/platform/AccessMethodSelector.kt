@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,7 +71,6 @@ internal fun AccessMethodSelector(
         modifier = modifier
             .clip(RoundedCornerShape(Corners.Chip))
             .background(CardBorder)
-            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Chip))
     ) {
         val itemWidth = if (accessMethods.isNotEmpty()) {
             (maxWidth - horizontalPadding * 2f - itemSpacing * (accessMethods.size - 1).toFloat()) /

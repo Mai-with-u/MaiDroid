@@ -10,7 +10,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -818,7 +817,6 @@ private fun SearchButton(searchOpen: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(42.dp)
             .clip(CircleShape)
-            .border(1.dp, GlassButtonSurface, CircleShape)
             .background(GlassButtonSurface)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -963,14 +961,6 @@ internal fun CategoryChip(
         ),
         label = "CategoryChipBackground"
     )
-    val borderColor by animateColorAsState(
-        targetValue = if (selected) BrandOrange else CardBorder,
-        animationSpec = spring(
-            dampingRatio = 1f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "CategoryChipBorder"
-    )
     val scale by animateFloatAsState(
         targetValue = if (selected) 1f else 0.96f,
         animationSpec = spring(
@@ -998,11 +988,6 @@ internal fun CategoryChip(
                 scaleY = scale
             }
             .clip(RoundedCornerShape(Corners.Chip))
-            .border(
-                width = 1.dp,
-                color = borderColor,
-                shape = RoundedCornerShape(Corners.Chip)
-            )
             .background(backgroundColor)
             .animateContentSize(
                 animationSpec = spring(
@@ -1018,7 +1003,7 @@ internal fun CategoryChip(
             text = text,
             color = TextPrimary,
             fontSize = if (compact) TextSizes.Body else TextSizes.Title,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = if (compact) 18.sp else 20.sp
         )
     }

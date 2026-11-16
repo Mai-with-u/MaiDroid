@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,17 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.CleaningServices
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,21 +58,32 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
+import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
+import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
-import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconCoralPink
+import org.maiwithu.maidroid.ui.theme.IconCyanBlue
+import org.maiwithu.maidroid.ui.theme.IconFreshGreen
+import org.maiwithu.maidroid.ui.theme.IconIrisBlue
+import org.maiwithu.maidroid.ui.theme.IconMintGreen
+import org.maiwithu.maidroid.ui.theme.IconPeachOrange
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.IconSunnyAmber
+import org.maiwithu.maidroid.ui.theme.IconTealMint
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -236,9 +236,9 @@ internal fun SettingsPage(
 
                 Box(
                     modifier = Modifier
-                        .width(1.dp)
+                        .width(0.5.dp)
                         .fillMaxHeight()
-                        .background(CardBorder.copy(alpha = 0.8f))
+                        .background(CardDivider)
                 )
 
                 Box(
@@ -428,10 +428,10 @@ private fun SettingsNavigationPane(
                 modifier = Modifier.overscrollBody(overscroll)
             ) {
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.Settings,
+                    icon = FlatFeatureIcons.WebUi,
+                    iconColor = IconPeachOrange,
                     title = "WebUI",
                     supportingText = if (webUiOnline) "服务在线" else "服务离线",
-                    accent = if (webUiOnline) StatusOnline else StatusWarning,
                     trailing = if (compact) null else {
                         {
                             SettingsStatusDot(if (webUiOnline) StatusOnline else StatusWarning)
@@ -442,19 +442,15 @@ private fun SettingsNavigationPane(
                 SettingsDivider()
 
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.SystemUpdate,
+                    icon = FlatFeatureIcons.MaiBotUpdate,
+                    iconColor = IconSkyBlue,
                     title = "MaiBot 更新",
                     supportingText = maiBotUpdateSummaryText(updateState),
-                    accent = maiBotUpdateAccent(updateState),
+                    supportingColor = maiBotUpdateSummaryColor(updateState),
                     onClick = onUpdateClick,
                     trailing = if (compact) null else {
                         {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "打开 MaiBot 更新",
-                                tint = TextMuted,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            SettingsRowArrow(contentDescription = "打开 MaiBot 更新")
                         }
                     }
                 )
@@ -462,20 +458,16 @@ private fun SettingsNavigationPane(
                 SettingsDivider()
 
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.Lock,
+                    icon = FlatFeatureIcons.ContainerSsh,
+                    iconColor = IconMintGreen,
                     title = "容器 SSH",
                     supportingText = containerSshSummaryText(sshState),
-                    accent = when {
-                        sshState.phase == ContainerSshPhase.Failed -> StatusWarning
-                        sshState.isRunning -> StatusOnline
-                        else -> BrandOrange
-                    },
                     onClick = onSshConfigureClick,
                     trailing = if (compact) {
                         null
                     } else {
                         {
-                            Switch(
+                            FlatSwitch(
                                 checked = sshState.enabled,
                                 onCheckedChange = onSshEnabledChange,
                                 enabled = !sshState.isStarting
@@ -496,19 +488,14 @@ private fun SettingsNavigationPane(
 
                 // 容器在应用私有目录里，普通文件管理器看不到；这里经 ContainerDocumentsProvider 打开
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.FolderOpen,
+                    icon = FlatFeatureIcons.MaiBotFiles,
+                    iconColor = IconSunnyAmber,
                     title = "MaiBot 文件",
                     supportingText = "在文件管理器中查看日志、插件和配置",
-                    accent = BrandOrange,
                     onClick = onOpenFilesClick,
                     trailing = if (compact) null else {
                         {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "在文件管理器中打开 MaiBot 目录",
-                                tint = TextMuted,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            SettingsRowArrow(contentDescription = "在文件管理器中打开 MaiBot 目录")
                         }
                     }
                 )
@@ -521,24 +508,18 @@ private fun SettingsNavigationPane(
                 modifier = Modifier.overscrollBody(overscroll)
             ) {
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.Security,
+                    icon = FlatFeatureIcons.Permissions,
+                    iconColor = IconFreshGreen,
                     title = "权限管理",
                     supportingText = permissionSummary(permissionState),
-                    accent = if (permissionState.storageGranted) StatusOnline else StatusWarning,
                     selected = permissionSelected,
                     exposesSelection = true,
                     onClick = onPermissionClick,
                     trailing = if (compact) null else {
                         {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            SettingsRowArrow(
                                 contentDescription = "进入权限管理",
-                                tint = if (permissionSelected) {
-                                    BrandOrange
-                                } else {
-                                    TextMuted
-                                },
-                                modifier = Modifier.size(24.dp)
+                                tint = if (permissionSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
                             )
                         }
                     }
@@ -552,14 +533,14 @@ private fun SettingsNavigationPane(
                 modifier = Modifier.overscrollBody(overscroll)
             ) {
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.Notifications,
+                    icon = FlatFeatureIcons.Platforms,
+                    iconColor = IconIrisBlue,
                     title = "消息平台",
                     supportingText = if (runningPlatformCount > 0) {
                         "$runningPlatformCount 个平台正在运行"
                     } else {
                         "暂无平台正在运行"
                     },
-                    accent = if (runningPlatformCount > 0) StatusOnline else StatusWarning,
                     trailing = if (compact) null else {
                         {
                             SettingsStatusDot(
@@ -573,19 +554,15 @@ private fun SettingsNavigationPane(
 
                 // 点这一行检查 MaiDroid 自身的更新（不是容器里的 MaiBot），副标题跟着检查、下载进度变化
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.Info,
+                    icon = FlatFeatureIcons.AppVersion,
+                    iconColor = IconCyanBlue,
                     title = "应用版本",
                     supportingText = appUpdateSummaryText(appUpdateState.copy(currentVersion = versionName)),
-                    accent = appUpdateAccent(appUpdateState),
+                    supportingColor = appUpdateSummaryColor(appUpdateState),
                     onClick = onAppUpdateClick,
                     trailing = if (compact) null else {
                         {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "检查 MaiDroid 更新",
-                                tint = TextMuted,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            SettingsRowArrow(contentDescription = "检查 MaiDroid 更新")
                         }
                     }
                 )
@@ -599,37 +576,27 @@ private fun SettingsNavigationPane(
                 modifier = Modifier.overscrollBody(overscroll)
             ) {
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.BugReport,
+                    icon = FlatFeatureIcons.Feedback,
+                    iconColor = IconCoralPink,
                     title = "反馈问题",
                     supportingText = "自动收集诊断信息，一键去 GitHub 提交问题",
-                    accent = BrandOrange,
                     onClick = onFeedbackClick,
                     trailing = if (compact) null else {
                         {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "反馈问题",
-                                tint = TextMuted,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            SettingsRowArrow(contentDescription = "反馈问题")
                         }
                     }
                 )
                 SettingsDivider()
                 SettingsNavigationRow(
-                    icon = Icons.Outlined.CleaningServices,
+                    icon = FlatFeatureIcons.Cleanup,
+                    iconColor = IconTealMint,
                     title = "清理空间",
                     supportingText = "清掉依赖包、软件源的下载缓存和用不到的文件",
-                    accent = BrandOrange,
                     onClick = onCleanupClick,
                     trailing = if (compact) null else {
                         {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "清理空间",
-                                tint = TextMuted,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            SettingsRowArrow(contentDescription = "清理空间")
                         }
                     }
                 )
@@ -662,16 +629,16 @@ private fun SettingsSection(
             text = title,
             color = TextMuted,
             fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 14.sp,
             modifier = Modifier.padding(start = 6.dp)
         )
 
+        // 取消外圈硬描边，用圆润扁平卡片底色与深色背景自然拉开层级
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Corners.Card))
-                .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
+                .clip(RoundedCornerShape(Corners.Chip))
                 .background(CardSurface),
             content = content
         )
@@ -681,10 +648,11 @@ private fun SettingsSection(
 @Composable
 private fun SettingsNavigationRow(
     icon: ImageVector,
+    iconColor: Color,
     title: String,
     supportingText: String,
-    accent: Color,
     modifier: Modifier = Modifier,
+    supportingColor: Color = TextMuted,
     selected: Boolean = false,
     exposesSelection: Boolean = false,
     onClick: (() -> Unit)? = null,
@@ -703,35 +671,27 @@ private fun SettingsNavigationRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(if (selected) BrandOrange.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (selected) BrandOrange.copy(alpha = 0.08f) else Color.Transparent)
             .then(clickModifier)
-            .padding(horizontal = 13.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(Corners.Control))
-                .background(accent.copy(alpha = 0.16f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(21.dp)
-            )
-        }
+        FlatFeatureIconBadge(
+            icon = icon,
+            backgroundColor = iconColor,
+            size = 38.dp,
+            iconSize = 20.dp
+        )
 
-        Spacer(modifier = Modifier.width(11.dp))
+        Spacer(modifier = Modifier.width(13.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 color = TextPrimary,
                 fontSize = TextSizes.BodyLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 18.sp,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 19.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -740,9 +700,9 @@ private fun SettingsNavigationRow(
 
             Text(
                 text = supportingText,
-                color = TextMuted,
+                color = supportingColor,
                 fontSize = TextSizes.Caption,
-                lineHeight = 14.sp,
+                lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -756,13 +716,26 @@ private fun SettingsNavigationRow(
 }
 
 @Composable
+private fun SettingsRowArrow(
+    contentDescription: String,
+    tint: Color = TextMuted.copy(alpha = 0.6f)
+) {
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        contentDescription = contentDescription,
+        tint = tint,
+        modifier = Modifier.size(20.dp)
+    )
+}
+
+@Composable
 private fun SettingsDivider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 62.dp, end = 14.dp)
-            .height(1.dp)
-            .background(CardBorder.copy(alpha = 0.72f))
+            .padding(start = 67.dp, end = 16.dp)
+            .height(0.5.dp)
+            .background(CardDivider)
     )
 }
 
@@ -791,7 +764,7 @@ private fun CompactSshSwitchRow(
                 role = Role.Switch,
                 onValueChange = onCheckedChange
             )
-            .padding(start = 13.dp, end = 13.dp, bottom = 12.dp),
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -799,10 +772,10 @@ private fun CompactSshSwitchRow(
             text = "启用 SSH",
             color = TextMuted,
             fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             maxLines = 1
         )
-        Switch(
+        FlatSwitch(
             checked = checked,
             onCheckedChange = null,
             enabled = enabled,
@@ -811,21 +784,20 @@ private fun CompactSshSwitchRow(
     }
 }
 
-// 失败标红，可更新和进行中用主题橙，已是最新或刚更新完标绿。
-private fun maiBotUpdateAccent(state: MaiBotUpdateState): Color =
+// 失败标醒目暖橙提醒，平时保持柔和次要灰字，避免喧宾夺主。
+private fun maiBotUpdateSummaryColor(state: MaiBotUpdateState): Color =
     when (state.phase) {
         MaiBotUpdatePhase.Failed -> StatusWarning
-        MaiBotUpdatePhase.UpToDate,
-        MaiBotUpdatePhase.Updated -> StatusOnline
-        else -> BrandOrange
+        MaiBotUpdatePhase.Available -> BrandOrange
+        else -> TextMuted
     }
 
-// 失败标红，已是最新标绿，有新版本、下载中、待安装用主题橙提醒。
-private fun appUpdateAccent(state: AppUpdateState): Color =
+// 失败标醒目暖橙提醒，发现新版本标品牌橙提醒，其余保持次要灰字。
+private fun appUpdateSummaryColor(state: AppUpdateState): Color =
     when (state.phase) {
         AppUpdatePhase.Failed -> StatusWarning
-        AppUpdatePhase.UpToDate -> StatusOnline
-        else -> BrandOrange
+        AppUpdatePhase.Available -> BrandOrange
+        else -> TextMuted
     }
 
 private fun permissionSummary(state: PermissionState): String {
