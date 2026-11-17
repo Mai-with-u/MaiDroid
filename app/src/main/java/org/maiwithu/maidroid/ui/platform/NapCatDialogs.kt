@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.platform
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -18,21 +19,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,11 +39,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.platform.napcat.NapCatLoginPhase
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformState
+import org.maiwithu.maidroid.platform.napcat.NapCatScripts
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.QrCanvasBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -52,7 +56,71 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// QQ（NapCat）这一路的三个弹窗：登录二维码、NapCat 配置详情、退出 QQ 登录的二次确认。
+// QQ（NapCat）这一路的四个弹窗：安装自定义源、登录二维码、NapCat 配置详情、退出 QQ 登录的二次确认。
+
+/**
+ * 安装 NapCat 前的自定义仓库填写与安全风险确认弹窗：
+ * 上游仓库不可用后默认留空，由用户自行输入 fork 仓库地址或 NapCat.Shell.zip 直链并确认风险后开始安装。
+ */
+@Composable
+internal fun NapCatInstallDialog(
+    state: NapCatPlatformState,
+    snowLumaInstalled: Boolean,
+    onConfirm: (sourceUrl: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var sourceUrlText by rememberSaveable { mutableStateOf(state.customSourceUrl) }
+    val validSource = parseQqCustomSource(QqClient.NapCat, sourceUrlText) as? QqSourceParseResult.Valid
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { PlatformDialogTitle("安装 NapCat") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                state.failure?.let { failure ->
+                    Text(
+                        text = "上次安装失败：${failure.message}",
+                        color = StatusDanger,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 15.sp
+                    )
+                    FailureNotice(failure = failure)
+                }
+
+                PlatformDialogBody(
+                    "原上游仓库已不可用，请填写 NapCat 的 fork 仓库地址（从 Release 下载 NapCat.Shell.zip）" +
+                        "或安装包 .zip 直链。MaiDroid 会在容器里安装官方 LinuxQQ ${NapCatScripts.QQ_VERSION} 与 NapCat（约占 1 GB）。"
+                )
+
+                if (snowLumaInstalled) {
+                    PlatformDialogBody("装好后改用 NapCat 登录 QQ，SnowLuma 会停用（不卸载，随时可以切回）。")
+                }
+
+                CustomSourceTextField(
+                    client = QqClient.NapCat,
+                    value = sourceUrlText,
+                    onValueChange = { sourceUrlText = it }
+                )
+
+                CustomSourceRiskNotice(clientLabel = "NapCat")
+            }
+        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
+        confirmButton = {
+            PlatformPrimaryButton(
+                text = "了解风险并安装",
+                enabled = validSource != null && !state.isInstalling,
+                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
+            )
+        },
+        containerColor = CardSurface,
+        titleContentColor = TextPrimary,
+        textContentColor = TextMuted
+    )
+}
 
 /** 退出 QQ 会让 MaiBot 断开 QQ，先让用户确认。 */
 @Composable
@@ -62,45 +130,12 @@ internal fun QqLogoutConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "退出 QQ 登录？",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("退出 QQ 登录？") },
         text = {
-            Text(
-                text = "将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。",
-                color = TextMuted,
-                fontSize = TextSizes.Body,
-                lineHeight = 18.sp
-            )
+            PlatformDialogBody("将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。")
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = StatusDanger,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "退出登录", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
+        confirmButton = { PlatformDangerButton(text = "退出登录", onClick = onConfirm) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -134,15 +169,7 @@ internal fun NapCatQrCodeDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "QQ 登录二维码",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
+        title = { PlatformDialogTitle("QQ 登录二维码") },
         text = {
             // 竖排（二维码在上、说明在下）放得下就竖排；手机横屏时弹窗只有一两百 dp 高，
             // 改成二维码在左、说明在右，二维码按可用高度缩小，说明文字太长时可以滚动。
@@ -181,33 +208,13 @@ internal fun NapCatQrCodeDialog(
         },
         dismissButton = {
             // 刷新请求进行中禁用按钮，避免连点把 QQ 登录服务打成频繁出码。
-            Button(
-                onClick = onRefresh,
+            PlatformSecondaryButton(
+                text = if (state.qrRefreshing) "刷新中…" else "刷新",
                 enabled = !state.qrRefreshing,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary,
-                    disabledContainerColor = CardBorder,
-                    disabledContentColor = TextFaint
-                )
-            ) {
-                Text(
-                    text = if (state.qrRefreshing) "刷新中…" else "刷新",
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                onClick = onRefresh
+            )
         },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "关闭", fontWeight = FontWeight.Bold)
-            }
-        },
+        confirmButton = { PlatformPrimaryButton(text = "关闭", onClick = onDismiss) },
         containerColor = CardSurface,
         titleContentColor = TextPrimary,
         textContentColor = TextMuted
@@ -233,7 +240,7 @@ private fun QrCodeImage(
             modifier = modifier
                 .size(size)
                 .clip(RoundedCornerShape(Corners.Control))
-                .background(Color.White)
+                .background(QrCanvasBackground)
                 .padding(10.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -309,103 +316,124 @@ internal fun napCatQrLoginHint(state: NapCatPlatformState): String? = when {
     else -> null
 }
 
-/** NapCat 配置详情：连接状态、当前账号、OneBot WebSocket 服务端的各项配置，以及“退出 QQ 登录”按钮。 */
+/** NapCat 配置详情：固定顶栏显示账号与在线状态，置顶管理页/扫码入口，技术参数和自定义源默认折叠收起。 */
 @Composable
 internal fun NapCatConfigDialog(
     state: NapCatPlatformState,
     onRefresh: () -> Unit,
+    onSaveSourceUrl: (String) -> Unit,
+    onReinstallFromSourceUrl: (String) -> Unit,
     onLogoutQq: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenManagement: () -> Unit
 ) {
     val config = state.oneBotConfig
+    val statusText = when {
+        !state.active -> "已停用（当前使用 SnowLuma）"
+        state.oneBotReachable -> "${state.accountDisplayName ?: "QQ"} 在线"
+        config?.enabled == true -> "等待连接"
+        else -> "未配置"
+    }
+    val endpoint = if (config != null && config.host.isNotBlank()) {
+        "${config.host}:${config.port}"
+    } else {
+        "-"
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "NapCat 配置",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
+    PlatformConfigDialogShell(
+        title = "NapCat 配置",
+        statusText = statusText,
+        statusOnline = state.active && state.oneBotReachable,
+        onRefresh = onRefresh,
+        onDismiss = onDismiss
+    ) {
+        state.failure?.let { failure ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "上次操作失败：${failure.message}",
+                    color = StatusDanger,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 15.sp
+                )
+                FailureNotice(failure = failure)
+            }
+        }
+
+        ConfigCardGroup {
+            ConfigQuickActionRow(
+                icon = FlatFeatureIcons.BrowserConsole,
+                iconColor = IconSkyBlue,
+                title = "打开管理页 / 登录二维码",
+                subtitle = "已登录直接进入控制台，未登录展示扫码二维码",
+                enabled = state.active && state.canOpenSettings,
+                onClick = onOpenManagement
             )
-        },
-        text = {
-            // 配置项加上退出按钮后小屏放不下，内容区允许滚动。
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                ConfigValueRow(
-                    label = "连接状态",
-                    value = when {
-                        state.oneBotReachable -> "OneBot 已监听，MaiBot 可连接"
-                        config?.enabled == true -> "已启用，等待连接"
-                        config != null -> "配置存在但未启用"
-                        else -> "未找到 onebot11.json"
-                    },
-                    valueColor = if (state.oneBotReachable) StatusOnline else TextMuted
-                )
-                ConfigValueRow("账号", state.accountDisplayName ?: "-")
-                ConfigValueRow("服务类型", config?.serviceType ?: "-")
-                ConfigValueRow("服务名称", config?.name ?: "-")
-                ConfigValueRow("监听地址", config?.host ?: "-")
-                ConfigValueRow("监听端口", config?.port?.toString() ?: "-")
-                ConfigValueRow("Token", config?.token?.ifBlank { "未设置" } ?: "-")
-                ConfigValueRow("消息格式", config?.messagePostFormat?.ifBlank { "-" } ?: "-")
-                ConfigValueRow("上报自身消息", config?.reportSelfMessage.toEnabledText())
-                ConfigValueRow("强制推送事件", config?.enableForcePushEvent.toEnabledText())
-                ConfigValueRow("心跳间隔", config?.heartInterval?.let { "${it}ms" } ?: "-")
-                ConfigValueRow("调试模式", config?.debug.toEnabledText())
-                ConfigValueRow("配置文件", config?.configPath ?: "/root/napcat/config/onebot11.json")
+        }
 
-                // 退出 QQ：先弹二次确认，确认后清自动登录并重启 NapCat；进行中禁用，避免重复重启。
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onLogoutQq,
-                    enabled = state.installed && !state.qqLoggingOut,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = StatusDanger,
-                        contentColor = TextPrimary,
-                        disabledContainerColor = CardBorder,
-                        disabledContentColor = TextFaint
-                    )
-                ) {
-                    Text(
-                        text = if (state.qqLoggingOut) "正在退出…" else "退出 QQ 登录",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            Button(
-                onClick = onRefresh,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "刷新", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "关闭", fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        ConfigCardGroup {
+            ConfigKeyValueRow(
+                label = "连接状态",
+                value = when {
+                    state.oneBotReachable -> "OneBot 已监听，MaiBot 可连接"
+                    config?.enabled == true -> "已启用，等待连接"
+                    config != null -> "配置存在但未启用"
+                    else -> "未找到 onebot11.json"
+                },
+                valueColor = if (state.oneBotReachable) StatusOnline else TextMuted
+            )
+            ConfigGroupDivider()
+            ConfigKeyValueRow(
+                label = "监听地址",
+                value = endpoint
+            )
+        }
+
+        ConfigFoldableSection(
+            title = "连接与配置详情",
+            summary = "9 项参数"
+        ) {
+            ConfigKeyValueRow(
+                label = "Token",
+                value = config?.token?.ifBlank { "未设置" } ?: "-",
+                maskableSecret = true
+            )
+            ConfigGroupDivider()
+            ConfigKeyValueRow("服务类型", config?.serviceType ?: "-")
+            ConfigGroupDivider()
+            ConfigKeyValueRow("服务名称", config?.name ?: "-")
+            ConfigGroupDivider()
+            ConfigKeyValueRow("消息格式", config?.messagePostFormat?.ifBlank { "-" } ?: "-")
+            ConfigGroupDivider()
+            ConfigKeyValueRow("上报自身消息", config?.reportSelfMessage.toEnabledText())
+            ConfigGroupDivider()
+            ConfigKeyValueRow("强制推送事件", config?.enableForcePushEvent.toEnabledText())
+            ConfigGroupDivider()
+            ConfigKeyValueRow("心跳间隔", config?.heartInterval?.let { "${it}ms" } ?: "-")
+            ConfigGroupDivider()
+            ConfigKeyValueRow("调试模式", config?.debug.toEnabledText())
+            ConfigGroupDivider()
+            ConfigKeyValueRow(
+                label = "配置文件",
+                value = config?.configPath ?: "/root/napcat/config/onebot11.json",
+                valueColor = TextMuted
+            )
+        }
+
+        CustomSourceEditorSection(
+            client = QqClient.NapCat,
+            savedUrl = state.customSourceUrl,
+            installing = state.isInstalling,
+            onSaveUrl = onSaveSourceUrl,
+            onRequestReinstall = onReinstallFromSourceUrl
+        )
+
+        // 退出 QQ：先弹二次确认，确认后清自动登录并重启 NapCat；进行中禁用，避免重复重启。
+        ConfigSoftDangerButton(
+            text = if (state.qqLoggingOut) "正在退出…" else "退出 QQ 登录",
+            enabled = state.installed && !state.qqLoggingOut,
+            onClick = onLogoutQq
+        )
+    }
 }
 
 private fun Boolean?.toEnabledText(): String = when (this) {

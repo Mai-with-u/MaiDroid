@@ -30,6 +30,9 @@ object TextSizes {
     /** 页面里的区块标题（如“发现”）。 */
     val Headline = 24.sp
 
+    /** 页面大标题（紧凑窄屏下的标题字号）。 */
+    val DisplayCompact = 27.sp
+
     /** 页面大标题（如“消息平台”“权限管理”）。 */
     val Display = 32.sp
 }

@@ -4,7 +4,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.CardBorder
+import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -73,7 +73,7 @@ internal fun PlatformSection(
                 text = title,
                 color = TextMuted,
                 fontSize = TextSizes.Caption,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 lineHeight = 14.sp,
                 modifier = Modifier
                     .padding(start = 6.dp)
@@ -84,11 +84,11 @@ internal fun PlatformSection(
 
         belowTitle?.invoke()
 
+        // 与设置页统一：取消外圈生硬塑料描边，改用干净圆润卡片底色
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Corners.Card))
-                .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
+                .clip(RoundedCornerShape(Corners.Chip))
                 .background(CardSurface)
                 .animateContentSize(
                     animationSpec = spring(
@@ -101,7 +101,7 @@ internal fun PlatformSection(
     }
 }
 
-/** 卡片里两行之间的分隔线，从文字起点画起，和设置页一样不穿过图标。 */
+/** 卡片里两行之间的分隔线，从文字起点画起，和设置页一样保持极细丝线，不穿过图标。 */
 @Composable
 internal fun PlatformRowDivider() {
     Box(
@@ -109,10 +109,10 @@ internal fun PlatformRowDivider() {
             .fillMaxWidth()
             .padding(
                 start = PlatformRowHorizontalPadding + PlatformRowLogoSize + PlatformRowLogoGap,
-                end = 14.dp
+                end = 16.dp
             )
-            .height(1.dp)
-            .background(CardBorder.copy(alpha = 0.72f))
+            .height(0.5.dp)
+            .background(CardDivider)
     )
 }
 
@@ -159,7 +159,7 @@ internal fun InstalledPlatformRow(
                     text = platform.account,
                     color = platform.statusColor,
                     fontSize = TextSizes.Caption,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Medium,
                     lineHeight = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -321,8 +321,8 @@ private fun PlatformRowTitle(text: String, modifier: Modifier = Modifier) {
         text = text,
         color = TextPrimary,
         fontSize = TextSizes.BodyLarge,
-        fontWeight = FontWeight.Bold,
-        lineHeight = 18.sp,
+        fontWeight = FontWeight.Medium,
+        lineHeight = 19.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
@@ -343,7 +343,7 @@ private fun UnsupportedPill() {
             text = "暂未适配",
             color = TextMuted,
             fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 14.sp
         )
     }

@@ -56,6 +56,8 @@ import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.HarmonySans
+import org.maiwithu.maidroid.ui.theme.SplashEdgeShade
+import org.maiwithu.maidroid.ui.theme.SplashSideBlurOverlay
 import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
 import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -68,7 +70,7 @@ private const val StartupSplashInfoOffsetY = 773f
 private const val StartupSplashInfoWidth = 314f
 private const val StartupSplashInfoHeight = 96f
 private const val StartupSplashInfoHorizontalMargin = 16f
-private const val StartupSplashSideBlurRadius = 24f
+private const val StartupSplashSideBlurRadius = 18f
 
 /** 宽度不小于 600dp 或横屏时插画按高度铺满、两侧留白模糊；否则按设计稿比例铺满竖屏。 */
 internal fun startupSplashUsesAdaptiveLayout(widthDp: Float, heightDp: Float): Boolean =
@@ -277,7 +279,7 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
             )
         }
 
-        val edgeShade = Color.Black.copy(alpha = 0.14f)
+        val edgeShade = SplashEdgeShade
         if (artLeft > 0f) {
             drawRect(
                 brush = Brush.horizontalGradient(
@@ -394,7 +396,7 @@ private fun StartupSideBlur(
     BackdropBlurView(
         blurTarget = blurTarget,
         blurRadius = StartupSplashSideBlurRadius,
-        overlayColor = Color.Black.copy(alpha = 0.06f),
+        overlayColor = SplashSideBlurOverlay,
         modifier = modifier
     )
 }

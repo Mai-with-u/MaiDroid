@@ -34,7 +34,9 @@ internal data class NapCatPlatformState(
     val qrRefreshing: Boolean = false,
     val qrRefreshError: String? = null,
     // 用户点了“退出 QQ 登录”，正在清自动登录并重启 NapCat。
-    val qqLoggingOut: Boolean = false
+    val qqLoggingOut: Boolean = false,
+    /** 用户保存的自定义 NapCat 仓库或安装包直链，默认留空。 */
+    val customSourceUrl: String = ""
 ) {
     val isInstalling: Boolean = phase == NapCatInstallPhase.Installing
     val errorMessage: String? get() = failure?.message
@@ -48,7 +50,12 @@ internal data class NapCatPlatformState(
     val qrLoginCompleted: Boolean = loginPhase == NapCatLoginPhase.Ready || oneBotReachable
 
     companion object {
-        fun initial(installed: Boolean, qrCodePath: String?, qrCodeLastModified: Long) =
+        fun initial(
+            installed: Boolean,
+            qrCodePath: String?,
+            qrCodeLastModified: Long,
+            customSourceUrl: String = ""
+        ) =
             NapCatPlatformState(
                 phase = if (installed) NapCatInstallPhase.Installed else NapCatInstallPhase.Idle,
                 installed = installed,
@@ -60,7 +67,8 @@ internal data class NapCatPlatformState(
                 oneBotReachable = false,
                 oneBotConfig = null,
                 accountId = null,
-                accountName = null
+                accountName = null,
+                customSourceUrl = customSourceUrl
             )
     }
 }

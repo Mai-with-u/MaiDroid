@@ -15,9 +15,10 @@ internal class ProotCommand(private val paths: RuntimePaths) {
         const val DEBIAN_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     }
 
-    /** 在容器里用 /bin/sh 执行脚本：先重置 PATH、HOME 等 Debian 环境变量，再执行脚本正文。 */
+    /** 在容器里用 /bin/sh 执行脚本：先重置 PATH、HOME 等 Debian 环境变量，按需挂载 extraBinds 与排除最高频 CPU 簇，再执行脚本正文。 */
     fun commandLine(script: ContainerScript): List<String> =
-        prootArguments(script.workingDirectory) + listOf("/bin/sh", "-c", "${shellPrelude()} ${script.body}")
+        prootArguments(script.workingDirectory, script.extraBinds) +
+            listOf("/bin/sh", "-c", "${shellPrelude()} ${if (script.excludeTopCpuCluster) excludeTopCpuClusterPrelude() else ""} ${script.body}")
 
     /**
      * proot 进程本身的环境变量：PROOT_LOADER 和 LD_LIBRARY_PATH 指向 APK 内置的 loader 与依赖库，
@@ -46,28 +47,44 @@ internal class ProotCommand(private val paths: RuntimePaths) {
     fun syncTimeZone(): String? =
         runCatching { ContainerTimeZone.sync(paths.rootfsDir, TimeZone.getDefault()) }.getOrNull()
 
-    private fun prootArguments(workingDirectory: String): List<String> {
+    private fun prootArguments(
+        workingDirectory: String,
+        extraBinds: List<ContainerBindMount> = emptyList()
+    ): List<String> {
         paths.termuxTmpDir.mkdirs()
         ensureFakeProcFiles()
         // 每条容器命令启动前都对一次时区：手机在应用没跑时改过时区，下次拉起的进程也能用上新时区。
         syncTimeZone()
-        return listOf(
-            paths.prootExecutable.absolutePath,
-            "--link2symlink",
-            "-0",
-            "-r", paths.rootfsDir.absolutePath,
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "${paths.fakeProcStat.absolutePath}:/proc/stat",
-            "-b", "${paths.fakeProcLoadAvg.absolutePath}:/proc/loadavg",
-            "-b", "${paths.fakeProcVmStat.absolutePath}:/proc/vmstat",
-            "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
-            "-b", "${paths.fakeProcLocks.absolutePath}:/proc/locks",
-            "-b", "/sys",
-            "-b", "/sdcard",
-            "-b", "${paths.termuxTmpDir.absolutePath}:/tmp",
-            "-w", workingDirectory
-        )
+        return buildList {
+            addAll(
+                listOf(
+                    paths.prootExecutable.absolutePath,
+                    "--link2symlink",
+                    "-0",
+                    "-r", paths.rootfsDir.absolutePath,
+                    "-b", "/dev",
+                    "-b", "/proc",
+                    "-b", "${paths.fakeProcStat.absolutePath}:/proc/stat",
+                    "-b", "${paths.fakeProcLoadAvg.absolutePath}:/proc/loadavg",
+                    "-b", "${paths.fakeProcVmStat.absolutePath}:/proc/vmstat",
+                    "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
+                    "-b", "${paths.procLocksStandIn.absolutePath}:/proc/locks",
+                    "-b", "/sys",
+                    "-b", "/sdcard",
+                    "-b", "${paths.termuxTmpDir.absolutePath}:/tmp"
+                )
+            )
+            // 仅在宿主机已有对应覆盖文件时注入 proot 绑定（如 NapCat 覆盖 QQ 的 package.json），不修改磁盘原文件。
+            for (bind in extraBinds) {
+                val source = File(paths.rootfsDir, bind.rootfsRelativeSource)
+                if (source.exists()) {
+                    add("-b")
+                    add("${source.absolutePath}:${bind.containerTarget}")
+                }
+            }
+            add("-w")
+            add(workingDirectory)
+        }
     }
 
     private fun shellPrelude(): String =
@@ -76,10 +93,57 @@ internal class ProotCommand(private val paths: RuntimePaths) {
             "export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh TMPDIR=/tmp; "
 
     /**
+     * 把整棵进程树钉在「非最高频簇」的 CPU 上（能效优化，通用规则不是机型特调）：
+     * 从 /sys 分簇，频率最高的簇（大小核机型的大核；三簇机型的 prime 簇）不进亲和掩码，
+     * 其余全部保留；检测失败、全同频（单簇）或没有 taskset 时不钉。子进程继承亲和性，
+     * 所以钉住这一条 sh，proot 里的 MaiBot/QQ/node/worker 全都会跟着留在中小核上。
+     *
+     * 注：紧连的 -pc 在 util-linux 2.38 的 Debian rootfs 实测可用；
+     * 分开写的「-c 列表 -p pid」会把 -p 当成待执行程序（实测报 failed to execute -p）。
+     */
+    private fun excludeTopCpuClusterPrelude(): String =
+        """
+        maidroid_exclude_top_cpu_cluster() {
+            command -v taskset >/dev/null 2>&1 || return 0
+            max_freq=0
+            cpus=''
+            i=0
+            while [ ${'$'}i -lt 512 ]; do
+                f=/sys/devices/system/cpu/cpu${'$'}i/cpufreq/cpuinfo_max_freq
+                if [ -r "${'$'}f" ]; then
+                    v=${'$'}(cat "${'$'}f" 2>/dev/null)
+                    case "${'$'}v" in ''|*[!0-9]*) v=0 ;; esac
+                    if [ "${'$'}v" -gt 0 ]; then
+                        cpus="${'$'}cpus ${'$'}i:${'$'}v"
+                        [ "${'$'}v" -gt "${'$'}max_freq" ] && max_freq=${'$'}v
+                    fi
+                fi
+                i=${'$'}((i + 1))
+            done
+            [ "${'$'}max_freq" -gt 0 ] || return 0
+            mask=''
+            for pair in ${'$'}cpus; do
+                idx=${'$'}{pair%%:*}
+                freq=${'$'}{pair##*:}
+                [ "${'$'}freq" -lt "${'$'}max_freq" ] && mask="${'$'}mask${'$'}idx,"
+            done
+            mask=${'$'}{mask%,}
+            if [ -z "${'$'}mask" ]; then
+                return 0
+            fi
+            if taskset -pc "${'$'}mask" ${'$'}${'$'} >/dev/null 2>&1; then
+                echo "[maidroid] CPU affinity pinned to cpus ${'$'}mask (excluding top cluster ${'$'}max_freq kHz)"
+            fi
+        }
+        maidroid_exclude_top_cpu_cluster
+        unset -f maidroid_exclude_top_cpu_cluster;
+        """.trimIndent()
+
+    /**
      * Android 不允许普通应用读 /proc/stat、/proc/loadavg、/proc/vmstat、/proc/uptime，
      * psutil、uv 等程序读不到会直接报错。这里写一份全零的假文件，由 proot 绑定到对应位置；
      * 开机时间按“一分钟前”填，内容不变时不重写，避免每条命令都触发一次磁盘写入。
-     * /proc/locks 同样读不了，它的替身由用到它的 SnowLuma 启动脚本填内容（见 InContainerPaths.PROC_LOCKS_STAND_IN）。
+     * /proc/locks 同样读不了，它的替身在 SnowLuma 运行期间由宿主侧 QqProcLocksSync 采集填内容（见 InContainerPaths.PROC_LOCKS_STAND_IN）。
      */
     private fun ensureFakeProcFiles() {
         val bootTimeSeconds = (System.currentTimeMillis() / 1000L) - 60L
@@ -117,10 +181,10 @@ internal class ProotCommand(private val paths: RuntimePaths) {
             """.trimIndent() + "\n"
         )
         writeIfChanged(paths.fakeProcUptime, "60.00 60.00\n")
-        // /proc/locks 的替身只在没有时建一个空的：SnowLuma 运行期间容器里会不断重写它，这里不能覆盖
-        if (!paths.fakeProcLocks.isFile) {
-            paths.fakeProcLocks.parentFile?.mkdirs()
-            paths.fakeProcLocks.writeText("")
+        // /proc/locks 的替身只在没有时建一个空的：SnowLuma 运行期间由宿主侧 QqProcLocksSync 定时刷新它，这里不能覆盖
+        if (!paths.procLocksStandIn.isFile) {
+            paths.procLocksStandIn.parentFile?.mkdirs()
+            paths.procLocksStandIn.writeText("")
         }
     }
 

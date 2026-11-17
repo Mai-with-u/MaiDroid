@@ -1,6 +1,15 @@
 package org.maiwithu.maidroid.runtime
 
 /**
+ * 仅对单条容器命令生效的额外文件绑定：当宿主机 rootfs 下存在 rootfsRelativeSource 时，
+ * 由 proot 以 -b 挂载到容器内的 containerTarget，不改动目标路径在磁盘上的原文件。
+ */
+internal data class ContainerBindMount(
+    val rootfsRelativeSource: String,
+    val containerTarget: String
+)
+
+/**
  * 一段要在 proot 容器里用 /bin/sh 执行的脚本，以及它在容器内的工作目录。
  *
  * 各功能模块（OOBE、MaiBot、NapCat、容器 SSH、在线更新）只负责写出脚本正文，
@@ -8,7 +17,11 @@ package org.maiwithu.maidroid.runtime
  */
 internal data class ContainerScript(
     val body: String,
-    val workingDirectory: String = "/"
+    val workingDirectory: String = "/",
+    /** true 时排除最高频 CPU 簇，让这条命令的整棵进程树留在中小核上省电（见 ProotCommand.excludeTopCpuClusterPrelude）。 */
+    val excludeTopCpuCluster: Boolean = false,
+    /** 需要由 proot 额外挂载进容器的文件或目录列表（文件不存在时自动跳过）。 */
+    val extraBinds: List<ContainerBindMount> = emptyList()
 )
 
 /** 把任意字符串包成单引号 shell 字面量，内部的单引号按 '"'"' 转义。 */

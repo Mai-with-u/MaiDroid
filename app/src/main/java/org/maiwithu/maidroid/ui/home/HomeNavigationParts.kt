@@ -1,0 +1,179 @@
+package org.maiwithu.maidroid.ui.home
+
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import eightbitlab.com.blurview.BlurTarget
+import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.ui.component.BackdropBlurView
+import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.GlassShadow
+import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.GlassSurface
+import org.maiwithu.maidroid.ui.theme.TextPrimary
+import org.maiwithu.maidroid.ui.theme.TextSizes
+
+/** 主页导航的三个标签，顺序即底栏从左到右、横屏侧栏从上到下的顺序（也决定切换动画的方向）。 */
+internal enum class HomeTab(val label: String) {
+    WebUi("WebUI"),
+    Platforms("消息平台"),
+    Settings("设置")
+}
+
+/** 导航栏毛玻璃的模糊半径（配合 3x 硬件缩放对应 ~33px 轻柔透光模糊）。 */
+internal const val NavigationBlurRadius = 11f
+
+/** 竖屏底部导航栏与独立圆形终端按钮的统一高度。 */
+internal val PortraitBottomBarHeight = 64.dp
+
+/** 竖屏底部导航栏离容器底边的留白。 */
+internal val PortraitBottomBarBottomPadding = 16.dp
+
+/** 竖屏底部导航栏与容器左右边缘的留白。 */
+internal val PortraitBottomBarHorizontalPadding = 28.dp
+
+/** 单个标签按钮高度（dp 数值常量，同时供竖屏侧边胶囊几何计算复用）。 */
+internal const val HomeTabButtonHeightDp = 56f
+
+/** 单个标签按钮的高度（竖屏底栏、侧边胶囊、横屏侧栏通用）。 */
+internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
+
+/** 计算竖屏底部三栏标签胶囊的目标宽度（dp），为右下角圆形终端按钮与左右留白让出间距。 */
+internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
+    val availableWidthDp = maxWidthDp - PortraitBottomBarHorizontalPadding.value * 2f
+    val terminalButtonSizeDp = PortraitBottomBarHeight.value
+    return minOf(249f, availableWidthDp - terminalButtonSizeDp - 16f).coerceAtLeast(216f)
+}
+
+/** 圆形毛玻璃终端按钮，点开终端输出；竖屏底栏右端与横屏侧栏底部共用，尺寸由调用方给。 */
+@Composable
+internal fun HomeTerminalButton(
+    blurTarget: BlurTarget?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = 14.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = GlassShadow,
+                spotColor = GlassShadow
+            )
+            .clip(CircleShape)
+            .border(1.dp, GlassStroke, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        BackdropBlurView(
+            blurTarget = blurTarget,
+            blurRadius = NavigationBlurRadius,
+            overlayColor = GlassSurface,
+            modifier = Modifier.matchParentSize()
+        )
+
+        Icon(
+            painter = painterResource(R.drawable.ic_terminal_code),
+            contentDescription = "查看终端输出",
+            tint = TextPrimary,
+            modifier = Modifier.size(32.dp)
+        )
+    }
+}
+
+/** 单个标签按钮：图标在上、文字在下，选中时不透明、未选中略淡；大小由调用方的 modifier 决定。 */
+@Composable
+internal fun HomeTabButton(
+    tab: HomeTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.76f,
+        animationSpec = spring(
+            dampingRatio = 1f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "HomeTabContentAlpha"
+    )
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(Corners.Pill))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.graphicsLayer { alpha = contentAlpha }
+        ) {
+            HomeTabIcon(tab)
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = tab.label,
+                color = TextPrimary,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 12.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** 标签的图标：WebUI 用麦麦头像（彩色原图），其余两个按文字主色着色。 */
+@Composable
+private fun HomeTabIcon(tab: HomeTab) {
+    when (tab) {
+        HomeTab.WebUi -> Image(
+            painter = painterResource(R.drawable.ic_maibot),
+            contentDescription = null,
+            modifier = Modifier.size(24.dp)
+        )
+
+        HomeTab.Platforms -> Icon(
+            painter = painterResource(R.drawable.ic_platform_plug),
+            contentDescription = null,
+            tint = TextPrimary,
+            modifier = Modifier.size(24.dp)
+        )
+
+        HomeTab.Settings -> Icon(
+            imageVector = Icons.Outlined.Settings,
+            contentDescription = null,
+            tint = TextPrimary,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}

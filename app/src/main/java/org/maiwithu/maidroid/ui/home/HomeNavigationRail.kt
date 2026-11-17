@@ -34,13 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import eightbitlab.com.blurview.BlurTarget
 import org.maiwithu.maidroid.ui.component.BackdropBlurView
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
+import org.maiwithu.maidroid.ui.theme.GlassShadow
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -93,7 +93,7 @@ internal fun HomeNavigationRail(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // 刷新按钮跟着 WebUI 页签出现；竖屏时它悬浮在网页右上角，横屏网页是桌面版，右上角有网页自己的按钮，挪到这里不挡。
+        // 刷新按钮仅在 WebUI 页签显示：横屏网页为桌面版，左侧栏留这一枚圆形快捷刷新钮不挡网页右上角控件。
         AnimatedVisibility(
             visible = onRefreshWebUi != null,
             enter = fadeIn() + scaleIn(),
@@ -126,11 +126,11 @@ private fun AnimatedHomeTabRail(
     BoxWithConstraints(
         modifier = modifier
             .shadow(
-                elevation = 18.dp,
+                elevation = 14.dp,
                 shape = shape,
                 clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.32f),
-                spotColor = Color.Black.copy(alpha = 0.32f)
+                ambientColor = GlassShadow,
+                spotColor = GlassShadow
             )
             .clip(shape)
             .border(1.dp, GlassStroke, shape)
@@ -190,6 +190,13 @@ private fun RailRefreshButton(
     Box(
         modifier = modifier
             .size(44.dp)
+            .shadow(
+                elevation = 14.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = GlassShadow,
+                spotColor = GlassShadow
+            )
             .clip(CircleShape)
             .border(1.dp, GlassStroke, CircleShape)
             .clickable(onClick = onClick),

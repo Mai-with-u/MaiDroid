@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -43,6 +42,7 @@ import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
 import org.maiwithu.maidroid.appupdate.ReleaseNoteKind
 import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.appupdate.releaseNoteLines
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -434,7 +434,7 @@ private fun MaiBotAutoUpdateRow(switch: MaiBotAutoUpdateSwitch) {
                 lineHeight = 16.sp
             )
         }
-        Switch(
+        FlatSwitch(
             checked = switch.disabled,
             onCheckedChange = null,
             modifier = Modifier.clearAndSetSemantics {}

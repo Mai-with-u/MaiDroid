@@ -4,7 +4,6 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -175,8 +174,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .height(120.dp)
-            .clip(RoundedCornerShape(Corners.Card))
-            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(CardSurface)
             .padding(18.dp),
         verticalArrangement = Arrangement.Center
@@ -185,7 +183,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
             text = "暂无其他平台",
             color = TextPrimary,
             fontSize = TextSizes.TitleLarge,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 22.sp
         )
 
@@ -195,7 +193,7 @@ internal fun EmptyPlatformCard(modifier: Modifier = Modifier) {
             text = "后续适配项会出现在这里。",
             color = TextFaint,
             fontSize = TextSizes.Body,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Normal,
             lineHeight = 16.sp
         )
     }
@@ -231,15 +229,15 @@ internal fun PlatformBadge(text: String) {
         modifier = Modifier
             .height(16.dp)
             .clip(RoundedCornerShape(Corners.Tag))
-            .background(BrandOrange.copy(alpha = 0.5f))
+            .background(BrandOrange.copy(alpha = 0.18f))
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = TextPrimary,
+            color = BrandOrange,
             fontSize = TextSizes.Tag,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 10.sp
         )
     }
@@ -259,7 +257,7 @@ private fun SmallTag(text: String) {
             text = text,
             color = TextPrimary,
             fontSize = TextSizes.Tag,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 11.sp
         )
     }
@@ -283,8 +281,7 @@ internal fun PlatformInstallCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (hasAccessMethods) 172.dp else 120.dp)
-            .clip(RoundedCornerShape(Corners.Card))
-            .border(1.dp, CardBorder, RoundedCornerShape(Corners.Card))
+            .clip(RoundedCornerShape(Corners.Chip))
             .background(CardSurface)
             .padding(16.dp)
     ) {

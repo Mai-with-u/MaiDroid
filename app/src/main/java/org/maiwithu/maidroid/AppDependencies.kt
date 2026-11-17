@@ -11,6 +11,8 @@ import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.TerminalLogFiles
 import org.maiwithu.maidroid.diagnostics.recentSystemCrashes
 import org.maiwithu.maidroid.diagnostics.TerminalLogRecorder
+import org.maiwithu.maidroid.diagnostics.logLatestProcessExitSummary
+import org.maiwithu.maidroid.maibot.MaiBotConsoleLogRotator
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
@@ -51,7 +53,10 @@ internal class AppDependencies(context: Context) {
     val terminalLogRecorder = TerminalLogRecorder(
         TerminalLogFiles(diagnosticsFiles.logsDir),
         startBanner = "===== MaiDroid ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) 启动，进程 ${Process.myPid()} ====="
-    )
+    ).also {
+        // 日志落盘通道就绪后立即补记上次进程退出摘要，防止莫名被杀后缺少取证记录
+        runCatching { logLatestProcessExitSummary(appContext) }
+    }
     // MaiDroid 自己闪退时记下堆栈和闪退前的终端输出，MaiDroidApplication 创建完依赖就接管未捕获异常
     val crashRecorder = CrashRecorder(
         diagnosticsFiles.crashesDir,
@@ -69,7 +74,12 @@ internal class AppDependencies(context: Context) {
     val commandRunner = ContainerCommandRunner(runtimePaths)
 
     // ── 容器里的长驻进程与功能模块 ───────────────────────────────────────
+    // MaiBot 控制台日志兜底轮转：worker-console.log 不滚动，MaiDroid 侧按大小 copytruncate（见类注释）。
+    val maiBotConsoleLogRotator: MaiBotConsoleLogRotator by lazy {
+        MaiBotConsoleLogRotator(runtimePaths).also { it.start() }
+    }
     val maiBotProcess: MaiBotProcessSupervisor by lazy {
+        maiBotConsoleLogRotator // 先保证控制台日志轮转跑起来
         MaiBotProcessSupervisor(runtimePaths, runtimeReadiness, commandRunner)
     }
     val containerSsh: ContainerSshManager by lazy {
@@ -95,14 +105,14 @@ internal class AppDependencies(context: Context) {
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
-            appContext, runtimePaths, runtimeReadiness, commandRunner, napCatProcess, snowLumaAdapterInstaller,
-            qqClientSwitcher, networkMonitor
+            appContext, settings, runtimePaths, runtimeReadiness, commandRunner, napCatProcess,
+            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
         )
     }
     val snowLuma: SnowLumaPlatformManager by lazy {
         SnowLumaPlatformManager(
-            appContext, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess, snowLumaAdapterInstaller,
-            qqClientSwitcher, networkMonitor
+            appContext, settings, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess,
+            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
         )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {

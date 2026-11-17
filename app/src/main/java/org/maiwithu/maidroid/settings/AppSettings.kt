@@ -9,9 +9,9 @@ import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
 
 /**
- * 用 MMKV 持久化的应用设置：OOBE 是否完成、是否同意协议、开机自启、容器 SSH 配置、
- * 上次打开时的 MaiDroid 版本号、是否关闭 MaiDroid 更新后的 MaiBot 自动升级、用户是否安全退出了。
- * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。键名已在用户设备上存在，不能改。
+ * 用 MMKV 持久化的应用设置：OOBE 是否完成及断点步骤、是否同意协议、自启开关、容器 SSH 配置、
+ * 上次打开时的 MaiDroid 版本号、MaiBot 自动升级开关、是否安全退出、QQ 自定义安装包来源，以及竖屏悬浮胶囊停靠位置。
+ * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。既有键名在用户设备上存在，不要随意改动。
  */
 internal class AppSettings(
     private val kv: MMKV = MMKV.defaultMMKV()
@@ -29,8 +29,13 @@ internal class AppSettings(
         const val KEY_MAIBOT_AUTO_UPDATE_DISABLED = "maibot_auto_update_disabled"
         const val KEY_USER_EXITED = "user_exited"
         const val KEY_OOBE_STEP = "oobe_step"
+        const val KEY_NAPCAT_CUSTOM_SOURCE_URL = "napcat_custom_source_url"
+        const val KEY_SNOWLUMA_CUSTOM_SOURCE_URL = "snowluma_custom_source_url"
+        const val KEY_WEBUI_PILL_DOCK_RIGHT = "webui_pill_dock_right"
+        const val KEY_WEBUI_PILL_VERTICAL_BIAS = "webui_pill_vertical_bias"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
+        const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
     }
 
     /** OOBE 全部完成（MaiBot 装好且 WebUI 起来过），之后启动直接进主页。 */
@@ -47,8 +52,8 @@ internal class AppSettings(
             kv.encode(KEY_AUTHORIZATION_ACCEPTED, value)
         }
 
-    /** 开机后是否自动拉起 MaiBot。目前没有界面开关，默认开启。 */
-    val autoStartOnBoot: Boolean
+    /** 开机或应用覆盖升级后是否自动拉起 MaiBot 前台服务。目前没有界面开关，默认开启。 */
+    val autoStartService: Boolean
         get() = kv.decodeBool(KEY_SERVICE_AUTO_START, true)
 
     var containerSshEnabled: Boolean
@@ -105,6 +110,40 @@ internal class AppSettings(
         get() = kv.decodeString(KEY_OOBE_STEP, null)
         set(value) {
             kv.encode(KEY_OOBE_STEP, value)
+        }
+
+    /**
+     * 用户自己填写的 NapCat 自定义仓库或压缩包直链；默认留空，不内置第三方 fork。
+     * 未填时下载安装会弹窗让用户填写，已安装后可在 NapCat 配置弹窗里修改或重装。
+     */
+    var napCatCustomSourceUrl: String
+        get() = kv.decodeString(KEY_NAPCAT_CUSTOM_SOURCE_URL, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_NAPCAT_CUSTOM_SOURCE_URL, value.trim())
+        }
+
+    /**
+     * 用户自己填写的 SnowLuma 自定义仓库或发行包直链；默认留空，不内置第三方 fork。
+     * 未填时下载安装会弹窗让用户填写，已安装后可在 SnowLuma 配置弹窗里修改或重装。
+     */
+    var snowLumaCustomSourceUrl: String
+        get() = kv.decodeString(KEY_SNOWLUMA_CUSTOM_SOURCE_URL, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_SNOWLUMA_CUSTOM_SOURCE_URL, value.trim())
+        }
+
+    /** 竖屏 WebUI 侧边胶囊是否停靠在屏幕右侧；默认停在左侧（false），符合单手握持与滑屏习惯。 */
+    var webuiPillDockRight: Boolean
+        get() = kv.decodeBool(KEY_WEBUI_PILL_DOCK_RIGHT, false)
+        set(value) {
+            kv.encode(KEY_WEBUI_PILL_DOCK_RIGHT, value)
+        }
+
+    /** 竖屏 WebUI 侧边胶囊沿屏高的垂直停靠比例，限定在 [0f, 1f]。 */
+    var webuiPillVerticalBias: Float
+        get() = kv.decodeFloat(KEY_WEBUI_PILL_VERTICAL_BIAS, DEFAULT_WEBUI_PILL_VERTICAL_BIAS).coerceIn(0f, 1f)
+        set(value) {
+            kv.encode(KEY_WEBUI_PILL_VERTICAL_BIAS, value.coerceIn(0f, 1f))
         }
 
     fun saveContainerSsh(port: Int, rootPassword: String) {

@@ -23,7 +23,9 @@ import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
+import org.maiwithu.maidroid.runtime.killOwnMatchingProcesses
 import org.maiwithu.maidroid.runtime.killProot
+import org.maiwithu.maidroid.runtime.logUnexpectedSigkill
 import org.maiwithu.maidroid.runtime.requestedExitOf
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
@@ -274,13 +276,15 @@ internal class MaiBotProcessSupervisor(
     }
 
     /**
-     * 监管循环：清理残留 -> 拉起 MaiBot -> 读日志直到退出 -> 非主动停止则退避后重启。
+     * 监管循环：每轮启动前先清理残留孤儿进程 -> 检查端口 -> 拉起 MaiBot -> 读日志直到退出 -> 非主动停止则退避后重启。
      * 整个循环属于同一个 job，重启不会额外生出并行的监管协程。
      */
     private suspend fun superviseProcess(ownGeneration: Int) {
         var restartDelayMs = INITIAL_RESTART_DELAY_MS
-        cleanupStaleProcesses()
         while (currentCoroutineContext().isActive && !shouldStayStopped(ownGeneration)) {
+            // 每轮拉起前都先清残留：proot 被外力 SIGKILL 后，容器内的 bootstrap/worker/插件进程不会自动死，
+            // 留着既白占幻影进程名额，也会自己占住 8001 端口导致误报 PORT-BUSY。
+            cleanupStaleProcesses()
             // 每次拉起前（含意外退出后重启前）都看一眼 WebUI 端口，等的时候被停止就不再拉起
             if (!awaitFreeWebUiPort(ownGeneration)) break
             runProcessOnce(ownGeneration)
@@ -349,6 +353,7 @@ internal class MaiBotProcessSupervisor(
 
             val exitCode = currentProcess.waitFor()
             appendLog("$LOG_PREFIX Process exited with code: $exitCode")
+            logUnexpectedSigkill(exitCode, shouldStayStopped(ownGeneration), ::appendLog)
             recordUnexpectedExit(ownGeneration, exitCode)
         } catch (e: Exception) {
             appendLog("$LOG_PREFIX Failed to start process: ${e.message}")
@@ -382,12 +387,15 @@ internal class MaiBotProcessSupervisor(
         }
     }
 
+    // 直接在宿主机按同 UID 扫 /proc 清理遗留的 MaiBot Python 进程：避免为了清理又拉起一次 proot 消耗幻影名额。
     private suspend fun cleanupStaleProcesses() {
-        val result = commandRunner.run(MaiBotScripts.cleanupStaleProcesses()) { line ->
-            if (line.isNotBlank()) appendLog(line)
-        }
-        if (!result.success) {
-            appendLog("$LOG_PREFIX Cleanup command exited with code: ${result.exitCode}")
+        withContext(Dispatchers.IO) {
+            killOwnMatchingProcesses(
+                pattern = Regex(MaiBotScripts.STALE_PROCESS_PATTERN),
+                processName = "stale MaiBot process",
+                logPrefix = "$LOG_PREFIX ",
+                onLog = ::appendLog
+            )
         }
     }
 

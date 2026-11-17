@@ -42,7 +42,7 @@ nativeLibraryDir/               libproot_exec.so 等
 
 ## 在容器里执行命令
 
-所有容器命令都写成 `ContainerScript`（脚本正文 + 容器内工作目录），交给 `ContainerCommandRunner`：
+所有容器命令都写成 `ContainerScript`（脚本正文、容器内工作目录，以及可选的 `excludeTopCpuCluster` 核簇排除开关和 `extraBinds` 附加绑定挂载），交给 `ContainerCommandRunner`：
 
 ```kotlin
 val result = commandRunner.run(MaiBotScripts.installUv()) { line -> TerminalLog.append(line) }
@@ -61,15 +61,17 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
   -b <假 /proc 文件>:/proc/stat（以及 loadavg、vmstat、uptime）
   -b <termux/tmp>/.maidroid-proc-locks:/proc/locks
   -b <termux/tmp>:/tmp
+  [可选 -b <extraBinds>...]
   -w <工作目录>
-  /bin/sh -c "unset LD_LIBRARY_PATH; export PATH=… HOME=/root …; <脚本正文>"
+  /bin/sh -c "unset LD_LIBRARY_PATH; export PATH=… HOME=/root …; [<排核前置>] <脚本正文>"
 ```
 
 - `-0` 假装 root，`--link2symlink` 让不支持硬链接的应用私有目录也能装 Debian 包。
+- `excludeTopCpuCluster = true` 时（MaiBot、NapCat、SnowLuma 等长驻进程开启），会在脚本正文前插入 `ProotCommand.excludeTopCpuClusterPrelude()`，把进程树钉在最高频大核之外的 CPU 核簇上省电降温；`extraBinds`（`ContainerBindMount`）则按需追加 `-b` 挂载，例如 NapCat 用它将覆盖后的 `/root/napcat/qq-package.json` 挂载到 `/opt/QQ/resources/app/package.json`。
 - proot 进程本身的环境变量里有 `PROOT_LOADER`、`LD_LIBRARY_PATH`（指向 nativeLibraryDir 和 termux/lib）；进入容器后脚本前缀会 unset `LD_LIBRARY_PATH`，避免 Android 的库污染 Debian 程序。
-- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。`/proc/locks` 同样读不了，它的替身放在 `/tmp` 下（容器里要能改写），平时是空的，SnowLuma 运行时由它的启动脚本填内容，见 [消息平台接入](platforms.md) 的 SnowLuma 一节。
+- Android 不让普通应用读 `/proc/stat` 等文件，psutil、uv 读不到会报错，所以写一份全零的假文件绑进去。`/proc/locks` 同样读不了，它的替身放在 `/tmp` 下（容器里要能改写，对应宿主路径 `RuntimePaths.procLocksStandIn`），平时是空的，SnowLuma 运行时由宿主侧 `QqProcLocksSync` 直接读取宿主机 `/proc/<qq_pid>/fdinfo` 里的锁记录原子更新，避免在容器内定期派生子进程，见 [消息平台接入](platforms.md) 的 SnowLuma 一节。
 
-写脚本时用 `shellQuote()` 包外部输入；需要结束残留进程用 `killMatchingProcessesScript()`。
+写脚本时用 `shellQuote()` 包外部输入；宿主机侧同 UID 清理残留进程和异常 SIGKILL 进程水位日志在 `OwnChildProcesses.kt`（`killOwnMatchingProcesses()` 挂起等待不阻塞 IO 线程池），容器脚本内清理可用 `killMatchingProcessesScript()`。
 
 ## 就绪检查（`RuntimeReadiness`）
 
@@ -114,7 +116,7 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 ### GitHub 镜像
 
-国内直连 GitHub 不稳定。`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 两个 shell 函数，依次尝试 gitproxy.mrhjx.cn、ghproxy.vip、直连、gh-proxy.com 等镜像，每个镜像重试 3 次。新增或调整镜像只改 `GitHubMirrors.ALL` 一处：容器脚本里的镜像列表从它生成，宿主侧的应用自更新（`appupdate`）也用同一份列表。
+国内直连 GitHub 不稳定。`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 和供协议端安装复用的 `maidroid_download_urls` shell 函数：遇到 GitHub 域名地址时依次尝试多个镜像线路与直连（非 GitHub 地址直接走直连），git 每个镜像重试 3 次。新增或调整镜像只改 `GitHubMirrors.ALL` 一处：容器脚本里的镜像列表从它生成，宿主侧的应用自更新（`appupdate`）也用同一份列表。
 
 git 默认不检测传输停滞，镜像连上后卡住会一直等。两个函数都带 `-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60`：连续 60 秒低于 1 KB/s 就判这一次失败，接着重试或换镜像。
 
@@ -161,7 +163,7 @@ Debian rootfs 出厂时区是 `Etc/UTC`，麦麦按容器时间报时，国内�
 
 ## MaiBot 的启动
 
-`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：`cd /opt/MaiBot && uv run python bot.py`，容器里有 `script` 命令时套一层伪终端，让彩色日志按行刷新。启动前先跑 `cleanupStaleProcesses()` 清掉上次残留的 `bot.py` 和插件运行器进程，每次拉起前再看一眼 8001 端口：被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot）时拉起来也绑不上端口，只会反复重启，所以先不拉起，等端口空出来。
+`MaiBotProcessSupervisor` 执行 `MaiBotScripts.launch()`：注入 `PYTHONUNBUFFERED=1` 并直接 `exec /opt/MaiBot/.venv/bin/python bot.py`（仅在 `.venv` 缺失时回退 `exec uv run python bot.py`），省掉 `script` 伪终端与常驻 `uv` 包装进程占用的系统幻影进程名额。每轮拉起前先在宿主侧调 `cleanupStaleProcesses()`（经 `killOwnMatchingProcesses` 按进程名清掉上次残留的 `bot.py`、bootstrap、worker 与插件运行器，不再为此额外起一次 proot），再看一眼 8001 端口：被别的程序占着（另一个 MaiDroid、Termux 里的 MaiBot）时拉起来也绑不上端口，只会反复重启，所以先不拉起，等端口空出来。
 
 ### 等 WebUI 的判断
 

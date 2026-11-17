@@ -1,48 +1,101 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqCustomSource
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
+import org.maiwithu.maidroid.runtime.ContainerBindMount
 
 class NapCatScriptsTest {
-    @Test
-    fun `installer is downloaded through github mirrors and checked`() {
-        val install = NapCatScripts.install("token").body
+    private val repoSource = (parseQqCustomSource(QqClient.NapCat, "https://github.com/owner/NapCatQQ")
+        as QqSourceParseResult.Valid).source
 
-        assertTrue(install.contains("maidroid_github_mirror_specs()"))
-        assertTrue(install.contains("napcat-linux-installer/refs/heads/main/install.sh"))
-        // 镜像返回网页或报错文字时不能当成安装器去执行
-        assertTrue(install.contains("grep -qi 'napcat' napcat.sh"))
-        assertFalse(install.contains("curl -fL --connect-timeout 20 -o napcat.sh https://"))
+    @Test
+    fun `installs official linuxqq and fetches napcat zip from custom repository`() {
+        val install = NapCatScripts.install("token", repoSource).body
+
+        assertTrue(install.contains("maidroid_download_urls"))
+        // 内置 LinuxQQ 检查与下载，不再依赖原第三方安装脚本和 g++ 编译
+        assertTrue(install.contains("https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/linuxqq_3.2.34-53644_arm64.deb"))
+        assertTrue(install.contains("buildVersion | tonumber >= 53644"))
+        assertFalse(install.contains("g++"))
+        // 自定义仓库先尝试 latest，失败再走 GitHub Releases API；每次下载用 unzip -t 拦截伪造页面
+        assertTrue(install.contains("https://github.com/owner/NapCatQQ/releases/latest/download/NapCat.Shell.zip"))
+        assertTrue(install.contains("https://api.github.com/repos/owner/NapCatQQ/releases/latest"))
+        assertTrue(install.contains("unzip -t /root/.cache/maidroid-napcat/NapCat.Shell.zip.part"))
+        assertTrue(install.contains("custom package sha256"))
+        assertFalse(install.lowercase().contains("napneko"))
         // OneBot token 和 SnowLuma 共用一份：先读出或存下，写 onebot11.json 时才有值
         assertTrue(install.indexOf("napcat_token=\"${'$'}(cat /root/.maidroid/napcat_token)\"") in 0 until install.indexOf("onebot11.json"))
         // 安装脚本里的 here-doc 结束标记必须顶格，否则 shell 找不到结尾
-        assertTrue(install.contains("\nEOF\n"))
+        assertEquals(3, Regex("(?m)^EOF$").findAll(install).count())
+    }
+
+    @Test
+    fun `supports direct zip archive and pinned tag custom sources`() {
+        val directInstall = NapCatScripts.install(
+            "token",
+            QqCustomSource.DirectArchive("https://example.com/custom/NapCat.Shell.zip")
+        ).body
+        assertTrue(directInstall.contains("maidroid_napcat_fetch_zip 'https://example.com/custom/NapCat.Shell.zip'"))
+
+        val taggedSource = (parseQqCustomSource(QqClient.NapCat, "https://github.com/owner/NapCatQQ/releases/tag/v4.18.42")
+            as QqSourceParseResult.Valid).source
+        val taggedInstall = NapCatScripts.install("token", taggedSource).body
+        assertTrue(taggedInstall.contains("https://github.com/owner/NapCatQQ/releases/download/v4.18.42/NapCat.Shell.zip"))
+        assertTrue(taggedInstall.contains("https://api.github.com/repos/owner/NapCatQQ/releases/tags/v4.18.42"))
+    }
+
+    @Test
+    fun `runtime generates package json override and mounts it via proot bind`() {
+        val launcher = NapCatScripts.prepareRuntime().body
+        val launch = NapCatScripts.launch()
+
+        assertTrue(launcher.contains("cat > /root/loadNapCat.cjs <<'EOF'"))
+        assertTrue(launcher.contains("import('file://' + path.join(currentPath, './napcat/napcat.mjs'))"))
+        assertTrue(launcher.contains("/root/napcat/qq-package.json"))
+        assertTrue(launcher.contains("../../../../root/loadNapCat.cjs"))
+        assertFalse(launcher.contains("LD_PRELOAD=/root/libnapcat_launcher.so"))
+        assertEquals(
+            listOf(
+                ContainerBindMount(
+                    rootfsRelativeSource = NapCatScripts.QQ_PACKAGE_JSON_OVERRIDE_REL,
+                    containerTarget = NapCatScripts.QQ_PACKAGE_JSON_TARGET
+                )
+            ),
+            launch.extraBinds
+        )
+        assertEquals(2, Regex("(?m)^EOF$").findAll(launcher).count())
+        assertEquals("cd /root && exec bash /root/launcher.sh", launch.body)
+        assertFalse(launch.body.contains("script -q"))
+        assertFalse(launcher.contains("oom_score_adj"))
+        assertTrue(launcher.contains("qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1"))
+        assertFalse(launcher.contains("--no-zygote"))
     }
 
     @Test
     fun `xvfb picks a free display instead of a fixed one`() {
         val launcher = NapCatScripts.prepareRuntime().body
 
-        // 别的应用占着同一个显示号时不能撞上：让 Xvfb 自己挑，挑中的号再给 QQ 用
         assertTrue(launcher.contains("Xvfb -displayfd 3 -screen 0 1x1x8 +extension GLX +render 3>\"${'$'}display_file\""))
         assertTrue(launcher.contains("export DISPLAY=\":${'$'}display\""))
         assertFalse(launcher.contains("DISPLAY=:1"))
-        // 被强杀、断电留下的锁和套接字在起 Xvfb 前删掉，cleanup 也把记下的号一起删
         assertTrue(launcher.indexOf("rm -f /tmp/.X*-lock /tmp/.X11-unix/X*") < launcher.indexOf("Xvfb -displayfd 3"))
         assertTrue(NapCatScripts.cleanup().body.contains("rm -f /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/.maidroid-display"))
     }
 
     @Test
-    fun `interrupted installs are repaired before running the installer`() {
-        val install = NapCatScripts.install("token").body
-        val installer = install.indexOf("bash napcat.sh")
+    fun `interrupted installs are repaired before installing packages`() {
+        val install = NapCatScripts.install("token", repoSource).body
+        val aptStep = install.indexOf("maidroid_apt_install zip unzip jq curl xvfb procps ca-certificates")
 
-        // 上次被打断留下的 dpkg 半装状态先收拾，apt 带超时并会自动换源
-        assertTrue(install.indexOf("dpkg --configure -a") in 0 until installer)
-        assertTrue(install.indexOf("maidroid_apt_write_network_conf\n") in 0 until installer)
-        assertTrue(install.indexOf("maidroid_apt_install zip unzip jq curl xvfb screen xauth procps g++") in 0 until installer)
-        // 没装完的目录只留最新一份备份，反复打断也不会占满空间
+        assertTrue(install.indexOf("dpkg --configure -a") in 0 until aptStep)
+        assertTrue(install.indexOf("maidroid_apt_write_network_conf\n") in 0 until aptStep)
+        assertTrue(install.contains("maidroid_apt_install --reinstall unzip"))
         assertTrue(install.indexOf("rm -rf \"${'$'}old_backup\"") < install.indexOf("mv \"${'$'}HOME/napcat\" \"${'$'}backup_dir\""))
     }
 }

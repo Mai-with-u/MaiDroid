@@ -14,8 +14,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import eightbitlab.com.blurview.BlurTarget
 import eightbitlab.com.blurview.BlurView
 
-// BlurView 先把背景缩小这么多倍再模糊，越大越省性能，画面越糊。
-private const val BLUR_DOWNSCALE_FACTOR = 5f
+// BlurView 先按该倍率计算缩放与硬件 RenderNode 实际高斯半径（blurRadius * BLUR_DOWNSCALE_FACTOR），
+// 取 3f 能在保证性能的同时保留柔和背景色块与轮廓，避免过高倍率糊成实心死灰板。
+private const val BLUR_DOWNSCALE_FACTOR = 3f
 
 /**
  * 毛玻璃效果的“被模糊的那一层”。

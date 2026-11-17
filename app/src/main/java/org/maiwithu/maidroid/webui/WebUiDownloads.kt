@@ -54,6 +54,9 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     private var pendingSave: PendingSave? = null
     private var released = false
 
+    /** 是否仍有尚未选定保存位置的下载任务（退后台休眠前用于防误销毁）。 */
+    val hasPending: Boolean get() = pendingSave != null
+
     /** 等用户在“另存为”里选位置的下载。 */
     private sealed interface PendingSave {
         val fileName: String
@@ -84,6 +87,13 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         this.webView = webView
         webView.setDownloadListener(this)
         webView.addJavascriptInterface(Bridge(), WebUiDownloadScripts.BRIDGE_NAME)
+    }
+
+    /** 仅摘除当前持有的 WebView 引用（退后台休眠或换新实例前调用），保留 launcher 与已有保存状态供唤醒复用。 */
+    fun detachFrom(target: WebView) {
+        if (webView === target) {
+            webView = null
+        }
     }
 
     /**

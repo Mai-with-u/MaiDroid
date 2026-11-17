@@ -49,6 +49,11 @@ class StorageCleanupScriptsTest {
         assertFalse(body.contains("rm -rf /root/napcat.maidroid-bak.*"))
         // 删完再量一遍，结果页用删后的大小
         CleanupItem.entries.forEach { assertTrue(body.contains("size.${it.key}=")) }
+
+        val platformCleanup = StorageCleanupScripts.clean(setOf(CleanupItem.NapCatBackups)).body
+        assertTrue(platformCleanup.contains("/root/.cache/maidroid-napcat"))
+        assertTrue(platformCleanup.contains("/root/.cache/maidroid-snowluma"))
+        assertTrue(platformCleanup.contains("if maidroid_qq_installing; then"))
     }
 
     @Test

@@ -40,7 +40,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | 测试 | 覆盖 |
 | --- | --- |
 | `files/ContainerDocumentsTest` | 容器文件共享：documentId 与路径互转、拒绝越界 id、按容器语义解析符号链接（l2s 替身、绝对路径链接、链接成环）、MIME 推断、新建时避开重名 |
-| `cleanup/StorageCleanupScriptsTest` | 清理空间：读出各类大小和被跳过的类、只删勾选的、装依赖装软件时跳过缓存、日志默认不勾 |
+| `cleanup/StorageCleanupScriptsTest` | 清理空间：读出各类大小和被跳过的类、只删勾选的、装依赖/装软件或协议端安装期间跳过缓存、日志默认不勾 |
 | `diagnostics/FailureCodesTest` | 错误码的格式和拼法、从 apt、uv、git、OkHttp 等输出认原因（规则顺序、只看尾部、MaiBot 运行时只认几类） |
 | `diagnostics/LogRedactorTest` | 诊断信息打码：已知密钥原样替换、常见密钥格式、QQ 号和手机号、公网 IP（局域网和 DNS 地址保留）、不重复打码 |
 | `diagnostics/DiagnosticReportTest` | 诊断报告排版、从日志里读最近的失败、复制内容只留最新的日志、诊断包、预填的 Issue 链接 |
@@ -55,13 +55,16 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `maibot/update/MaiBotUpdateReportTest` | 在线更新脚本输出的解析 |
 | `maibot/update/MaiBotUpdateScriptsTest` | 在线更新拉取前、确认没有 git 在跑时清掉残留的 git 锁；动源码前先记下目标提交，被打断后不联网接着做完 |
 | `maibot/update/MaiBotAutoUpdateTest` | MaiDroid 更新后要不要自动升级 MaiBot：刚更新过才升级，同版本、降级、还在 OOBE、设置里关掉时不升级 |
+| `maibot/update/MaiBotChannelTest` | MaiBot 更新通道：正式版（main）与测试版（dev）识别及切换判定 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
 | `oobe/OobeAutoRetryTest` | OOBE 失败后的自动重试：断网时等网络回来、其他网络错误隔一阵重试两次、重试解决不了的交给用户 |
+| `platform/qq/QqCustomSourceTest` | QQ 协议端自定义来源解析：校验 `.zip`/`.tar.gz`/`.tgz` 直链、`www.github.com` 归一化、仓库基础地址与锁定 tag |
 | `platform/qq/SnowLumaAdapterConfigTest` | SnowLuma 适配器配置迁移：识别 MaiBot 生成的配置、启用并连本机 OneBot、搬旧适配器的对应设置、跳过多行值；MaiBot 版本门槛；安装脚本克隆新适配器并按清单 ID 删旧适配器；OneBot token 只生成一次、两种 QQ 协议端共用 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
 | `platform/napcat/NapCatWebUiPageTest` | NapCat 管理页地址、扫码完成判断 |
-| `platform/napcat/NapCatScriptsTest` | NapCat 安装器经 GitHub 镜像下载并确认是安装脚本；装之前先修 dpkg 半装状态、只留一份没装完的备份；Xvfb 自己挑空着的显示号 |
-| `platform/snowluma/SnowLumaScriptsTest` | SnowLuma 安装脚本：发行包钉版本、校验 sha256 后才解开；LinuxQQ 不是钉的版本才装；OneBot 配置用共用的端口和 token；heredoc 结束符在行首；启动脚本让 Xvfb 写屏幕文件、和 QQ 共用 hook 目录；停止时认得出 SnowLuma 和 QQ 的进程；点击发到 Xvfb 挑的显示号；没有启用记录时按 NapCat |
+| `platform/napcat/NapCatScriptsTest` | NapCat 安装与运行脚本：从自定义仓库/直链下载并用 `unzip -t` 校验、修复失效 `unzip` 软链、`proot -b` 挂载 `qq-package.json`、只保留完整配置、Xvfb 自己挑空着的显示号 |
+| `platform/snowluma/QqProcLocksSyncTest` | 宿主侧从 QQ 进程 `fdinfo` 提取锁记录并原子写入 `/proc/locks` 替身 |
+| `platform/snowluma/SnowLumaScriptsTest` | SnowLuma 安装与运行脚本：从自定义源或锁定 tag 下载归档并校验 `tar -tzf`、从 `package.json` 提取真实版本、LinuxQQ 按固定 sha256 校验、OneBot 配置共用端口和 token、`wait -n` 保育与 Node 堆上限设置 |
 | `platform/snowluma/SnowLumaWebUiTest`、`platform/snowluma/SnowLumaPlatformStateTest` | SnowLuma 管理页接口的进程列表解析、登录进度归类（多个 QQ 时已登录的优先）；已登录的判断、“已连接”卡片的登录提示 |
 | `platform/snowluma/XwdScreenTest` | 解析 Xvfb 的屏幕文件：裁出 QQ 窗口、屏幕上还没窗口、文件写了一半或不是 XWD、画面变了才换签名 |
 | `platform/qqofficial/QqOfficialPlatformTest` | config.toml 读写、连接报错识别、状态文案 |
@@ -72,18 +75,23 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `runtime/DpkgStateTest` | dpkg 上次没做完的判断：updates 里有没并进 status 的记录、包停在解包或配置到一半 |
 | `runtime/DurableFilesTest` | 原子写文件：整份替换、不留临时文件、写不成时旧内容不动；量已下载缓存的大小 |
 | `runtime/NetworkStatusTest` | 没连网时给出 NET-OFFLINE，系统没验证过能上网照常放行 |
+| `runtime/OwnChildProcessesTest` | 宿主机同 UID 子进程枚举、SIGKILL(137) 进程水位日志与先 TERM 后 KILL 挂起清理 |
 | `runtime/RequestExitScriptTest` | 停止时在容器里通知谁退出：MaiBot 只通知 Runner、QQ 只通知主进程（用真机抓到的进程命令行验证），不会选中脚本自己；退出码的含义；清理残留时认得出 MaiBot 的每一层进程、不碰 NapCat |
+| `service/LowBatteryPolicyTest` | 低电量（<5%）暂停与充电/高电量（≥10%）恢复的双阈值判定 |
 | `service/SafeExitStateTest` | 安全退出进度：什么时候算全部停下、常驻通知显示哪一项 |
 | `terminal/AnsiTextTest` | 终端输出的 ANSI 解析：颜色和加粗、回车退格覆盖、擦除行、丢掉光标等控制序列、截断的序列不漏进正文 |
 | `VersionNumberTest` | 版本号比较（数字逐位比、正式版新于同号预发布）和解析 |
 | `appupdate/AppReleaseTest` | 应用自更新：Release 解析与挑选 APK、校验行、更新说明排版 |
 | `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、断点续传响应判断、测速、大小显示 |
 | `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
+| `ui/component/BounceOverscrollTest` | 列表越界橡胶阻尼曲线、顶部下拉视差与 1:1 反向回推消费 |
+| `ui/home/HomePortraitNavigationTest` | 竖屏底栏与 WebUI 侧边悬浮胶囊的几何定位及双向平滑形变轨迹 |
+| `ui/home/PillTiltDamperTest` | 重力传感器屏幕坐标投影与侧边胶囊三级阻尼防抖换边 |
 | `ui/home/WakeBootLogTest` | 唤醒页开机自检：正常三阶段、自动升级 MaiBot 时多出的一行和进度分段、容器出问题时进度条停住、端口被占时的提示 |
 | `webui/WebUiRenderCrashGuardTest` | WebView 渲染进程崩溃后自动重开：2 分钟内最多 3 次，更早的崩溃不算 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
-| `ui/platform/QqClientButtonTest` | QQ 两种协议端的按钮：SnowLuma 先看协议、装好并启用后进设置；点没启用的那个先确认切换；停用的那个照样列出、不算运行中 |
+| `ui/platform/QqClientButtonTest` | QQ 两种协议端的按钮：支持从自定义源安装与协议/来源确认、装好并启用后进设置；点没启用的那个先确认切换；停用的那个照样列出、不算运行中 |
 | `ui/diagnostics/FeedbackDialogTest` | 反馈弹窗里“诊断包包括什么”只列实际带上的 |
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
@@ -106,7 +114,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | --- | --- |
 | `TerminalLog` | 终端输出的每一行：MaiBot、NapCat、sshd、OOBE 命令、在线更新（D 级别） |
 | `MaiDroidWebUi` | WebView 加载、网页 console 输出、视口修补结果 |
-| `MaiBotProcessSupervisor`、`MaiBotRuntimeService`、`BootCompletedReceiver`、`OobeSetupManager` | 进程监管、前台服务、开机广播、首次引导 |
+| `MaiBotProcessSupervisor`、`MaiBotRuntimeService`、`RuntimeAutoStartReceiver`、`OobeSetupManager` | 进程监管、前台服务、开机与覆盖安装自启广播、首次引导 |
 | `WebUiResponseRewriter` | 拦截 WebUI 页面 HTML 时的改写结果 |
 
 ```bash

@@ -24,7 +24,12 @@ internal enum class CleanupItem(
         "unused_python", "用不到的 Python 版本",
         "uv 装过、但 MaiBot 现在没在用的 Python；正在用的那个会留着。", true
     ),
-    NapCatBackups("napcat_backups", "没装完的 NapCat 备份", "重装 NapCat 时挪到一边的半成品。", true),
+    NapCatBackups(
+        "napcat_backups",
+        "协议端重装残留",
+        "重装 NapCat 或 SnowLuma 时留下的备份目录与安装包缓存。",
+        true
+    ),
     OldMaiBotLogs(
         "maibot_old_logs", "MaiBot 三天前的日志",
         "最近三天的日志会留着，反馈问题时用得上。", false
@@ -60,7 +65,8 @@ internal object StorageCleanupScripts {
                 CleanupItem.DependencyCache -> "maidroid_size_kb /root/.cache/uv /root/.cache/pip"
                 CleanupItem.AptCache -> "maidroid_size_kb /var/cache/apt /var/lib/apt/lists"
                 CleanupItem.UnusedPython -> "maidroid_size_kb ${'$'}(maidroid_unused_pythons)"
-                CleanupItem.NapCatBackups -> "maidroid_size_kb /root/napcat.maidroid-bak.*"
+                CleanupItem.NapCatBackups ->
+                    "maidroid_size_kb /root/napcat.maidroid-bak.* /root/.cache/maidroid-napcat /root/.cache/maidroid-snowluma"
                 CleanupItem.OldMaiBotLogs -> "maidroid_old_logs | maidroid_sum_kb"
             }
             "printf 'size.${item.key}=%s\\n' \"${'$'}($size)\""
@@ -108,8 +114,13 @@ internal object StorageCleanupScripts {
             """.trimIndent()
         CleanupItem.NapCatBackups ->
             """
-            rm -rf /root/napcat.maidroid-bak.*
-            maidroid_done ${shellQuote(item.label)}
+            # 下载或解压协议端期间跳过缓存目录清理，免得把正在下载的归档或 .deb 删掉
+            if maidroid_qq_installing; then
+                maidroid_skip ${item.key} ${shellQuote(item.label)} "正在安装协议端"
+            else
+                rm -rf /root/napcat.maidroid-bak.* /root/.cache/maidroid-napcat /root/.cache/maidroid-snowluma
+                maidroid_done ${shellQuote(item.label)}
+            fi
             """.trimIndent()
         CleanupItem.OldMaiBotLogs ->
             """
@@ -151,6 +162,12 @@ internal object StorageCleanupScripts {
             ps -eo args= | awk -v names="${'$'}1" -v subcommands="${'$'}2" '
                 { name = ${'$'}1; sub(/.*\//, "", name)
                   if (name ~ ("^(" names ")${'$'}") && (subcommands == "" || ${'$'}2 ~ ("^(" subcommands ")${'$'}"))) found = 1 }
+                END { exit !found }'
+        }
+        maidroid_qq_installing() {
+            ps -eo args= | awk '
+                { name = ${'$'}1; sub(/.*\//, "", name)
+                  if (name ~ /^(curl|unzip|tar|dpkg|apt|apt-get)${'$'}/ && ${'$'}0 ~ /maidroid-(napcat|snowluma)/) found = 1 }
                 END { exit !found }'
         }
         maidroid_skip() {

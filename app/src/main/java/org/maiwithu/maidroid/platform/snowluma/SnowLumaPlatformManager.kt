@@ -25,8 +25,11 @@ import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqClientSwitcher
+import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.NetworkStatus
@@ -35,6 +38,7 @@ import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.runtime.StorageSpace
 import org.maiwithu.maidroid.runtime.flushFileSystems
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
+import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
 import java.net.InetSocketAddress
@@ -50,6 +54,7 @@ import java.security.SecureRandom
  */
 internal class SnowLumaPlatformManager(
     private val appContext: Context,
+    private val settings: AppSettings,
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
@@ -85,7 +90,12 @@ internal class SnowLumaPlatformManager(
     private val clickMutex = Mutex()
 
     private val _state = MutableStateFlow(
-        SnowLumaPlatformState.initial(installed = files.isInstalled(), active = switcher.activeClient() == QqClient.SnowLuma)
+        SnowLumaPlatformState.initial(
+            installed = files.isInstalled(),
+            active = switcher.activeClient() == QqClient.SnowLuma,
+            customSourceUrl = settings.snowLumaCustomSourceUrl,
+            installedVersion = files.readInstalledVersion()
+        )
     )
     val state: StateFlow<SnowLumaPlatformState> = _state.asStateFlow()
 
@@ -106,6 +116,16 @@ internal class SnowLumaPlatformManager(
     /** 立即重读一次状态（打开页面、点刷新时用）。 */
     fun refresh() {
         scope.launch { refreshStatus() }
+    }
+
+    /** 校验并保存用户填写的自定义 SnowLuma 仓库或发行包直链；无效返回错误说明，保存成功返回 null。 */
+    fun saveCustomSourceUrl(rawUrl: String): String? {
+        val parsed = parseQqCustomSource(QqClient.SnowLuma, rawUrl)
+        if (parsed is QqSourceParseResult.Invalid) return parsed.reason
+        val normalized = (parsed as QqSourceParseResult.Valid).source.rawUrl
+        settings.snowLumaCustomSourceUrl = normalized
+        _state.update { it.copy(customSourceUrl = normalized) }
+        return null
     }
 
     /** 已登录时点设置要打开的 SnowLuma 管理页地址，带密码让页面自动登录。 */
@@ -175,17 +195,41 @@ internal class SnowLumaPlatformManager(
     }
 
     /**
-     * 用户在协议弹窗里点了“同意并安装”。已经装好就只改用 SnowLuma；否则在后台：
-     * 检查容器、MaiBot 源码和版本、网络和空间 -> SnowLuma 本体没装才跑安装脚本（进度文件每 500 毫秒同步到进度环）->
-     * 没装就装 MaiBot 侧的 SnowLuma 适配器 -> 改用 SnowLuma（停掉 NapCat）-> 经前台服务拉起 SnowLuma 并重启 MaiBot ->
-     * 等适配器配置生成后迁移连接设置。和 NapCat 的安装共用一把锁（两边都会跑 apt、装 QQ）。
+     * 用户在协议与风险提示弹窗里确认后触发安装（或从配置弹窗重新下载安装）。
+     * 非强装且已装好时只改用 SnowLuma；否则先校验并保存自定义源地址 -> 检查容器、MaiBot 源码和版本、网络与空间 ->
+     * 强装时先安全停止正在跑的 SnowLuma 并清除完成标记（保留数据目录与 QQ 登录态）->
+     * 跑安装脚本 -> 装 MaiBot 侧 QQ 适配器 -> 改用 SnowLuma 并重启运行时、迁移配置。
      */
-    fun installSnowLuma() {
+    fun installSnowLuma(rawUrl: String? = null, forceReinstall: Boolean = false) {
         if (installJob?.isActive == true) return
-        if (files.isInstalled() && !adapterInstaller.needsInstall()) {
+
+        val requestedUrl = rawUrl?.trim()
+        if (!requestedUrl.isNullOrEmpty()) {
+            when (val parsed = parseQqCustomSource(QqClient.SnowLuma, requestedUrl)) {
+                is QqSourceParseResult.Invalid -> {
+                    fail(Failure(FailureStep.SnowLumaPrecheck, parsed.reason))
+                    return
+                }
+                is QqSourceParseResult.Valid -> {
+                    settings.snowLumaCustomSourceUrl = parsed.source.rawUrl
+                    _state.update { it.copy(customSourceUrl = parsed.source.rawUrl) }
+                }
+            }
+        }
+
+        if (!forceReinstall && files.isInstalled() && !adapterInstaller.needsInstall()) {
             activate()
             return
         }
+
+        val source = when (val parsed = parseQqCustomSource(QqClient.SnowLuma, requestedUrl ?: settings.snowLumaCustomSourceUrl)) {
+            is QqSourceParseResult.Valid -> parsed.source
+            is QqSourceParseResult.Invalid -> {
+                fail(Failure(FailureStep.SnowLumaPrecheck, parsed.reason))
+                return
+            }
+        }
+
         cancelAutoRetry()
         installJob = scope.launch {
             if (!switcher.installLock.tryLock()) {
@@ -194,7 +238,7 @@ internal class SnowLumaPlatformManager(
             }
             // 意外异常（读写文件出错、系统拒绝启动服务……）也落到失败提示上，不让进度环一直转、按钮点不了
             try {
-                runInstall()
+                runInstall(source, forceReinstall)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -205,13 +249,13 @@ internal class SnowLumaPlatformManager(
         }
     }
 
-    private suspend fun runInstall() {
+    private suspend fun runInstall(source: QqCustomSource, forceReinstall: Boolean) {
+        // 覆盖重装开始前保留原有 installed 状态与 readyMarker：下载或强杀中断时旧版依然完好可用
         _state.update {
             it.copy(
                 phase = SnowLumaInstallPhase.Installing,
-                installed = false,
                 progress = 0.02f,
-                progressDescription = "准备安装 SnowLuma",
+                progressDescription = if (forceReinstall) "准备重新安装 SnowLuma" else "准备安装 SnowLuma",
                 failure = null
             )
         }
@@ -235,14 +279,26 @@ internal class SnowLumaPlatformManager(
             return
         }
 
+        val targetDesc = when (source) {
+            is QqCustomSource.DirectArchive -> "自定义直链"
+            is QqCustomSource.Repository -> source.pinnedTag?.let { "tag $it" } ?: "优先 v${SnowLumaScripts.VERSION}"
+        }
         TerminalLog.append("")
-        TerminalLog.append("[SnowLuma] 启动安装流程（SnowLuma ${SnowLumaScripts.VERSION}，LinuxQQ ${SnowLumaScripts.QQ_VERSION}）")
+        TerminalLog.append(
+            "[SnowLuma] 启动安装流程（目标 $targetDesc，LinuxQQ ${SnowLumaScripts.QQ_VERSION}，来源: ${source.rawUrl}）"
+        )
 
-        if (!withContext(Dispatchers.IO) { files.isSnowLumaReady() }) {
+        val stoppedRunningForReinstall = forceReinstall && snowLumaProcess.isRunning
+        if (stoppedRunningForReinstall) {
+            TerminalLog.append("[SnowLuma] 停止运行中的 SnowLuma 以便覆盖更新程序文件")
+            snowLumaProcess.stopAndWait()
+        }
+
+        if (forceReinstall || !withContext(Dispatchers.IO) { files.isSnowLumaReady() }) {
             clearInstallProgress()
             startProgressWatcher()
             val result = commandRunner.run(
-                SnowLumaScripts.install(token = randomHex(32), webUiPassword = randomHex(16)),
+                SnowLumaScripts.install(token = randomHex(32), webUiPassword = randomHex(16), source = source),
                 onLine = TerminalLog::append
             )
             TerminalLog.append("[SnowLuma] 安装流程退出码: ${result.exitCode}")
@@ -250,6 +306,12 @@ internal class SnowLumaPlatformManager(
             progressJob = null
             if (!result.success) {
                 fail(failureOf(FailureStep.SnowLumaInstall, result.summary(), result.output))
+                // 覆盖重装失败但原安装仍然完好：若当前启用 SnowLuma 且重装前刚停掉它，自动拉回保持可用
+                if (stoppedRunningForReinstall &&
+                    withContext(Dispatchers.IO) { files.isInstalled() && switcher.activeClient() == QqClient.SnowLuma }
+                ) {
+                    restartRuntime()
+                }
                 return
             }
             // 刚装下的几百 MB（QQ、SnowLuma）落到存储上再往下走，这时断电也不会留下“标记在、文件空”
@@ -265,6 +327,11 @@ internal class SnowLumaPlatformManager(
             })
             if (adapterError != null) {
                 fail(failureOf(FailureStep.SnowLumaAdapter, adapterError, adapterOutput.toString() + adapterError))
+                if (stoppedRunningForReinstall &&
+                    withContext(Dispatchers.IO) { files.isInstalled() && switcher.activeClient() == QqClient.SnowLuma }
+                ) {
+                    restartRuntime()
+                }
                 return
             }
             withContext(Dispatchers.IO) { flushFileSystems() }
@@ -283,6 +350,7 @@ internal class SnowLumaPlatformManager(
         }
 
         if (withContext(Dispatchers.IO) { files.isInstalled() }) {
+            val installedVersion = withContext(Dispatchers.IO) { files.readInstalledVersion() }
             _state.update {
                 it.copy(
                     phase = SnowLumaInstallPhase.Installed,
@@ -290,7 +358,8 @@ internal class SnowLumaPlatformManager(
                     active = true,
                     progress = 1f,
                     progressDescription = "SnowLuma 安装和自动配置完成",
-                    failure = null
+                    failure = null,
+                    installedVersion = installedVersion
                 )
             }
             TerminalLog.append("[SnowLuma] 安装完成：在 QQ 窗口里扫码登录后，麦麦就能收发 QQ 消息")
@@ -365,6 +434,7 @@ internal class SnowLumaPlatformManager(
             Triple(active, files.isInstalled(), active && isOneBotReachable())
         }
         val (active, installed, reachable) = snapshot
+        val installedVersion = withContext(Dispatchers.IO) { files.readInstalledVersion() }
         val running = snowLumaProcess.isRunning
         val processes = if (active && running) webUiClient.processes() else null
         val primary = processes?.let(::primaryQqProcess)
@@ -388,7 +458,9 @@ internal class SnowLumaPlatformManager(
                 accountId = primary?.uin?.ifBlank { null } ?: accountFromConfig,
                 accountName = primary?.nickname?.ifBlank { null },
                 // 账号只看 SnowLuma 这次认出来的，不看按 QQ 号另存的旧配置（以前登录过也会有）
-                accountDetected = !primary?.uin.isNullOrBlank()
+                accountDetected = !primary?.uin.isNullOrBlank(),
+                customSourceUrl = settings.snowLumaCustomSourceUrl,
+                installedVersion = installedVersion
             )
         }
     }

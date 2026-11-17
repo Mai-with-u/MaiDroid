@@ -10,7 +10,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +70,9 @@ import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.overscrollBody
+import org.maiwithu.maidroid.ui.component.overscrollHeader
+import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -115,11 +117,9 @@ internal fun messagePlatformsLayout(widthDp: Float, heightDp: Float): PlatformsL
 }
 
 /**
- * Chooses the largest practical card layout for the available content width.
- *
- * Cards stay between 272dp and 420dp whenever the viewport can satisfy both
- * constraints. For in-between widths where that is impossible, fewer columns
- * are preferred so controls inside a card are not squeezed.
+ * 按可用内容宽度挑出最合适的多栏列数。
+ * 只要视口允许，每张平台卡片宽度保持在 272dp ~ 420dp 之间；处于尴尬中间宽度时宁可少放一列，
+ * 避免压缩卡片内部的开关、输入框和按钮。
  */
 internal fun calculatePlatformGridColumnCount(availableWidthDp: Float): Int {
     val safeWidth = availableWidthDp.coerceAtLeast(0f)
@@ -178,7 +178,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     LaunchedEffect(snowLumaManager) {
         snowLumaManager.refresh()
     }
-    var selectedCategory by remember { mutableStateOf("全部") }
+    var selectedCategory by rememberSaveable { mutableStateOf("全部") }
     // 右上角搜索：点开后标题下出现搜索框，按名称和简介筛选当前分类；再点一次或按返回键收起并清空关键字。
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -190,6 +190,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     // QQ 卡片默认选中最左边的官方机器人；用户切到 NapCat 等其他选项后，本次页面内记住所选。
     var selectedAccessMethods by remember { mutableStateOf(mapOf("QQ" to AccessMethod.QqOfficial)) }
     // 弹窗开关在 Activity 重建后保留：用户切到 QQ 扫码时系统可能因配置变化重建界面，回来弹窗还在。
+    var showNapCatInstall by rememberSaveable { mutableStateOf(false) }
     var showNapCatQrCode by rememberSaveable { mutableStateOf(false) }
     var showNapCatConfig by rememberSaveable { mutableStateOf(false) }
     var showQqLogoutConfirm by rememberSaveable { mutableStateOf(false) }
@@ -202,10 +203,24 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     var showSnowLumaConfig by rememberSaveable { mutableStateOf(false) }
     var showSnowLumaRestart by rememberSaveable { mutableStateOf(false) }
     var qqClientSwitchTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    // 已安装配置弹窗触发的“从自定义地址重新安装”二次确认状态。
+    var pendingReinstallClient by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingReinstallUrl by rememberSaveable { mutableStateOf("") }
     val categories = listOf("全部", "国内", "海外", "其他")
     val installedPlatforms = installedPlatformCards(napCatState, snowLumaState, qqOfficialState)
     val openWebPage: (String) -> Unit = { url ->
         context.startActivity(Intent(context, WebUiActivity::class.java).apply { putExtra(WebUiActivity.EXTRA_URL, url) })
+    }
+    // 发现卡片入口和 NapCat 配置弹窗共用的登录/控制台分流动作：已登录进管理页，未登录弹二维码。
+    val openNapCatConsole: () -> Unit = {
+        napCatManager.refresh()
+        uiScope.launch {
+            if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
+                openWebPage(napCatManager.webUiPageUrl())
+            } else {
+                showNapCatQrCode = true
+            }
+        }
     }
     val runningCount = installedPlatforms.count { it.running }
     val onSearchClick: () -> Unit = { if (searchOpen) closeSearch() else searchOpen = true }
@@ -234,20 +249,9 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             napCatState = napCatState,
             snowLumaState = snowLumaState,
             qqOfficialState = qqOfficialState,
-            onNapCatInstall = { napCatManager.installNapCat() },
-            onNapCatSettings = {
-                napCatManager.refresh()
-                // 点设置 -> 先问 NapCat QQ 是否已登录 -> 已登录进管理页，未登录弹二维码。
-                // 不能只看 OneBot 端口：登录后端口还没起来或 WsServer 被关掉时，
-                // 会弹出二维码又因“已登录”立刻关掉，永远进不了管理页去修。
-                uiScope.launch {
-                    if (napCatState.oneBotReachable || napCatManager.isQqLoggedIn()) {
-                        openWebPage(napCatManager.webUiPageUrl())
-                    } else {
-                        showNapCatQrCode = true
-                    }
-                }
-            },
+            // NapCat 未安装点下载先弹出自定义仓库填报与风险确认弹窗，不写死第三方 fork。
+            onNapCatInstall = { showNapCatInstall = true },
+            onNapCatSettings = openNapCatConsole,
             // SnowLuma 没装时先看协议，同意后才装
             onSnowLumaInstall = { showSnowLumaAgreement = true },
             onSnowLumaSettings = {
@@ -282,12 +286,10 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         val statusBarTop = statusBarTopInset()
         val bottomClearance = LocalBottomNavigationClearance.current
         val pageWidth = maxWidth
-        // Grow the generous portrait spacing back gradually instead of jumping
-        // at a breakpoint when a landscape window is resized.
+        // 横屏窗口高度逐步拉大时平滑过渡回竖屏间距，避免跨过断点时界面突然跳变
         val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f))
             .coerceIn(0f, 1f)
-        // The previous 64dp top slot assumed a roughly 24dp status bar. Keep its
-        // visual breathing room separate from the inset reported by the system.
+        // 原 64dp 顶部留白默认按约 24dp 状态栏估算，这里把视觉呼吸感与系统安全区内边距拆开计算
         val topSpacing = 8.dp + 32.dp * verticalExpansion
         val sectionSpacing = 8.dp + 16.dp * verticalExpansion
 
@@ -359,24 +361,33 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 
         when (messagePlatformsLayout(maxWidth.value, maxHeight.value)) {
             PlatformsLayout.List -> {
-                // 手机竖屏：页头 -> 已连接 -> 发现，整页一起滚动，底部给浮动导航栏留出空间。
+                // 手机竖屏：页头微幅下沉，下方“已连接”与“发现”卡片弹性拉开留白，消除拉伸变形。
+                val listOverscroll = rememberSplitHeaderOverscrollEffect()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState(), overscrollEffect = listOverscroll)
                         .padding(horizontal = PlatformGridHorizontalPadding)
                         .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    listHeader(false)
-                    installedSection()
-                    discoverSection(false)
+                    Box(modifier = Modifier.overscrollHeader(listOverscroll)) {
+                        listHeader(false)
+                    }
+                    Column(
+                        modifier = Modifier.overscrollBody(listOverscroll),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        installedSection()
+                        discoverSection(false)
+                    }
                 }
             }
 
             PlatformsLayout.TwoPane -> {
-                // 手机横屏：左栏页头和已连接，右栏发现；两栏各自滚动，一屏能看到全部平台。
+                // 手机横屏：左栏页头和已连接同样走视差过冲，右栏发现随默认弹性工厂平滑平移；两栏各自滚动。
                 val leftPaneWidth = (pageWidth * 0.4f).coerceIn(220.dp, 320.dp)
+                val leftOverscroll = rememberSplitHeaderOverscrollEffect()
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
@@ -386,13 +397,17 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .width(leftPaneWidth)
                             .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(rememberScrollState(), overscrollEffect = leftOverscroll)
                             .padding(start = PlatformGridHorizontalPadding, end = 8.dp)
                             .padding(top = topSpacing, bottom = bottomClearance),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        listHeader(true)
-                        installedSection()
+                        Box(modifier = Modifier.overscrollHeader(leftOverscroll)) {
+                            listHeader(true)
+                        }
+                        Box(modifier = Modifier.overscrollBody(leftOverscroll)) {
+                            installedSection()
+                        }
                     }
 
                     Column(
@@ -485,12 +500,39 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
+        // 未安装时点 NapCat 先让用户填写自定义仓库或 .zip 直链并确认风险，再后台下载安装。
+        if (showNapCatInstall) {
+            NapCatInstallDialog(
+                state = napCatState,
+                snowLumaInstalled = snowLumaState.installed,
+                onConfirm = { sourceUrl ->
+                    showNapCatInstall = false
+                    napCatManager.installNapCat(sourceUrl)
+                    Toast.makeText(context, "正在安装 NapCat 和 QQ", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showNapCatInstall = false }
+            )
+        }
+
         if (showNapCatConfig) {
             NapCatConfigDialog(
                 state = napCatState,
                 onRefresh = { napCatManager.refresh() },
+                onSaveSourceUrl = { sourceUrl ->
+                    val error = napCatManager.saveCustomSourceUrl(sourceUrl)
+                    val tip = error ?: "自定义安装包来源已保存"
+                    Toast.makeText(context, tip, Toast.LENGTH_SHORT).show()
+                },
+                onReinstallFromSourceUrl = { sourceUrl ->
+                    pendingReinstallClient = QqClient.NapCat.wireValue
+                    pendingReinstallUrl = sourceUrl
+                },
                 onLogoutQq = { showQqLogoutConfirm = true },
-                onDismiss = { showNapCatConfig = false }
+                onDismiss = { showNapCatConfig = false },
+                onOpenManagement = {
+                    showNapCatConfig = false
+                    openNapCatConsole()
+                }
             )
         }
 
@@ -519,13 +561,14 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
-        // 装 SnowLuma 前先看协议：同意后才开始装，进度显示在卡片的进度环上
+        // 装 SnowLuma 前先填自定义源、看协议并确认风险：同意后才开始装，进度显示在卡片的进度环上
         if (showSnowLumaAgreement) {
             SnowLumaAgreementDialog(
+                state = snowLumaState,
                 napCatInstalled = napCatState.installed,
-                onConfirm = {
+                onConfirm = { sourceUrl ->
                     showSnowLumaAgreement = false
-                    snowLumaManager.installSnowLuma()
+                    snowLumaManager.installSnowLuma(sourceUrl)
                     Toast.makeText(context, "正在安装 SnowLuma 和 QQ", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showSnowLumaAgreement = false }
@@ -563,6 +606,15 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                     showQqWindow = true
                 },
                 onOpenWebUi = { openWebPage(snowLumaManager.webUiPageUrl()) },
+                onSaveSourceUrl = { sourceUrl ->
+                    val error = snowLumaManager.saveCustomSourceUrl(sourceUrl)
+                    val tip = error ?: "自定义安装包来源已保存"
+                    Toast.makeText(context, tip, Toast.LENGTH_SHORT).show()
+                },
+                onReinstallFromSourceUrl = { sourceUrl ->
+                    pendingReinstallClient = QqClient.SnowLuma.wireValue
+                    pendingReinstallUrl = sourceUrl
+                },
                 onRestartQq = { showSnowLumaRestart = true },
                 onDismiss = { showSnowLumaConfig = false }
             )
@@ -581,7 +633,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             )
         }
 
-        // 两种协议端只能启用一个：切过去前先确认。目标装好了就直接切；NapCat 没装就装，装完自动切过去
+        // 两种协议端只能启用一个：切过去前先确认。目标装好了就直接切；NapCat 没装就弹出安装填写窗口，不跳过风险确认
         qqClientSwitchTarget?.let { wireValue ->
             val target = QqClient.fromWireValue(wireValue)
             val targetInstalled = when (target) {
@@ -594,12 +646,44 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 onConfirm = {
                     qqClientSwitchTarget = null
                     when (target) {
-                        QqClient.NapCat -> napCatManager.installNapCat()
-                        QqClient.SnowLuma -> snowLumaManager.activate()
+                        QqClient.NapCat -> if (napCatState.installed) {
+                            napCatManager.installNapCat()
+                            Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            showNapCatInstall = true
+                        }
+                        QqClient.SnowLuma -> {
+                            snowLumaManager.activate()
+                            Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    Toast.makeText(context, "正在切换到 ${target.label}", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { qqClientSwitchTarget = null }
+            )
+        }
+
+        // 配置弹窗触发“从自定义地址重新安装”前的二次风险确认。
+        pendingReinstallClient?.let { wireValue ->
+            val target = QqClient.fromWireValue(wireValue)
+            CustomSourceReinstallConfirmDialog(
+                client = target,
+                sourceUrl = pendingReinstallUrl,
+                onConfirm = {
+                    val targetUrl = pendingReinstallUrl
+                    pendingReinstallClient = null
+                    when (target) {
+                        QqClient.NapCat -> {
+                            showNapCatConfig = false
+                            napCatManager.installNapCat(targetUrl, forceReinstall = true)
+                        }
+                        QqClient.SnowLuma -> {
+                            showSnowLumaConfig = false
+                            snowLumaManager.installSnowLuma(targetUrl, forceReinstall = true)
+                        }
+                    }
+                    Toast.makeText(context, "正在从自定义地址重新安装 ${target.label}", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { pendingReinstallClient = null }
             )
         }
 
@@ -635,8 +719,7 @@ private fun PlatformGrid(
         val availableWidth = (maxWidth - PlatformGridHorizontalPadding * 2f)
             .coerceAtLeast(0.dp)
         val widthBasedColumnCount = calculatePlatformGridColumnCount(availableWidth.value)
-        // Do not reserve empty columns when a category has fewer results; the
-        // resulting narrower grid stays centered by the parent container.
+        // 当前分类结果数量不足以填满整行时，不保留空列占位，让实际渲染的窄网格由父容器居中
         val columnCount = minOf(widthBasedColumnCount, platforms.size.coerceAtLeast(1))
         val maximumGridWidth = PlatformGridMaxCardWidthDp.dp * columnCount.toFloat() +
             PlatformGridSpacingDp.dp * (columnCount - 1).toFloat()
@@ -702,7 +785,7 @@ private fun MessagePlatformsHeader(
             Text(
                 text = "消息平台",
                 color = TextPrimary,
-                fontSize = if (compact) 27.sp else TextSizes.Display,
+                fontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
                 fontWeight = FontWeight.Bold,
                 lineHeight = if (compact) 30.sp else 34.sp
             )
@@ -732,7 +815,6 @@ private fun SearchButton(searchOpen: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(42.dp)
             .clip(CircleShape)
-            .border(1.dp, GlassButtonSurface, CircleShape)
             .background(GlassButtonSurface)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -877,14 +959,6 @@ internal fun CategoryChip(
         ),
         label = "CategoryChipBackground"
     )
-    val borderColor by animateColorAsState(
-        targetValue = if (selected) BrandOrange else CardBorder,
-        animationSpec = spring(
-            dampingRatio = 1f,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "CategoryChipBorder"
-    )
     val scale by animateFloatAsState(
         targetValue = if (selected) 1f else 0.96f,
         animationSpec = spring(
@@ -912,11 +986,6 @@ internal fun CategoryChip(
                 scaleY = scale
             }
             .clip(RoundedCornerShape(Corners.Chip))
-            .border(
-                width = 1.dp,
-                color = borderColor,
-                shape = RoundedCornerShape(Corners.Chip)
-            )
             .background(backgroundColor)
             .animateContentSize(
                 animationSpec = spring(
@@ -932,7 +1001,7 @@ internal fun CategoryChip(
             text = text,
             color = TextPrimary,
             fontSize = if (compact) TextSizes.Body else TextSizes.Title,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = if (compact) 18.sp else 20.sp
         )
     }

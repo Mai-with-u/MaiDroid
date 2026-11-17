@@ -5,21 +5,55 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.platform.qq.QqClient
+import org.maiwithu.maidroid.platform.qq.QqCustomSource
+import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
+import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 
 class SnowLumaScriptsTest {
-    private val install = SnowLumaScripts.install(token = "tok", webUiPassword = "pass-1234").body
+    private val customRepo = (parseQqCustomSource(QqClient.SnowLuma, "https://github.com/owner/SnowLuma")
+        as QqSourceParseResult.Valid).source
+    private val install = SnowLumaScripts.install(token = "tok", webUiPassword = "pass-1234", source = customRepo).body
     private val launcher = SnowLumaScripts.prepareRuntime().body
 
     @Test
-    fun `release bundle is pinned and checked before unpacking`() {
-        // 固定版本，经 GitHub 镜像下载，sha256 对不上就换下一个来源
-        assertTrue(install.contains("releases/download/v${SnowLumaScripts.VERSION}/SnowLuma-v${SnowLumaScripts.VERSION}-linux-arm64.tar.gz"))
-        assertTrue(install.contains("maidroid_github_urls 'https://github.com/SnowLuma/SnowLuma/releases/download/"))
-        assertTrue(install.contains("c4bcff22828fb465d6fbd8caa375e82432fd3af684b297c43f2c428a2de2200c"))
-        assertTrue(install.contains("if [ \"${'$'}fetch_got\" = \"${'$'}fetch_sha\" ]; then"))
+    fun `custom repository prefers v2_4_2 then falls back to latest non-lite arm64 release`() {
+        // 优先尝试 v2.4.2 发行包，失败时经 GitHub Releases API 兜底查询最新非 lite 的 linux-arm64 压缩包
+        val preferred = "https://github.com/owner/SnowLuma/releases/download/v${SnowLumaScripts.VERSION}/SnowLuma-v${SnowLumaScripts.VERSION}-linux-arm64.tar.gz"
+        val latestApi = "https://api.github.com/repos/owner/SnowLuma/releases/latest"
+        assertTrue(install.indexOf(preferred) in 0 until install.indexOf(latestApi))
+        assertTrue(install.contains("-lite"))
+        assertTrue(install.contains("tar -tzf \"${'$'}archive_out.part\""))
+        assertTrue(install.contains("WARNING: bundle sha256"))
+        assertTrue(install.contains(SnowLumaScripts.OFFICIAL_BUNDLE_SHA256))
+        assertFalse(install.contains("github.com/SnowLuma/SnowLuma"))
         // 先解到临时目录、确认入口和 node 都在才换上
         assertTrue(install.indexOf("tar -xzf") < install.indexOf("mv /root/snowluma/app.tmp /root/snowluma/app"))
         assertTrue(install.contains("[ ! -x /root/snowluma/app.tmp/node ]"))
+    }
+
+    @Test
+    fun `supports direct archive and pinned tag custom sources`() {
+        val directInstall = SnowLumaScripts.install(
+            token = "tok",
+            webUiPassword = "pass-1234",
+            source = QqCustomSource.DirectArchive("https://example.com/SnowLuma-custom.tar.gz")
+        ).body
+        assertTrue(directInstall.contains("maidroid_snowluma_fetch_archive /root/.cache/maidroid-snowluma/snowluma.tar.gz 'https://example.com/SnowLuma-custom.tar.gz'"))
+
+        val taggedRepo = (parseQqCustomSource(QqClient.SnowLuma, "https://github.com/owner/SnowLuma/releases/tag/v2.5.0")
+            as QqSourceParseResult.Valid).source
+        val taggedInstall = SnowLumaScripts.install(token = "tok", webUiPassword = "pass-1234", source = taggedRepo).body
+        assertTrue(taggedInstall.contains("https://github.com/owner/SnowLuma/releases/download/v2.5.0/SnowLuma-v2.5.0-linux-arm64.tar.gz"))
+        assertTrue(taggedInstall.contains("https://api.github.com/repos/owner/SnowLuma/releases/tags/v2.5.0"))
+
+        val slashTaggedRepo = (parseQqCustomSource(QqClient.SnowLuma, "https://github.com/owner/SnowLuma/releases/tag/release/v2.5.1")
+            as QqSourceParseResult.Valid).source
+        val slashTaggedInstall = SnowLumaScripts.install(token = "tok", webUiPassword = "pass-1234", source = slashTaggedRepo).body
+        assertTrue(
+            slashTaggedInstall.contains(
+                "https://github.com/owner/SnowLuma/releases/download/release/v2.5.1/SnowLuma-v2.5.1-linux-arm64.tar.gz"
+            )
+        )
     }
 
     @Test
@@ -30,7 +64,7 @@ class SnowLumaScriptsTest {
         // package.json 里写的是“版本号-构建号”（真机读出来的），不是包名里的发布日期
         assertTrue(install.contains("qq_wanted='3.2.32-52194'"))
         // 官方地址在前，GitHub 备份在后；NapCat 装过别的版本时允许降级
-        assertTrue(install.indexOf("https://qqdl.gtimg.cn/") < install.indexOf("maidroid_github_urls 'https://github.com/Rodert/qq-versions/"))
+        assertTrue(install.indexOf("https://qqdl.gtimg.cn/") < install.indexOf("maidroid_download_urls 'https://github.com/Rodert/qq-versions/"))
         assertTrue(install.contains("maidroid_apt_install --allow-downgrades /root/.cache/maidroid-snowluma/QQ_3.2.32_260812_arm64_01.deb"))
         assertTrue(install.contains("0.0.0.0 qqpatch.gtimg.cn"))
         // 装之前先收拾 dpkg 半装状态
@@ -39,7 +73,7 @@ class SnowLumaScriptsTest {
 
     @Test
     fun `onebot config serves maibot on the shared port with the shared token`() {
-        val config = install.substringAfter("cat > /root/snowluma/data/config/onebot.json <<EOF").substringBefore("\nEOF\n")
+        val config = install.substringAfter("cat > /root/snowluma/data/config/onebot.json.tmp <<EOF").substringBefore("\nEOF\n")
 
         assertTrue(config.contains("\"host\": \"127.0.0.1\""))
         assertTrue(config.contains("\"port\": 8095"))
@@ -49,6 +83,9 @@ class SnowLumaScriptsTest {
         assertTrue(config.contains("\"statusCommand\": { \"enabled\": false }"))
         // token 和 NapCat 共用，写配置前已经读出来
         assertTrue(install.indexOf("onebot_token=\"${'$'}(cat /root/.maidroid/napcat_token)\"") < install.indexOf("onebot.json"))
+        // 优先从解压后的 package.json 读取实际版本原子写完成标记
+        assertTrue(install.contains("jq -r '.version // empty' /root/snowluma/app/package.json"))
+        assertTrue(install.contains("mv -f /root/.maidroid/snowluma_ready.tmp /root/.maidroid/snowluma_ready"))
     }
 
     @Test
@@ -68,22 +105,25 @@ class SnowLumaScriptsTest {
         assertTrue(launcher.contains("> /tmp/.maidroid-snowluma-webui-port"))
         // 只有用户同意过协议才替用户确认
         assertTrue(launcher.indexOf("if [ -f /root/.maidroid/snowluma_consent ]; then") < launcher.indexOf("export SNOWLUMA_ACCEPT_EULA=1"))
-        // SnowLuma 的工作目录是数据目录，QQ 不带 WebUI 密码
+        // SnowLuma 的工作目录是数据目录，QQ 不带 WebUI 密码且不禁用 zygote
         assertTrue(launcher.contains("(cd /root/snowluma/data && exec /root/snowluma/app/node /root/snowluma/app/index.mjs) 2>&1 &"))
-        assertTrue(launcher.contains("env -u SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD qq --no-sandbox --disable-gpu --disable-dev-shm-usage"))
+        assertTrue(launcher.contains("env -u SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD -u NODE_OPTIONS qq --no-sandbox --disable-gpu --disable-dev-shm-usage 2>&1 &"))
+        assertFalse(launcher.contains("--no-zygote"))
     }
 
     @Test
-    fun `launcher rebuilds the lock table from qq fdinfo while qq runs`() {
-        // QQ 起来之前就开始拼，先写临时文件再改名；QQ 退出后停掉并清空
-        val loop = launcher.indexOf("for qq_pid in \$(pgrep -x qq); do")
-        assertTrue(loop in 0 until launcher.indexOf("Launching LinuxQQ"))
-        assertTrue(launcher.contains("grep -h '^lock:' /proc/\$qq_pid/fdinfo/* 2>/dev/null"))
-        assertTrue(launcher.contains("done | sed 's/^lock:[[:space:]]*//' > /tmp/.maidroid-proc-locks.new"))
-        assertTrue(launcher.contains("mv -f /tmp/.maidroid-proc-locks.new /tmp/.maidroid-proc-locks"))
-        assertTrue(launcher.indexOf("kill \"\$locks_pid\"") > launcher.indexOf("qq exited with code"))
+    fun `launcher uses exec bash and wait -n supervision without polling child processes`() {
+        val launch = SnowLumaScripts.launch().body
+        assertEquals("cd /root && exec bash /root/snowluma-launcher.sh", launch)
+        assertFalse(launch.contains("script -q"))
+
+        // 宿主机 QqProcLocksSync 接管 /proc/locks，节点保育留在主脚本内由 wait -n 阻塞等待
+        assertFalse(launcher.contains("pgrep -x qq"))
+        assertFalse(launcher.contains("oom_score_adj"))
+        assertTrue(launcher.contains("wait -n -p exited_pid \"\$qq_pid\" \"\$snowluma_pid\""))
+        assertTrue(launcher.indexOf(": > /tmp/.maidroid-proc-locks") > launcher.indexOf("qq exited with code"))
         // QQ 退出后最后结束 Xvfb，proot 才会跟着退出
-        assertTrue(launcher.indexOf("kill \"\$xvfb_pid\"") > launcher.indexOf("kill -TERM \"\$snowluma_pid\""))
+        assertTrue(launcher.indexOf("kill \"\$xvfb_pid\"") > launcher.indexOf("pkill -TERM -f \"snowluma.app.index[.]mjs\""))
         // 清理时只清空替身，不删：proot 每条命令都要绑定它
         val cleanup = SnowLumaScripts.cleanup().body
         assertTrue(cleanup.contains(": > /tmp/.maidroid-proc-locks"))
@@ -93,11 +133,9 @@ class SnowLumaScriptsTest {
     @Test
     fun `exit targets match the real processes`() {
         val snowLuma = Regex(SnowLumaScripts.SNOWLUMA_EXIT_TARGET.pattern)
-        // 真机上 ps 看到的是 node 改过的命令行；启动时写的原样也要认
         assertTrue(snowLuma.containsMatchIn("node /root/snowluma/app/index.mjs"))
         assertTrue(snowLuma.containsMatchIn("/root/snowluma/app/node /root/snowluma/app/index.mjs"))
         assertFalse(snowLuma.containsMatchIn("bash /root/snowluma-launcher.sh"))
-        // 清理残留时同样认得出改过命令行的 node
         assertTrue(SnowLumaScripts.cleanup().body.contains("snowluma.app.index[.]mjs"))
         val qq = Regex(SnowLumaScripts.QQ_EXIT_TARGET.pattern)
         assertTrue(qq.containsMatchIn("qq --no-sandbox --disable-gpu --disable-dev-shm-usage"))
