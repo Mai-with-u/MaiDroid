@@ -1,0 +1,16 @@
+{
+  "name": "maidroid-cloud-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "keygen": "node scripts/generate-keys.mjs",
+    "test": "node --test test/worker.test.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "wrangler": "^4.0.0"
+  }
+}

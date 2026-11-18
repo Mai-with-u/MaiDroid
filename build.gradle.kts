@@ -86,6 +86,8 @@ private val checkUtf8Encoding = tasks.register<CheckUtf8EncodingTask>("checkUtf8
         exclude("**/.gradle/**")
         exclude("**/.idea/**")
         exclude("**/build/**")
+        exclude("**/node_modules/**")
+        exclude("**/.wrangler/**")
     })
     projectRoot.set(layout.projectDirectory)
 }
