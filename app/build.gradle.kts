@@ -29,7 +29,7 @@ val appUpdateApiUrl = providers.gradleProperty("appUpdateApiUrl").orNull?.takeIf
 // 远程公告、6 位求助码诊断快照上传与匿名遥测的 Cloudflare Worker 根地址，以及静态签名清单的 GitHub 兜底地址。
 // 本地真机联调可用 -PremoteOpsBaseUrl=http://127.0.0.1:18787 -PremoteSigningPublicKeys="2026-k1=..." 指到 wrangler dev。
 val remoteOpsBaseUrl = providers.gradleProperty("remoteOpsBaseUrl").orNull?.trim()?.trimEnd('/')
-    ?: "https://ops.maiwithu.org"
+    ?: "https://ops.8u.nz"
 val remoteManifestFallbackUrl = providers.gradleProperty("remoteManifestFallbackUrl").orNull?.trim()
     ?: "https://raw.githubusercontent.com/Mai-with-u/MaiDroid/ops-manifest/manifest.json"
 val remoteSigningPublicKeys = providers.gradleProperty("remoteSigningPublicKeys").orNull?.trim()

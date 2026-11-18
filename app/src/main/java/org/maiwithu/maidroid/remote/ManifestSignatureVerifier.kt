@@ -17,7 +17,7 @@ internal object ManifestSignatureVerifier {
     // 生产环境公钥表（keyId -> X.509 SPKI Base64）：由 cloud-worker 的 `npm run keygen` 生成后填入，支持平滑轮换。
     private val BUILT_IN_PUBLIC_KEYS: Map<String, String> = mapOf(
         // 预置初始验签公钥槽位；绑定正式 Worker 域名时替换为自己私钥配对的 SPKI 公钥
-        "2026-k1" to "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEo4g6wHHLouOppENnhbQUhwPjGs4DUeAFrkwuDwTUQi6Zp0mMadSrmfo2/a0b3qs17MxjSJ8J19MozXH0OPWnBA=="
+        "2026-k1" to "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9xmWOUL21jbqmq4/Yen8x7r/+3wmkKFHXrm1JXQAh1kBUIH2kQgAoJrzo6y0+wDme2EGZF3PHHqYMLpCkUzdsA=="
     )
 
     fun parseKeySpecMap(extraSpec: String): Map<String, String> {
