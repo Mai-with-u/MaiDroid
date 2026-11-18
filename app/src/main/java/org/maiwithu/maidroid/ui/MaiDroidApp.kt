@@ -31,6 +31,7 @@ import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.diagnostics.CrashPromptDialog
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
+import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.diagnostics.crashFailure
 import org.maiwithu.maidroid.ui.home.HomeScreen
 import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
@@ -84,8 +85,9 @@ internal fun MaiDroidApp(
     val safeExitState by safeExit.state.collectAsState()
     val pendingCrash by viewModel.pendingCrash.collectAsState()
     val lowStorageBytes by viewModel.lowStorageBytes.collectAsState()
-    // 在闪退提示里点了“反馈问题”：记下是哪次闪退，接着打开反馈弹窗；去“另存为”回来重建时也保留
+    // 在闪退提示里点了“反馈问题”或“QQ 群反馈”：记下动作接着打开对应弹窗；去“另存为”或手机 QQ 回来重建时也保留
     var crashToReport by rememberSaveable(stateSaver = CrashRecordSaver) { mutableStateOf<CrashRecord?>(null) }
+    var showCrashQqGroup by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -206,11 +208,17 @@ internal fun MaiDroidApp(
         SafeExitProgressDialog(state = safeExitState, onMoveToBackground = onMoveToBackground)
     } else if (reporting != null) {
         FeedbackDialog(failure = crashFailure(reporting), onDismiss = { crashToReport = null })
+    } else if (showCrashQqGroup) {
+        QqFeedbackGroupDialog(onDismiss = { showCrashQqGroup = false })
     } else if (crash != null && crashPromptAllowed) {
         CrashPromptDialog(
             crash = crash,
             onFeedback = {
                 crashToReport = crash
+                viewModel.acknowledgeCrash()
+            },
+            onQqFeedback = {
+                showCrashQqGroup = true
                 viewModel.acknowledgeCrash()
             },
             onDismiss = viewModel::acknowledgeCrash

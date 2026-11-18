@@ -6,8 +6,8 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -17,7 +17,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -36,9 +35,9 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
- * 一处失败的“怎么办”：错误码 -> 认出原因时的标题和建议 -> 按钮（原因带的跳转，以及“反馈问题”）。
+ * 一处失败的“怎么办”：错误码 -> 认出原因时的标题和建议 -> 按钮（原因带的跳转、“反馈问题”和“QQ 群反馈”）。
  * 首次引导的页脚、更新弹窗、消息平台的安装弹窗都放这一块，失败说明本身仍由各处自己显示。
- * “反馈问题”打开的反馈弹窗、“清理空间”打开的清理弹窗都由这里自己管，调用方不用再接。
+ * “反馈问题”、“QQ 群反馈”和“清理空间”打开的弹窗都由这里自己管，调用方不用再接。
  */
 @Composable
 internal fun FailureNotice(
@@ -48,6 +47,7 @@ internal fun FailureNotice(
 ) {
     val context = LocalContext.current
     var showFeedback by rememberSaveable { mutableStateOf(false) }
+    var showQqGroup by rememberSaveable { mutableStateOf(false) }
     var showCleanup by rememberSaveable { mutableStateOf(false) }
     val cause = failure.cause
 
@@ -70,9 +70,9 @@ internal fun FailureNotice(
             )
             Text(text = cause.advice, color = textColor, fontSize = TextSizes.Body, lineHeight = 19.sp)
         }
-        Row(
+        FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             cause?.action?.let { action ->
                 NoticeButton(text = action.label, highlighted = true) {
@@ -80,11 +80,15 @@ internal fun FailureNotice(
                 }
             }
             NoticeButton(text = "反馈问题", highlighted = false) { showFeedback = true }
+            NoticeButton(text = "QQ 群反馈", highlighted = false) { showQqGroup = true }
         }
     }
 
     if (showFeedback) {
         FeedbackDialog(failure = failure, onDismiss = { showFeedback = false })
+    }
+    if (showQqGroup) {
+        QqFeedbackGroupDialog(onDismiss = { showQqGroup = false })
     }
     if (showCleanup) {
         StorageCleanupDialog(onDismiss = { showCleanup = false })

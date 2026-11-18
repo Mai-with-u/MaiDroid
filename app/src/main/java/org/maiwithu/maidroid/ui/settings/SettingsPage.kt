@@ -70,6 +70,9 @@ import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
+import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NAME
+import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NUMBER
+import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
@@ -95,7 +98,7 @@ private const val PermissionSettingsDetail = "permissions"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
- * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题、清理空间），最底下是“安全退出”按钮。
+ * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题、QQ 反馈群、清理空间），最底下是“安全退出”按钮。
  * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
@@ -127,8 +130,9 @@ internal fun SettingsPage(
     // 安全退出的二次确认；转屏重建时保留，免得用户刚点开就没了
     var showSafeExitConfirm by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
-    // 反馈弹窗里要去系统“另存为”选位置，回来时 Activity 可能被重建，开关要能保存下来
+    // 反馈弹窗里要去系统“另存为”选位置、QQ 群弹窗要切去手机 QQ 加群，回来时 Activity 可能被重建，开关都要保存下来
     var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
+    var showQqGroupDialog by rememberSaveable { mutableStateOf(false) }
     var showCleanupDialog by rememberSaveable { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -228,6 +232,7 @@ internal fun SettingsPage(
                     onAppUpdateClick = { openAppUpdateDialog() },
                     onSafeExitClick = { showSafeExitConfirm = true },
                     onFeedbackClick = { showFeedbackDialog = true },
+                    onQqGroupClick = { showQqGroupDialog = true },
                     onCleanupClick = { showCleanupDialog = true },
                     modifier = Modifier
                         .width(navigationWidth)
@@ -291,6 +296,7 @@ internal fun SettingsPage(
                         onAppUpdateClick = { openAppUpdateDialog() },
                         onSafeExitClick = { showSafeExitConfirm = true },
                         onFeedbackClick = { showFeedbackDialog = true },
+                        onQqGroupClick = { showQqGroupDialog = true },
                         onCleanupClick = { showCleanupDialog = true },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -310,6 +316,10 @@ internal fun SettingsPage(
 
         if (showFeedbackDialog) {
             FeedbackDialog(failure = null, onDismiss = { showFeedbackDialog = false })
+        }
+
+        if (showQqGroupDialog) {
+            QqFeedbackGroupDialog(onDismiss = { showQqGroupDialog = false })
         }
 
         if (showCleanupDialog) {
@@ -374,6 +384,7 @@ private fun SettingsNavigationPane(
     onAppUpdateClick: () -> Unit,
     onSafeExitClick: () -> Unit,
     onFeedbackClick: () -> Unit,
+    onQqGroupClick: () -> Unit,
     onCleanupClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -569,7 +580,7 @@ private fun SettingsNavigationPane(
             }
         }
 
-        // 出了问题时的入口：收集诊断信息（打过码）后去 GitHub 反馈，或者保存成诊断包；手机空间不够时清掉下载缓存
+        // 出了问题时的入口：去 GitHub 提带脱敏诊断包的 Issue、加 QQ 用户群交流互助；手机空间不够时清掉下载缓存
         item {
             SettingsSection(
                 title = "帮助",
@@ -584,6 +595,19 @@ private fun SettingsNavigationPane(
                     trailing = if (compact) null else {
                         {
                             SettingsRowArrow(contentDescription = "反馈问题")
+                        }
+                    }
+                )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.QqGroup,
+                    iconColor = IconSkyBlue,
+                    title = "QQ 反馈群",
+                    supportingText = "加入群聊【$QQ_FEEDBACK_GROUP_NAME】（$QQ_FEEDBACK_GROUP_NUMBER）交流互助",
+                    onClick = onQqGroupClick,
+                    trailing = if (compact) null else {
+                        {
+                            SettingsRowArrow(contentDescription = "打开 QQ 反馈群")
                         }
                     }
                 )

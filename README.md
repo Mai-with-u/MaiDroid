@@ -192,7 +192,7 @@ MaiBot 源码、适配器、uv、Python 以及来自 GitHub 的自定义 QQ 协�
 
 ### 出问题了怎么反馈？
 
-打开主页的终端输出页（竖屏在底栏右侧或 WebUI 侧边悬浮胶囊展开菜单内，横屏在左侧导航栏底部）复制日志，或直接在“设置 > 反馈问题”导出脱敏诊断包，然后到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交；若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
+打开主页的终端输出页（竖屏在底栏右侧或 WebUI 侧边悬浮胶囊展开菜单内，横屏在左侧导航栏底部）复制日志，或直接在“设置 > 反馈问题”导出脱敏诊断包，然后到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交；日常使用遇到的小问题也可以在“设置 > QQ 反馈群”或报错提示处加入 QQ 群【麦麦不吃苹果派】（750194887）交流互助。若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
 
 MaiBot 相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请提交到你所用 QQ 协议端的对应仓库，看你用的是哪一个。
 

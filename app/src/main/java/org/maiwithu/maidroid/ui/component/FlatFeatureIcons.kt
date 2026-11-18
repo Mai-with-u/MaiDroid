@@ -216,6 +216,32 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** 用户反馈群图标：后排柔白群友与前排纯白群友叠合，表达群聊互助交流。 */
+    val QqGroup: ImageVector by lazy {
+        flatVector("FlatQqGroup") {
+            fillLayer(IconSecondary) {
+                circlePath(16.2f, 8.2f, 2.7f)
+                moveTo(12.2f, 18.2f)
+                curveTo(12.2f, 14.8f, 14.0f, 12.8f, 16.5f, 12.8f)
+                curveTo(19.0f, 12.8f, 20.8f, 14.8f, 20.8f, 18.2f)
+                curveTo(20.8f, 19.0f, 20.1f, 19.6f, 19.3f, 19.6f)
+                lineTo(13.7f, 19.6f)
+                curveTo(12.9f, 19.6f, 12.2f, 19.0f, 12.2f, 18.2f)
+                close()
+            }
+            fillLayer(IconForeground) {
+                circlePath(9.2f, 7.6f, 3.3f)
+                moveTo(3.4f, 18.6f)
+                curveTo(3.4f, 14.4f, 5.8f, 12.2f, 9.2f, 12.2f)
+                curveTo(12.6f, 12.2f, 15.0f, 14.4f, 15.0f, 18.6f)
+                curveTo(15.0f, 19.6f, 14.2f, 20.2f, 13.2f, 20.2f)
+                lineTo(5.2f, 20.2f)
+                curveTo(4.2f, 20.2f, 3.4f, 19.6f, 3.4f, 18.6f)
+                close()
+            }
+        }
+    }
+
     val Cleanup: ImageVector by lazy {
         flatVector("FlatCleanup") {
             // 斜置小扫帚手柄与闪烁星点用柔白层，前景圆头束腰和扇形扫头用纯白层

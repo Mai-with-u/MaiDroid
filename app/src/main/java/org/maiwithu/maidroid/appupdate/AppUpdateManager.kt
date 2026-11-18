@@ -111,6 +111,7 @@ internal class AppUpdateManager(
 
     private val scope = backgroundScope("MaiDroid 自更新", Dispatchers.Main.immediate)
     private var job: Job? = null
+    private var silentReleaseJob: Job? = null
     private val currentVersion = VersionNumber.parse(currentVersionName)
     private val files = AppUpdateFiles(appContext.cacheDir)
     private val client = AppUpdateClient(userAgent = "MaiDroid/$currentVersionName")
@@ -146,6 +147,21 @@ internal class AppUpdateManager(
     fun dismissLaunchPrompt() {
         checkingOnLaunch = false
         _launchPrompt.value = false
+    }
+
+    /**
+     * 仅在还没查到过最新 Release 时静默拉取一次：供 QQ 反馈群弹窗在首次引导或离线恢复后展示最新正式版版本号，
+     * 不改变更新状态阶段、不弹更新提醒，拉取失败也不挂错误。
+     */
+    fun ensureReleaseLoaded() {
+        if (_state.value.release != null || job?.isActive == true || silentReleaseJob?.isActive == true) return
+        if (NetworkStatus.read(appContext).offlineFailure(FailureStep.AppUpdateCheck) != null) return
+        silentReleaseJob = scope.launch {
+            val win = client.fetchLatestRelease(apiUrl) ?: return@launch
+            _state.update { current ->
+                if (current.release != null) current else current.copy(release = win.value, checkSource = win.mirror.name)
+            }
+        }
     }
 
     private fun startCheck(onLaunch: Boolean) {
