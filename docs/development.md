@@ -84,6 +84,8 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `appupdate/AppReleaseTest` | 应用自更新：Release 解析与挑选 APK、校验行、更新说明排版 |
 | `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、断点续传响应判断、测速、大小显示 |
 | `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
+| `remote/RemoteManifestTest`、`remote/ManifestSignatureVerifierTest`、`remote/DiagnosticSnapshotPayloadTest` | 远程公告定向过滤与动态排障热规则匹配、WebCrypto 与 Android `SHA256withECDSA` 跨端验签及防篡改、超长日志自动裁剪压进 128 KB Gzip 上限 |
+| `ui/remote/RemoteActionTargetTest` | 远程公告与热规则受控跳转动作解析，拒绝非 `https://` 外链与不安全 scheme |
 | `ui/component/BounceOverscrollTest` | 列表越界橡胶阻尼曲线、顶部下拉视差与 1:1 反向回推消费 |
 | `ui/home/HomePortraitNavigationTest` | 竖屏底栏与 WebUI 侧边悬浮胶囊的几何定位及双向平滑形变轨迹 |
 | `ui/home/PillTiltDamperTest` | 重力传感器屏幕坐标投影与侧边胶囊三级阻尼防抖换边 |

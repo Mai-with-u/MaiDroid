@@ -242,6 +242,19 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** 匿名运行统计图标：柔白双短柱配纯白主趋势高柱，表达轻量运行健康统计。 */
+    val Telemetry: ImageVector by lazy {
+        flatVector("FlatTelemetry") {
+            fillLayer(IconSecondary) {
+                roundedRectPath(4.2f, 12.6f, 8.2f, 19.6f, 1.8f)
+                roundedRectPath(10.0f, 9.2f, 14.0f, 19.6f, 1.8f)
+            }
+            fillLayer(IconForeground) {
+                roundedRectPath(15.8f, 5.2f, 19.8f, 19.6f, 1.8f)
+            }
+        }
+    }
+
     val Cleanup: ImageVector by lazy {
         flatVector("FlatCleanup") {
             // 斜置小扫帚手柄与闪烁星点用柔白层，前景圆头束腰和扇形扫头用纯白层

@@ -74,6 +74,7 @@ import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NAME
 import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NUMBER
 import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
+import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -389,6 +390,15 @@ private fun SettingsNavigationPane(
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
+    val context = LocalContext.current
+    val settings = remember(context) { context.appDependencies.settings }
+    val remoteOps = remember(context) { context.appDependencies.remoteOps }
+    val bannerAnnouncements by remoteOps.bannerAnnouncements.collectAsState()
+    var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
+    val onTelemetryChange: (Boolean) -> Unit = { enabled ->
+        settings.telemetryEnabled = enabled
+        telemetryEnabled = enabled
+    }
     // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
     // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
     val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
@@ -430,6 +440,12 @@ private fun SettingsNavigationPane(
                     fontSize = TextSizes.Body,
                     lineHeight = 17.sp
                 )
+            }
+        }
+
+        if (bannerAnnouncements.isNotEmpty()) {
+            item {
+                AnnouncementBannerSection(modifier = Modifier.overscrollBody(overscroll))
             }
         }
 
@@ -624,6 +640,30 @@ private fun SettingsNavigationPane(
                         }
                     }
                 )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.Telemetry,
+                    iconColor = IconIrisBlue,
+                    title = "匿名运行统计",
+                    supportingText = "仅上报匿名版本与错误码枚举以改进稳定性，不含任何聊天与个人数据",
+                    onClick = { onTelemetryChange(!telemetryEnabled) },
+                    trailing = if (compact) null else {
+                        {
+                            FlatSwitch(
+                                checked = telemetryEnabled,
+                                onCheckedChange = onTelemetryChange
+                            )
+                        }
+                    }
+                )
+                if (compact) {
+                    CompactSettingSwitchRow(
+                        label = "启用匿名统计",
+                        checked = telemetryEnabled,
+                        enabled = true,
+                        onCheckedChange = onTelemetryChange
+                    )
+                }
             }
         }
 
@@ -779,6 +819,21 @@ private fun CompactSshSwitchRow(
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    CompactSettingSwitchRow(
+        label = "启用 SSH",
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = onCheckedChange
+    )
+}
+
+@Composable
+private fun CompactSettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -793,7 +848,7 @@ private fun CompactSshSwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "启用 SSH",
+            text = label,
             color = TextMuted,
             fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Medium,

@@ -79,8 +79,11 @@ private sealed interface FeedbackPreparation {
 internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val diagnostics = remember(context) { context.appDependencies.diagnostics }
+    val remoteOps = remember(context) { context.appDependencies.remoteOps }
     val scope = rememberCoroutineScope()
     var saving by remember { mutableStateOf(false) }
+    var generatingCode by remember { mutableStateOf(false) }
+    var helpCode by rememberSaveable { mutableStateOf<String?>(null) }
     var showQqGroup by rememberSaveable { mutableStateOf(false) }
 
     val preparation by produceState<FeedbackPreparation>(FeedbackPreparation.Loading, failure) {
@@ -137,6 +140,48 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
                     }
                     is FeedbackPreparation.Error -> BodyText("收集诊断信息失败：${state.message}", color = StatusWarning)
                     is FeedbackPreparation.Ready -> {
+                        val currentCode = helpCode
+                        if (currentCode != null) {
+                            HelpCodeCard(code = currentCode, errorCode = failure?.code)
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Corners.Control))
+                                    .background(TerminalBackground)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "不方便导诊断包？点右侧上传脱敏快照（保留 7 天自动清理），拿 6 位求助码发进群即可排查。",
+                                    color = TextMuted,
+                                    fontSize = TextSizes.Caption,
+                                    lineHeight = 16.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeedbackActionButton(
+                                    text = if (generatingCode) "生成中..." else "生成求助码",
+                                    enabled = !generatingCode,
+                                    containerColor = BrandOrange.copy(alpha = 0.22f),
+                                    contentColor = TextPrimary,
+                                    onClick = {
+                                        generatingCode = true
+                                        scope.launch {
+                                            val res = remoteOps.generateHelpCode(state.pkg)
+                                            generatingCode = false
+                                            res.onSuccess { code ->
+                                                helpCode = code
+                                                copyHelpCodeToClipboard(context, code, failure?.code)
+                                            }.onFailure { err ->
+                                                Toast.makeText(context, err.message ?: "生成求助码失败", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
                         BodyText(feedbackContentsText(state.pkg))
                         BodyText(
                             "点“去 GitHub 反馈”会复制诊断信息并打开填好版本、机型和错误码的问题表单：" +

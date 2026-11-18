@@ -45,6 +45,7 @@ import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.MaiDroidApp
+import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputPanel
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
 import org.maiwithu.maidroid.ui.theme.OobeBackground
@@ -303,6 +304,8 @@ private fun BoxScope.CompactOobeLayout(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        AnnouncementBannerSection(modifier = Modifier.padding(bottom = 12.dp))
+
         AnimatedContent(
             targetState = step,
             modifier = Modifier
@@ -457,6 +460,8 @@ private fun AdaptiveOobeLayout(
 
                         Spacer(modifier = Modifier.height(8.dp))
                     }
+
+                    AnnouncementBannerSection(modifier = Modifier.padding(bottom = 10.dp))
 
                     AnimatedContent(
                         targetState = step,
