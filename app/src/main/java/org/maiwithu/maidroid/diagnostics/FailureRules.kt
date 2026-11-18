@@ -1,5 +1,8 @@
 package org.maiwithu.maidroid.diagnostics
 
+import org.maiwithu.maidroid.remote.RemoteFailureHint
+import org.maiwithu.maidroid.remote.matchRemoteFailureHint
+
 // 从失败命令的输出里认原因的规则表：每条原因对应几段 apt、git、curl、uv、Python 和 proot 实际会打印的报错文字。
 // 规则按表里的顺序逐条试，排在前面的先认：具体的原因（空间满、时间不对）放在笼统的网络错误前面，
 // 网络错误里又按“解析不了 -> 超时 -> 断开 -> 服务器报错”排，几种同时出现时（各镜像失败的方式不同）报最根本的那个。
@@ -98,4 +101,21 @@ internal fun diagnoseFailureCause(output: String, among: Set<FailureCause>? = nu
         .filter { among == null || it.cause in among }
         .firstOrNull { rule -> rule.patterns.any { it.containsMatchIn(tail) } }
         ?.cause
+}
+
+// 远端清单下发的动态排障热规则缓存：启动时从本地验签文件恢复，拉取到新清单时原子替换引用。
+@Volatile
+private var cachedRemoteHints: List<RemoteFailureHint> = emptyList()
+
+internal fun updateRemoteFailureHints(hints: List<RemoteFailureHint>) {
+    cachedRemoteHints = hints
+}
+
+internal fun diagnoseRemoteFailureHint(stepCode: String, output: String): FailureHintOverride? {
+    val matched = matchRemoteFailureHint(cachedRemoteHints, stepCode, output, TAIL_LINES) ?: return null
+    return FailureHintOverride(
+        title = matched.title,
+        advice = matched.advice,
+        actionTarget = matched.action
+    )
 }
