@@ -53,3 +53,4 @@ key.properties
 /cloud-worker/node_modules/
 /cloud-worker/.wrangler/
 /cloud-worker/.dev.vars
+/cloud-worker/package-lock.json
