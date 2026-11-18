@@ -109,8 +109,10 @@ internal class MainViewModel(
         // MaiBot 的检查只拉取上游提交、不动源码，和麦麦启动同时进行互不影响；自动升级期间麦麦被拦着不启动，升级完由它拉起。
         // 查到新版本由主界面在主页上弹窗提醒，见 MaiDroidApp。
         viewModelScope.launch {
+            dependencies.remoteOps.refreshOnForeground()
             setupComplete.collectLatest { complete ->
                 if (!complete) return@collectLatest
+                dependencies.remoteOps.reportDailyHeartbeat()
                 dependencies.appUpdater.checkOnLaunch()
                 if (autoUpdatingMaiBot) {
                     dependencies.maiBotUpdater.updateAfterAppUpgrade()
@@ -169,10 +171,11 @@ internal class MainViewModel(
         }
     }
 
-    // 换到 OOBE 的某一步，同时记进设置，重新打开应用时回到这一步
+    // 换到 OOBE 的某一步，同时记进设置并上报匿名漏斗进度，重新打开应用时回到这一步
     private fun moveToOobeStep(step: OobeStep) {
         _oobeStep.value = step
         settings.oobeStep = step.name
+        dependencies.remoteOps.reportOobeStep(step.name, complete = false)
     }
 
     // 进入或重试“安装 MaiBot”：容器没配好（例如重新打开时回到这一步、容器文件被清掉一部分）
@@ -213,6 +216,8 @@ internal class MainViewModel(
             OobeStep.Install -> {
                 if (state.isComplete) {
                     _setupComplete.value = true
+                    dependencies.remoteOps.reportOobeStep(OobeStep.Install.name, complete = true)
+                    dependencies.remoteOps.recomputeVisibleAnnouncements()
                 } else {
                     startInstallOrReturnToContainer()
                 }

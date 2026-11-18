@@ -15,6 +15,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalConfiguration
 import org.maiwithu.maidroid.permission.SystemPermissionController
+import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUi
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
             hideNavigationBar = viewModel.setupComplete.value
         )
         permissions.refresh()
+        handleAnnouncementIntent(intent)
 
         setContent {
             MaiDroidTheme {
@@ -66,10 +68,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAnnouncementIntent(intent)
+    }
+
     // 从系统设置页回来时权限可能变了，重新读一遍。
     override fun onResume() {
         super.onResume()
         permissions.refresh()
+        appDependencies.remoteOps.refreshOnForeground()
+    }
+
+    private fun handleAnnouncementIntent(intent: Intent?) {
+        val annId = intent?.getStringExtra(RemoteOpsManager.EXTRA_ANNOUNCEMENT_ID) ?: return
+        intent.removeExtra(RemoteOpsManager.EXTRA_ANNOUNCEMENT_ID)
+        appDependencies.remoteOps.focusAnnouncementById(annId)
     }
 
     private fun openWebUi() {

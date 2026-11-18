@@ -62,6 +62,9 @@ class MaiBotRuntimeService : Service() {
         // 关机广播最多等所有接收者 10 秒，留两秒余量：到点还没停完就放行关机，剩下的交给重新打开后的恢复
         private const val SHUTDOWN_WAIT_MS = 8_000L
 
+        // 常驻后台期间每小时拉取一次远程公告与排障热规则，照顾长期挂后台不打开界面的旧手机
+        private const val REMOTE_OPS_POLL_MS = 60 * 60 * 1000L
+
         /** 重启 MaiBot（以及没在跑的 QQ 协议端），用于装好或改了平台适配器之后让 MaiBot 重新加载插件。 */
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
 
@@ -207,6 +210,15 @@ class MaiBotRuntimeService : Service() {
             appDependencies.networkMonitor.changes.collectLatest {
                 delay(NETWORK_SETTLE_MS)
                 if (runtimeRequested) refreshContainerDns()
+            }
+        }
+        serviceScope.launch {
+            while (true) {
+                delay(REMOTE_OPS_POLL_MS)
+                if (runtimeRequested && !lowBatteryPaused && !safeExitRunning) {
+                    appDependencies.remoteOps.refreshFromBackgroundService()
+                    appDependencies.remoteOps.reportDailyHeartbeat()
+                }
             }
         }
     }

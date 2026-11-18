@@ -3,6 +3,7 @@ package org.maiwithu.maidroid
 import android.app.Application
 import android.util.Log
 import com.tencent.mmkv.MMKV
+import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.settings.AppSettingsRecovery
 
@@ -23,5 +24,6 @@ class MaiDroidApplication : Application() {
         dependencies = AppDependencies(this)
         dependencies.crashRecorder.install()
         MaiBotRuntimeService.createNotificationChannel(this)
+        RemoteOpsManager.createAnnouncementChannel(this)
     }
 }

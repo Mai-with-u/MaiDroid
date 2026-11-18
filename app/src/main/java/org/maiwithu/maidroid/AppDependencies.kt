@@ -26,6 +26,7 @@ import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformManager
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
+import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -144,9 +145,12 @@ internal class AppDependencies(context: Context) {
         OobeSetupManager(appContext, settings, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess, networkMonitor)
     }
 
-    // ── MaiDroid 应用本体的在线更新（与容器无关） ─────────────────────────
+    // ── MaiDroid 应用本体的在线更新与远程公告诊断（与容器无关） ────────────────
     val appUpdater: AppUpdateManager by lazy {
         AppUpdateManager(appContext, BuildConfig.VERSION_NAME, BuildConfig.APP_UPDATE_API_URL)
+    }
+    val remoteOps: RemoteOpsManager by lazy {
+        RemoteOpsManager(appContext, settings, runtimePaths, diagnostics)
     }
 }
 
