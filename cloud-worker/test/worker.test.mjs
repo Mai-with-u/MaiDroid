@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ADMIN_HTML } from "../src/adminHtml.ts";
+import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "../src/adminConsole.ts";
+import { ADMIN_GATE_SCRIPT, ADMIN_HTML } from "../src/adminHtml.ts";
 import { buildHeatmapMatrix, cnDayIndex, cnDayLabel, componentState, fillDailySeries } from "../src/adminOverview.ts";
 import { buildDiagnosticAdvice } from "../src/advisor.ts";
 import {
@@ -601,10 +602,46 @@ test("overview helpers fill blank days by Beijing time and rotate heatmap to Mon
   assert.equal(componentState(now - 120, now, 60), "idle");
 });
 
-test("ADMIN_HTML inline script has valid JavaScript syntax and safe dataset handlers", () => {
+test("admin gate page hides console until token verified and all inline scripts parse", async () => {
+  // 闸门页与控制台脚本都必须是合法 JS（模板字符串转义失误会直接白屏）
   const match = ADMIN_HTML.match(/<script>([\s\S]*?)<\/script>/);
   assert.ok(match, "Expected <script> block in ADMIN_HTML");
   new Function(match[1]);
-  assert.equal(ADMIN_HTML.includes("data-bt="), true);
-  assert.equal(ADMIN_HTML.includes("openErrorDetail(this.dataset.bt,this.dataset.fp)"), true);
+  new Function(ADMIN_CONSOLE_SCRIPT);
+  assert.equal(match[1], ADMIN_GATE_SCRIPT);
+
+  // 闸门页上不能出现任何控制台结构与管理接口路径（除校验口令用的 console 入口外）
+  assert.equal(ADMIN_HTML.includes("errList"), false);
+  assert.equal(ADMIN_HTML.includes("manifestEditor"), false);
+  assert.equal(ADMIN_HTML.includes("/admin/api/errors"), false);
+  assert.equal(ADMIN_HTML.includes("/admin/api/console"), true);
+  assert.equal(ADMIN_CONSOLE_MARKUP.includes('data-act="errReload"'), true);
+
+  const db = createMockD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const page = await worker.fetch(new Request("https://ops.8u.nz/admin"), env, ctx);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
+  assert.equal(page.headers.get("X-Frame-Options"), "DENY");
+
+  const denied = await worker.fetch(
+    new Request("https://ops.8u.nz/admin/api/console", { headers: { Authorization: "Bearer wrong" } }),
+    env,
+    ctx
+  );
+  assert.equal(denied.status, 401);
+  const deniedBody = await denied.text();
+  assert.equal(deniedBody.includes("errList"), false);
+
+  const granted = await worker.fetch(
+    new Request("https://ops.8u.nz/admin/api/console", { headers: { Authorization: "Bearer test-secret" } }),
+    env,
+    ctx
+  );
+  assert.equal(granted.status, 200);
+  assert.equal(granted.headers.get("Cache-Control"), "no-store");
+  const body = await granted.json();
+  assert.equal(body.markup, ADMIN_CONSOLE_MARKUP);
+  assert.equal(body.script, ADMIN_CONSOLE_SCRIPT);
 });

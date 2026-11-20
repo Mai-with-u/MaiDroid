@@ -5,7 +5,8 @@
 // 4. POST /v1/error-report  — 接收脱敏后的崩溃堆栈与安装/启动报错并按指纹聚合
 // 5. GET  /admin & /admin/api/* — 单页管理后台
 
-import { ADMIN_HTML } from "./adminHtml.ts";
+import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "./adminConsole.ts";
+import { ADMIN_HTML, ADMIN_PAGE_HEADERS } from "./adminHtml.ts";
 import { buildAdminOverview } from "./adminOverview.ts";
 import { buildDiagnosticAdvice, type SnapshotInput } from "./advisor.ts";
 import {
@@ -63,9 +64,8 @@ export default {
         return await handleErrorReport(request, env, ctx);
       }
       if (pathname === "/admin" && request.method === "GET") {
-        return new Response(ADMIN_HTML, {
-          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-        });
+        // 只下发登录闸门，控制台标记与脚本要等口令校验通过后经 /admin/api/console 获取
+        return new Response(ADMIN_HTML, { headers: ADMIN_PAGE_HEADERS });
       }
       if (pathname.startsWith("/admin/api/")) {
         // 管理接口一律禁止任何缓存，避免共享代理或浏览器把遥测与报错现场落盘
@@ -419,6 +419,10 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
   }
 
   const sub = url.pathname.slice("/admin/api/".length);
+  // 登录闸门校验口令通过后才拿到控制台本体（标记 + 脚本）
+  if (sub === "console" && request.method === "GET") {
+    return jsonResponse({ markup: ADMIN_CONSOLE_MARKUP, script: ADMIN_CONSOLE_SCRIPT });
+  }
   if (sub.startsWith("diag/") && request.method === "GET") {
     const code = normalizeDiagCode(decodeURIComponent(sub.slice("diag/".length)));
     if (!code) return jsonResponse({ error: "求助码格式不正确（应为 6 位字符）" }, 400);
