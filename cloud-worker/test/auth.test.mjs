@@ -9,6 +9,7 @@ import {
   resolvePrincipal,
   verifyPassword,
 } from "../src/adminAuth.ts";
+import worker from "../src/index.ts";
 import { createSqliteD1 } from "./sqliteD1.mjs";
 
 const BASE = "https://ops.8u.nz/admin/api/";
@@ -130,4 +131,53 @@ test("login lockout blocks even correct credentials after 8 failures from the sa
   assert.equal((await login(env, "", "root-secret", "9.9.9.9")).status, 429);
   // 换个 IP 不受影响
   assert.equal((await login(env, "", "root-secret", "8.8.8.8")).status, 200);
+});
+
+test("worker enforces role ladder end to end: viewer < support < maintainer < owner", async () => {
+  const env = { DB: createSqliteD1(), ADMIN_TOKEN: "root-secret", IP_HASH_SALT: "s" };
+  const ctx = { waitUntil() {} };
+  const fetchApi = async (path, opts) => {
+    const resp = await worker.fetch(req(path, opts), env, ctx);
+    return { status: resp.status, body: await resp.json() };
+  };
+
+  // 超级管理员直接带 ADMIN_TOKEN 建三个不同角色的成员，各自登录并改掉初始口令
+  const tokens = {};
+  for (const role of ["viewer", "support", "maintainer"]) {
+    const c = await fetchApi("users", { method: "POST", token: "root-secret", body: { username: "m-" + role, role } });
+    assert.equal(c.status, 200);
+    const lg = await fetchApi("login", { method: "POST", body: { username: "m-" + role, password: c.body.initialPassword } });
+    tokens[role] = lg.body.token;
+    // 改口令之前什么都不让做，但能拿到控制台以弹出改口令窗口
+    assert.equal((await fetchApi("overview", { token: tokens[role] })).body.code, "must_change");
+    assert.equal((await fetchApi("console", { token: tokens[role] })).body.me.mustChange, true);
+    const pw = await fetchApi("password", { method: "POST", token: tokens[role], body: { oldPassword: c.body.initialPassword, newPassword: "new-pass-" + role } });
+    assert.equal(pw.status, 200);
+  }
+
+  const fp = "release/0123456789abcdef0123456789abcdef";
+  const matrix = [
+    // [接口, 方法, 观察者, 客服, 维护者]
+    ["overview", "GET", 200, 200, 200],
+    ["diag/M8K-29F", "GET", 403, 404, 404],
+    ["errors", "GET", 403, 200, 200],
+    ["errors/" + fp, "PATCH", 403, 403, 404],
+    ["manifest", "GET", 403, 403, 200],
+    ["errors/debug", "DELETE", 403, 403, 403],
+    ["users", "GET", 403, 403, 403],
+    ["audit", "GET", 403, 403, 403],
+  ];
+  for (const [path, method, ...expect] of matrix) {
+    for (const [i, role] of ["viewer", "support", "maintainer"].entries()) {
+      const body = method === "PATCH" ? { status: "resolved" } : undefined;
+      const r = await fetchApi(path, { method, token: tokens[role], body });
+      assert.equal(r.status, expect[i], `${role} ${method} ${path}`);
+    }
+  }
+
+  // 客服查求助码（哪怕没查到）也会留下审计，所有者能看到是谁查的
+  const audit = await fetchApi("audit?action=diag_lookup", { token: "root-secret" });
+  assert.deepEqual(audit.body.entries.map((e) => e.actor).sort(), ["m-maintainer", "m-support"]);
+  assert.equal((await fetchApi("errors/debug", { method: "DELETE", token: "root-secret" })).status, 200);
+  assert.equal((await fetchApi("overview", { token: "bogus-token" })).status, 401);
 });

@@ -167,6 +167,7 @@ function createMockD1() {
   const issues = new Map();
   const installs = new Map();
   const samples = [];
+  const audits = [];
   let sampleSeq = 1;
 
   const normalize = (sql) => sql.replace(/\s+/g, " ").trim();
@@ -382,6 +383,14 @@ function createMockD1() {
     }
     if (q.includes("FROM manifest_config")) {
       return { first: null };
+    }
+    // 多用户鉴权：错误令牌查会话表查不到；审计写入只计数
+    if (q.includes("FROM admin_sessions")) {
+      return { first: null };
+    }
+    if (q.startsWith("INSERT INTO admin_audit")) {
+      audits.push(args);
+      return { changes: 1 };
     }
     if (q.includes("FROM telemetry_events")) {
       return { first: { uniq: 0, done: 0 }, results: [] };

@@ -7,6 +7,16 @@
 
 import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "./adminConsole.ts";
 import { ADMIN_HTML, ADMIN_PAGE_HEADERS } from "./adminHtml.ts";
+import {
+  handleAccountRoute,
+  handleLogin,
+  hasRole,
+  meOf,
+  requiredRoleFor,
+  resolvePrincipal,
+  ROLE_LABEL,
+  writeAudit,
+} from "./adminAuth.ts";
 import { buildAdminOverview } from "./adminOverview.ts";
 import { buildDiagnosticAdvice, type SnapshotInput } from "./advisor.ts";
 import {
@@ -14,7 +24,6 @@ import {
   normalizeDiagCode,
   sha256Hex,
   signManifestPayload,
-  timingSafeEqualText,
 } from "./crypto.ts";
 import {
   compareAppVersion,
@@ -406,23 +415,37 @@ async function handleErrorReport(request: Request, env: Env, ctx: ExecutionConte
 }
 
 async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Response> {
-  if (!env.ADMIN_TOKEN) {
-    return jsonResponse({ error: "ADMIN_TOKEN 未配置" }, 503);
+  const sub = url.pathname.slice("/admin/api/".length);
+  // 登录：账号 + 口令（账号留空则用 ADMIN_TOKEN），成功后换发 12 小时会话令牌
+  if (sub === "login" && request.method === "POST") {
+    return await handleLogin(request, env);
   }
-  const auth = request.headers.get("Authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (!token || !(await timingSafeEqualText(token, env.ADMIN_TOKEN))) {
+
+  // 认人：会话令牌或直接携带 ADMIN_TOKEN；认不出来按 IP 计失败次数
+  const principal = await resolvePrincipal(request, env);
+  if (!principal) {
     if (!(await checkRateLimit(request, env, "admin_fail", 8, 900))) {
       return jsonResponse({ error: "鉴权失败次数过多，请 15 分钟后再试" }, 429);
     }
-    return jsonResponse({ error: "ADMIN_TOKEN 无效" }, 401);
+    return jsonResponse({ error: "未登录或会话已过期" }, 401);
+  }
+  // 还在用一次性初始口令的成员，除了改口令和退出什么都不能做
+  if (principal.mustChange && !["console", "me", "password", "logout"].includes(sub)) {
+    return jsonResponse({ error: "请先修改初始口令", code: "must_change" }, 403);
+  }
+  // 认权：按接口要求的最低角色放行，前端隐藏按钮只是体验，真正的闸门在这里
+  const need = requiredRoleFor(sub, request.method);
+  if (!hasRole(principal, need)) {
+    return jsonResponse({ error: `权限不足：需要「${ROLE_LABEL[need]}」及以上角色` }, 403);
   }
 
-  const sub = url.pathname.slice("/admin/api/".length);
-  // 登录闸门校验口令通过后才拿到控制台本体（标记 + 脚本）
+  // 登录闸门校验通过后才拿到控制台本体（标记 + 脚本），同时告知前端当前身份与角色
   if (sub === "console" && request.method === "GET") {
-    return jsonResponse({ markup: ADMIN_CONSOLE_MARKUP, script: ADMIN_CONSOLE_SCRIPT });
+    return jsonResponse({ markup: ADMIN_CONSOLE_MARKUP, script: ADMIN_CONSOLE_SCRIPT, me: meOf(principal) });
   }
+  const accountResp = await handleAccountRoute(sub, request, env, principal);
+  if (accountResp) return accountResp;
+
   if (sub.startsWith("diag/") && request.method === "GET") {
     const code = normalizeDiagCode(decodeURIComponent(sub.slice("diag/".length)));
     if (!code) return jsonResponse({ error: "求助码格式不正确（应为 6 位字符）" }, 400);
@@ -439,6 +462,8 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
         error_code: string | null;
         payload_gzip: ArrayBuffer;
       }>();
+    // 查求助码会看到用户脱敏现场，无论查没查到都留审计
+    await writeAudit(env.DB, principal, "diag_lookup", code, { found: !!row });
     if (!row) return jsonResponse({ error: `未找到求助码 #${code}（可能已过期或输入有误）` }, 404);
     const snapshot = JSON.parse(
       await gunzipLimitedText(new Uint8Array(row.payload_gzip), MAX_DIAG_UNCOMPRESSED_BYTES)
@@ -497,6 +522,10 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
       .run();
 
     await caches.default.delete(new Request(new URL("/v1/manifest.json", url.origin).toString(), { method: "GET" }));
+    await writeAudit(env.DB, principal, "manifest_publish", `v${nextVersion}`, {
+      announcements: payloadObj.announcements.length,
+      failureHints: payloadObj.failureHints.length,
+    });
     return jsonResponse({ version: nextVersion, etag, payload: payloadObj });
   }
 
@@ -604,6 +633,10 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
       env.DB.prepare("DELETE FROM error_issue_installs WHERE build_type = 'debug'").run(),
       env.DB.prepare("DELETE FROM error_issues WHERE build_type = 'debug'").run(),
     ]);
+    await writeAudit(env.DB, principal, "debug_clear", null, {
+      issues: delIssues.meta?.changes ?? 0,
+      samples: delSamples.meta?.changes ?? 0,
+    });
     return jsonResponse({
       ok: true,
       deletedIssues: delIssues.meta?.changes ?? 0,
@@ -679,6 +712,7 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
     if ((updateRes.meta?.changes ?? 0) === 0) {
       return jsonResponse({ error: "未找到该错误问题记录" }, 404);
     }
+    await writeAudit(env.DB, principal, "error_status", `${buildType}:${fingerprint.slice(0, 16)}`, { status: nextStatus });
     return jsonResponse({ ok: true, status: nextStatus });
   }
 
