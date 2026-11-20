@@ -264,6 +264,32 @@ internal class DiagnosticsManager(
         }
     }
 
+    /** 构造基于当前本地凭据与 QQ 账号的脱敏器，供自动错误上报复用一致的打码规则。 */
+    fun createRedactor(): LogRedactor = LogRedactor(knownSecrets())
+
+    /** 仅收集可用空间、可用内存和最近进程退出摘要，不扫描全量日志以保证自动上报轻量化。 */
+    fun collectLightMeta(): AutoErrorDeviceMeta {
+        val storageMb = runCatching {
+            StatFs(paths.rootfsDir.parentFile?.absolutePath ?: "/data").availableBytes / (1024L * 1024L)
+        }.getOrNull()
+        val availMemMb = runCatching {
+            val mem = ActivityManager.MemoryInfo()
+            appContext.getSystemService(ActivityManager::class.java).getMemoryInfo(mem)
+            mem.availMem / (1024L * 1024L)
+        }.getOrNull()
+        return AutoErrorDeviceMeta(
+            availableStorageMb = storageMb,
+            availableMemMb = availMemMb,
+            lastExitReason = latestExitReasonText(appContext)
+        )
+    }
+
+    /** 仅读取最新一份 MaiBot 日志的最后若干 KB，专供启动失败时抽取纯 Python Traceback，绝不整段上送。 */
+    fun readNewestMaiBotLogTail(maxBytes: Long = 32 * 1024L): String? {
+        val file = newestMaiBotLog() ?: return null
+        return runCatching { readTail(file, maxBytes) }.getOrNull()
+    }
+
     // ── 文件 ────────────────────────────────────────────────────────
 
     private fun newestMaiBotLog(): File? =

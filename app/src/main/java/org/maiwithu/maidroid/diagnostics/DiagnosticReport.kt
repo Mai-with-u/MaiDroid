@@ -114,6 +114,13 @@ internal data class DiagnosticSnapshotMeta(
     val lastExitReason: String?
 )
 
+/** 自动错误上报随附的轻量设备资源快照（只读存储、内存与系统退出原因，不扫描日志文件）。 */
+internal data class AutoErrorDeviceMeta(
+    val availableStorageMb: Long?,
+    val availableMemMb: Long?,
+    val lastExitReason: String?
+)
+
 /** 把报告和各个日志文件打成 zip 写进 out（用户在“另存为”里选的位置），不关闭 out。 */
 internal fun writeDiagnosticBundle(out: OutputStream, entries: List<BundleEntry>) {
     val zip = ZipOutputStream(out)

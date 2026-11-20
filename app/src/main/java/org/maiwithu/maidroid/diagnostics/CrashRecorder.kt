@@ -81,6 +81,24 @@ internal class CrashRecorder(
      * 比用户上次看过的那次还新才返回，否则返回 null。
      */
     fun pendingCrash(): CrashRecord? {
+        val newest = newestCrash() ?: return null
+        val acknowledged = runCatching { File(dir, ACKNOWLEDGED_FILE).readText().trim().toLong() }.getOrNull()
+        if (acknowledged != null && newest.timeMillis <= acknowledged) return null
+        return newest
+    }
+
+    /** 最近 3 天内最新一条崩溃（不受用户是否点掉弹窗限制），专供冷启动静默自动上报补发。 */
+    fun latestCrash(): CrashRecord? = newestCrash()
+
+    /** 读取本地崩溃文件原文；系统记录的原生闪退或非法文件名返回 null。 */
+    fun readCrashFile(record: CrashRecord): String? {
+        if (record.fromSystem) return null
+        if (!record.id.startsWith(FILE_PREFIX) || !record.id.endsWith(FILE_SUFFIX)) return null
+        if (record.id.contains('/') || record.id.contains('\\') || record.id.contains("..")) return null
+        return runCatching { File(dir, record.id).takeIf { it.isFile }?.readText() }.getOrNull()
+    }
+
+    private fun newestCrash(): CrashRecord? {
         val fromFile = crashFiles().firstOrNull()?.let { file ->
             timeOf(file)?.let { CrashRecord(file.name, it, summaryOf(file)) }
         }
@@ -88,10 +106,7 @@ internal class CrashRecorder(
             .filter { now() - it.timeMillis <= SYSTEM_CRASH_MAX_AGE_MILLIS }
             .maxByOrNull { it.timeMillis }
             ?.let { CrashRecord("$SYSTEM_ID_PREFIX${it.timeMillis}", it.timeMillis, it.summary) }
-        val newest = listOfNotNull(fromFile, fromSystem).maxByOrNull { it.timeMillis } ?: return null
-        val acknowledged = runCatching { File(dir, ACKNOWLEDGED_FILE).readText().trim().toLong() }.getOrNull()
-        if (acknowledged != null && newest.timeMillis <= acknowledged) return null
-        return newest
+        return listOfNotNull(fromFile, fromSystem).maxByOrNull { it.timeMillis }
     }
 
     /** 用户看过这次闪退的提示（反馈了或点了知道了），这次和更早的都不再问。 */
