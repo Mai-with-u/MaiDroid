@@ -6,6 +6,7 @@
 // 5. GET  /admin & /admin/api/* — 单页管理后台
 
 import { ADMIN_HTML } from "./adminHtml.ts";
+import { buildAdminOverview } from "./adminOverview.ts";
 import { buildDiagnosticAdvice, type SnapshotInput } from "./advisor.ts";
 import {
   generateDiagCode,
@@ -67,7 +68,10 @@ export default {
         });
       }
       if (pathname.startsWith("/admin/api/")) {
-        return await handleAdminApi(request, env, url);
+        // 管理接口一律禁止任何缓存，避免共享代理或浏览器把遥测与报错现场落盘
+        const adminResp = await handleAdminApi(request, env, url);
+        adminResp.headers.set("Cache-Control", "no-store");
+        return adminResp;
       }
       return jsonResponse({ error: "Not found" }, 404);
     } catch (err) {
@@ -490,6 +494,11 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
 
     await caches.default.delete(new Request(new URL("/v1/manifest.json", url.origin).toString(), { method: "GET" }));
     return jsonResponse({ version: nextVersion, etag, payload: payloadObj });
+  }
+
+  // 控制台“01 总览”大屏一次拉齐：KPI、30 日健康条带、7×24 热力、分布与组件状态
+  if (sub === "overview" && request.method === "GET") {
+    return jsonResponse(await buildAdminOverview(env.DB, Math.floor(Date.now() / 1000)));
   }
 
   if (sub === "stats" && request.method === "GET") {

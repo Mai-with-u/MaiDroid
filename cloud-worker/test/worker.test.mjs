@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ADMIN_HTML } from "../src/adminHtml.ts";
+import { buildHeatmapMatrix, cnDayIndex, cnDayLabel, componentState, fillDailySeries } from "../src/adminOverview.ts";
 import { buildDiagnosticAdvice } from "../src/advisor.ts";
 import {
   bytesToBase64,
@@ -355,6 +356,32 @@ function createMockD1() {
       const cnt = Array.from(issues.values()).filter((r) => r.build_type === "release" && r.status === "open").length;
       return { first: { cnt } };
     }
+    // 总览大屏：正式版待处理问题按分类聚合
+    if (q.startsWith("SELECT category, COUNT(*) AS cnt, SUM(affected_installs) AS installs FROM error_issues")) {
+      const map = new Map();
+      for (const r of issues.values()) {
+        if (r.build_type !== "release" || r.status !== "open") continue;
+        const cur = map.get(r.category) ?? { category: r.category, cnt: 0, installs: 0 };
+        cur.cnt += 1;
+        cur.installs += r.affected_installs;
+        map.set(r.category, cur);
+      }
+      return { results: Array.from(map.values()) };
+    }
+    if (q.startsWith("SELECT status, COUNT(*) AS cnt FROM error_issues WHERE build_type = 'release'")) {
+      const map = new Map();
+      for (const r of issues.values()) {
+        if (r.build_type === "release") map.set(r.status, (map.get(r.status) ?? 0) + 1);
+      }
+      return { results: Array.from(map.entries()).map(([status, cnt]) => ({ status, cnt })) };
+    }
+    if (q === "SELECT MAX(last_seen_at) AS at FROM error_issues") {
+      const all = Array.from(issues.values()).map((r) => r.last_seen_at);
+      return { first: { at: all.length ? Math.max(...all) : null } };
+    }
+    if (q.includes("FROM manifest_config")) {
+      return { first: null };
+    }
     if (q.includes("FROM telemetry_events")) {
       return { first: { uniq: 0, done: 0 }, results: [] };
     }
@@ -525,6 +552,53 @@ test("Worker /v1/error-report aggregates issues, isolates debug builds, and supp
   );
   const stats = await statsResp.json();
   assert.equal(stats.openReleaseIssues, 1);
+
+  // 6. 总览大屏：待处理正式版问题计入 KPI，30 日条带与 7×24 热力形状固定，无管理口令一律 401
+  const overviewResp = await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers }), env, ctx);
+  assert.equal(overviewResp.status, 200);
+  assert.equal(overviewResp.headers.get("Cache-Control"), "no-store");
+  const overview = await overviewResp.json();
+  assert.equal(overview.kpi.openIssues, 1);
+  assert.equal(overview.kpi.openInstalls, afterNew.issue.affected_installs);
+  assert.equal(overview.daily.length, 30);
+  assert.equal(overview.heatmap.length, 7);
+  assert.equal(overview.heatmap[0].length, 24);
+  assert.equal(overview.components.manifest.state, "none");
+  assert.equal(overview.components.errorReport.state, "up");
+
+  const anonOverview = await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview"), env, ctx);
+  assert.equal(anonOverview.status, 401);
+});
+
+test("overview helpers fill blank days by Beijing time and rotate heatmap to Monday-first", () => {
+  // 2026-11-20 09:00 北京时间 = 01:00 UTC
+  const now = Date.UTC(2026, 10, 20, 1, 0, 0) / 1000;
+  const today = cnDayIndex(now);
+  assert.equal(cnDayLabel(today), "11-20");
+  // 北京时间 07:59 仍属于当天，UTC 前一天 23:59 也是北京时间当天
+  assert.equal(cnDayIndex(Date.UTC(2026, 10, 19, 16, 0, 0) / 1000), today);
+  assert.equal(cnDayIndex(Date.UTC(2026, 10, 19, 15, 59, 59) / 1000), today - 1);
+
+  const series = fillDailySeries([{ d: today, installs: 10, err_installs: 2, events: 40 }], today);
+  assert.equal(series.length, 30);
+  assert.equal(series[29].day, "11-20");
+  assert.equal(series[29].errRate, 0.2);
+  assert.equal(series[0].installs, 0);
+  assert.equal(series[0].day, "10-22");
+
+  // SQL 侧周日为 0：周日 23 时应落到矩阵最后一行，周一 0 时落到第一行
+  const matrix = buildHeatmapMatrix([
+    { wd: 0, hr: 23, cnt: 5 },
+    { wd: 1, hr: 0, cnt: 3 },
+    { wd: 9, hr: 1, cnt: 99 },
+  ]);
+  assert.equal(matrix[6][23], 5);
+  assert.equal(matrix[0][0], 3);
+  assert.equal(matrix.flat().reduce((a, b) => a + b, 0), 8);
+
+  assert.equal(componentState(null, now, 60), "none");
+  assert.equal(componentState(now - 30, now, 60), "up");
+  assert.equal(componentState(now - 120, now, 60), "idle");
 });
 
 test("ADMIN_HTML inline script has valid JavaScript syntax and safe dataset handlers", () => {
