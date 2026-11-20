@@ -227,9 +227,13 @@ flowchart TB
 | `snowluma_custom_source_url` | 用户保存的 SnowLuma 自定义仓库或 `.tar.gz`/`.tgz` 直链 | 空 |
 | `webui_pill_dock_right` | 竖屏 WebUI 侧边悬浮胶囊是否停靠在右侧（默认左侧） | false |
 | `webui_pill_vertical_bias` | 竖屏 WebUI 侧边悬浮胶囊的纵向位置比例（0~1） | 0.65 |
-| `telemetry_enabled` | 是否允许发送无感匿名运行统计（设置页“帮助 > 匿名运行统计”开关） | true |
+| `telemetry_enabled` | 是否允许发送无感匿名运行统计与脱敏报错上报（设置页“帮助 > 匿名运行统计”开关） | true |
 | `telemetry_install_id` | 匿名统计使用的随机安装 UUID，重装即变 | 首次生成 |
 | `telemetry_last_heartbeat_sec` | 上次成功发送每日存活心跳的时间戳（秒） | 0 |
+| `telemetry_last_auto_crash_ms` | 上次已自动补报的崩溃时间戳（毫秒），防跨进程重复上报 | 0 |
+| `telemetry_auto_error_day` | 自动错误上报的当日日期（`yyyy-MM-dd`） | 空 |
+| `telemetry_auto_error_day_count` | 当日已自动上报的脱敏错误条数（单设备每天上限 8 条） | 0 |
+| `telemetry_auto_error_fps` | 最近 32 条已上报错误指纹与时间戳（24 小时同指纹防重） | 空 |
 | `remote_manifest_etag` | 上次从远程清单主源拿到的 `ETag`，供条件请求省流 | 空 |
 | `dismissed_announcement_ids` | 用户已手动关闭的远程公告 ID 列表（最多留最近 64 条） | 空 |
 | `notified_announcement_ids` | 已经向系统状态栏推送过通知的重要公告 ID 列表 | 空 |
@@ -254,6 +258,7 @@ flowchart TB
 - 新增失败点：用一个 `FailureStep`（没有合适的就加一个，码要短、全大写、不重复，`FailureCodesTest` 会检查），失败时用 `failureOf(步骤, 说明, 输出)` 生成 `Failure` 放进界面状态，并写一行 `logLine()`，界面放一个 `FailureNotice`。新增原因：先拿到真机日志或 Issue 里的原文，加进规则表并补测试。
 - 反馈：`DiagnosticsManager.prepare` 收集版本、设备、权限、网络、容器和进程状态、最近几次进程结束的原因（`ApplicationExitInfo`）、终端日志、MaiBot 最新的日志和闪退记录，经 `LogRedactor` 打码：已知的令牌、密钥、密码、QQ 号原样替换，再按规则替换 API Key、Bearer、URL 里的密钥参数、QQ 号、手机号和公网 IP。“生成求助码”把这份已打码材料经 `DiagnosticSnapshotPayload` Gzip 压缩（上限 128 KB）上传至 `cloud-worker/` 诊断服务换取 6 位短码（如 `#M8K-29F`，保留 7 天自动清理），方便不熟悉文件操作的用户直接发码或截屏排查。“去 GitHub 反馈”复制报告和日志尾部，打开按 `.github/ISSUE_TEMPLATE/bug_report.yml` 的字段 id 预填好版本、机型、错误码的表单；GitHub 只能预填文本框，下拉选项要用户自己选。“保存诊断包”把报告和全部日志存成 zip。“QQ 群反馈”（`QqFeedbackGroupDialog`，设置页“帮助 > QQ 反馈群”也打开它）展示群号与入群验证答案（优先取 `AppUpdateManager` 查到的最新正式版版本号，未查到时回退当前版本），复制验证答案并打开加群链接。
 - 远程公告与热规则：`RemoteOpsManager` 在打开界面及前台服务每小时后台拉取经 ECDSA P-256 签名的远程清单（主源不可达时经 `GitHubMirrors` 并发兜底），验签通过后一方面把 `failureHints` 合并进 `FailureRules`（不发版即可补充新报错的人话建议），另一方面按版本、品牌、协议端筛选当前生效公告展示在设置页/首次引导横幅、根界面强提醒弹窗或系统通知栏。
+- 自动脱敏报错上报：`RemoteOpsManager` 在“匿名运行统计”开启时订阅终端失败行、冷启补报未上报的 `CrashRecorder` 记录并监听后台 MaiBot 启动异常，经 `AutoErrorExtractor` 与 `LogRedactor` 严格裁除闪退前终端与聊天内容（MaiBot 启动失败仅抽取纯 Python `Traceback` 或白名单启动行），附带 `buildType` 和 24 小时同指纹冷却/每日 8 条配额发往 `/v1/error-report` 并在服务端按 `(fingerprint, build_type)` 隔离聚合。
 
 ## 扛得住暴力测试：断网、闪退、强杀、存储满、断电
 

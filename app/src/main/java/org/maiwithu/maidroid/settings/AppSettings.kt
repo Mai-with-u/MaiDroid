@@ -37,6 +37,10 @@ internal class AppSettings(
         const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
         const val KEY_TELEMETRY_INSTALL_ID = "telemetry_install_id"
         const val KEY_LAST_HEARTBEAT_SECONDS = "telemetry_last_heartbeat_sec"
+        const val KEY_LAST_AUTO_CRASH_MILLIS = "telemetry_last_auto_crash_ms"
+        const val KEY_AUTO_ERROR_DAY = "telemetry_auto_error_day"
+        const val KEY_AUTO_ERROR_DAY_COUNT = "telemetry_auto_error_day_count"
+        const val KEY_AUTO_ERROR_FPS = "telemetry_auto_error_fps"
         const val KEY_REMOTE_MANIFEST_ETAG = "remote_manifest_etag"
         const val KEY_DISMISSED_ANNOUNCEMENTS = "dismissed_announcement_ids"
         const val KEY_NOTIFIED_ANNOUNCEMENTS = "notified_announcement_ids"
@@ -44,6 +48,7 @@ internal class AppSettings(
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
         const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
         const val MAX_TRACKED_ANNOUNCEMENT_IDS = 64
+        const val MAX_TRACKED_ERROR_FINGERPRINTS = 32
     }
 
     /** OOBE 全部完成（MaiBot 装好且 WebUI 起来过），之后启动直接进主页。 */
@@ -160,7 +165,7 @@ internal class AppSettings(
         kv.encode(KEY_CONTAINER_SSH_CONFIGURED, true)
     }
 
-    /** 是否允许发送匿名运行统计（仅含版本号、步骤与错误码枚举，不含任何日志或个人数据）；默认开启，可在设置页随时关闭。 */
+    /** 是否允许发送匿名运行统计（含匿名版本、脱敏崩溃堆栈与安装/启动报错片段，绝不含聊天内容与密钥）；默认开启，可在设置页随时关闭。 */
     var telemetryEnabled: Boolean
         get() = kv.decodeBool(KEY_TELEMETRY_ENABLED, true)
         set(value) {
@@ -182,6 +187,62 @@ internal class AppSettings(
         set(value) {
             kv.encode(KEY_LAST_HEARTBEAT_SECONDS, value)
         }
+
+    /** 上次已成功自动补报的崩溃记录时间戳（毫秒），成功上传后推进，避免跨进程重复上报同一场闪退。 */
+    var lastAutoReportedCrashMillis: Long
+        get() = kv.decodeLong(KEY_LAST_AUTO_CRASH_MILLIS, 0L)
+        set(value) {
+            kv.encode(KEY_LAST_AUTO_CRASH_MILLIS, value)
+        }
+
+    /** 检查今天（按 yyyy-MM-dd）的自动错误现场上报是否还在每日配额内。 */
+    fun canSendAutoErrorToday(dayKey: String, maxPerDay: Int): Boolean {
+        val savedDay = kv.decodeString(KEY_AUTO_ERROR_DAY, "") ?: ""
+        if (savedDay != dayKey) return maxPerDay > 0
+        return kv.decodeInt(KEY_AUTO_ERROR_DAY_COUNT, 0) < maxPerDay
+    }
+
+    /** 成功发出一份自动报错现场后递增今日计数，跨天时重置归 1。 */
+    fun recordAutoErrorSentToday(dayKey: String) {
+        val savedDay = kv.decodeString(KEY_AUTO_ERROR_DAY, "") ?: ""
+        val nextCount = if (savedDay == dayKey) kv.decodeInt(KEY_AUTO_ERROR_DAY_COUNT, 0) + 1 else 1
+        kv.encode(KEY_AUTO_ERROR_DAY, dayKey)
+        kv.encode(KEY_AUTO_ERROR_DAY_COUNT, nextCount)
+    }
+
+    /** 判断某个错误指纹在冷却窗口内是否已经成功上报过，防止重启或重试期间反复刷同一问题。 */
+    fun wasAutoErrorFingerprintReportedRecently(fingerprint: String, nowSec: Long, cooldownSec: Long): Boolean {
+        val recordedAt = decodeFingerprintTimestamps()[fingerprint] ?: return false
+        return nowSec >= recordedAt && nowSec - recordedAt < cooldownSec
+    }
+
+    /** 记录某个错误指纹的最近成功上报秒级时间戳，最多保留最近 MAX_TRACKED_ERROR_FINGERPRINTS 条。 */
+    fun markAutoErrorFingerprintReported(fingerprint: String, nowSec: Long) {
+        val cleanFp = fingerprint.trim().replace(",", "").replace(":", "")
+        if (cleanFp.isEmpty()) return
+        val entries = decodeFingerprintTimestamps().toMutableMap()
+        entries.remove(cleanFp)
+        entries[cleanFp] = nowSec
+        val encoded = entries.entries
+            .toList()
+            .takeLast(MAX_TRACKED_ERROR_FINGERPRINTS)
+            .joinToString(",") { (fp, ts) -> "$fp:$ts" }
+        kv.encode(KEY_AUTO_ERROR_FPS, encoded)
+    }
+
+    private fun decodeFingerprintTimestamps(): Map<String, Long> {
+        val raw = kv.decodeString(KEY_AUTO_ERROR_FPS, "").orEmpty()
+        if (raw.isBlank()) return emptyMap()
+        val result = LinkedHashMap<String, Long>()
+        for (item in raw.split(',')) {
+            val sep = item.indexOf(':')
+            if (sep <= 0) continue
+            val fp = item.substring(0, sep).trim()
+            val ts = item.substring(sep + 1).trim().toLongOrNull() ?: continue
+            if (fp.isNotEmpty()) result[fp] = ts
+        }
+        return result
+    }
 
     /** 上次从主源拉取远程清单保存的 ETag，下次请求带 If-None-Match 命中 304 省流量。 */
     var remoteManifestEtag: String

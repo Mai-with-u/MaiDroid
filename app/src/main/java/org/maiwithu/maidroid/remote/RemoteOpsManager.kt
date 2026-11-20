@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,19 +24,28 @@ import kotlinx.serialization.json.Json
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.diagnostics.CrashRecorder
 import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.Failure
+import org.maiwithu.maidroid.diagnostics.FailureCause
+import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.FeedbackPackage
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.latestExitReasonText
+import org.maiwithu.maidroid.diagnostics.parseFailureLogLine
 import org.maiwithu.maidroid.diagnostics.updateRemoteFailureHints
+import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
 import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.writeTextAtomically
 import org.maiwithu.maidroid.settings.AppSettings
+import org.maiwithu.maidroid.terminal.AnsiText
+import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -43,13 +53,14 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * 1. 启动即从本地缓存恢复上次验签通过的清单（热规则零延迟生效），随后在打开界面及前台服务每小时后台增量刷新；
  * 2. 匹配当前设备环境的公告拆成顶部横幅列表（info/warning）与模态强提醒（blocker），开启系统栏提醒的新公告只推送一次通知；
- * 3. 匿名运行统计严格遵守用户开关与时间窗口节流，仅发结构化枚举，不含任何日志文本或个人数据。
+ * 3. 匿名运行统计严格遵守用户开关与时间窗口节流：包括纯枚举指标，以及按指纹去重与脱敏清洗后的崩溃堆栈、安装与启动报错。
  */
 internal class RemoteOpsManager(
     context: Context,
     private val settings: AppSettings,
     private val paths: RuntimePaths,
-    private val diagnostics: DiagnosticsManager
+    private val crashRecorder: CrashRecorder,
+    private val diagnosticsProvider: () -> DiagnosticsManager
 ) {
     companion object {
         const val ANNOUNCEMENT_CHANNEL_ID = "maidroid_announcements"
@@ -59,7 +70,10 @@ internal class RemoteOpsManager(
         private const val BACKGROUND_POLL_INTERVAL_MS = 60 * 60 * 1000L
         private const val DAILY_HEARTBEAT_INTERVAL_SEC = 24 * 3600L
         private const val FAILURE_REPORT_COOLDOWN_MS = 60 * 60 * 1000L
+        private const val AUTO_ERROR_COOLDOWN_SEC = 24 * 3600L
+        private const val MAX_AUTO_ERRORS_PER_DAY = 8
         private const val NOTIFICATION_BASE_ID = 2200
+        private val AUTO_ERROR_DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
 
         fun createAnnouncementChannel(context: Context) {
             val channel = NotificationChannel(
@@ -76,6 +90,7 @@ internal class RemoteOpsManager(
     private val appContext = context.applicationContext
     private val scope = backgroundScope("远程公告与诊断", Dispatchers.Main.immediate)
     private val refreshMutex = Mutex()
+    private val autoErrorMutex = Mutex()
     private val client = RemoteOpsClient(userAgent = "MaiDroid/${BuildConfig.VERSION_NAME}")
     private val cacheFile = File(appContext.filesDir, "remote/manifest.json")
     private val telemetryJson = Json { encodeDefaults = false }
@@ -110,6 +125,34 @@ internal class RemoteOpsManager(
         val lastExitReason: String? = null
     )
 
+    @Serializable
+    private data class ErrorReportExtraPayload(
+        val oobeStep: String? = null,
+        val setupComplete: Boolean? = null,
+        val activeQqClient: String? = null,
+        val availableStorageMb: Long? = null,
+        val availableMemMb: Long? = null,
+        val lastExitReason: String? = null
+    )
+
+    @Serializable
+    private data class ErrorReportPayload(
+        val installId: String,
+        val fingerprint: String,
+        val buildType: String,
+        val category: String,
+        val errorCode: String,
+        val appVersion: String,
+        val versionCode: Int,
+        val manufacturer: String,
+        val model: String,
+        val sdkInt: Int,
+        val title: String,
+        val message: String,
+        val contextText: String,
+        val extra: ErrorReportExtraPayload
+    )
+
     init {
         scope.launch {
             val restored = withContext(Dispatchers.IO) {
@@ -120,7 +163,20 @@ internal class RemoteOpsManager(
                 applyManifest(restored, notifySystemBar = false)
             }
         }
+        // 在 Application 启动即无条件挂上终端失败监听，确保即使失败没有留在 UI 上也能捕获安装与更新现场
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            TerminalLog.lines.collect { line ->
+                val (code, message) = parseFailureLogLine(line) ?: return@collect
+                reportFailure(code)
+                val (step, cause) = AutoErrorExtractor.parseFailureCode(code) ?: return@collect
+                val snapshotLines = TerminalLog.logs.value.map(AnsiText::plain)
+                scheduleAutoErrorReport(step, cause, message, snapshotLines)
+            }
+        }
     }
+
+    /** 供 Application.onCreate 显式唤起懒加载，确保终端失败监听在进程第一时间就位。 */
+    fun ensureStarted() = Unit
 
     /** 打开界面或首次引导进入时触发刷新（默认 5 分钟内不重复拉取）。 */
     fun refreshOnForeground() {
@@ -199,7 +255,7 @@ internal class RemoteOpsManager(
 
     /** 从报错现场一键收集脱敏快照并上传换取 6 位求助码（供 FailureNotice 直接调用）。 */
     suspend fun generateHelpCode(failure: Failure?): Result<String> {
-        val pkg = runCatching { diagnostics.prepare(failure) }.getOrElse { err ->
+        val pkg = runCatching { diagnosticsProvider().prepare(failure) }.getOrElse { err ->
             return Result.failure(err)
         }
         return generateHelpCode(pkg)
@@ -239,6 +295,129 @@ internal class RemoteOpsManager(
             val payload = buildTelemetryPayload(event = "failure", errorCode = errorCode)
             client.sendTelemetry(BuildConfig.REMOTE_OPS_BASE_URL, telemetryJson.encodeToString(payload))
         }
+    }
+
+    /** 失败提示卡片就绪时同时记错误码计数，并将高价值失败送入脱敏自动聚合上报队列。 */
+    fun reportFailure(failure: Failure) {
+        reportFailure(failure.code)
+        val snapshotLines = TerminalLog.logs.value.map(AnsiText::plain)
+        scheduleAutoErrorReport(failure.step, failure.cause, failure.message, snapshotLines)
+    }
+
+    /** 后台服务检测到 MaiBot 连续启动退出或受阻时自动调用，抓取纯 Python Traceback 上报。 */
+    fun reportMaiBotStartupFailure(failure: Failure) {
+        reportFailure(failure.code)
+        val snapshotLines = TerminalLog.logs.value.map(AnsiText::plain)
+        scheduleAutoErrorReport(failure.step, failure.cause, failure.message, snapshotLines)
+    }
+
+    /** 冷启或后台服务拉起时补报尚未送达过的最新本地崩溃堆栈 / 原生崩溃记录。 */
+    fun reportPendingCrashIfNeeded() {
+        if (!settings.telemetryEnabled) return
+        scope.launch(Dispatchers.IO) {
+            autoErrorMutex.withLock {
+                if (!settings.telemetryEnabled || !NetworkStatus.read(appContext).connected) return@withLock
+                val record = crashRecorder.latestCrash() ?: return@withLock
+                if (record.timeMillis <= settings.lastAutoReportedCrashMillis) return@withLock
+                val crashText = crashRecorder.readCrashFile(record)
+                val redactor = diagnosticsProvider().createRedactor()
+                val draft = AutoErrorExtractor.buildCrashDraft(record.summary, crashText, redactor)
+                if (sendAutoErrorLocked(draft)) {
+                    settings.lastAutoReportedCrashMillis = record.timeMillis
+                }
+            }
+        }
+    }
+
+    private fun scheduleAutoErrorReport(
+        step: FailureStep,
+        cause: FailureCause?,
+        message: String,
+        terminalPlainLines: List<String>
+    ) {
+        if (!settings.telemetryEnabled) return
+        val category = AutoErrorExtractor.classifyForAutoReport(step, cause) ?: return
+        // MD-CRASH 统一由 reportPendingCrashIfNeeded 从本地崩溃堆栈文件提取完整栈帧，不从无栈提示处上报空记录
+        if (category == AutoErrorCategory.Crash) return
+
+        scope.launch(Dispatchers.IO) {
+            autoErrorMutex.withLock {
+                if (!settings.telemetryEnabled || !NetworkStatus.read(appContext).connected) return@withLock
+                val diag = diagnosticsProvider()
+                val redactor = diag.createRedactor()
+                val draft = when (category) {
+                    AutoErrorCategory.Install -> AutoErrorExtractor.buildInstallDraft(
+                        step = step,
+                        cause = cause,
+                        message = message,
+                        terminalPlainLines = terminalPlainLines,
+                        setupComplete = settings.setupComplete,
+                        redactor = redactor
+                    )
+                    AutoErrorCategory.MaiBotBoot -> {
+                        val recentRunLines = maiBotRecentRunOutput(terminalPlainLines).lines()
+                        val hasTbInTerminal = recentRunLines.any { it.contains("Traceback (most recent call last):") }
+                        val fallbackTail = if (hasTbInTerminal) null else diag.readNewestMaiBotLogTail()
+                        AutoErrorExtractor.buildMaiBotBootDraft(
+                            step = step,
+                            cause = cause,
+                            message = message,
+                            recentRunLines = recentRunLines,
+                            fallbackLogTail = fallbackTail,
+                            redactor = redactor
+                        )
+                    }
+                    AutoErrorCategory.Crash -> return@withLock
+                }
+                sendAutoErrorLocked(draft)
+            }
+        }
+    }
+
+    private suspend fun sendAutoErrorLocked(draft: AutoErrorDraft): Boolean {
+        val nowSec = Instant.now().epochSecond
+        if (settings.wasAutoErrorFingerprintReportedRecently(draft.fingerprint, nowSec, AUTO_ERROR_COOLDOWN_SEC)) {
+            return true
+        }
+        val dayKey = AUTO_ERROR_DAY_FORMAT.format(LocalDate.now())
+        if (!settings.canSendAutoErrorToday(dayKey, MAX_AUTO_ERRORS_PER_DAY)) {
+            return true
+        }
+
+        val lightMeta = diagnosticsProvider().collectLightMeta()
+        val activeQq = runCatching { QqClientChoice(paths).read().name.lowercase() }.getOrNull()
+        val payload = ErrorReportPayload(
+            installId = settings.telemetryInstallId(),
+            fingerprint = draft.fingerprint,
+            buildType = BuildConfig.BUILD_TYPE,
+            category = draft.category.wireValue,
+            errorCode = draft.errorCode,
+            appVersion = BuildConfig.VERSION_NAME,
+            versionCode = BuildConfig.VERSION_CODE,
+            manufacturer = Build.MANUFACTURER,
+            model = Build.MODEL,
+            sdkInt = Build.VERSION.SDK_INT,
+            title = draft.title,
+            message = draft.message,
+            contextText = draft.contextText,
+            extra = ErrorReportExtraPayload(
+                oobeStep = settings.oobeStep,
+                setupComplete = settings.setupComplete,
+                activeQqClient = activeQq,
+                availableStorageMb = lightMeta.availableStorageMb,
+                availableMemMb = lightMeta.availableMemMb,
+                lastExitReason = lightMeta.lastExitReason
+            )
+        )
+        val ok = client.sendErrorReport(
+            BuildConfig.REMOTE_OPS_BASE_URL,
+            telemetryJson.encodeToString(payload)
+        )
+        if (ok) {
+            settings.markAutoErrorFingerprintReported(draft.fingerprint, nowSec)
+            settings.recordAutoErrorSentToday(dayKey)
+        }
+        return ok
     }
 
     private suspend fun buildTelemetryPayload(

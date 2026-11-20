@@ -25,5 +25,7 @@ class MaiDroidApplication : Application() {
         dependencies.crashRecorder.install()
         MaiBotRuntimeService.createNotificationChannel(this)
         RemoteOpsManager.createAnnouncementChannel(this)
+        // 进程启动后立即挂载终端失败日志监听器，不触发容器监管组件的提前初始化
+        dependencies.remoteOps.ensureStarted()
     }
 }

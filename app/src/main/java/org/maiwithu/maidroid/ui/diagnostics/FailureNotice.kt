@@ -69,7 +69,7 @@ internal fun FailureNotice(
     val cause = failure.cause
 
     LaunchedEffect(failure.code) {
-        remoteOps.reportFailure(failure.code)
+        remoteOps.reportFailure(failure)
     }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {

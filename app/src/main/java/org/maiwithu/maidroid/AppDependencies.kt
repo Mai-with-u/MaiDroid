@@ -150,7 +150,7 @@ internal class AppDependencies(context: Context) {
         AppUpdateManager(appContext, BuildConfig.VERSION_NAME, BuildConfig.APP_UPDATE_API_URL)
     }
     val remoteOps: RemoteOpsManager by lazy {
-        RemoteOpsManager(appContext, settings, runtimePaths, diagnostics)
+        RemoteOpsManager(appContext, settings, runtimePaths, crashRecorder) { diagnostics }
     }
 }
 

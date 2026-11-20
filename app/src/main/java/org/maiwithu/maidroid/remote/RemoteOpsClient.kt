@@ -163,4 +163,16 @@ internal class RemoteOpsClient(userAgent: String) {
             http.newCall(req).execute().use { it.isSuccessful }
         }.getOrDefault(false)
     }
+
+    /** 静默上报一条已脱敏的自动错误聚合现场，网络或服务异常时仅返回 false，绝不打断用户操作。 */
+    suspend fun sendErrorReport(baseUrl: String, jsonBody: String): Boolean = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) return@withContext false
+        runCatching {
+            val req = Request.Builder()
+                .url("$baseUrl/v1/error-report")
+                .post(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+            http.newCall(req).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
+    }
 }

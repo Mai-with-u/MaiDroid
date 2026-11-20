@@ -645,7 +645,7 @@ private fun SettingsNavigationPane(
                     icon = FlatFeatureIcons.Telemetry,
                     iconColor = IconIrisBlue,
                     title = "匿名运行统计",
-                    supportingText = "仅上报匿名版本与错误码枚举以改进稳定性，不含任何聊天与个人数据",
+                    supportingText = "上报匿名版本、崩溃堆栈与脱敏的安装/启动报错以改进稳定性，绝不含聊天记录、QQ 号与密钥",
                     onClick = { onTelemetryChange(!telemetryEnabled) },
                     trailing = if (compact) null else {
                         {

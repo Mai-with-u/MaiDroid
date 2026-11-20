@@ -110,6 +110,7 @@ internal class MainViewModel(
         // 查到新版本由主界面在主页上弹窗提醒，见 MaiDroidApp。
         viewModelScope.launch {
             dependencies.remoteOps.refreshOnForeground()
+            dependencies.remoteOps.reportPendingCrashIfNeeded()
             setupComplete.collectLatest { complete ->
                 if (!complete) return@collectLatest
                 dependencies.remoteOps.reportDailyHeartbeat()
