@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "../src/adminConsole.ts";
-import { ADMIN_TEAM_MARKUP, ADMIN_TEAM_SCRIPT } from "../src/adminTeam.ts";
+import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT, buildConsoleBundle } from "../src/adminConsole.ts";
+import { ADMIN_MANIFEST_EDITOR_SCRIPT } from "../src/adminManifestEditor.ts";
+import { ADMIN_MANIFEST_PREVIEW_SCRIPT } from "../src/adminManifestPreview.ts";
+import { ADMIN_TEAM_SCRIPT } from "../src/adminTeam.ts";
 import { ADMIN_GATE_SCRIPT, ADMIN_HTML } from "../src/adminHtml.ts";
 import { buildHeatmapMatrix, cnDayIndex, cnDayLabel, componentState, fillDailySeries } from "../src/adminOverview.ts";
 import { buildDiagnosticAdvice } from "../src/advisor.ts";
@@ -652,10 +654,59 @@ test("admin gate page hides console until token verified and all inline scripts 
   assert.equal(granted.status, 200);
   assert.equal(granted.headers.get("Cache-Control"), "no-store");
   const body = await granted.json();
-  // ADMIN_TOKEN 是所有者：拿到的控制台包含成员与审计分页
-  assert.equal(body.markup, ADMIN_CONSOLE_MARKUP.replace("<!--TEAM-->", ADMIN_TEAM_MARKUP));
-  assert.equal(body.script, ADMIN_CONSOLE_SCRIPT + ADMIN_TEAM_SCRIPT);
+  // ADMIN_TOKEN 是所有者：拿到的控制台包含清单编辑器、成员与审计分页
+  const full = buildConsoleBundle({ maintainer: true, owner: true });
+  assert.equal(body.markup, full.markup);
+  assert.equal(body.script, full.script);
+  assert.equal(body.markup.includes("<!--"), false);
   assert.equal(body.me.root, true);
-  new Function(ADMIN_TEAM_SCRIPT);
-  new Function(body.script);
+  for (const s of [ADMIN_TEAM_SCRIPT, ADMIN_MANIFEST_PREVIEW_SCRIPT, ADMIN_MANIFEST_EDITOR_SCRIPT, body.script]) new Function(s);
+});
+
+test("manifest preview logic mirrors the Android client matching rules", () => {
+  // 预览脚本不碰 DOM，直接在 Node 里执行，拿到挂在 window.MDC.mfp 上的纯函数
+  const window = { MDC: {} };
+  new Function("window", ADMIN_MANIFEST_PREVIEW_SCRIPT)(window);
+  const P = window.MDC.mfp;
+
+  // 动作白名单：与 parseRemoteActionTarget 一致
+  assert.deepEqual(P.parseAction("open:qq_group"), { kind: "qq_group" });
+  assert.deepEqual(P.parseAction("FreeUpStorage"), { kind: "cleanup" });
+  assert.equal(P.parseAction("url:https://example.com/a").url, "https://example.com/a");
+  assert.equal(P.parseAction("http://example.com"), null);
+  assert.equal(P.parseAction("intent://x"), null);
+  assert.equal(P.actionText("", "open:app_update"), "检查应用更新");
+  assert.equal(P.actionText("去看看", "https://example.com/x"), "去看看");
+
+  // 版本比较：与 VersionNumber 一致
+  const v = (s) => P.parseVersion(s);
+  assert.equal(P.cmpVersion(v("0.2.0-rc1"), v("0.2.0")), -1);
+  assert.equal(P.cmpVersion(v("v0.2"), v("0.2.0")), 0);
+  assert.equal(P.cmpVersion(v("0.10.0"), v("0.9.9")), 1);
+  assert.equal(v("1.2.3-"), null);
+
+  // 公告命中：逐条对齐 matches()
+  const env = { appVersion: "0.2.5", manufacturer: "HONOR", sdkInt: 34, activeQqClient: "snowluma", setupComplete: true, now: 1000 };
+  const base = { id: "a", title: "t", body: "b", filter: {} };
+  assert.equal(P.annMissReason(base, env), null);
+  assert.match(P.annMissReason({ ...base, expiresAt: 1000 }, env), /过期/);
+  assert.equal(P.annMissReason({ ...base, filter: { manufacturers: ["honor"] } }, env), null);
+  assert.match(P.annMissReason({ ...base, filter: { manufacturers: ["Xiaomi"] } }, env), /品牌/);
+  assert.match(P.annMissReason({ ...base, filter: { activeQqClients: ["napcat"] } }, env), /协议端/);
+  assert.match(P.annMissReason({ ...base, filter: { activeQqClients: ["snowluma"] } }, { ...env, activeQqClient: null }), /协议端/);
+  assert.match(P.annMissReason({ ...base, filter: { minAppVersion: "0.2.6" } }, env), /低于/);
+  assert.equal(P.annMissReason({ ...base, filter: { maxAppVersion: "bad" } }, env), null);
+  assert.match(P.annMissReason({ ...base, filter: { onlyDuringOobe: true } }, env), /首次引导/);
+
+  // 热规则：最后 400 行内字面匹配，按顺序取第一条
+  const hints = [
+    { id: "1", steps: ["QQ-INSTALL"], containsAny: ["ENOSPC"], title: "空间不足", advice: "清理" },
+    { id: "2", steps: [], containsAny: ["enospc", "timeout"], title: "通用", advice: "重试" },
+  ];
+  assert.equal(P.matchHintIndex(hints, "QQ-INSTALL", "x\nError: ENOSPC no space"), 0);
+  assert.equal(P.matchHintIndex(hints, "SL-INSTALL", "Error: ENOSPC"), 1);
+  assert.equal(P.matchHintIndex(hints, "SL-INSTALL", "ENOSPC\n" + "ok\n".repeat(400)), -1);
+  assert.equal(P.validateHint({ id: "x", title: "t", advice: "a", containsAny: [] }).some((e) => e[0] === "err"), true);
+  assert.equal(P.validateAnn({ ...base, filter: { minAppVersion: "0.3", maxAppVersion: "0.2" } }, 0).some((e) => e[0] === "err"), true);
+  assert.match(P.renderBanner({ ...base, title: "<b>x</b>" }), /&lt;b&gt;x/);
 });

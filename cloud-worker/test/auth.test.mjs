@@ -183,6 +183,11 @@ test("worker enforces role ladder end to end: viewer < support < maintainer < ow
   assert.equal(supportConsole.body.me.role, "support");
   assert.equal(supportConsole.body.markup.includes('id="v-team"'), false);
   assert.equal(supportConsole.body.script.includes("/admin/api/users"), false);
+  // 客服拿不到清单编辑器，维护者能拿到但拿不到成员分页
+  assert.equal(supportConsole.body.markup.includes('id="v-manifest"'), false);
+  const maintConsole = await fetchApi("console", { token: tokens.maintainer });
+  assert.equal(maintConsole.body.markup.includes('id="v-manifest"'), true);
+  assert.equal(maintConsole.body.markup.includes('id="v-team"'), false);
   assert.equal((await fetchApi("errors/debug", { method: "DELETE", token: "root-secret" })).status, 200);
   assert.equal((await fetchApi("overview", { token: "bogus-token" })).status, 401);
 });

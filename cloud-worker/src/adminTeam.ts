@@ -214,11 +214,3 @@ export const ADMIN_TEAM_SCRIPT = `
   $("auActor").addEventListener("input", renderAudit);
 })();
 `;
-
-// 按角色拼装控制台：成员与审计分页的标记和脚本只下发给所有者
-export function buildConsoleBundle(consoleMarkup: string, consoleScript: string, isOwner: boolean) {
-  return {
-    markup: consoleMarkup.replace("<!--TEAM-->", isOwner ? ADMIN_TEAM_MARKUP : ""),
-    script: consoleScript + (isOwner ? ADMIN_TEAM_SCRIPT : ""),
-  };
-}

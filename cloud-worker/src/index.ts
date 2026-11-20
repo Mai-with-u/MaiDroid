@@ -5,9 +5,8 @@
 // 4. POST /v1/error-report  — 接收脱敏后的崩溃堆栈与安装/启动报错并按指纹聚合
 // 5. GET  /admin & /admin/api/* — 单页管理后台
 
-import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "./adminConsole.ts";
+import { buildConsoleBundle } from "./adminConsole.ts";
 import { ADMIN_HTML, ADMIN_PAGE_HEADERS } from "./adminHtml.ts";
-import { buildConsoleBundle } from "./adminTeam.ts";
 import {
   handleAccountRoute,
   handleLogin,
@@ -442,7 +441,7 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
 
   // 登录闸门校验通过后才拿到控制台本体（标记 + 脚本），同时告知前端当前身份与角色
   if (sub === "console" && request.method === "GET") {
-    const bundle = buildConsoleBundle(ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT, hasRole(principal, "owner"));
+    const bundle = buildConsoleBundle({ maintainer: hasRole(principal, "maintainer"), owner: hasRole(principal, "owner") });
     return jsonResponse({ ...bundle, me: meOf(principal) });
   }
   const accountResp = await handleAccountRoute(sub, request, env, principal);

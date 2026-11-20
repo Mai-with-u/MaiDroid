@@ -4,6 +4,10 @@
 // 原因：口令通过前页面上只有登录框，看不到任何控制台结构、接口路径和操作入口。
 // 注意：这里是 TS 模板字符串，脚本里不写反斜杠和美元加花括号，换行一律用 NL 常量。
 
+import { ADMIN_MANIFEST_EDITOR_SCRIPT, ADMIN_MANIFEST_MARKUP } from "./adminManifestEditor.ts";
+import { ADMIN_MANIFEST_PREVIEW_SCRIPT } from "./adminManifestPreview.ts";
+import { ADMIN_TEAM_MARKUP, ADMIN_TEAM_SCRIPT } from "./adminTeam.ts";
+
 export const ADMIN_CONSOLE_MARKUP = `
 <div class="wrap">
   <header class="hd">
@@ -86,20 +90,7 @@ export const ADMIN_CONSOLE_MARKUP = `
     <div id="diagResult"></div>
   </section>
 
-  <section class="view" id="v-manifest">
-    <div class="panel" data-busy="manifest">
-      <div class="ph"><h2>远程公告与排障热规则</h2><span class="sp mono soft" id="manifestStatus">未加载</span></div>
-      <div class="chips" id="manChips"></div>
-      <div class="toolbar" style="margin-top:20px">
-        <button class="btn sm" data-act="tplAnn">+ 公告模板</button>
-        <button class="btn sm" data-act="tplHint">+ 热规则模板</button>
-        <button class="btn sm" data-act="fmtJson">格式化 JSON</button>
-        <button class="btn sm" data-act="dlSigned">下载已签名清单</button>
-        <span class="sp"><button class="btn pri" data-act="publish">ECDSA 签名并发布</button></span>
-      </div>
-      <textarea class="term" id="manifestEditor" spellcheck="false"></textarea>
-    </div>
-  </section>
+  <!--MANIFEST-->
   <!--TEAM-->
 </div>
 <div class="modal" id="modal" hidden><div class="mbox" id="mbox"></div></div>`;
@@ -112,7 +103,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
   const MD = window.MD;
   const PALETTE = ["var(--orange)", "var(--teal)", "var(--mustard)", "var(--brown)", "var(--olive)", "var(--plum)", "var(--mute)", "var(--soft)"];
   const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
-  const st = { view: "overview", ov: null, share: "manufacturers", errStatus: "open", errCat: "all", activeKey: "", detail: null, reply: "", manifestLoaded: false, errLoaded: false };
+  const st = { view: "overview", ov: null, share: "manufacturers", errStatus: "open", errCat: "all", activeKey: "", detail: null, reply: "", errLoaded: false };
   // 角色逐级包含；前端按角色隐藏入口只是体验，越权请求服务端一律 403
   const RANK = { viewer: 1, support: 2, maintainer: 3, owner: 4 };
   const ROLE_NAME = { viewer: "观察者", support: "客服", maintainer: "维护者", owner: "所有者" };
@@ -462,91 +453,12 @@ export const ADMIN_CONSOLE_SCRIPT = `
     }
   }
 
-  // ---------- 04 清单 ----------
-  function editorObj() {
-    return JSON.parse($("manifestEditor").value || '{"announcements":[],"failureHints":[]}');
-  }
-  function refreshManChips() {
-    let ann = "-", hint = "-", okJson = true;
-    try { const o = editorObj(); ann = (o.announcements || []).length; hint = (o.failureHints || []).length; } catch (e) { okJson = false; }
-    const chips = [
-      ["线上版本", st.manifestVersion == null ? "-" : "v" + st.manifestVersion, "var(--orange)"],
-      ["公告", ann, "var(--teal)"],
-      ["排障热规则", hint, "var(--mustard)"],
-      ["JSON 语法", okJson ? "OK" : "ERR", okJson ? "var(--olive)" : "var(--red)"],
-    ];
-    $("manChips").innerHTML = chips.map((c) =>
-      '<div class="chip" style="border-top-color:' + c[2] + '"><div class="l">' + c[0] + '</div><div class="v">' + esc(c[1]) + "</div></div>"
-    ).join("");
-  }
-  async function loadManifest() {
-    busy("manifest", true);
-    try {
-      const d = await api("/admin/api/manifest");
-      $("manifestEditor").value = JSON.stringify(d.payload, null, 2);
-      st.manifestVersion = d.version;
-      st.manifestLoaded = true;
-      $("manifestStatus").textContent = "线上 v" + d.version + " · 发布即刻生效（边缘缓存已自动失效）";
-      refreshManChips();
-    } catch (e) { if (e.message !== "unauthorized") toast("清单加载失败：" + e.message, true); }
-    finally { busy("manifest", false); }
-  }
-  function mutateEditor(fn) {
-    try {
-      const o = editorObj();
-      fn(o);
-      $("manifestEditor").value = JSON.stringify(o, null, 2);
-      refreshManChips();
-    } catch (e) { toast("当前 JSON 格式有误：" + e.message, true); }
-  }
-  function tplAnn() {
-    mutateEditor((o) => {
-      o.announcements = o.announcements || [];
-      o.announcements.unshift({
-        id: "ann-" + new Date().toISOString().slice(0, 10) + "-01",
-        level: "info", title: "运行提醒标题", body: "这里填写面向用户的清晰提示说明。",
-        actionLabel: null, actionTarget: null, notifySystemBar: false, dismissible: true,
-        expiresAt: Math.floor(Date.now() / 1000) + 7 * 86400,
-        filter: { minAppVersion: null, maxAppVersion: null, manufacturers: [], minSdkInt: null, activeQqClients: [], onlyDuringOobe: false },
-      });
-    });
-  }
-  function tplHint() {
-    mutateEditor((o) => {
-      o.failureHints = o.failureHints || [];
-      o.failureHints.unshift({ id: "hint-" + Date.now(), steps: [], containsAny: ["报错特征关键字"], title: "给用户看的原因标题", advice: "给用户看的分步解决办法。", action: null });
-    });
-  }
-  async function publish() {
-    let parsed;
-    try { parsed = editorObj(); } catch (e) { toast("JSON 语法错误：" + e.message, true); return; }
-    if (!confirm("确认签名并发布到全部客户端？")) return;
-    busy("manifest", true);
-    try {
-      const d = await api("/admin/api/manifest", { method: "PUT", body: parsed });
-      $("manifestEditor").value = JSON.stringify(d.payload, null, 2);
-      st.manifestVersion = d.version;
-      $("manifestStatus").textContent = "已签名发布 v" + d.version;
-      refreshManChips();
-      toast("清单 v" + d.version + " 已签名发布");
-    } catch (e) { if (e.message !== "unauthorized") toast("发布失败：" + e.message, true); }
-    finally { busy("manifest", false); }
-  }
-  // 从当前报错样本生成热规则草稿：取步骤码与样本最后一行非空文本作为匹配关键字
+  // 04 清单：可视化编辑器在 adminManifestEditor 模块里，这里只负责把报错样本交给它生成热规则草稿
   async function draftHint() {
-    if (!st.detail || !st.detail.issue) return;
-    if (!st.manifestLoaded) await loadManifest();
-    const issue = st.detail.issue;
-    const stepCode = String(issue.error_code || "").split("/")[0];
-    const sample = (st.detail.samples || [])[0];
-    const last = sample && sample.context_text ? sample.context_text.split(NL).map((l) => l.trim()).filter(Boolean).slice(-1)[0] : "";
-    const keyword = (last || issue.title || "报错特征关键字").slice(0, 60);
-    mutateEditor((o) => {
-      o.failureHints = o.failureHints || [];
-      o.failureHints.unshift({ id: "hint-" + Date.now(), steps: stepCode ? [stepCode] : [], containsAny: [keyword], title: "补充面向用户的排查说明：" + String(issue.title).slice(0, 40), advice: "请在此填写分步解决建议。", action: null });
-    });
+    if (!st.detail || !st.detail.issue || !MDC.mfDraftHint) return;
     switchView("manifest");
-    toast("已插入热规则草稿，请补充说明后发布");
+    await MDC.mfDraftHint(st.detail.issue, st.detail.samples);
+    toast("已生成热规则草稿，补充原因与建议后发布");
   }
 
   // ---------- 外壳：导航、主题、时钟、提示框 ----------
@@ -557,7 +469,6 @@ export const ADMIN_CONSOLE_SCRIPT = `
     document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.v === v));
     document.querySelectorAll(".view").forEach((s) => s.classList.toggle("on", s.id === "v-" + v));
     if (v === "errors" && !st.errLoaded) loadErrors();
-    if (v === "manifest" && !st.manifestLoaded) loadManifest();
     if (v === "diag") setTimeout(() => $("diagCode").focus(), 50);
     if (MDC.views[v]) MDC.views[v]();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -634,15 +545,9 @@ export const ADMIN_CONSOLE_SCRIPT = `
     else if (a === "draftHint") draftHint();
     else if (a === "diagLookup") lookupDiag();
     else if (a === "copyReply") navigator.clipboard.writeText(st.reply).then(() => toast("回复话术已复制"), () => toast("复制失败，请手动选择", true));
-    else if (a === "tplAnn") tplAnn();
-    else if (a === "tplHint") tplHint();
-    else if (a === "fmtJson") mutateEditor(() => {});
-    else if (a === "publish") publish();
-    else if (a === "dlSigned") window.open("/v1/manifest.json", "_blank", "noopener");
   });
   $("errDebug").addEventListener("change", loadErrors);
   $("diagCode").addEventListener("keydown", (e) => { if (e.key === "Enter") lookupDiag(); });
-  $("manifestEditor").addEventListener("input", refreshManChips);
 
   // 悬浮提示：任何带 data-tip 的元素，第一段加粗，其余按竖线分行
   const vt = $("vt");
@@ -674,3 +579,16 @@ export const ADMIN_CONSOLE_SCRIPT = `
   else loadOverview();
 })();
 `;
+
+// 按角色拼装控制台：清单编辑器（预览 + 表单）只发给维护者及以上，成员与审计分页只发给所有者
+export function buildConsoleBundle(roles: { maintainer: boolean; owner: boolean }) {
+  return {
+    markup: ADMIN_CONSOLE_MARKUP
+      .replace("<!--MANIFEST-->", roles.maintainer ? ADMIN_MANIFEST_MARKUP : "")
+      .replace("<!--TEAM-->", roles.owner ? ADMIN_TEAM_MARKUP : ""),
+    script:
+      ADMIN_CONSOLE_SCRIPT +
+      (roles.maintainer ? ADMIN_MANIFEST_PREVIEW_SCRIPT + ADMIN_MANIFEST_EDITOR_SCRIPT : "") +
+      (roles.owner ? ADMIN_TEAM_SCRIPT : ""),
+  };
+}
