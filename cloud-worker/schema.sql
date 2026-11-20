@@ -101,3 +101,41 @@ CREATE TABLE IF NOT EXISTS error_samples (
 );
 
 CREATE INDEX IF NOT EXISTS idx_error_samples_issue ON error_samples (fingerprint, build_type, created_at DESC);
+
+-- 管理台成员账号（所有者在控制台创建；口令为 PBKDF2-SHA256 加盐哈希，首次登录必须改掉一次性初始口令）
+CREATE TABLE IF NOT EXISTS admin_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    must_change INTEGER NOT NULL DEFAULT 1,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_login_at INTEGER
+);
+
+-- 管理台登录会话（只存会话令牌的 SHA-256，user_id = 0 表示 ADMIN_TOKEN 超级管理员）
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions (expires_at);
+
+-- 管理台审计日志（谁在何时查了哪个求助码、改了哪个报错、发布了哪版清单，保留 90 天）
+CREATE TABLE IF NOT EXISTS admin_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    actor TEXT NOT NULL,
+    role TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT,
+    detail TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit (created_at DESC);
