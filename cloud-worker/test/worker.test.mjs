@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "../src/adminConsole.ts";
+import { ADMIN_TEAM_MARKUP, ADMIN_TEAM_SCRIPT } from "../src/adminTeam.ts";
 import { ADMIN_GATE_SCRIPT, ADMIN_HTML } from "../src/adminHtml.ts";
 import { buildHeatmapMatrix, cnDayIndex, cnDayLabel, componentState, fillDailySeries } from "../src/adminOverview.ts";
 import { buildDiagnosticAdvice } from "../src/advisor.ts";
@@ -651,6 +652,10 @@ test("admin gate page hides console until token verified and all inline scripts 
   assert.equal(granted.status, 200);
   assert.equal(granted.headers.get("Cache-Control"), "no-store");
   const body = await granted.json();
-  assert.equal(body.markup, ADMIN_CONSOLE_MARKUP);
-  assert.equal(body.script, ADMIN_CONSOLE_SCRIPT);
+  // ADMIN_TOKEN 是所有者：拿到的控制台包含成员与审计分页
+  assert.equal(body.markup, ADMIN_CONSOLE_MARKUP.replace("<!--TEAM-->", ADMIN_TEAM_MARKUP));
+  assert.equal(body.script, ADMIN_CONSOLE_SCRIPT + ADMIN_TEAM_SCRIPT);
+  assert.equal(body.me.root, true);
+  new Function(ADMIN_TEAM_SCRIPT);
+  new Function(body.script);
 });

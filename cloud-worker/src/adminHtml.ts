@@ -12,17 +12,23 @@ export const ADMIN_GATE_SCRIPT = `
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   document.body.className = localStorage.getItem("md_theme") === "day" ? "day" : "night";
 
-  // 锁定或口令失效时带着原因刷新回闸门
+  // 退出或会话失效时：通知服务端作废会话令牌，再带着原因刷新回闸门
   window.MD = {
     token: "",
+    me: null,
     lock(msg) {
-      sessionStorage.removeItem("md_admin_token");
+      const tok = sessionStorage.getItem("md_session");
+      sessionStorage.removeItem("md_session");
       if (msg) sessionStorage.setItem("md_gate_msg", msg);
-      location.reload();
+      const done = () => location.reload();
+      if (!tok) { done(); return; }
+      fetch("/admin/api/logout", { method: "POST", headers: { Authorization: "Bearer " + tok }, keepalive: true }).then(done, done);
     },
   };
+  sessionStorage.removeItem("md_admin_token");
   const pending = sessionStorage.getItem("md_gate_msg");
   if (pending) { $("gmsg").textContent = "// " + pending; sessionStorage.removeItem("md_gate_msg"); }
+  $("guser").value = localStorage.getItem("md_last_user") || "";
 
   const tick = () => { const c = $("gclock"); if (c) c.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false }); };
   tick();
@@ -44,53 +50,71 @@ export const ADMIN_GATE_SCRIPT = `
     $("gpass").select();
   }
 
-  async function unlock(token, quick) {
+  function failMsg(status, d) {
+    if (status === 429) return "尝试次数过多，链路已熔断 15 分钟";
+    if (status === 401) return d.error || "账号或口令错误 · ACCESS DENIED";
+    return d.error || ("HTTP " + status);
+  }
+
+  // 第一步：账号 + 口令换会话令牌（已有会话则跳过）；第二步：凭会话令牌拉取控制台本体
+  async function unlock(username, password, savedToken) {
     $("gbtn").disabled = true;
     $("gmsg").textContent = "";
     $("glog").innerHTML = "";
-    $("gstate").textContent = "HANDSHAKE · 正在校验口令";
+    $("gstate").textContent = "HANDSHAKE · 正在校验身份";
     logLine("&gt; 建立安全会话 ...");
-    let r;
-    let d = {};
+    let token = savedToken;
     try {
-      r = await fetch("/admin/api/console", { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
-      d = await r.json().catch(() => ({}));
+      if (!token) {
+        const lr = await fetch("/admin/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+          cache: "no-store",
+        });
+        const ld = await lr.json().catch(() => ({}));
+        if (!lr.ok) { $("glog").innerHTML = ""; fail(failMsg(lr.status, ld)); return; }
+        token = ld.token;
+        localStorage.setItem("md_last_user", username);
+      }
+      const r = await fetch("/admin/api/console", { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        sessionStorage.removeItem("md_session");
+        $("glog").innerHTML = "";
+        fail(savedToken && r.status === 401 ? "会话已过期，请重新登录" : failMsg(r.status, d));
+        return;
+      }
+      sessionStorage.setItem("md_session", token);
+      window.MD.token = token;
+      window.MD.me = d.me;
+      $("gstate").textContent = "ACCESS GRANTED · 欢迎回来，" + d.me.displayName;
+      for (const s of ["身份校验 · " + d.me.roleLabel, "下发控制台模块", "挂载遥测通道", "点亮仪表舱"]) {
+        logLine("&gt; " + s + " ... <b>OK</b>");
+        await sleep(savedToken ? 70 : 160);
+      }
+      $("gate").classList.add("fade-out");
+      await sleep(460);
+      clearInterval(clockTimer);
+      $("gate").remove();
+      $("app").innerHTML = d.markup;
+      const s = document.createElement("script");
+      s.textContent = d.script;
+      document.body.appendChild(s);
     } catch (e) {
       fail("网络异常：" + e.message);
-      return;
     }
-    if (!r.ok) {
-      sessionStorage.removeItem("md_admin_token");
-      $("glog").innerHTML = "";
-      fail(r.status === 429 ? "尝试次数过多，链路已熔断 15 分钟" : r.status === 401 ? "口令错误 · ACCESS DENIED" : (d.error || ("HTTP " + r.status)));
-      return;
-    }
-    sessionStorage.setItem("md_admin_token", token);
-    window.MD.token = token;
-    $("gstate").textContent = "ACCESS GRANTED · 欢迎回来";
-    for (const s of ["口令校验", "下发控制台模块", "挂载遥测通道", "点亮仪表舱"]) {
-      logLine("&gt; " + s + " ... <b>OK</b>");
-      await sleep(quick ? 70 : 160);
-    }
-    $("gate").classList.add("fade-out");
-    await sleep(460);
-    clearInterval(clockTimer);
-    $("gate").remove();
-    $("app").innerHTML = d.markup;
-    const s = document.createElement("script");
-    s.textContent = d.script;
-    document.body.appendChild(s);
   }
 
   $("gbox").addEventListener("submit", (e) => {
     e.preventDefault();
-    const t = $("gpass").value.trim();
-    if (!t) { fail("请输入口令"); return; }
-    unlock(t, false);
+    const p = $("gpass").value;
+    if (!p) { fail("请输入口令"); return; }
+    unlock($("guser").value.trim().toLowerCase(), p, "");
   });
-  const saved = sessionStorage.getItem("md_admin_token");
-  if (saved) unlock(saved, true);
-  else $("gpass").focus();
+  const saved = sessionStorage.getItem("md_session");
+  if (saved) unlock("", "", saved);
+  else ($("guser").value ? $("gpass") : $("guser")).focus();
 })();
 `;
 
@@ -110,9 +134,9 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     <div class="sig"><i style="background:var(--orange)"></i><i style="background:var(--mustard)"></i><i style="background:var(--teal)"></i></div>
     <h1>MAI<em>DROID</em></h1>
     <div class="sub">远程运维 · 遥测控制台</div>
-    <div class="lock"><i></i><span id="gstate">SECURE CHANNEL · 等待管理员口令</span></div>
-    <input type="text" name="username" value="admin" autocomplete="username" hidden />
-    <label class="gfield"><span>&gt;</span><input id="gpass" type="password" placeholder="ADMIN_TOKEN" autocomplete="current-password" spellcheck="false" /><span class="cursor"></span></label>
+    <div class="lock"><i></i><span id="gstate">SECURE CHANNEL · 等待身份校验</span></div>
+    <label class="gfield"><span>@</span><input id="guser" type="text" name="username" placeholder="账号（超级管理员留空）" autocomplete="username" spellcheck="false" autocapitalize="off" /></label>
+    <label class="gfield"><span>&gt;</span><input id="gpass" type="password" placeholder="口令 / ADMIN_TOKEN" autocomplete="current-password" spellcheck="false" /><span class="cursor"></span></label>
     <button class="go" id="gbtn" type="submit">解 锁</button>
     <div class="msg" id="gmsg"></div>
     <div class="log" id="glog"></div>

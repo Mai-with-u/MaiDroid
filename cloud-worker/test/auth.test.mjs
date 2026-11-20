@@ -178,6 +178,11 @@ test("worker enforces role ladder end to end: viewer < support < maintainer < ow
   // 客服查求助码（哪怕没查到）也会留下审计，所有者能看到是谁查的
   const audit = await fetchApi("audit?action=diag_lookup", { token: "root-secret" });
   assert.deepEqual(audit.body.entries.map((e) => e.actor).sort(), ["m-maintainer", "m-support"]);
+  // 非所有者拿到的控制台里没有成员与审计分页
+  const supportConsole = await fetchApi("console", { token: tokens.support });
+  assert.equal(supportConsole.body.me.role, "support");
+  assert.equal(supportConsole.body.markup.includes('id="v-team"'), false);
+  assert.equal(supportConsole.body.script.includes("/admin/api/users"), false);
   assert.equal((await fetchApi("errors/debug", { method: "DELETE", token: "root-secret" })).status, 200);
   assert.equal((await fetchApi("overview", { token: "bogus-token" })).status, 401);
 });

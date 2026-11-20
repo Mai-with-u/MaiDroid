@@ -10,14 +10,18 @@ export const ADMIN_CONSOLE_MARKUP = `
     <div class="brand"><b>MAI<em>DROID</em></b><span>运维控制台</span></div>
     <nav id="nav">
       <a data-act="view" data-v="overview" class="on"><i>01</i>总览</a>
-      <a data-act="view" data-v="errors"><i>02</i>报错<span class="cnt" id="navErrCnt" hidden></span></a>
-      <a data-act="view" data-v="diag"><i>03</i>求助码</a>
-      <a data-act="view" data-v="manifest"><i>04</i>清单</a>
+      <a data-act="view" data-v="errors" data-min="support"><i>02</i>报错<span class="cnt" id="navErrCnt" hidden></span></a>
+      <a data-act="view" data-v="diag" data-min="support"><i>03</i>求助码</a>
+      <a data-act="view" data-v="manifest" data-min="maintainer"><i>04</i>清单</a>
+      <a data-act="view" data-v="team" data-min="owner"><i>05</i>成员</a>
+      <a data-act="view" data-v="audit" data-min="owner"><i>06</i>审计</a>
     </nav>
     <div class="hd-r">
       <div class="upd"><i></i><span id="clock">--:--:--</span><span id="syncAt">同步中</span></div>
+      <div class="who" id="who"></div>
       <button class="btn" data-act="theme" id="themeBtn">日间</button>
-      <button class="btn" data-act="lock">锁定</button>
+      <button class="btn" data-act="pwd" id="pwdBtn">改口令</button>
+      <button class="btn" data-act="lock">退出</button>
     </div>
   </header>
 
@@ -67,7 +71,7 @@ export const ADMIN_CONSOLE_MARKUP = `
         <div class="seg" id="segStatus"><button class="on" data-act="errStatus" data-v="open">待处理</button><button data-act="errStatus" data-v="resolved">已修复</button><button data-act="errStatus" data-v="ignored">已忽略</button><button data-act="errStatus" data-v="all">全部</button></div>
         <div class="seg" id="segCat"><button class="on" data-act="errCat" data-v="all">全部分类</button><button data-act="errCat" data-v="crash">闪退</button><button data-act="errCat" data-v="install">安装/容器</button><button data-act="errCat" data-v="maibot_boot">MaiBot 启动</button></div>
         <label class="chk"><input type="checkbox" id="errDebug" data-act="errReload" /> 显示 debug 测试数据</label>
-        <span class="sp toolbar"><button class="btn sm" data-act="errReload">刷新</button><button class="btn sm danger" data-act="errClearDebug">清空 debug</button></span>
+        <span class="sp toolbar"><button class="btn sm" data-act="errReload">刷新</button><button class="btn sm danger" data-act="errClearDebug" data-min="owner">清空 debug</button></span>
       </div>
       <div id="errList"></div>
     </div>
@@ -96,7 +100,9 @@ export const ADMIN_CONSOLE_MARKUP = `
       <textarea class="term" id="manifestEditor" spellcheck="false"></textarea>
     </div>
   </section>
-</div>`;
+  <!--TEAM-->
+</div>
+<div class="modal" id="modal" hidden><div class="mbox" id="mbox"></div></div>`;
 
 export const ADMIN_CONSOLE_SCRIPT = `
 (function () {
@@ -107,6 +113,15 @@ export const ADMIN_CONSOLE_SCRIPT = `
   const PALETTE = ["var(--orange)", "var(--teal)", "var(--mustard)", "var(--brown)", "var(--olive)", "var(--plum)", "var(--mute)", "var(--soft)"];
   const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
   const st = { view: "overview", ov: null, share: "manufacturers", errStatus: "open", errCat: "all", activeKey: "", detail: null, reply: "", manifestLoaded: false, errLoaded: false };
+  // 角色逐级包含；前端按角色隐藏入口只是体验，越权请求服务端一律 403
+  const RANK = { viewer: 1, support: 2, maintainer: 3, owner: 4 };
+  const ROLE_NAME = { viewer: "观察者", support: "客服", maintainer: "维护者", owner: "所有者" };
+  function can(role) { return (RANK[MD.me.role] || 0) >= RANK[role]; }
+  function applyRoles(root) {
+    (root || document).querySelectorAll("[data-min]").forEach((el) => { el.hidden = !can(el.dataset.min); });
+  }
+  // 给“成员 / 审计”分页脚本共用的工具与分页钩子（函数声明会提升，这里可以直接引用）
+  const MDC = (window.MDC = { views: {}, api, esc, fmt, fmtTime, ago, toast, busy, can, openModal, closeModal, ROLE_NAME });
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -189,7 +204,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
     $("kOpenRd").textContent = k.openIssues > 0 ? "影响 " + fmt(k.openInstalls) + " 台设备" : "正式版零待处理";
     roll($("kDiag"), k.diag7d);
     const nav = $("navErrCnt");
-    nav.hidden = !(k.openIssues > 0);
+    nav.hidden = !(k.openIssues > 0 && can("support"));
     nav.textContent = String(k.openIssues);
 
     const c = o.components;
@@ -391,7 +406,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
     }).join("");
     $("errDetail").innerHTML =
       '<div class="panel"><div class="ph"><div><div class="tags" style="display:flex;gap:6px;margin-bottom:6px">' + catTag(it.category) + statusTag(it.status) + '<span class="tag">' + esc(it.error_code) + "</span></div><h2>" + esc(it.title) + "</h2></div>" +
-      '<span class="sp toolbar">' +
+      '<span class="sp toolbar"' + (can("maintainer") ? "" : " hidden") + ">" +
       '<button class="btn sm pri" data-act="errPatch" data-st="resolved"' + attrs + ">标记已修复</button>" +
       '<button class="btn sm" data-act="errPatch" data-st="ignored"' + attrs + ">忽略</button>" +
       '<button class="btn sm" data-act="errPatch" data-st="open"' + attrs + ">重新打开</button>" +
@@ -536,13 +551,57 @@ export const ADMIN_CONSOLE_SCRIPT = `
 
   // ---------- 外壳：导航、主题、时钟、提示框 ----------
   function switchView(v) {
+    const tab = document.querySelector('#nav a[data-v="' + v + '"]');
+    if (!tab || tab.hidden) return;
     st.view = v;
     document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.v === v));
     document.querySelectorAll(".view").forEach((s) => s.classList.toggle("on", s.id === "v-" + v));
     if (v === "errors" && !st.errLoaded) loadErrors();
     if (v === "manifest" && !st.manifestLoaded) loadManifest();
     if (v === "diag") setTimeout(() => $("diagCode").focus(), 50);
+    if (MDC.views[v]) MDC.views[v]();
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ---------- 账号：身份徽标与改口令 ----------
+  function renderWho() {
+    const me = MD.me;
+    $("who").innerHTML = '<b>' + esc(me.displayName) + '</b><span class="tag role-' + esc(me.role) + '">' + esc(ROLE_NAME[me.role]) + "</span>";
+    $("pwdBtn").hidden = !!me.root;
+  }
+  function openModal(html, dismissible) {
+    $("mbox").innerHTML = html;
+    $("modal").hidden = false;
+    $("modal").dataset.dismiss = dismissible ? "1" : "0";
+    const first = $("mbox").querySelector("input");
+    if (first) setTimeout(() => first.focus(), 50);
+  }
+  function closeModal() { $("modal").hidden = true; $("mbox").innerHTML = ""; }
+  // 首次登录强制改口令：弹窗不可关闭，改完刷新页面重新拉取控制台
+  function openPwdModal(forced) {
+    openModal(
+      '<div class="ph"><h2>' + (forced ? "首次登录 · 设置你的口令" : "修改口令") + "</h2></div>" +
+      '<div class="soft" style="margin-bottom:14px">' + (forced ? "当前用的是一次性初始口令，换成你自己的口令（至少 10 位）后才能使用控制台。" : "改完后你在其他设备上的登录会被强制退出。") + "</div>" +
+      '<label class="fld"><span>当前口令</span><input type="password" id="pwOld" autocomplete="current-password" /></label>' +
+      '<label class="fld"><span>新口令</span><input type="password" id="pwNew" autocomplete="new-password" /></label>' +
+      '<label class="fld"><span>再输一次</span><input type="password" id="pwNew2" autocomplete="new-password" /></label>' +
+      '<div class="fmsg" id="pwMsg"></div>' +
+      '<div class="toolbar"><span class="sp"></span>' + (forced ? '<button class="btn" data-act="lock">退出</button>' : '<button class="btn" data-act="modalClose">取消</button>') +
+      '<button class="btn pri" data-act="pwdSave" data-forced="' + (forced ? "1" : "0") + '">保存</button></div>',
+      !forced
+    );
+  }
+  async function savePwd(forced) {
+    const oldPw = $("pwOld").value;
+    const np = $("pwNew").value;
+    if (np.length < 10) { $("pwMsg").textContent = "新口令至少 10 位"; return; }
+    if (np !== $("pwNew2").value) { $("pwMsg").textContent = "两次输入的新口令不一致"; return; }
+    try {
+      await api("/admin/api/password", { method: "POST", body: { oldPassword: oldPw, newPassword: np } });
+      toast("口令已更新");
+      if (forced) { location.reload(); return; }
+      closeModal();
+    } catch (e) { if (e.message !== "unauthorized") $("pwMsg").textContent = e.message; }
   }
   function segOn(segId, v) {
     $(segId).querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
@@ -561,7 +620,10 @@ export const ADMIN_CONSOLE_SCRIPT = `
       document.body.className = next;
       localStorage.setItem("md_theme", next);
       syncThemeBtn();
-    } else if (a === "lock") MD.lock("控制台已锁定");
+    } else if (a === "lock") MD.lock("已退出登录");
+    else if (a === "pwd") openPwdModal(false);
+    else if (a === "pwdSave") savePwd(el.dataset.forced === "1");
+    else if (a === "modalClose") closeModal();
     else if (a === "share") { st.share = el.dataset.v; segOn("shareSeg", st.share); renderShare(); }
     else if (a === "errStatus") { st.errStatus = el.dataset.v; segOn("segStatus", st.errStatus); loadErrors(); }
     else if (a === "errCat") { st.errCat = el.dataset.v; segOn("segCat", st.errCat); loadErrors(); }
@@ -601,8 +663,14 @@ export const ADMIN_CONSOLE_SCRIPT = `
   setInterval(() => { $("clock").textContent = hhmm(new Date()); }, 1000);
   $("clock").textContent = hhmm(new Date());
   // 停留在总览页且窗口可见时每 60 秒自动刷新，后台标签页不白白消耗 D1 读额度
-  setInterval(() => { if (st.view === "overview" && document.visibilityState === "visible") loadOverview(); }, 60000);
+  setInterval(() => { if (st.view === "overview" && document.visibilityState === "visible" && !MD.me.mustChange) loadOverview(); }, 60000);
+  // 点弹窗外的遮罩可关闭（强制改口令的弹窗除外）
+  $("modal").addEventListener("click", (e) => { if (e.target === $("modal") && $("modal").dataset.dismiss === "1") closeModal(); });
+  $("modal").addEventListener("keydown", (e) => { if (e.key === "Enter" && $("pwNew2")) savePwd($("modal").dataset.dismiss !== "1"); });
   syncThemeBtn();
-  loadOverview();
+  renderWho();
+  applyRoles();
+  if (MD.me.mustChange) openPwdModal(true);
+  else loadOverview();
 })();
 `;

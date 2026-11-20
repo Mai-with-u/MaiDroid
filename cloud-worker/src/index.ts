@@ -7,6 +7,7 @@
 
 import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT } from "./adminConsole.ts";
 import { ADMIN_HTML, ADMIN_PAGE_HEADERS } from "./adminHtml.ts";
+import { buildConsoleBundle } from "./adminTeam.ts";
 import {
   handleAccountRoute,
   handleLogin,
@@ -441,7 +442,8 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
 
   // 登录闸门校验通过后才拿到控制台本体（标记 + 脚本），同时告知前端当前身份与角色
   if (sub === "console" && request.method === "GET") {
-    return jsonResponse({ markup: ADMIN_CONSOLE_MARKUP, script: ADMIN_CONSOLE_SCRIPT, me: meOf(principal) });
+    const bundle = buildConsoleBundle(ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT, hasRole(principal, "owner"));
+    return jsonResponse({ ...bundle, me: meOf(principal) });
   }
   const accountResp = await handleAccountRoute(sub, request, env, principal);
   if (accountResp) return accountResp;
