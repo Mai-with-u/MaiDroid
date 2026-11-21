@@ -1,6 +1,8 @@
 package org.maiwithu.maidroid.platform.qq
 
 import org.maiwithu.maidroid.maibot.findPluginDirById
+import org.maiwithu.maidroid.maibot.findPluginDirsById
+import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import java.io.File
 
@@ -17,6 +19,12 @@ internal class QqAdapterFiles(paths: RuntimePaths) {
     /** MaiBot 的 pyproject.toml，读主程序版本判断能不能装 SnowLuma 适配器。 */
     val maiBotPyproject: File = paths.maiBotPyproject
 
+    /** 新适配器克隆暂存目录（以点开头，校验版本兼容后再移动为正式目录）。 */
+    val stagingAdapterDir: File = File(maiBotPluginsDir, SnowLumaAdapterScripts.STAGING_DIR_NAME)
+
+    /** MaiDroid 自己安装新适配器时的正式目录。 */
+    val targetAdapterDir: File = File(maiBotPluginsDir, SnowLumaAdapterScripts.DIR_NAME)
+
     /**
      * MaiBot 侧的 SnowLuma 适配器插件（SnowLumaAdapterScripts）：和 MaiBot 一样按清单 ID 找，
      * 用户也可能从 MaiBot WebUI 的插件市场装过，只认固定目录名会再装一份、同一插件 ID 出现两份会冲突。
@@ -24,13 +32,20 @@ internal class QqAdapterFiles(paths: RuntimePaths) {
     fun adapterDir(): File? =
         findPluginDirById(maiBotPluginsDir, SnowLumaAdapterScripts.PLUGIN_ID, SnowLumaAdapterScripts.DIR_NAME)
 
-    /** 已停更的旧适配器（MaiBot-Napcat-Adapter）还在就返回它的目录，迁移时要删掉。 */
-    fun legacyAdapterDir(): File? =
-        findPluginDirById(maiBotPluginsDir, SnowLumaAdapterScripts.LEGACY_PLUGIN_ID, SnowLumaAdapterScripts.LEGACY_DIR_NAME)
+    /** 已停更的旧适配器（MaiBot-Napcat-Adapter）的所有目录（MaiDroid 装的或插件市场装的），新适配器兼容后要一并删掉。 */
+    fun legacyAdapterDirs(): List<File> =
+        findPluginDirsById(maiBotPluginsDir, SnowLumaAdapterScripts.LEGACY_PLUGIN_ID, SnowLumaAdapterScripts.LEGACY_DIR_NAME)
+
+    /** 已停更的旧适配器（MaiBot-Napcat-Adapter）还在就返回它的首选目录，迁移时要删掉。 */
+    fun legacyAdapterDir(): File? = legacyAdapterDirs().firstOrNull()
+
+    /** 从 MaiBot 的 pyproject.toml 读取主程序版本，读不到返回 null。 */
+    fun readMaiBotVersion(): String? =
+        runCatching { maiBotPyproject.takeIf { it.isFile }?.readText() }.getOrNull()?.let(::maiBotProjectVersion)
 
     /** SnowLuma 适配器的配置，里面写着连 OneBot 用的端口和 token，由 SnowLumaAdapterConfig 改写；还没装时指向将要安装的位置。 */
     fun adapterConfig(): File =
-        File(adapterDir() ?: File(maiBotPluginsDir, SnowLumaAdapterScripts.DIR_NAME), "config.toml")
+        File(adapterDir() ?: targetAdapterDir, "config.toml")
 
     /** 第一次安装时保存的 OneBot token，读不到返回 null。 */
     fun readOneBotToken(): String? = oneBotTokenFile.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }

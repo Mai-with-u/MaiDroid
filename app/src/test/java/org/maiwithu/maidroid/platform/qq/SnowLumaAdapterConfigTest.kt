@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.maibot.PluginHostVersionRange
 
 class SnowLumaAdapterConfigTest {
     // MaiBot 按新适配器默认值生成的配置（节选）：默认关着、连 3001、没有 token
@@ -122,36 +123,59 @@ class SnowLumaAdapterConfigTest {
     }
 
     @Test
-    fun `MaiBot older than the adapter requires is asked to update first`() {
-        val problem = adapterHostVersionProblem("1.3.14")
+    fun `MaiBot older or newer than the adapter manifest range is rejected`() {
+        val range = PluginHostVersionRange(minVersion = "1.4.4", maxVersion = "1.4.99")
+        val tooOld = adapterHostVersionProblem("1.4.3", range)
 
-        assertTrue(problem!!.contains("1.3.18"))
-        assertTrue(problem.contains("当前 1.3.14"))
-        assertNull(adapterHostVersionProblem("1.3.18"))
-        assertNull(adapterHostVersionProblem("1.3.19"))
-        assertNull(adapterHostVersionProblem("1.4.0"))
+        assertTrue(tooOld!!.contains("1.4.4"))
+        assertTrue(tooOld.contains("当前 1.4.3"))
+        assertNull(adapterHostVersionProblem("1.4.4", range))
+        assertNull(adapterHostVersionProblem("1.4.8", range))
+        assertNull(adapterHostVersionProblem("1.4.99", range))
+        assertTrue(adapterHostVersionProblem("1.5.0", range)!!.contains("最高支持 MaiBot 1.4.99"))
     }
 
     @Test
-    fun `unknown MaiBot version does not block the install`() {
-        assertNull(adapterHostVersionProblem(null))
-        assertNull(adapterHostVersionProblem("dev"))
+    fun `unknown MaiBot version or missing range does not block the install`() {
+        val range = PluginHostVersionRange(minVersion = "1.4.4", maxVersion = "1.4.99")
+        assertNull(adapterHostVersionProblem(null, range))
+        assertNull(adapterHostVersionProblem("dev", range))
+        assertNull(adapterHostVersionProblem("1.4.3", null))
     }
 
     @Test
-    fun `install script clones the new adapter and removes the legacy one by manifest id`() {
-        val fresh = SnowLumaAdapterScripts.install(cloneAdapter = true).body
-        val existing = SnowLumaAdapterScripts.install(cloneAdapter = false).body
+    fun `cloneToStaging downloads adapter into staging without removing legacy adapter`() {
+        val script = SnowLumaAdapterScripts.cloneToStaging().body
 
-        assertTrue(fresh.contains("maidroid_github_clone 'https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter.git'"))
-        assertTrue(fresh.contains("'/opt/MaiBot/plugins/.MaiBot-SnowLuma-Adapter.tmp'"))
-        // 旧适配器按清单 id 删：插件市场装的副本目录名不同
-        assertTrue(fresh.contains("maibot-team\\.napcat-adapter"))
-        assertFalse(existing.contains("maidroid_github_clone '"))
-        assertTrue(existing.contains("maibot-team\\.napcat-adapter"))
-        // 装 SnowLuma 时装的适配器，终端里的输出带 SnowLuma 的前缀
-        assertTrue(SnowLumaAdapterScripts.install(cloneAdapter = true, logPrefix = "[SnowLuma]").body.contains("'[SnowLuma]'"))
-        assertFalse(SnowLumaAdapterScripts.install(cloneAdapter = true, logPrefix = "[SnowLuma]").body.contains("[NapCat]"))
+        assertTrue(script.contains("maidroid_github_clone 'https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter.git'"))
+        assertTrue(script.contains("'/opt/MaiBot/plugins/.MaiBot-SnowLuma-Adapter.tmp'"))
+        // 暂存脚本只负责克隆，不直接删正式目录或旧适配器，需先等宿主校验 manifest 兼容再清理
+        assertFalse(script.contains("maibot-team\\.napcat-adapter"))
+        assertFalse(script.contains("mv "))
+        assertTrue(SnowLumaAdapterScripts.cloneToStaging(logPrefix = "[SnowLuma]").body.contains("'[SnowLuma]'"))
+        assertFalse(SnowLumaAdapterScripts.cloneToStaging(logPrefix = "[SnowLuma]").body.contains("[NapCat]"))
+    }
+
+    @Test
+    fun `diagnoseAdapterConfigWaitFailure identifies version mismatch, dependency block, and generic timeout`() {
+        val versionRejected = diagnoseAdapterConfigWaitFailure(
+            listOf(
+                "[MaiBot] 插件 maibot-team.snowluma-adapter manifest 校验失败: Host 版本不兼容: 版本 1.4.3 低于最小要求 1.4.4"
+            )
+        )
+        assertTrue(versionRejected.contains("低于最小要求"))
+
+        val depBlocked = diagnoseAdapterConfigWaitFailure(
+            listOf(
+                "[MaiBot] 插件 maibot-team.snowluma-adapter 已被 Host 依赖流水线阻止加载: silk-python 安装失败"
+            )
+        )
+        assertTrue(depBlocked.contains("silk-python"))
+
+        val generic = diagnoseAdapterConfigWaitFailure(
+            listOf("[MaiBot] ValueError: 图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body")
+        )
+        assertTrue(generic.contains("等了 5 分钟"))
     }
 
     @Test

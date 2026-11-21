@@ -281,7 +281,8 @@ internal class NapCatPlatformManager(
                 }
         }
         if (validationError != null) {
-            fail(Failure(FailureStep.NapCatPrecheck, validationError))
+            // 经过 failureOf 匹配内置原因（如 MaiBot 版本过低）和远端热规则，提供直接可操作的按钮。
+            fail(failureOf(FailureStep.NapCatPrecheck, validationError))
             return
         }
         // NapCat、LinuxQQ 和 QQ 适配器都要从网上下载，没连网、空间明摆着不够时直接说
@@ -349,7 +350,8 @@ internal class NapCatPlatformManager(
         restartRuntime()
         val migrationError = adapterInstaller.migrateConfigWhenReady()
         if (migrationError != null) {
-            fail(Failure(FailureStep.NapCatAdapterConfig, migrationError))
+            // 配置等待失败走 failureOf，确保能认出 MaiBot 拒绝加载原因或命中远端排障热规则。
+            fail(failureOf(FailureStep.NapCatAdapterConfig, migrationError))
             return
         }
 
