@@ -89,4 +89,20 @@ class CrashRecorderTest {
         assertEquals(10, files.size)
         assertEquals("java.lang.RuntimeException: crash 11", recorder.pendingCrash()?.summary)
     }
+
+    @Test
+    fun latestCrashRemainsReadableAfterAcknowledgeForAutoReport() {
+        val recorder = recorder()
+        recorder.record("main", IllegalStateException("auto-report-test"))
+        val pending = recorder.pendingCrash()!!
+        recorder.acknowledge(pending)
+
+        // 用户关掉弹窗后 pendingCrash 变为 null，但 latestCrash 仍可用于后台补报，且能读取原堆栈文件
+        assertNull(recorder.pendingCrash())
+        val latest = recorder.latestCrash()
+        assertEquals(pending, latest)
+        val text = recorder.readCrashFile(latest!!)
+        assertTrue(text!!.contains("IllegalStateException: auto-report-test"))
+        assertNull(recorder.readCrashFile(CrashRecord("../evil.txt", 1L, "x")))
+    }
 }

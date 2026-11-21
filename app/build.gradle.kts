@@ -26,6 +26,15 @@ val hasReleaseSigning = releaseKeystorePath != null &&
 val appUpdateApiUrl = providers.gradleProperty("appUpdateApiUrl").orNull?.takeIf { it.isNotBlank() }
     ?: "https://api.github.com/repos/Mai-with-u/MaiDroid/releases/latest"
 
+// 远程公告、6 位求助码诊断快照上传与匿名遥测的 Cloudflare Worker 根地址，以及静态签名清单的 GitHub 兜底地址。
+// 本地真机联调可用 -PremoteOpsBaseUrl=http://127.0.0.1:18787 -PremoteSigningPublicKeys="2026-k1=..." 指到 wrangler dev。
+val remoteOpsBaseUrl = providers.gradleProperty("remoteOpsBaseUrl").orNull?.trim()?.trimEnd('/')
+    ?: "https://ops.8u.nz"
+val remoteManifestFallbackUrl = providers.gradleProperty("remoteManifestFallbackUrl").orNull?.trim()
+    ?: "https://raw.githubusercontent.com/Mai-with-u/MaiDroid/ops-manifest/manifest.json"
+val remoteSigningPublicKeys = providers.gradleProperty("remoteSigningPublicKeys").orNull?.trim()
+    ?: ""
+
 android {
     namespace = "org.maiwithu.maidroid"
     compileSdk {
@@ -38,9 +47,12 @@ android {
         applicationId = "org.maiwithu.maidroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.2.4"
+        versionCode = 10
+        versionName = "0.3.0"
         buildConfigField("String", "APP_UPDATE_API_URL", "\"$appUpdateApiUrl\"")
+        buildConfigField("String", "REMOTE_OPS_BASE_URL", "\"$remoteOpsBaseUrl\"")
+        buildConfigField("String", "REMOTE_MANIFEST_FALLBACK_URL", "\"$remoteManifestFallbackUrl\"")
+        buildConfigField("String", "REMOTE_SIGNING_PUBLIC_KEYS", "\"$remoteSigningPublicKeys\"")
     }
 
     signingConfigs {

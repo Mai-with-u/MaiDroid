@@ -2,11 +2,16 @@ package org.maiwithu.maidroid.ui.diagnostics
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -16,6 +21,7 @@ import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -26,10 +32,16 @@ internal fun crashFailure(crash: CrashRecord): Failure =
 
 /**
  * 打开 MaiDroid 时发现上次闪退过、用户还没看过：说明已经记下了报错，问要不要反馈。
- * “反馈问题”接着打开反馈弹窗（带上闪退记录）；“知道了”只是不再提示。两个按钮都会把这次闪退记为已看过。
+ * “反馈问题”接着打开反馈弹窗（带上闪退记录）；“QQ 群反馈”打开 QQ 用户反馈群弹窗；“知道了”只是不再提示。
+ * 三个按钮都会把这次闪退记为已看过。
  */
 @Composable
-internal fun CrashPromptDialog(crash: CrashRecord, onFeedback: () -> Unit, onDismiss: () -> Unit) {
+internal fun CrashPromptDialog(
+    crash: CrashRecord,
+    onFeedback: () -> Unit,
+    onQqFeedback: () -> Unit,
+    onDismiss: () -> Unit
+) {
     val failure = crashFailure(crash)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -58,20 +70,36 @@ internal fun CrashPromptDialog(crash: CrashRecord, onFeedback: () -> Unit, onDis
                 )
             }
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-            ) {
-                Text(text = "知道了", fontWeight = FontWeight.Bold)
-            }
-        },
         confirmButton = {
-            Button(
-                onClick = onFeedback,
-                colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = TextPrimary)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(text = "反馈问题", fontWeight = FontWeight.Bold)
+                Button(
+                    onClick = onDismiss,
+                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
+                ) {
+                    Text(text = "知道了", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+                Button(
+                    onClick = onQqFeedback,
+                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BrandOrange.copy(alpha = 0.22f),
+                        contentColor = TextPrimary
+                    )
+                ) {
+                    Text(text = "QQ 群反馈", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+                Button(
+                    onClick = onFeedback,
+                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = OnBrandOrange)
+                ) {
+                    Text(text = "反馈问题", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
             }
         },
         containerColor = CardSurface,

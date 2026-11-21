@@ -34,7 +34,12 @@ import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.backgroundScope
+import org.maiwithu.maidroid.maibot.MaiBotStartup
+import org.maiwithu.maidroid.maibot.MaiBotStartupResult
+import org.maiwithu.maidroid.maibot.failure
+import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
 import org.maiwithu.maidroid.runtime.ContainerDns
+import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.util.TimeZone
 
@@ -61,6 +66,9 @@ class MaiBotRuntimeService : Service() {
 
         // 关机广播最多等所有接收者 10 秒，留两秒余量：到点还没停完就放行关机，剩下的交给重新打开后的恢复
         private const val SHUTDOWN_WAIT_MS = 8_000L
+
+        // 常驻后台期间每小时拉取一次远程公告与排障热规则，照顾长期挂后台不打开界面的旧手机
+        private const val REMOTE_OPS_POLL_MS = 60 * 60 * 1000L
 
         /** 重启 MaiBot（以及没在跑的 QQ 协议端），用于装好或改了平台适配器之后让 MaiBot 重新加载插件。 */
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
@@ -207,6 +215,43 @@ class MaiBotRuntimeService : Service() {
             appDependencies.networkMonitor.changes.collectLatest {
                 delay(NETWORK_SETTLE_MS)
                 if (runtimeRequested) refreshContainerDns()
+            }
+        }
+        serviceScope.launch {
+            while (true) {
+                delay(REMOTE_OPS_POLL_MS)
+                if (runtimeRequested && !lowBatteryPaused && !safeExitRunning) {
+                    appDependencies.remoteOps.refreshFromBackgroundService()
+                    appDependencies.remoteOps.reportDailyHeartbeat()
+                }
+            }
+        }
+        // 服务刚起或开机自启时先补发一次上次尚未上报的崩溃记录
+        appDependencies.remoteOps.reportPendingCrashIfNeeded()
+        // 监听后台 MaiBot 启动阶段异常（例如开机自启无人盯盘时连续退出），提取纯 Python Traceback 上报
+        serviceScope.launch {
+            var lastReportedExitCount = 0
+            var lastReportedBlockedReason: String? = null
+            maiBotProcess.status.collect { status ->
+                if (!runtimeRequested || lowBatteryPaused || safeExitRunning) return@collect
+                val blocked = status.launchBlockedReason
+                if (blocked != null && blocked != lastReportedBlockedReason) {
+                    lastReportedBlockedReason = blocked
+                    MaiBotStartupResult.Blocked(blocked).failure("")?.let { failure ->
+                        appDependencies.remoteOps.reportMaiBotStartupFailure(failure)
+                    }
+                } else if (blocked == null) {
+                    lastReportedBlockedReason = null
+                }
+                if (status.exitCount >= MaiBotStartup.MAX_EXITS &&
+                    status.exitCount >= lastReportedExitCount + MaiBotStartup.MAX_EXITS
+                ) {
+                    lastReportedExitCount = status.exitCount
+                    val recentOut = maiBotRecentRunOutput(TerminalLog.logs.value.map(AnsiText::plain))
+                    MaiBotStartupResult.Crashed(status.exitCount, status.lastExitCode).failure(recentOut)?.let { failure ->
+                        appDependencies.remoteOps.reportMaiBotStartupFailure(failure)
+                    }
+                }
             }
         }
     }

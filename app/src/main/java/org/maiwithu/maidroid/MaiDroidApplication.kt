@@ -3,6 +3,7 @@ package org.maiwithu.maidroid
 import android.app.Application
 import android.util.Log
 import com.tencent.mmkv.MMKV
+import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.settings.AppSettingsRecovery
 
@@ -23,5 +24,8 @@ class MaiDroidApplication : Application() {
         dependencies = AppDependencies(this)
         dependencies.crashRecorder.install()
         MaiBotRuntimeService.createNotificationChannel(this)
+        RemoteOpsManager.createAnnouncementChannel(this)
+        // 进程启动后立即挂载终端失败日志监听器，不触发容器监管组件的提前初始化
+        dependencies.remoteOps.ensureStarted()
     }
 }

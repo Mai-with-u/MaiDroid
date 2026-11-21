@@ -1,0 +1,420 @@
+package org.maiwithu.maidroid.remote
+
+import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
+import org.maiwithu.maidroid.diagnostics.FAILURE_LOG_PREFIX
+import org.maiwithu.maidroid.diagnostics.FailureCause
+import org.maiwithu.maidroid.diagnostics.FailureStep
+import org.maiwithu.maidroid.diagnostics.LogRedactor
+import java.security.MessageDigest
+
+/** 自动报错的三类上报通道，与服务端 error_issues.category 字段一一对应。 */
+internal enum class AutoErrorCategory(val wireValue: String) {
+    Crash("crash"),
+    Install("install"),
+    MaiBotBoot("maibot_boot")
+}
+
+/** 从本地报错现场提炼出的脱敏自动上报草稿，包含稳定聚合指纹与防隐私泄漏的上下文片段。 */
+internal data class AutoErrorDraft(
+    val category: AutoErrorCategory,
+    val errorCode: String,
+    val fingerprint: String,
+    val title: String,
+    val message: String,
+    val contextText: String
+)
+
+/**
+ * 自动报错准入分类、隐私清洗与聚合指纹生成器：
+ * 1. App 闪退 / ANR：只留头信息与 Java/Kotlin 异常栈，遇到“闪退前的终端输出”标记立即截断丢弃；
+ * 2. 安装 / 容器 / 更新 / 协议端阶段：过滤纯网络抖动等噪音后，提取脱敏尾部 50 行终端报错；
+ * 3. MaiBot 启动失败：仅通过严格白名单提取纯 Python Traceback 与启动异常行，绝不放行常规业务与聊天日志。
+ */
+internal object AutoErrorExtractor {
+
+    private const val CRASH_TERMINAL_MARKER = "----- 闪退前的终端输出 -----"
+    private const val MAX_CRASH_CONTEXT_CHARS = 12_000
+    private const val MAX_INSTALL_TAIL_LINES = 50
+    private const val MAX_CONTEXT_CHARS = 10_000
+    private const val MAX_TRACEBACK_LINES = 45
+    private const val MAX_BOOT_WHITELIST_LINES = 25
+    private const val MAX_LINE_CHARS = 280
+    private const val MAX_TITLE_CHARS = 140
+    private const val MAX_MESSAGE_CHARS = 260
+
+    // 安装/容器阶段的纯用户环境或瞬态抖动原因只保留枚举计数，不传终端现场以免制造噪音
+    private val INSTALL_NOISE_CAUSES = setOf(
+        FailureCause.NoNetwork,
+        FailureCause.Dns,
+        FailureCause.Timeout,
+        FailureCause.ConnectionLost,
+        FailureCause.Tls,
+        FailureCause.ClockSkew,
+        FailureCause.DiskFull,
+        FailureCause.LowBattery,
+        FailureCause.PortInUse,
+        FailureCause.AptMirrorSyncing,
+        FailureCause.GitLocked
+    )
+
+    private val MAIBOT_NOISE_CAUSES = setOf(
+        FailureCause.LowBattery,
+        FailureCause.PortInUse,
+        FailureCause.DiskFull
+    )
+
+    // 明显属于聊天消息流或正常日常运行的关键词，在自动提取上下文时直接剔除
+    private val CHAT_PRIVACY_KEYWORDS = listOf(
+        "收到消息", "发送消息", "回复消息", "私聊", "群聊", "聊天记录",
+        "chat_stream", "recv_msg", "send_msg", "message_content", "group_chat", "private_chat"
+    )
+
+    private val INSTALL_ERROR_KEYWORDS = listOf(
+        "error", "fatal", "failed", "exception", "cannot", "permission denied",
+        "exit code", "not found", "returned error", "no such file", "unable to",
+        "segmentation fault", "killed", "exec format", "traceback"
+    )
+
+    private val MAIBOT_LIFECYCLE_OR_ERROR_WORDS = listOf(
+        "Process started", "Process exited", "Failed to start", "Runtime validation",
+        "Traceback", "Error", "Exception", "Killed", "Segmentation fault", "TOMLDecodeError"
+    )
+
+    private val EXCEPTION_CLASS_LINE =
+        Regex("""^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit|Interrupt)|SyntaxError|IndentationError|MemoryError|SystemExit|TOMLDecodeError|ModuleNotFoundError|ImportError)\b.*""")
+
+    private val PYTHON_FILE_FRAME =
+        Regex("""^\s*File\s+"([^"]+)",\s*line\s+\d+,\s*in\s+(\S+)""")
+
+    private val LOG_TIMESTAMP_LINE =
+        Regex("""^(?:\d{2,4}[-/]\d{2}[-/]\d{2}|\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}|\[\d{2}:\d{2}:\d{2})""")
+
+    private val MAIBOT_BOOT_WHITELIST_REGEXES = listOf(
+        Regex("""\[MaiBot]\s+(?:Process started|Process exited with code:|Failed to start process:|Runtime validation failed:)"""),
+        Regex("""proot\s+(?:error|warning):""", RegexOption.IGNORE_CASE),
+        Regex("""(?:Exec format error|cannot execute binary file|Segmentation fault|Illegal instruction|^\s*Killed\s*$)"""),
+        Regex("""(?:TOMLDecodeError|tomlkit\.exceptions|Invalid TOML|ModuleNotFoundError|No module named|ImportError)"""),
+        Regex("""(?:当前数据库版本高于代码内注册的最新迁移版本|database is locked|Address already in use|\[Errno \d+])"""),
+        EXCEPTION_CLASS_LINE
+    )
+
+    private val TIMESTAMP_RE = Regex("""\b(?:\d{4}-\d{2}-\d{2}[T\s])?\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b""")
+    private val DATE_RE = Regex("""\b\d{2,4}[-/]\d{2}[-/]\d{2}\b""")
+    private val HEX_RE = Regex("""0x[0-9a-fA-F]+""")
+    private val TEMP_PATH_RE = Regex("""/tmp/[A-Za-z0-9._-]+""")
+    private val STACK_LINE_NUM_RE = Regex(""":\d+\)""")
+    private val PID_PORT_RE = Regex("""(?i)\b(pid|port)\s*[:=]?\s*\d+\b""")
+    private val MULTI_DIGITS_RE = Regex("""\b\d{2,}\b""")
+    private val WHITESPACE_RE = Regex("""\s+""")
+
+    /** 判断某类报错是否需要自动携带脱敏现场上报；返回 null 时仅做原有计数统计。 */
+    fun classifyForAutoReport(step: FailureStep, cause: FailureCause?): AutoErrorCategory? = when (step) {
+        FailureStep.AppCrash -> AutoErrorCategory.Crash
+        FailureStep.MaiBotBlocked,
+        FailureStep.MaiBotCrash,
+        FailureStep.MaiBotNotStarted,
+        FailureStep.MaiBotTimeout ->
+            if (cause in MAIBOT_NOISE_CAUSES) null else AutoErrorCategory.MaiBotBoot
+        // QQ 官方机器人连接期已处于消息收发运行期，保守拦截自动上下文上报
+        FailureStep.QqOfficialConnect -> null
+        else ->
+            if (cause in INSTALL_NOISE_CAUSES) null else AutoErrorCategory.Install
+    }
+
+    /** 将 `UV-SYNC/NET-DNS` 这样的组合错误码还原回步骤和原因枚举。 */
+    fun parseFailureCode(code: String): Pair<FailureStep, FailureCause?>? {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return null
+        val stepCode = trimmed.substringBefore('/')
+        val causeCode = trimmed.substringAfter('/', missingDelimiterValue = "").takeIf { it.isNotEmpty() }
+        val step = FailureStep.entries.firstOrNull { it.code == stepCode } ?: return null
+        val cause = causeCode?.let { target -> FailureCause.entries.firstOrNull { it.code == target } }
+        return step to cause
+    }
+
+    /** 构造 App 闪退/原生崩溃/ANR 自动上报草稿，彻底剥离闪退前的终端日志。 */
+    fun buildCrashDraft(
+        crashSummary: String,
+        crashFileText: String?,
+        redactor: LogRedactor
+    ): AutoErrorDraft {
+        val cleanSummary = redactor.redact(crashSummary.trim().ifBlank { "未知异常" }).take(MAX_MESSAGE_CHARS)
+        if (crashFileText.isNullOrBlank()) {
+            val sig = normalizeSignatureLine(cleanSummary)
+            return AutoErrorDraft(
+                category = AutoErrorCategory.Crash,
+                errorCode = FailureStep.AppCrash.code,
+                fingerprint = sha256Hex("crash|${FailureStep.AppCrash.code}|native|$sig").take(32),
+                title = "系统异常退出：$cleanSummary".take(MAX_TITLE_CHARS),
+                message = "MaiDroid 上次闪退：$cleanSummary".take(MAX_MESSAGE_CHARS),
+                contextText = "系统进程异常退出记录：$cleanSummary"
+            )
+        }
+
+        // 先截断闪退前终端输出标记，确保不会把闪退瞬间的聊天或业务输出带出手机
+        val stackSection = crashFileText.substringBefore(CRASH_TERMINAL_MARKER).trimEnd()
+        val redactedStack = redactor.redact(stackSection).take(MAX_CRASH_CONTEXT_CHARS)
+        val stackLines = redactedStack.lines()
+
+        val exceptionLine = stackLines.firstOrNull { line ->
+            val t = line.trim()
+            t.isNotEmpty() &&
+                !t.startsWith("MaiDroid ") &&
+                !t.startsWith("时间：") &&
+                !t.startsWith("线程：") &&
+                !t.startsWith("at ") &&
+                !t.startsWith("Caused by:") &&
+                !t.startsWith("...")
+        } ?: cleanSummary
+        val exceptionClass = exceptionLine.substringBefore(':').trim().ifBlank { cleanSummary }
+
+        // 优先抓第一个业务自身栈帧作为指纹定位点，去掉源文件名后的具体行号，避免小补丁改行分裂聚合结果
+        val appFrame = stackLines.firstOrNull { it.trimStart().startsWith("at org.maiwithu.maidroid.") }
+        val anyFrame = appFrame ?: stackLines.firstOrNull { it.trimStart().startsWith("at ") }
+        val normalizedFrame = anyFrame?.trim()?.replace(STACK_LINE_NUM_RE, ")").orEmpty()
+
+        val fingerprint = sha256Hex(
+            "crash|${FailureStep.AppCrash.code}|$exceptionClass|$normalizedFrame"
+        ).take(32)
+
+        return AutoErrorDraft(
+            category = AutoErrorCategory.Crash,
+            errorCode = FailureStep.AppCrash.code,
+            fingerprint = fingerprint,
+            title = exceptionLine.take(MAX_TITLE_CHARS),
+            message = "MaiDroid 上次闪退：$cleanSummary".take(MAX_MESSAGE_CHARS),
+            contextText = redactedStack
+        )
+    }
+
+    /** 构造 OOBE/容器/依赖/协议端安装与更新阶段的脱敏自动上报草稿。 */
+    fun buildInstallDraft(
+        step: FailureStep,
+        cause: FailureCause?,
+        message: String,
+        terminalPlainLines: List<String>,
+        setupComplete: Boolean,
+        redactor: LogRedactor
+    ): AutoErrorDraft {
+        val errorCode = cause?.let { "${step.code}/${it.code}" } ?: step.code
+        val redactedMessage = redactor.redact(message.trim().ifBlank { step.label }).take(MAX_MESSAGE_CHARS)
+
+        val autoFixIdx = terminalPlainLines.indexOfLast { it.contains(AUTO_FIX_LOG_PREFIX) }
+        val afterRetry = if (autoFixIdx >= 0 && autoFixIdx + 1 < terminalPlainLines.size) {
+            terminalPlainLines.subList(autoFixIdx + 1, terminalPlainLines.size)
+        } else {
+            terminalPlainLines
+        }
+
+        val filtered = afterRetry
+            .filter { line ->
+                val trimmed = line.trim()
+                if (trimmed.isEmpty()) return@filter false
+                if (trimmed.contains(FAILURE_LOG_PREFIX)) return@filter false
+                if (containsChatPrivacyKeyword(trimmed)) return@filter false
+                if (setupComplete && isLikelyMaiBotRuntimeLine(trimmed)) return@filter false
+                true
+            }
+            .takeLast(MAX_INSTALL_TAIL_LINES)
+
+        val contextText = if (filtered.isNotEmpty()) {
+            trimTailToChars(redactor.redact(filtered.joinToString("\n")), MAX_CONTEXT_CHARS)
+        } else {
+            redactedMessage
+        }
+
+        val sigSourceLines = contextText.lines().map(String::trim).filter(String::isNotEmpty)
+        val highSignalLine = sigSourceLines.lastOrNull { line ->
+            val lower = line.lowercase()
+            !line.startsWith("[MaiDroid] ") && INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
+        } ?: sigSourceLines.lastOrNull() ?: redactedMessage
+
+        val normalizedSig = normalizeSignatureLine(highSignalLine)
+        val fingerprint = sha256Hex("install|$errorCode|$normalizedSig").take(32)
+        val titlePrefix = cause?.title ?: step.label
+        val title = if (highSignalLine != redactedMessage && highSignalLine.length > 6) {
+            "$titlePrefix：${highSignalLine.take(96)}"
+        } else {
+            "$titlePrefix：$redactedMessage"
+        }.take(MAX_TITLE_CHARS)
+
+        return AutoErrorDraft(
+            category = AutoErrorCategory.Install,
+            errorCode = errorCode,
+            fingerprint = fingerprint,
+            title = title,
+            message = redactedMessage,
+            contextText = contextText
+        )
+    }
+
+    /** 构造 MaiBot 启动失败草稿：只收录严格匹配的 Python Traceback 或容器/启动级异常行，绝不放行常规业务日志。 */
+    fun buildMaiBotBootDraft(
+        step: FailureStep,
+        cause: FailureCause?,
+        message: String,
+        recentRunLines: List<String>,
+        fallbackLogTail: String?,
+        redactor: LogRedactor
+    ): AutoErrorDraft {
+        val errorCode = cause?.let { "${step.code}/${it.code}" } ?: step.code
+        val redactedMessage = redactor.redact(message.trim().ifBlank { step.label }).take(MAX_MESSAGE_CHARS)
+
+        val primaryTb = extractPythonTraceback(recentRunLines)
+        val fallbackLines = fallbackLogTail?.lines().orEmpty()
+        val fallbackTb = if (primaryTb.isEmpty() && fallbackLines.isNotEmpty()) {
+            extractPythonTraceback(fallbackLines)
+        } else {
+            emptyList()
+        }
+        val tracebackLines = primaryTb.ifEmpty { fallbackTb }
+
+        val whitelistLines = if (tracebackLines.isNotEmpty()) {
+            val statusLines = extractBootWhitelistLines(recentRunLines).takeLast(3)
+            (statusLines + tracebackLines).distinct().takeLast(MAX_TRACEBACK_LINES)
+        } else {
+            val fromRecent = extractBootWhitelistLines(recentRunLines)
+            val fromFallback = if (fromRecent.size < 3 && fallbackLines.isNotEmpty()) {
+                extractBootWhitelistLines(fallbackLines)
+            } else {
+                emptyList()
+            }
+            (fromRecent + fromFallback).distinct().takeLast(MAX_BOOT_WHITELIST_LINES)
+        }
+
+        val contextText = if (whitelistLines.isNotEmpty()) {
+            trimTailToChars(
+                redactor.redact(whitelistLines.joinToString("\n") { it.take(MAX_LINE_CHARS) }),
+                MAX_CONTEXT_CHARS
+            )
+        } else {
+            "（未提取到 Python Traceback 或启动异常行；摘要：$redactedMessage）"
+        }
+
+        val redactedTbLines = if (tracebackLines.isNotEmpty()) {
+            redactor.redact(tracebackLines.joinToString("\n")).lines()
+        } else {
+            emptyList()
+        }
+        val pyErrLine = redactedTbLines.lastOrNull { EXCEPTION_CLASS_LINE.matches(it.trim()) }?.trim()
+        val lastFileMatch = redactedTbLines.asReversed().firstNotNullOfOrNull { PYTHON_FILE_FRAME.find(it) }
+
+        val fingerprintSeed = if (pyErrLine != null) {
+            val pyFrameKey = lastFileMatch?.let { m ->
+                val fileTail = m.groupValues[1].replace('\\', '/').split('/').takeLast(2).joinToString("/")
+                "$fileTail:${m.groupValues[2]}"
+            }.orEmpty()
+            "maibot_boot|$errorCode|${normalizeSignatureLine(pyErrLine)}|$pyFrameKey"
+        } else {
+            val fallbackSig = contextText.lines().lastOrNull { it.isNotBlank() } ?: redactedMessage
+            "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(fallbackSig)}"
+        }
+
+        val title = (pyErrLine ?: cause?.title ?: redactedMessage).take(MAX_TITLE_CHARS)
+        return AutoErrorDraft(
+            category = AutoErrorCategory.MaiBotBoot,
+            errorCode = errorCode,
+            fingerprint = sha256Hex(fingerprintSeed).take(32),
+            title = title,
+            message = redactedMessage,
+            contextText = contextText
+        )
+    }
+
+    /** 仅截取最后一段 Python `Traceback (most recent call last):` 到异常结尾行之间的栈帧文本。 */
+    private fun extractPythonTraceback(lines: List<String>): List<String> {
+        val tbStart = lines.indexOfLast { it.contains("Traceback (most recent call last):") }
+        if (tbStart < 0) return emptyList()
+
+        val collected = mutableListOf<String>()
+        var seenExceptionLine = false
+        for (i in tbStart until minOf(lines.size, tbStart + MAX_TRACEBACK_LINES)) {
+            val line = lines[i]
+            val trimmed = line.trim()
+            if (containsChatPrivacyKeyword(trimmed)) continue
+
+            if (i == tbStart) {
+                collected.add(line)
+                continue
+            }
+            if (trimmed.isEmpty()) {
+                val next = lines.getOrNull(i + 1)?.trim().orEmpty()
+                if (next.startsWith("During handling of") || next.startsWith("The above exception") || next.startsWith("Traceback")) {
+                    collected.add(line)
+                    seenExceptionLine = false
+                    continue
+                }
+                break
+            }
+            if (trimmed.startsWith("Traceback (most recent call last):") ||
+                trimmed.startsWith("During handling of the above exception") ||
+                trimmed.startsWith("The above exception was the direct cause")
+            ) {
+                collected.add(line)
+                seenExceptionLine = false
+                continue
+            }
+            if (line.startsWith("  ") && !LOG_TIMESTAMP_LINE.containsMatchIn(trimmed)) {
+                collected.add(line)
+                continue
+            }
+            if (EXCEPTION_CLASS_LINE.matches(trimmed)) {
+                collected.add(trimmed)
+                seenExceptionLine = true
+                val nextTrimmed = lines.getOrNull(i + 1)?.trim().orEmpty()
+                if (!nextTrimmed.startsWith("During handling") && !nextTrimmed.startsWith("The above exception")) {
+                    break
+                }
+                continue
+            }
+            if (seenExceptionLine || LOG_TIMESTAMP_LINE.containsMatchIn(trimmed)) {
+                break
+            }
+            // 多行异常消息紧跟在异常头后时最多收录到遇到下一条时间戳为止
+            if (collected.size <= 3) break
+            collected.add(trimmed)
+        }
+        return collected
+    }
+
+    private fun extractBootWhitelistLines(lines: List<String>): List<String> =
+        lines.mapNotNull { raw ->
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty() || containsChatPrivacyKeyword(trimmed)) return@mapNotNull null
+            if (MAIBOT_BOOT_WHITELIST_REGEXES.any { it.containsMatchIn(trimmed) }) trimmed else null
+        }
+
+    private fun containsChatPrivacyKeyword(line: String): Boolean {
+        val lower = line.lowercase()
+        return CHAT_PRIVACY_KEYWORDS.any { lower.contains(it) }
+    }
+
+    private fun isLikelyMaiBotRuntimeLine(trimmed: String): Boolean {
+        if (!trimmed.startsWith("[MaiBot]")) return false
+        return MAIBOT_LIFECYCLE_OR_ERROR_WORDS.none { trimmed.contains(it) }
+    }
+
+    private fun normalizeSignatureLine(line: String): String {
+        var normalized = line.trim()
+        normalized = TIMESTAMP_RE.replace(normalized, "<ts>")
+        normalized = DATE_RE.replace(normalized, "<date>")
+        normalized = TEMP_PATH_RE.replace(normalized, "/tmp/<tmp>")
+        normalized = HEX_RE.replace(normalized, "<hex>")
+        normalized = PID_PORT_RE.replace(normalized, "$1=<n>")
+        normalized = MULTI_DIGITS_RE.replace(normalized, "<n>")
+        normalized = WHITESPACE_RE.replace(normalized, " ")
+        return normalized.take(200)
+    }
+
+    private fun trimTailToChars(text: String, maxChars: Int): String {
+        if (text.length <= maxChars) return text
+        val slice = text.takeLast(maxChars)
+        val firstNewline = slice.indexOf('\n')
+        return if (firstNewline in 0 until slice.lastIndex) slice.substring(firstNewline + 1) else slice
+    }
+
+    private fun sha256Hex(input: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+}

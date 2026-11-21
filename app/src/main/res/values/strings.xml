@@ -11,4 +11,6 @@
     <string name="notification_low_battery_text">已保存好数据停下，插上充电后自动恢复</string>
     <string name="notification_setup">正在安装 MaiBot</string>
     <string name="notification_setup_text">切到后台也会接着装，点这里查看进度</string>
+    <string name="notification_channel_announcements">系统公告与提醒</string>
+    <string name="notification_channel_announcements_desc">接收 MaiDroid 重要兼容提醒与运行公告</string>
 </resources>

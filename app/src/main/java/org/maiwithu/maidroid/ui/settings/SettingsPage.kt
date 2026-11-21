@@ -70,7 +70,11 @@ import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
+import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NAME
+import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NUMBER
+import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
+import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -95,7 +99,7 @@ private const val PermissionSettingsDetail = "permissions"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
- * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题、清理空间），最底下是“安全退出”按钮。
+ * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题、QQ 反馈群、清理空间），最底下是“安全退出”按钮。
  * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
@@ -127,8 +131,9 @@ internal fun SettingsPage(
     // 安全退出的二次确认；转屏重建时保留，免得用户刚点开就没了
     var showSafeExitConfirm by rememberSaveable { mutableStateOf(false) }
     var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
-    // 反馈弹窗里要去系统“另存为”选位置，回来时 Activity 可能被重建，开关要能保存下来
+    // 反馈弹窗里要去系统“另存为”选位置、QQ 群弹窗要切去手机 QQ 加群，回来时 Activity 可能被重建，开关都要保存下来
     var showFeedbackDialog by rememberSaveable { mutableStateOf(false) }
+    var showQqGroupDialog by rememberSaveable { mutableStateOf(false) }
     var showCleanupDialog by rememberSaveable { mutableStateOf(false) }
     // 去系统里开“安装未知应用”再回来时 Activity 可能被重建，弹窗开关要能保存下来
     var showAppUpdateDialog by rememberSaveable { mutableStateOf(false) }
@@ -228,6 +233,7 @@ internal fun SettingsPage(
                     onAppUpdateClick = { openAppUpdateDialog() },
                     onSafeExitClick = { showSafeExitConfirm = true },
                     onFeedbackClick = { showFeedbackDialog = true },
+                    onQqGroupClick = { showQqGroupDialog = true },
                     onCleanupClick = { showCleanupDialog = true },
                     modifier = Modifier
                         .width(navigationWidth)
@@ -291,6 +297,7 @@ internal fun SettingsPage(
                         onAppUpdateClick = { openAppUpdateDialog() },
                         onSafeExitClick = { showSafeExitConfirm = true },
                         onFeedbackClick = { showFeedbackDialog = true },
+                        onQqGroupClick = { showQqGroupDialog = true },
                         onCleanupClick = { showCleanupDialog = true },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -310,6 +317,10 @@ internal fun SettingsPage(
 
         if (showFeedbackDialog) {
             FeedbackDialog(failure = null, onDismiss = { showFeedbackDialog = false })
+        }
+
+        if (showQqGroupDialog) {
+            QqFeedbackGroupDialog(onDismiss = { showQqGroupDialog = false })
         }
 
         if (showCleanupDialog) {
@@ -374,10 +385,20 @@ private fun SettingsNavigationPane(
     onAppUpdateClick: () -> Unit,
     onSafeExitClick: () -> Unit,
     onFeedbackClick: () -> Unit,
+    onQqGroupClick: () -> Unit,
     onCleanupClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statusBarTop = statusBarTopInset()
+    val context = LocalContext.current
+    val settings = remember(context) { context.appDependencies.settings }
+    val remoteOps = remember(context) { context.appDependencies.remoteOps }
+    val bannerAnnouncements by remoteOps.bannerAnnouncements.collectAsState()
+    var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
+    val onTelemetryChange: (Boolean) -> Unit = { enabled ->
+        settings.telemetryEnabled = enabled
+        telemetryEnabled = enabled
+    }
     // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
     // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
     val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
@@ -419,6 +440,12 @@ private fun SettingsNavigationPane(
                     fontSize = TextSizes.Body,
                     lineHeight = 17.sp
                 )
+            }
+        }
+
+        if (bannerAnnouncements.isNotEmpty()) {
+            item {
+                AnnouncementBannerSection(modifier = Modifier.overscrollBody(overscroll))
             }
         }
 
@@ -569,7 +596,7 @@ private fun SettingsNavigationPane(
             }
         }
 
-        // 出了问题时的入口：收集诊断信息（打过码）后去 GitHub 反馈，或者保存成诊断包；手机空间不够时清掉下载缓存
+        // 出了问题时的入口：去 GitHub 提带脱敏诊断包的 Issue、加 QQ 用户群交流互助；手机空间不够时清掉下载缓存
         item {
             SettingsSection(
                 title = "帮助",
@@ -589,6 +616,19 @@ private fun SettingsNavigationPane(
                 )
                 SettingsDivider()
                 SettingsNavigationRow(
+                    icon = FlatFeatureIcons.QqGroup,
+                    iconColor = IconSkyBlue,
+                    title = "QQ 反馈群",
+                    supportingText = "加入群聊【$QQ_FEEDBACK_GROUP_NAME】（$QQ_FEEDBACK_GROUP_NUMBER）交流互助",
+                    onClick = onQqGroupClick,
+                    trailing = if (compact) null else {
+                        {
+                            SettingsRowArrow(contentDescription = "打开 QQ 反馈群")
+                        }
+                    }
+                )
+                SettingsDivider()
+                SettingsNavigationRow(
                     icon = FlatFeatureIcons.Cleanup,
                     iconColor = IconTealMint,
                     title = "清理空间",
@@ -600,6 +640,30 @@ private fun SettingsNavigationPane(
                         }
                     }
                 )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.Telemetry,
+                    iconColor = IconIrisBlue,
+                    title = "匿名运行统计",
+                    supportingText = "上报匿名版本、崩溃堆栈与脱敏的安装/启动报错以改进稳定性，绝不含聊天记录、QQ 号与密钥",
+                    onClick = { onTelemetryChange(!telemetryEnabled) },
+                    trailing = if (compact) null else {
+                        {
+                            FlatSwitch(
+                                checked = telemetryEnabled,
+                                onCheckedChange = onTelemetryChange
+                            )
+                        }
+                    }
+                )
+                if (compact) {
+                    CompactSettingSwitchRow(
+                        label = "启用匿名统计",
+                        checked = telemetryEnabled,
+                        enabled = true,
+                        onCheckedChange = onTelemetryChange
+                    )
+                }
             }
         }
 
@@ -755,6 +819,21 @@ private fun CompactSshSwitchRow(
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    CompactSettingSwitchRow(
+        label = "启用 SSH",
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = onCheckedChange
+    )
+}
+
+@Composable
+private fun CompactSettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -769,7 +848,7 @@ private fun CompactSshSwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "启用 SSH",
+            text = label,
             color = TextMuted,
             fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Medium,

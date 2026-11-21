@@ -31,10 +31,12 @@ import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.diagnostics.CrashPromptDialog
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
+import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.diagnostics.crashFailure
 import org.maiwithu.maidroid.ui.home.HomeScreen
 import org.maiwithu.maidroid.ui.oobe.OobeAuthorizationDialog
 import org.maiwithu.maidroid.ui.oobe.OobeFlowScreen
+import org.maiwithu.maidroid.ui.remote.AnnouncementModalDialogHost
 import org.maiwithu.maidroid.ui.settings.AppUpdateDialogHost
 import org.maiwithu.maidroid.ui.settings.MaiBotUpdateDialogHost
 import org.maiwithu.maidroid.ui.settings.SafeExitProgressDialog
@@ -82,10 +84,14 @@ internal fun MaiDroidApp(
     val maiBotUpdateState by maiBotUpdater.state.collectAsState()
     val safeExit = remember(context) { context.appDependencies.safeExit }
     val safeExitState by safeExit.state.collectAsState()
+    val remoteOps = remember(context) { context.appDependencies.remoteOps }
+    val blockerAnnouncement by remoteOps.blockerAnnouncement.collectAsState()
+    val focusedAnnouncement by remoteOps.focusedAnnouncement.collectAsState()
     val pendingCrash by viewModel.pendingCrash.collectAsState()
     val lowStorageBytes by viewModel.lowStorageBytes.collectAsState()
-    // 在闪退提示里点了“反馈问题”：记下是哪次闪退，接着打开反馈弹窗；去“另存为”回来重建时也保留
+    // 在闪退提示里点了“反馈问题”或“QQ 群反馈”：记下动作接着打开对应弹窗；去“另存为”或手机 QQ 回来重建时也保留
     var crashToReport by rememberSaveable(stateSaver = CrashRecordSaver) { mutableStateOf<CrashRecord?>(null) }
+    var showCrashQqGroup by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -202,18 +208,39 @@ internal fun MaiDroidApp(
     val crashPromptAllowed = !showStartupSplash && (setupComplete || authorizationAccepted)
     val crash = pendingCrash
     val reporting = crashToReport
+    val modalAnnouncement = focusedAnnouncement ?: blockerAnnouncement
     if (safeExitState.started) {
         SafeExitProgressDialog(state = safeExitState, onMoveToBackground = onMoveToBackground)
     } else if (reporting != null) {
         FeedbackDialog(failure = crashFailure(reporting), onDismiss = { crashToReport = null })
+    } else if (showCrashQqGroup) {
+        QqFeedbackGroupDialog(onDismiss = { showCrashQqGroup = false })
     } else if (crash != null && crashPromptAllowed) {
+        LaunchedEffect(crash.id) {
+            remoteOps.reportFailure(crashFailure(crash).code)
+        }
         CrashPromptDialog(
             crash = crash,
             onFeedback = {
                 crashToReport = crash
                 viewModel.acknowledgeCrash()
             },
+            onQqFeedback = {
+                showCrashQqGroup = true
+                viewModel.acknowledgeCrash()
+            },
             onDismiss = viewModel::acknowledgeCrash
+        )
+    } else if (modalAnnouncement != null && crashPromptAllowed) {
+        AnnouncementModalDialogHost(
+            announcement = modalAnnouncement,
+            onDismiss = {
+                if (focusedAnnouncement != null) {
+                    remoteOps.clearFocusedAnnouncement()
+                } else {
+                    remoteOps.dismissAnnouncement(modalAnnouncement)
+                }
+            }
         )
     } else if (setupComplete && !showStartupSplash) {
         val freeBytes = lowStorageBytes

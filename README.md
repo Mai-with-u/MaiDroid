@@ -168,6 +168,7 @@ sequenceDiagram
 | 容器 SSH | `ssh/` |
 | 系统“文件”应用里的 MaiBot 目录 | `files/` |
 | MaiDroid 自己的更新 | `appupdate/` |
+| 远程公告、动态排障热规则、6 位求助码与匿名统计 | 客户端在 `remote/` 与 `ui/remote/`，配套 Cloudflare Worker + D1 服务端在仓库根目录 `cloud-worker/` |
 | 权限、设置、终端输出 | `permission/`、`settings/`、`terminal/` |
 
 更细的分层、启动流程和各类的职责见 [架构总览](docs/architecture.md)。
@@ -192,7 +193,7 @@ MaiBot 源码、适配器、uv、Python 以及来自 GitHub 的自定义 QQ 协�
 
 ### 出问题了怎么反馈？
 
-打开主页的终端输出页（竖屏在底栏右侧或 WebUI 侧边悬浮胶囊展开菜单内，横屏在左侧导航栏底部）复制日志，或直接在“设置 > 反馈问题”导出脱敏诊断包，然后到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交；若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
+报错提示处或“设置 > 反馈问题”弹窗里可以直接点“生成求助码”，一键上传脱敏诊断快照（7 天自动过期）拿到 6 位短码，把短码发进“设置 > QQ 反馈群”【麦麦不吃苹果派】（750194887）即可快速定位原因；也可以导出脱敏诊断包 zip，或复制日志到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交。若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
 
 MaiBot 相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请提交到你所用 QQ 协议端的对应仓库，看你用的是哪一个。
 

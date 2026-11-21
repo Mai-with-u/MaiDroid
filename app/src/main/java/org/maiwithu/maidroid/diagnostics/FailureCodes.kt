@@ -7,11 +7,19 @@ package org.maiwithu.maidroid.diagnostics
  * 认不出时没有后半段。两段都在这个文件里定义完：拿到用户报的码，搜一下就能找到出错的地方和识别规则。
  * 码一经发布就不改名、不复用，新增失败点时加新码。
  */
+/** 远端下发的排障热规则命中时给出的覆盖提示：保留既有错误码，只在界面提供更新鲜的原因标题、操作建议与快捷入口。 */
+internal data class FailureHintOverride(
+    val title: String,
+    val advice: String,
+    val actionTarget: String? = null
+)
+
 internal data class Failure(
     val step: FailureStep,
     /** 给用户看的一句话，原来界面上显示的失败说明。 */
     val message: String,
-    val cause: FailureCause? = null
+    val cause: FailureCause? = null,
+    val remoteHint: FailureHintOverride? = null
 ) {
     val code: String get() = cause?.let { "${step.code}/${it.code}" } ?: step.code
 
@@ -28,9 +36,14 @@ internal const val FAILURE_LOG_PREFIX = "[MaiDroid] 错误码 "
  */
 internal const val AUTO_FIX_LOG_PREFIX = "[自动修复]"
 
-/** 一步失败了：按这一步的输出认原因，拼成带错误码的失败。output 默认用失败说明本身（没有命令输出的失败）。 */
+/** 一步失败了：按这一步的输出认原因（同时匹配远端下发的热规则），拼成带错误码的失败。 */
 internal fun failureOf(step: FailureStep, message: String, output: String = message): Failure =
-    Failure(step, message, diagnoseFailureCause(output))
+    Failure(
+        step = step,
+        message = message,
+        cause = diagnoseFailureCause(output),
+        remoteHint = diagnoseRemoteFailureHint(step.code, output)
+    )
 
 /** 从日志里一行失败记录读出错误码和说明；不是失败记录返回 null。行首可以带时间等前缀。 */
 internal fun parseFailureLogLine(line: String): Pair<String, String>? {

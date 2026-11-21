@@ -48,3 +48,9 @@ key.properties
 
 # ── 临时笔记（计划、审计、实验记录），不进 Git 历史 ─────────────
 /docs/tmp/
+
+# ── Cloudflare Worker 本地依赖与调试密钥 ─────────────────────────
+/cloud-worker/node_modules/
+/cloud-worker/.wrangler/
+/cloud-worker/.dev.vars
+/cloud-worker/package-lock.json
