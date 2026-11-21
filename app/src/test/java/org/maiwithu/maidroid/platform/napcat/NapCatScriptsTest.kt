@@ -98,4 +98,34 @@ class NapCatScriptsTest {
         assertTrue(install.contains("maidroid_apt_install --reinstall unzip"))
         assertTrue(install.indexOf("rm -rf \"${'$'}old_backup\"") < install.indexOf("mv \"${'$'}HOME/napcat\" \"${'$'}backup_dir\""))
     }
+
+    @Test
+    fun `linux qq runtime libraries are checked outside deb install branch`() {
+        // 避免之前由 SnowLuma 等方式装过 /opt/QQ 后 NapCat 跳过 deb 分支并顺带漏装 libgbm1 等共享库。
+        val install = NapCatScripts.install("token", repoSource).body
+        val qqPackageRm = "rm -f /root/.cache/maidroid-napcat/linuxqq_${NapCatScripts.QQ_VERSION}_arm64.deb"
+        val qqBranchEnd = install.indexOf("$qqPackageRm\nfi")
+        assertTrue(qqBranchEnd >= 0)
+        val afterQqBranch = install.substring(qqBranchEnd)
+
+        val readyCall = afterQqBranch.indexOf("if ! maidroid_linuxqq_deps_ready; then")
+        assertTrue(readyCall > 0)
+        assertTrue(afterQqBranch.indexOf("maidroid_linuxqq_install_deps", readyCall) > readyCall)
+        assertTrue(afterQqBranch.indexOf("maidroid_linuxqq_install_deps", readyCall) < afterQqBranch.indexOf("Download NapCat package"))
+        assertTrue(install.contains("libnss3 libgbm1 libgssapi-krb5-2"))
+        assertTrue(install.contains("libasound2t64"))
+        assertTrue(install.contains("libasound2"))
+    }
+
+    @Test
+    fun `prepare runtime includes apt mirrors and non-fatal shared library self-heal`() {
+        val runtime = NapCatScripts.prepareRuntime().body
+        val selfHealSection = runtime.substringBefore("cat > /root/loadNapCat.cjs")
+
+        assertTrue(selfHealSection.contains("maidroid_apt_install()"))
+        assertTrue(selfHealSection.contains("if command -v qq >/dev/null 2>&1 && ! maidroid_linuxqq_deps_ready; then"))
+        assertTrue(selfHealSection.contains("[自动修复]"))
+        assertTrue(selfHealSection.contains("maidroid_linuxqq_install_deps"))
+        assertFalse(selfHealSection.contains("exit 1"))
+    }
 }

@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.platform.snowluma
 
+import org.maiwithu.maidroid.platform.qq.LinuxQqRuntimeDeps
 import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
 import org.maiwithu.maidroid.runtime.AptMirrors
@@ -95,8 +96,9 @@ internal object SnowLumaScripts {
 
     /**
      * 首次安装（或从自定义地址重装）：
-     * 写 OneBot token、WebUI 密码和协议同意记录 -> 装 Xvfb、xdotool、jq、中文字体 -> 没有这版 LinuxQQ 就下载校验后装上，
-     * 并挡住 QQ 的热更新 -> 从用户指定的自定义来源下载 SnowLuma 发行包、验证归档并对比官方 sha256、解到程序目录 ->
+     * 写 OneBot token、WebUI 密码和协议同意记录 -> 装 Xvfb、xdotool、jq、中文字体 -> 没有这版 LinuxQQ 就下载校验后装上 ->
+     * 补齐 LinuxQQ 运行必需的共享库（libnss3/libgbm1 等）并挡住 QQ 的热更新 ->
+     * 从用户指定的自定义来源下载 SnowLuma 发行包、验证归档并对比官方 sha256、解到程序目录 ->
      * 写全局 OneBot 配置 -> 打完成标记 -> 生成启动脚本。
      */
     fun install(token: String, webUiPassword: String, source: QqCustomSource): ContainerScript = ContainerScript(
@@ -113,8 +115,20 @@ internal object SnowLumaScripts {
         workingDirectory = "/root"
     )
 
-    /** 每次启动前执行：补齐目录，并重新生成启动脚本。 */
-    fun prepareRuntime(): ContainerScript = ContainerScript(prepareRuntimeBody(), workingDirectory = "/root")
+    /** 每次启动前执行：检测并自愈补装缺失的 LinuxQQ 运行依赖库，补齐目录并重新生成启动脚本。 */
+    fun prepareRuntime(): ContainerScript = ContainerScript(
+        body = listOf(
+            "set -e",
+            AptMirrors.shellFunctions(),
+            LinuxQqRuntimeDeps.ensureScript(
+                logPrefix = "[SnowLuma]",
+                failOnError = false,
+                requireQqInstalled = true
+            ),
+            prepareRuntimeBody()
+        ).joinToString("\n"),
+        workingDirectory = "/root"
+    )
 
     /** 前台直接以 exec bash 接管启动脚本，省掉额外 sh 与 script 伪终端进程。 */
     fun launch(): ContainerScript = ContainerScript(
@@ -282,6 +296,10 @@ internal object SnowLumaScripts {
             fi
             rm -f $DOWNLOAD_DIR/$QQ_PACKAGE
         fi
+        """.trimIndent() + "\n" +
+        // 官方 deb 未完整声明 libnss3/libgbm1 等运行库；放在 if/else 外，即使容器里先前已装过 /opt/QQ 也要确保补齐。
+        LinuxQqRuntimeDeps.ensureScript(logPrefix = "[SnowLuma]", failOnError = true) + "\n" +
+        """
         # 挡住 QQ 的热更新：热更新会悄悄换掉 QQ 的组件，SnowLuma 的注入就对不上了
         if ! grep -q 'qqpatch[.]gtimg[.]cn' /etc/hosts 2>/dev/null; then
             printf "0.0.0.0 qqpatch.gtimg.cn\n" >> /etc/hosts
