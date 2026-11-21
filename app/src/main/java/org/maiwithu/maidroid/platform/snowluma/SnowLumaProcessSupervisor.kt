@@ -262,6 +262,7 @@ internal class SnowLumaProcessSupervisor(
                 SnowLumaScripts.launch(),
                 extraEnvironment = mapOf(SnowLumaScripts.WEBUI_PORT_ENV to webUiPort.toString())
             )
+            val startedAtMs = System.currentTimeMillis()
             startedProcess = currentProcess
             // 停止可能恰好在启动途中发生：要么停止流程看得到这个进程、请它们退出，
             // 要么这里看到本协程已被取消、正在退出或暂停着，自己把刚起的进程结束掉（QQ 还没登录，没有要保存的）。
@@ -287,9 +288,10 @@ internal class SnowLumaProcessSupervisor(
                 }
             }
             val exitCode = currentProcess.waitFor()
+            val uptimeMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
             // QQ 在前台跑（启动脚本随 QQ 退出）：不管退出码是几，只要不是被下令停掉，都交给监管循环整树重启。
             TerminalLog.append("[SnowLuma] 进程退出码: $exitCode")
-            logUnexpectedSigkill(exitCode, shouldStopSupervising()) { TerminalLog.append(it) }
+            logUnexpectedSigkill(exitCode, shouldStopSupervising(), uptimeMs = uptimeMs) { TerminalLog.append(it) }
             return true
         } catch (e: Exception) {
             TerminalLog.append("[SnowLuma] 启动异常: ${e.message.orEmpty()}")

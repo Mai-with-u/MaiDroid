@@ -234,4 +234,36 @@ class AutoErrorExtractorTest {
         assertTrue(withAdapterError.contextText.contains("maibot-team.snowluma-adapter"))
         assertFalse(withAdapterError.contextText.contains("image_embedding_input"))
     }
+
+    @Test
+    fun maiBotBootDraftKeepsSigkillUptimeDiagnosticLineWithoutSplittingFingerprint() {
+        val draftA = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 137），请查看终端输出里的报错",
+            recentRunLines = listOf(
+                "[MaiBot] Process started (PID: 11498)",
+                "[MaiBot] Process exited with code: 137",
+                "[MaiDroid] 容器进程收到 SIGKILL(137)，本轮已运行 305s，当前本应用子进程数：19"
+            ),
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+        val draftB = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 137），请查看终端输出里的报错",
+            recentRunLines = listOf(
+                "[MaiBot] Process started (PID: 22100)",
+                "[MaiBot] Process exited with code: 137",
+                "[MaiDroid] 容器进程收到 SIGKILL(137)，本轮已运行 1842s，当前本应用子进程数：27"
+            ),
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+
+        assertTrue(draftA.contextText.contains("本轮已运行 305s"))
+        assertTrue(draftA.contextText.contains("子进程数：19"))
+        assertEquals(draftA.fingerprint, draftB.fingerprint)
+    }
 }

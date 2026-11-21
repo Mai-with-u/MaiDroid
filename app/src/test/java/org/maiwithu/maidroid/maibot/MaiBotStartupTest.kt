@@ -1,7 +1,9 @@
 package org.maiwithu.maidroid.maibot
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MaiBotStartupTest {
@@ -113,5 +115,43 @@ class MaiBotStartupTest {
         assertEquals("$started (PID: 2)\nrun2\n$started (PID: 3)", maiBotRecentRunOutput(lines))
         assertEquals("a\nb", maiBotRecentRunOutput(listOf("a", "b")))
         assertEquals("$started (PID: 1)\nonly", maiBotRecentRunOutput(listOf("$started (PID: 1)", "only")))
+    }
+
+    @Test
+    fun `stable run resets consecutive exit count and restart backoff`() {
+        val initial = MaiBotProcessSupervisor.INITIAL_RESTART_DELAY_MS
+        val maxDelay = MaiBotProcessSupervisor.MAX_RESTART_DELAY_MS
+
+        // 短期退出：计数加一，本轮用当前间隔等待，下轮退避翻倍
+        val short1 = nextMaiBotRestartState(uptimeMs = 4_000L, currentConsecutiveExits = 0, currentRestartDelayMs = initial)
+        assertEquals(1, short1.consecutiveExits)
+        assertEquals(initial, short1.waitDelayMs)
+        assertEquals(initial * 2, short1.nextDelayMs)
+        assertFalse(short1.resetFromStableRun)
+
+        val short2 = nextMaiBotRestartState(uptimeMs = 15_000L, currentConsecutiveExits = short1.consecutiveExits, currentRestartDelayMs = maxDelay)
+        assertEquals(2, short2.consecutiveExits)
+        assertEquals(maxDelay, short2.waitDelayMs)
+        assertEquals(maxDelay, short2.nextDelayMs)
+        assertFalse(short2.resetFromStableRun)
+
+        // 稳定运行满 10 分钟：即使前面累过计数、退避到上限，也立刻归零并按 5s 快速拉起
+        val stable = nextMaiBotRestartState(
+            uptimeMs = MaiBotProcessSupervisor.STABLE_RUNTIME_MS,
+            currentConsecutiveExits = 2,
+            currentRestartDelayMs = maxDelay
+        )
+        assertEquals(0, stable.consecutiveExits)
+        assertEquals(initial, stable.waitDelayMs)
+        assertEquals(initial, stable.nextDelayMs)
+        assertTrue(stable.resetFromStableRun)
+    }
+
+    @Test
+    fun `background crash report triggers at threshold and throttles until reset`() {
+        assertFalse(shouldReportBackgroundMaiBotCrash(consecutiveExits = 1, lastReportedConsecutiveExits = 0))
+        assertTrue(shouldReportBackgroundMaiBotCrash(consecutiveExits = 2, lastReportedConsecutiveExits = 0))
+        assertFalse(shouldReportBackgroundMaiBotCrash(consecutiveExits = 3, lastReportedConsecutiveExits = 2))
+        assertTrue(shouldReportBackgroundMaiBotCrash(consecutiveExits = 4, lastReportedConsecutiveExits = 2))
     }
 }

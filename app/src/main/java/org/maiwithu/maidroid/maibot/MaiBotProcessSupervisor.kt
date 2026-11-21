@@ -48,7 +48,8 @@ internal class MaiBotProcessSupervisor(
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val webUiPortTaken: () -> Boolean = MaiBotWebUi::isPortTaken
+    private val webUiPortTaken: () -> Boolean = MaiBotWebUi::isPortTaken,
+    private val nowMs: () -> Long = System::currentTimeMillis
 ) {
 
     companion object {
@@ -59,10 +60,11 @@ internal class MaiBotProcessSupervisor(
         /** 每次拉起 MaiBot 都会打这一行；QQ 官方机器人据此判断之前的连接报错已经属于上一轮。 */
         const val PROCESS_STARTED_LOG = "$LOG_PREFIX Process started"
 
-        // 意外退出后的重启间隔：5 秒起步，每次翻倍，最长 1 分钟。
-        private const val INITIAL_RESTART_DELAY_MS = 5_000L
-        private const val MAX_RESTART_DELAY_MS = 60_000L
-        private const val BACKOFF_MULTIPLIER = 2.0
+        // 意外退出后的重启间隔：5 秒起步，每次翻倍，最长 1 分钟；单轮稳定跑满 10 分钟后清零计数与退避。
+        internal const val INITIAL_RESTART_DELAY_MS = 5_000L
+        internal const val MAX_RESTART_DELAY_MS = 60_000L
+        internal const val BACKOFF_MULTIPLIER = 2.0
+        internal const val STABLE_RUNTIME_MS = 10 * 60 * 1000L
 
         // 停止时等待监管协程退出的上限；读日志是阻塞调用，进程已被杀掉后通常会立即返回。
         private const val STOP_JOIN_TIMEOUT_MS = 10_000L
@@ -271,12 +273,14 @@ internal class MaiBotProcessSupervisor(
             withTimeoutOrNull(STOP_JOIN_TIMEOUT_MS) { runningJob.join() }
         }
         cleanupStaleProcesses()
-        _status.update { it.copy(running = false) }
+        // 主动停止、重启、维护或低电量暂停时清零连续短期退出计数，避免和下一次异常退出混算
+        _status.update { it.copy(running = false, consecutiveExits = 0) }
         return outcome
     }
 
     /**
-     * 监管循环：每轮启动前先清理残留孤儿进程 -> 检查端口 -> 拉起 MaiBot -> 读日志直到退出 -> 非主动停止则退避后重启。
+     * 监管循环：每轮启动前先清理残留孤儿进程 -> 检查端口 -> 拉起 MaiBot -> 读日志直到退出 ->
+     * 依据本轮实际运行时长决定连续退出计数与退避间隔 -> 退避后重启。
      * 整个循环属于同一个 job，重启不会额外生出并行的监管协程。
      */
     private suspend fun superviseProcess(ownGeneration: Int) {
@@ -287,14 +291,14 @@ internal class MaiBotProcessSupervisor(
             cleanupStaleProcesses()
             // 每次拉起前（含意外退出后重启前）都看一眼 WebUI 端口，等的时候被停止就不再拉起
             if (!awaitFreeWebUiPort(ownGeneration)) break
-            runProcessOnce(ownGeneration)
-            if (shouldStayStopped(ownGeneration)) break
+            val decision = runProcessOnce(ownGeneration, restartDelayMs) ?: break
+            if (decision.resetFromStableRun) {
+                appendLog("$LOG_PREFIX 上轮已稳定运行 10 分钟，连续退出计数与重启退避清零")
+            }
 
-            appendLog("$LOG_PREFIX Restarting in ${restartDelayMs}ms...")
-            delay(restartDelayMs)
-            restartDelayMs = (restartDelayMs * BACKOFF_MULTIPLIER)
-                .toLong()
-                .coerceAtMost(MAX_RESTART_DELAY_MS)
+            appendLog("$LOG_PREFIX Restarting in ${decision.waitDelayMs}ms...")
+            delay(decision.waitDelayMs)
+            restartDelayMs = decision.nextDelayMs
         }
     }
 
@@ -328,20 +332,22 @@ internal class MaiBotProcessSupervisor(
         return true
     }
 
-    // 跑一轮 MaiBot：启动 -> 把输出逐行写进终端日志 -> 等它退出。阻塞调用，只在监管协程（IO 线程）里执行。
-    private fun runProcessOnce(ownGeneration: Int) {
+    // 跑一轮 MaiBot：启动 -> 把输出逐行写进终端日志 -> 等它退出，并返回下次重启决策；主动停止时返回 null。
+    // 阻塞调用，只在监管协程（IO 线程）里执行。
+    private fun runProcessOnce(ownGeneration: Int, currentRestartDelayMs: Long): MaiBotRestartDecision? {
         var startedProcess: Process? = null
-        try {
+        return try {
             val script = MaiBotScripts.launch()
             appendLog("$LOG_PREFIX Starting: ${commandRunner.commandLine(script).joinToString(" ")}")
 
             val currentProcess = commandRunner.start(script, MaiBotAgreement.environment(paths))
+            val startedAtMs = nowMs()
             startedProcess = currentProcess
             process = currentProcess
             // 进程刚起来时若恰好收到停止请求，stopLocked 可能还没看到这个进程，这里自行结束它（MaiBot 还没起来，没有要保存的）。
             if (shouldStayStopped(ownGeneration)) {
                 forceKill(currentProcess)
-                return
+                return null
             }
 
             _status.update { it.copy(running = true) }
@@ -352,13 +358,14 @@ internal class MaiBotProcessSupervisor(
             }
 
             val exitCode = currentProcess.waitFor()
+            val uptimeMs = (nowMs() - startedAtMs).coerceAtLeast(0L)
             appendLog("$LOG_PREFIX Process exited with code: $exitCode")
-            logUnexpectedSigkill(exitCode, shouldStayStopped(ownGeneration), ::appendLog)
-            recordUnexpectedExit(ownGeneration, exitCode)
+            logUnexpectedSigkill(exitCode, shouldStayStopped(ownGeneration), uptimeMs = uptimeMs, onLog = ::appendLog)
+            recordUnexpectedExit(ownGeneration, exitCode, uptimeMs, currentRestartDelayMs)
         } catch (e: Exception) {
             appendLog("$LOG_PREFIX Failed to start process: ${e.message}")
             Log.e(TAG, "Failed to start MaiBot process", e)
-            recordUnexpectedExit(ownGeneration, exitCode = null)
+            recordUnexpectedExit(ownGeneration, exitCode = null, uptimeMs = 0L, currentRestartDelayMs = currentRestartDelayMs)
         } finally {
             // 只清理本轮自己的进程引用：停止超时后迟迟退出的旧一轮不能覆盖新一轮的运行状态。
             if (process === startedProcess) {
@@ -368,10 +375,26 @@ internal class MaiBotProcessSupervisor(
         }
     }
 
-    // 主动停止、重启、维护时进程被结束不算意外退出；其余的退出（含没能起来）计数，供 OOBE 判断是否起不来。
-    private fun recordUnexpectedExit(ownGeneration: Int, exitCode: Int?) {
-        if (shouldStayStopped(ownGeneration)) return
-        _status.update { it.copy(exitCount = it.exitCount + 1, lastExitCode = exitCode) }
+    // 主动停止、重启、维护时进程被结束不算意外退出；其余退出更新累计计数（供 OOBE 基线差值）
+    // 与连续短期意外退出计数（满 10 分钟稳定运行后归零，避免挂机偶发被杀误报 MB-CRASH）。
+    private fun recordUnexpectedExit(
+        ownGeneration: Int,
+        exitCode: Int?,
+        uptimeMs: Long,
+        currentRestartDelayMs: Long
+    ): MaiBotRestartDecision? {
+        if (shouldStayStopped(ownGeneration)) return null
+        var decision: MaiBotRestartDecision? = null
+        _status.update { current ->
+            val next = nextMaiBotRestartState(uptimeMs, current.consecutiveExits, currentRestartDelayMs)
+            decision = next
+            current.copy(
+                exitCount = current.exitCount + 1,
+                consecutiveExits = next.consecutiveExits,
+                lastExitCode = exitCode
+            )
+        }
+        return decision
     }
 
     private suspend fun killProcess() {
@@ -415,17 +438,64 @@ internal class MaiBotProcessSupervisor(
 /**
  * MaiBot 进程的状态快照。
  *
- * exitCount 是进程启动后意外退出（含没能启动起来）的累计次数，主动停止、重启不算；
- * 等 WebUI 的一方先记下当前值，之后看它涨了几次就知道 MaiBot 是不是起来就崩。
- * launchBlockedReason 是最近一次启动请求因启动前检查没通过而被拦下的原因，成功拉起后清空。
- * webUiPortTaken 表示 WebUI 端口被别的程序占着、正等它空出来才拉起 MaiBot。
+ * exitCount 是进程启动后意外退出（含没能启动起来）的单调累计次数，供 OOBE 与唤醒页按基线差值统计；
+ * consecutiveExits 是连续短期意外退出次数（单轮稳定运行满 10 分钟或主动停止后归零），供后台 MB-CRASH 上报判断；
+ * launchBlockedReason 是最近一次启动请求因启动前检查没通过而被拦下的原因，成功拉起后清空；
+ * webUiPortTaken 表示 WebUI 端口被别的程序占着、正等它空出来才拉起 MaiBot；
  * lowBatteryPaused 表示手机电量低、又没插电，MaiBot 已经（或正在）保存好数据停下，插上电后才拉起。
  */
 internal data class MaiBotProcessStatus(
     val running: Boolean = false,
     val exitCount: Int = 0,
+    val consecutiveExits: Int = 0,
     val lastExitCode: Int? = null,
     val launchBlockedReason: String? = null,
     val webUiPortTaken: Boolean = false,
     val lowBatteryPaused: Boolean = false
 )
+
+/** 一轮 MaiBot 意外退出后给出的重启节奏与连续崩溃统计结果。 */
+internal data class MaiBotRestartDecision(
+    val consecutiveExits: Int,
+    val waitDelayMs: Long,
+    val nextDelayMs: Long,
+    val resetFromStableRun: Boolean
+)
+
+/**
+ * 依据本轮实际运行时长计算连续退出计数和重启退避：
+ * 稳定运行满 10 分钟后清零计数并立刻以初始间隔（5s）重拉；
+ * 短期内退出则累加计数并将下轮退避翻倍封顶。
+ */
+internal fun nextMaiBotRestartState(
+    uptimeMs: Long,
+    currentConsecutiveExits: Int,
+    currentRestartDelayMs: Long
+): MaiBotRestartDecision {
+    if (uptimeMs >= MaiBotProcessSupervisor.STABLE_RUNTIME_MS) {
+        return MaiBotRestartDecision(
+            consecutiveExits = 0,
+            waitDelayMs = MaiBotProcessSupervisor.INITIAL_RESTART_DELAY_MS,
+            nextDelayMs = MaiBotProcessSupervisor.INITIAL_RESTART_DELAY_MS,
+            resetFromStableRun = currentConsecutiveExits > 0 ||
+                currentRestartDelayMs > MaiBotProcessSupervisor.INITIAL_RESTART_DELAY_MS
+        )
+    }
+    val nextDelay = (currentRestartDelayMs * MaiBotProcessSupervisor.BACKOFF_MULTIPLIER)
+        .toLong()
+        .coerceAtMost(MaiBotProcessSupervisor.MAX_RESTART_DELAY_MS)
+    return MaiBotRestartDecision(
+        consecutiveExits = currentConsecutiveExits + 1,
+        waitDelayMs = currentRestartDelayMs,
+        nextDelayMs = nextDelay,
+        resetFromStableRun = false
+    )
+}
+
+/** 后台长驻时判断是否需要向远端上报一次 MB-CRASH：连续短期退出达到阈值后按步长节流。 */
+internal fun shouldReportBackgroundMaiBotCrash(
+    consecutiveExits: Int,
+    lastReportedConsecutiveExits: Int
+): Boolean =
+    consecutiveExits >= MaiBotStartup.MAX_EXITS &&
+        consecutiveExits >= lastReportedConsecutiveExits + MaiBotStartup.MAX_EXITS

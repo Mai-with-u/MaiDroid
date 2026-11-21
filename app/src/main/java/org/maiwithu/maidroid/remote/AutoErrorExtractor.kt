@@ -97,6 +97,8 @@ internal object AutoErrorExtractor {
 
     private val MAIBOT_BOOT_WHITELIST_REGEXES = listOf(
         Regex("""\[MaiBot]\s+(?:Process started|Process exited with code:|Failed to start process:|Runtime validation failed:)"""),
+        // 放行被系统 SIGKILL 强杀时的本轮运行时长与子进程水位日志，便于现场分辨冷启动崩溃与后台长跑被杀
+        Regex("""\[MaiDroid]\s+容器进程收到\s+SIGKILL\(137\)"""),
         Regex("""proot\s+(?:error|warning):""", RegexOption.IGNORE_CASE),
         Regex("""(?:Exec format error|cannot execute binary file|Segmentation fault|Illegal instruction|^\s*Killed\s*$)"""),
         Regex("""(?:TOMLDecodeError|tomlkit\.exceptions|Invalid TOML|ModuleNotFoundError|No module named|ImportError)"""),
@@ -315,7 +317,13 @@ internal object AutoErrorExtractor {
             }.orEmpty()
             "maibot_boot|$errorCode|${normalizeSignatureLine(pyErrLine)}|$pyFrameKey"
         } else {
-            val fallbackSig = contextText.lines().lastOrNull { it.isNotBlank() } ?: redactedMessage
+            // 计算无 Traceback 指纹时跳过带运行时长与子进程数动态数值的 SIGKILL 补充行，避免同因报错按秒分裂指纹
+            val fallbackSig = contextText.lines()
+                .lastOrNull { line ->
+                    line.isNotBlank() && !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)")
+                }
+                ?: contextText.lines().lastOrNull { it.isNotBlank() }
+                ?: redactedMessage
             "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(fallbackSig)}"
         }
 
