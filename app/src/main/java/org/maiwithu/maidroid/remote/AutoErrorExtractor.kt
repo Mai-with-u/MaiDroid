@@ -86,6 +86,20 @@ internal object AutoErrorExtractor {
         FailureStep.SnowLumaAdapterConfig
     )
 
+    // 识别终端里的 NapCat 字符画二维码、扫码提示噪音以及扫码风控失败行，避免占满 50 行上报窗口或误充当配置失败标题
+    private val QR_ASCII_ART_LINE = Regex("""^(?:\[[^\]]+]\s*)?[█▄▀ ]*[▄▀][█▄▀ ]{7,}$""")
+
+    private val NAPCAT_QR_NOISE_KEYWORDS = listOf(
+        "二维码解码url",
+        "如果控制台二维码无法扫码",
+        "请扫描下面的二维码",
+        "二维码已保存到",
+        "请求刷新二维码",
+        "二维码已被扫描"
+    )
+
+    private val NAPCAT_LOGIN_ERROR_RE = Regex("""\[Core]\s*\[Login]\s*Login Error""", RegexOption.IGNORE_CASE)
+
     private val EXCEPTION_CLASS_LINE =
         Regex("""^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit|Interrupt)|SyntaxError|IndentationError|MemoryError|SystemExit|TOMLDecodeError|ModuleNotFoundError|ImportError)\b.*""")
 
@@ -220,6 +234,7 @@ internal object AutoErrorExtractor {
                 if (trimmed.isEmpty()) return@filter false
                 if (trimmed.contains(FAILURE_LOG_PREFIX)) return@filter false
                 if (containsChatPrivacyKeyword(trimmed)) return@filter false
+                if (isQqQrNoiseLine(trimmed)) return@filter false
                 if (!shouldKeepMaiBotLineInInstall(trimmed, step, setupComplete)) return@filter false
                 true
             }
@@ -237,6 +252,7 @@ internal object AutoErrorExtractor {
             val lower = line.lowercase()
             !line.startsWith("[MaiDroid] ") &&
                 (allowMaiBotSignal || !line.startsWith("[MaiBot]")) &&
+                (!allowMaiBotSignal || !NAPCAT_LOGIN_ERROR_RE.containsMatchIn(line)) &&
                 INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
         } ?: redactedMessage
 
@@ -404,6 +420,13 @@ internal object AutoErrorExtractor {
     private fun containsChatPrivacyKeyword(line: String): Boolean {
         val lower = line.lowercase()
         return CHAT_PRIVACY_KEYWORDS.any { lower.contains(it) }
+    }
+
+    // 剔除 NapCat 输出的字符画二维码与扫码提示，防止其占满 50 行尾部上下文并掩盖前置真实异常。
+    private fun isQqQrNoiseLine(trimmed: String): Boolean {
+        if (QR_ASCII_ART_LINE.matches(trimmed)) return true
+        val lower = trimmed.lowercase()
+        return NAPCAT_QR_NOISE_KEYWORDS.any { lower.contains(it) }
     }
 
     // OOBE 完成后在安装/协议端阶段排障时，屏蔽无关的 MaiBot 后台运行异常（如图片嵌入/模型调用错误），

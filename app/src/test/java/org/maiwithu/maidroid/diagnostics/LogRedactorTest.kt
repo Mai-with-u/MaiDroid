@@ -61,4 +61,29 @@ class LogRedactorTest {
         assertEquals(once, redactor.redact(once))
         assertFalse(once.contains("a1b2c3d4e5f6"))
     }
+
+    @Test
+    fun qqQrLoginUrlAndAsciiArtAreRedactedIdempotently() {
+        val raw = """
+            [NapCat] ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+            [NapCat] █ ▄▄▄▄▄ █▀ █▀▀▀ ▀▀██▄█▄▄▄▄█ ▄▄▄▄▄ █
+            [NapCat] █▄▀█ █ ▄▀█ ▀ ▄██▄▀█▄█▄  ▀▀▀▀▄ ▄▀▄██
+            [NapCat] █▄▄▄▄▄▄▄█▄████▄█▄▄▄▄█▄▄▄█▄██▄▄▄█▄██
+            [NapCat] 二维码解码URL: https://txz.qq.com/p?k=oddpZqC*wMEqVM8-0v0prZlBXi9k6-oh&f=1600001615
+            [NapCat] 备用地址 https://ssl.ptlogin2.qq.com/ptqrlogin?qrsig=abcdef123456
+            [NapCat] Downloading 50% [████████    ]
+        """.trimIndent()
+
+        val once = redactor.redact(raw)
+        val expected = """
+            <已隐藏:登录二维码>
+            [NapCat] 二维码解码URL: <已隐藏:QQ登录链接>
+            [NapCat] 备用地址 <已隐藏:QQ登录链接>
+            [NapCat] Downloading 50% [████████    ]
+        """.trimIndent()
+
+        assertEquals(expected, once)
+        // 验证二次脱敏保持完全幂等
+        assertEquals(once, redactor.redact(once))
+    }
 }

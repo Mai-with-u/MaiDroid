@@ -7,7 +7,7 @@ import org.maiwithu.maidroid.runtime.ContainerDns
  * 1. MaiDroid 自己知道的具体值（MaiBot WebUI 令牌、NapCat 令牌、QQ 官方机器人 AppID/AppSecret、容器 SSH 密码、
  *    大模型 API Key、登录过的 QQ 号）原样换成“<已隐藏:名字>”，比按格式猜准；
  * 2. 再按常见格式兜底：sk- 开头的密钥、Bearer 令牌、地址里的 token=、“token: …”“api_key = …”这类键值、
- *    QQ 号/群号字样后面的数字、手机号、公网 IP（局域网地址和容器用的公共 DNS 保留，排查网络要看）。
+ *    QQ 扫码登录授权链接与字符画二维码、QQ 号/群号字样后面的数字、手机号、公网 IP（局域网地址和容器用的公共 DNS 保留，排查网络要看）。
  * 聊天内容没法可靠地认出来，反馈弹窗里会提醒用户自己看一眼。
  */
 internal class LogRedactor(secrets: List<Secret>) {
@@ -33,6 +33,11 @@ internal class LogRedactor(secrets: List<Secret>) {
         }
         result = API_KEY.replace(result, "sk-<已隐藏>")
         result = BEARER.replace(result) { "${it.groupValues[1]}<已隐藏>" }
+        // QQ 扫码授权链接与字符画二维码先于 URL 参数规则整段替换，避免凭证参数碎片外泄或只换一半。
+        result = QQ_QR_LOGIN_URL.replace(result, "<已隐藏:QQ登录链接>")
+        result = QR_ASCII_ART_BLOCK.replace(result) { match ->
+            if (match.value.endsWith("\n")) "<已隐藏:登录二维码>\n" else "<已隐藏:登录二维码>"
+        }
         result = URL_SECRET_PARAM.replace(result) { "${it.groupValues[1]}<已隐藏>" }
         result = KEY_VALUE_SECRET.replace(result) { "${it.groupValues[1]}<已隐藏>" }
         result = QQ_NUMBER.replace(result) { "${it.groupValues[1]}<QQ号>" }
@@ -46,6 +51,10 @@ internal class LogRedactor(secrets: List<Secret>) {
 
         val API_KEY = Regex("""sk-[A-Za-z0-9_\-]{12,}""")
         val BEARER = Regex("""(?i)(Bearer\s+)[A-Za-z0-9._\-~+/=]{12,}""")
+        // QQ 扫码登录授权链接（包含 txz.qq.com 与 ptlogin2 登录域）属于短期敏感凭证，离开手机前整段打码。
+        val QQ_QR_LOGIN_URL = Regex("""(?i)https?://(?:txz|ssl\.ptlogin2|xui\.ptlogin2)\.qq\.com/[^\s"'<>]+""")
+        // 识别 NapCat 控制台输出的字符画二维码（至少含 ▄/▀ 上下半块方块且宽度 >= 8），防止与进度条混淆，多行折叠为单行占位符。
+        val QR_ASCII_ART_BLOCK = Regex("""(?m)(?:^(?:\[[^\]]+]\s*)?[█▄▀ ]*[▄▀][█▄▀ ]{7,}\r?\n?)+""")
         // 值以 < 开头的是已经换好的占位符（或 MaiDroid 自己打的 <redacted>），不再动
         val URL_SECRET_PARAM = Regex("""(?i)([?&](?:token|access_token|key|secret|password)=)(?!<)[^&\s#"']+""")
 

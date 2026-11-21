@@ -266,4 +266,63 @@ class AutoErrorExtractorTest {
         assertTrue(draftA.contextText.contains("子进程数：19"))
         assertEquals(draftA.fingerprint, draftB.fingerprint)
     }
+
+    @Test
+    fun qqConfigDraftDropsQrNoiseAndDoesNotUseLoginErrorAsTitle() {
+        // 超过 50 行的日志，中间夹杂两整块字符画二维码与解码 URL，验证去除噪音后前置 MaiBot 报错不会被挤出窗口
+        val qrBlock = List(22) { idx ->
+            if (idx % 2 == 0) "[NapCat] █ ▄▄▄▄▄ █▀ █▀▀▀ ▀▀██▄█▄▄▄▄█ ▄▄▄▄▄ █"
+            else "[NapCat] █▄▀█ █ ▄▀█ ▀ ▄██▄▀█▄█▄  ▀▀▀▀▄ ▄▀▄██"
+        }
+        val fillerLines = List(25) { "[NapCat] 11-22 00:39:${10 + it} [info] ordinary status line $it" }
+        val fullLogs = buildList {
+            add("[MaiBot] 插件 maibot-team.snowluma-adapter manifest 校验失败: 版本 1.4.3 低于最小要求 1.4.4")
+            addAll(fillerLines)
+            addAll(qrBlock)
+            add("[NapCat] 二维码解码URL: https://txz.qq.com/p?k=oddpZqC*wMEqVM8-0v0prZlBXi9k6-oh&f=1600001615")
+            add("[NapCat] 11-22 00:39:59 [warn] 二维码已保存到 /root/napcat/cache/qrcode.png")
+            add("[NapCat] 11-22 00:40:08 [info] [Core] [Login] 二维码已被扫描，等待确认...")
+            add("[NapCat] 11-22 00:40:09 [error] [Core] [Login] Login Error,ErrType:  1  ErrCode: 5")
+            add("[NapCat] 11-22 00:40:38 [warn] [Core] [Login] 请求刷新二维码 {\"requested\":true,\"msfStatus\":1}")
+            add("[NapCat] 11-22 00:40:38 [warn] 请扫描下面的二维码，然后在手Q上授权登录：")
+            addAll(qrBlock)
+            add("[NapCat] 11-22 00:40:50 [error] [Core] [Login] Login Error,ErrType:  1  ErrCode: 5")
+            add("[NapCat] 等麦麦生成 QQ 适配器的配置，生成后自动迁移连接设置")
+        }
+
+        val draftWithMaiBotErr = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.NapCatAdapterConfig,
+            cause = FailureCause.MaiBotTooOld,
+            message = "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            terminalPlainLines = fullLogs,
+            setupComplete = true,
+            redactor = testRedactor()
+        )
+
+        assertFalse(draftWithMaiBotErr.contextText.contains("txz.qq.com"))
+        assertFalse(draftWithMaiBotErr.contextText.contains("█"))
+        assertFalse(draftWithMaiBotErr.contextText.contains("▄"))
+        assertFalse(draftWithMaiBotErr.contextText.contains("▀"))
+        assertTrue(draftWithMaiBotErr.contextText.contains("maibot-team.snowluma-adapter"))
+        assertFalse(draftWithMaiBotErr.title.contains("Login Error"))
+
+        // 即使没有安装失败显式尾行或前置 MaiBot 报错，Login Error 也不得抢占 QQ-CONFIG 的标题
+        val loginErrOnlyLogs = listOf(
+            "[NapCat] 二维码解码URL: https://txz.qq.com/p?k=secret",
+            "[NapCat] 11-22 00:40:50 [error] [Core] [Login] Login Error,ErrType:  1  ErrCode: 5",
+            "[NapCat] 等麦麦生成 QQ 适配器的配置，生成后自动迁移连接设置"
+        )
+        val draftLoginOnly = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.NapCatAdapterConfig,
+            cause = null,
+            message = "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            terminalPlainLines = loginErrOnlyLogs,
+            setupComplete = true,
+            redactor = testRedactor()
+        )
+        assertFalse(draftLoginOnly.title.contains("Login Error"))
+        assertTrue(draftLoginOnly.title.contains("等了 5 分钟"))
+        assertTrue(draftLoginOnly.contextText.contains("Login Error"))
+        assertFalse(draftLoginOnly.contextText.contains("txz.qq.com"))
+    }
 }
