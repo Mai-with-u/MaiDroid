@@ -77,6 +77,20 @@ test("Diagnostic advisor surfaces missing battery whitelist, low disk, and DNS s
   assert.equal(result.replyText.includes("清理空间"), true);
   assert.equal(result.replyText.includes("私人 DNS"), true);
   assert.equal(result.replyText.includes("忽略电池优化"), true);
+
+  const prootAdvice = buildDiagnosticAdvice("P18-2AA", {
+    appVersion: "0.3.0",
+    device: "HUAWEI MLR-AL00",
+    errorCode: "CT-PROOT/PROOT-182",
+  });
+  assert.equal(prootAdvice.replyText.includes("卓易通"), true);
+
+  const oldMaiBotAdvice = buildDiagnosticAdvice("MBO-123", {
+    appVersion: "0.3.0",
+    device: "Xiaomi 24069RA21C",
+    errorCode: "QQ-PRECHECK/MB-OLD",
+  });
+  assert.equal(oldMaiBotAdvice.replyText.includes("MaiBot 更新"), true);
 });
 
 test("validateErrorReportPayload normalizes fields, filters extra whitelist, and rejects bad inputs", () => {
@@ -628,6 +642,7 @@ test("admin gate page hides console until token verified and all inline scripts 
   assert.equal(ADMIN_HTML.includes("/admin/api/errors"), false);
   assert.equal(ADMIN_HTML.includes("/admin/api/console"), true);
   assert.equal(ADMIN_CONSOLE_MARKUP.includes('data-act="errReload"'), true);
+  assert.equal(ADMIN_CONSOLE_SCRIPT.includes("已完成引导"), true);
 
   const db = createMockD1();
   const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };

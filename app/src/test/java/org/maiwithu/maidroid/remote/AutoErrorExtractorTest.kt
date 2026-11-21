@@ -180,4 +180,58 @@ class AutoErrorExtractorTest {
         assertTrue(draftA.contextText.contains("Permission denied"))
         assertEquals(draftA.fingerprint, draftB.fingerprint)
     }
+
+    @Test
+    fun qqConfigDraftIgnoresUnrelatedMaiBotExceptionsAndAggregatesSameFailure() {
+        val logA = listOf(
+            "[NapCat] [NativeCrashHandler.cpp][uploadCrashEvent][331]get null crashDetailBean, return!",
+            "[MaiBot] 11-21 23:17:25 [模型] Traceback (most recent call last):",
+            "[MaiBot]   raise ValueError(\"图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body\")",
+            "[MaiBot] ValueError: 图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body",
+            "[NapCat] 安装失败: 等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            "[NapCat] 等麦麦生成 QQ 适配器的配置，生成后自动迁移连接设置"
+        )
+        val logB = listOf(
+            "[MaiBot] 11-21 23:40:01 [模型] RuntimeError: 另一个无关的大模型超时",
+            "[NapCat] 安装失败: 等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            "[NapCat] 等麦麦生成 QQ 适配器的配置，生成后自动迁移连接设置"
+        )
+
+        val draftA = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.NapCatAdapterConfig,
+            cause = null,
+            message = "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            terminalPlainLines = logA,
+            setupComplete = true,
+            redactor = testRedactor()
+        )
+        val draftB = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.NapCatAdapterConfig,
+            cause = null,
+            message = "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            terminalPlainLines = logB,
+            setupComplete = true,
+            redactor = testRedactor()
+        )
+
+        assertFalse(draftA.title.contains("image_embedding_input"))
+        assertFalse(draftA.contextText.contains("image_embedding_input"))
+        assertTrue(draftA.title.contains("等了 5 分钟"))
+        assertEquals(draftA.fingerprint, draftB.fingerprint)
+
+        // QQ-CONFIG 下真正与适配器相关的 MaiBot 加载报错应当保留，方便定位原因
+        val withAdapterError = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.NapCatAdapterConfig,
+            cause = FailureCause.MaiBotTooOld,
+            message = "MaiBot 拒绝加载 QQ 适配器（当前版本低于最小要求）",
+            terminalPlainLines = listOf(
+                "[MaiBot] 插件 maibot-team.snowluma-adapter manifest 校验失败: 版本 1.4.3 低于最小要求 1.4.4",
+                "[MaiBot] ValueError: 图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body"
+            ),
+            setupComplete = true,
+            redactor = testRedactor()
+        )
+        assertTrue(withAdapterError.contextText.contains("maibot-team.snowluma-adapter"))
+        assertFalse(withAdapterError.contextText.contains("image_embedding_input"))
+    }
 }

@@ -143,4 +143,24 @@ class FailureCodesTest {
         )
         assertEquals(FailureCause.ConnectionLost, diagnoseFailureCause("ConnectException: Failed to connect to /1.2.3.4:443"))
     }
+
+    @Test
+    fun proot182AndOldMaiBotAreRecognizedEvenWithBlankOutput() {
+        val prootFailure = failureOf(FailureStep.ContainerProot, "命令退出码: 182", output = "")
+        assertEquals("CT-PROOT/PROOT-182", prootFailure.code)
+        assertEquals(FailureCause.ProotLoaderFailed, prootFailure.cause)
+
+        val oldMaiBotFailure = failureOf(
+            FailureStep.NapCatPrecheck,
+            "QQ 适配器需要 MaiBot 1.4.4 以上（当前 1.4.3），请先更新 MaiBot"
+        )
+        assertEquals("QQ-PRECHECK/MB-OLD", oldMaiBotFailure.code)
+        assertEquals(FailureCause.MaiBotTooOld, oldMaiBotFailure.cause)
+        assertEquals(FailureAction.MaiBotUpdate, oldMaiBotFailure.cause?.action)
+
+        assertEquals(
+            FailureCause.MaiBotTooOld,
+            diagnoseFailureCause("Host 版本不兼容: 版本 1.4.3 低于最小要求 1.4.4")
+        )
+    }
 }

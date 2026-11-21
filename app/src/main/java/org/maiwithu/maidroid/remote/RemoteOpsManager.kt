@@ -401,7 +401,8 @@ internal class RemoteOpsManager(
             message = draft.message,
             contextText = draft.contextText,
             extra = ErrorReportExtraPayload(
-                oobeStep = settings.oobeStep,
+                // OOBE 完成后 settings.oobeStep 仍保留最后一步 Install，仅未完成引导时才上报步骤以免看板误导
+                oobeStep = if (settings.setupComplete) null else settings.oobeStep,
                 setupComplete = settings.setupComplete,
                 activeQqClient = activeQq,
                 availableStorageMb = lightMeta.availableStorageMb,

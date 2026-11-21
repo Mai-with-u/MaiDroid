@@ -86,4 +86,26 @@ class RemoteManifestTest {
             updateRemoteFailureHints(emptyList())
         }
     }
+
+    @Test
+    fun remoteFailureHintsMatchZeroOutputExitCodeViaSummaryFallback() {
+        try {
+            updateRemoteFailureHints(
+                listOf(
+                    RemoteFailureHint(
+                        id = "h-proot-182",
+                        steps = listOf("CT-STORAGE", "CT-PROOT"),
+                        containsAny = listOf("exit code: 182", "命令退出码: 182"),
+                        title = "暂不支持鸿蒙卓易通容器",
+                        advice = "proot 加载器退出码 182，请在原生安卓设备运行。"
+                    )
+                )
+            )
+            val failure = failureOf(FailureStep.ContainerStorage, "命令退出码: 182", output = "")
+            assertEquals("CT-STORAGE/PROOT-182", failure.code)
+            assertEquals("暂不支持鸿蒙卓易通容器", failure.remoteHint?.title)
+        } finally {
+            updateRemoteFailureHints(emptyList())
+        }
+    }
 }

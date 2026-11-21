@@ -72,12 +72,18 @@ internal object AutoErrorExtractor {
     private val INSTALL_ERROR_KEYWORDS = listOf(
         "error", "fatal", "failed", "exception", "cannot", "permission denied",
         "exit code", "not found", "returned error", "no such file", "unable to",
-        "segmentation fault", "killed", "exec format", "traceback"
+        "segmentation fault", "killed", "exec format", "traceback",
+        "安装失败", "配置失败", "退出码", "需要 maibot", "还没生成", "不完整", "失败：", "失败:"
     )
 
-    private val MAIBOT_LIFECYCLE_OR_ERROR_WORDS = listOf(
-        "Process started", "Process exited", "Failed to start", "Runtime validation",
-        "Traceback", "Error", "Exception", "Killed", "Segmentation fault", "TOMLDecodeError"
+    // QQ 适配器配置等待期只放行插件加载/依赖相关的 MaiBot 输出，剔除图片嵌入、聊天推理等无关业务异常
+    private val ADAPTER_RELEVANT_MAIBOT_KEYWORDS = listOf(
+        "snowluma", "adapter", "manifest", "插件", "silk-python", "低于最小要求"
+    )
+
+    private val ADAPTER_CONFIG_STEPS = setOf(
+        FailureStep.NapCatAdapterConfig,
+        FailureStep.SnowLumaAdapterConfig
     )
 
     private val EXCEPTION_CLASS_LINE =
@@ -212,7 +218,7 @@ internal object AutoErrorExtractor {
                 if (trimmed.isEmpty()) return@filter false
                 if (trimmed.contains(FAILURE_LOG_PREFIX)) return@filter false
                 if (containsChatPrivacyKeyword(trimmed)) return@filter false
-                if (setupComplete && isLikelyMaiBotRuntimeLine(trimmed)) return@filter false
+                if (!shouldKeepMaiBotLineInInstall(trimmed, step, setupComplete)) return@filter false
                 true
             }
             .takeLast(MAX_INSTALL_TAIL_LINES)
@@ -224,10 +230,13 @@ internal object AutoErrorExtractor {
         }
 
         val sigSourceLines = contextText.lines().map(String::trim).filter(String::isNotEmpty)
+        val allowMaiBotSignal = step in ADAPTER_CONFIG_STEPS
         val highSignalLine = sigSourceLines.lastOrNull { line ->
             val lower = line.lowercase()
-            !line.startsWith("[MaiDroid] ") && INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
-        } ?: sigSourceLines.lastOrNull() ?: redactedMessage
+            !line.startsWith("[MaiDroid] ") &&
+                (allowMaiBotSignal || !line.startsWith("[MaiBot]")) &&
+                INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
+        } ?: redactedMessage
 
         val normalizedSig = normalizeSignatureLine(highSignalLine)
         val fingerprint = sha256Hex("install|$errorCode|$normalizedSig").take(32)
@@ -389,9 +398,13 @@ internal object AutoErrorExtractor {
         return CHAT_PRIVACY_KEYWORDS.any { lower.contains(it) }
     }
 
-    private fun isLikelyMaiBotRuntimeLine(trimmed: String): Boolean {
-        if (!trimmed.startsWith("[MaiBot]")) return false
-        return MAIBOT_LIFECYCLE_OR_ERROR_WORDS.none { trimmed.contains(it) }
+    // OOBE 完成后在安装/协议端阶段排障时，屏蔽无关的 MaiBot 后台运行异常（如图片嵌入/模型调用错误），
+    // 仅在等待 QQ 适配器配置生成时保留插件加载与依赖提示。
+    private fun shouldKeepMaiBotLineInInstall(trimmed: String, step: FailureStep, setupComplete: Boolean): Boolean {
+        if (!setupComplete || !trimmed.startsWith("[MaiBot]")) return true
+        if (step !in ADAPTER_CONFIG_STEPS) return false
+        val lower = trimmed.lowercase()
+        return ADAPTER_RELEVANT_MAIBOT_KEYWORDS.any { lower.contains(it) }
     }
 
     private fun normalizeSignatureLine(line: String): String {

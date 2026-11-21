@@ -63,6 +63,14 @@ const CODE_STEPS: Record<string, { title: string; step: string }> = {
     title: "数据库版本高于要切换的代码分支",
     step: "MaiBot 数据库不支持降级，请保持在更新的版本通道，或在“设置 > MaiBot 更新”升级到最新提交。",
   },
+  "PROOT-182": {
+    title: "当前系统或兼容容器拦截了 proot 加载器",
+    step: "退出码 182 表示容器加载器无法完成内存映射，目前仅支持原生安卓设备，纯血鸿蒙“卓易通”等兼容容器暂无法运行。",
+  },
+  "MB-OLD": {
+    title: "MaiBot 版本低于当前 QQ 适配器要求",
+    step: "请先进入 MaiDroid“设置 > MaiBot 更新”升级到最新版 MaiBot，再回来安装或配置 QQ 适配器。",
+  },
 };
 
 export function buildDiagnosticAdvice(code: string, snap: SnapshotInput): {

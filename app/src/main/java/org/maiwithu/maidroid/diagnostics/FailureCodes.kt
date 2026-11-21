@@ -36,14 +36,23 @@ internal const val FAILURE_LOG_PREFIX = "[MaiDroid] 错误码 "
  */
 internal const val AUTO_FIX_LOG_PREFIX = "[自动修复]"
 
-/** 一步失败了：按这一步的输出认原因（同时匹配远端下发的热规则），拼成带错误码的失败。 */
-internal fun failureOf(step: FailureStep, message: String, output: String = message): Failure =
-    Failure(
+/**
+ * 一步失败了：按这一步的输出与摘要合并后认原因（同时匹配远端下发的热规则），拼成带错误码的失败。
+ * 某些程序（如 proot loader）在出错时会零输出直接退出，把非空的 message 补进匹配文本里才能命中规则。
+ */
+internal fun failureOf(step: FailureStep, message: String, output: String = message): Failure {
+    val diagnosticText = when {
+        output.isBlank() -> message
+        message.isNotBlank() && !output.contains(message) -> "$output\n$message"
+        else -> output
+    }
+    return Failure(
         step = step,
         message = message,
-        cause = diagnoseFailureCause(output),
-        remoteHint = diagnoseRemoteFailureHint(step.code, output)
+        cause = diagnoseFailureCause(diagnosticText),
+        remoteHint = diagnoseRemoteFailureHint(step.code, diagnosticText)
     )
+}
 
 /** 从日志里一行失败记录读出错误码和说明；不是失败记录返回 null。行首可以带时间等前缀。 */
 internal fun parseFailureLogLine(line: String): Pair<String, String>? {
@@ -124,7 +133,8 @@ internal enum class FailureStep(val code: String, val label: String) {
 internal enum class FailureAction(val label: String) {
     NetworkSettings("打开网络设置"),
     DateSettings("打开日期和时间设置"),
-    FreeUpStorage("清理空间")
+    FreeUpStorage("清理空间"),
+    MaiBotUpdate("打开 MaiBot 更新")
 }
 
 /**
@@ -185,6 +195,15 @@ internal enum class FailureCause(
     UnsupportedCpu(
         "ABI-ARM64", "这台手机的处理器不受支持",
         "MaiDroid 只能在 64 位 ARM（arm64）手机上运行，请确认装的是 arm64 版安装包。"
+    ),
+    ProotLoaderFailed(
+        "PROOT-182", "当前系统拦截了容器加载器",
+        "proot 容器加载器被系统或兼容容器拦截（退出码 182），无法启动 Debian 环境。这通常发生在纯血鸿蒙（卓易通）或其他非标准安卓兼容环境中，目前仅支持原生安卓设备。"
+    ),
+    MaiBotTooOld(
+        "MB-OLD", "MaiBot 版本过低，适配器无法加载",
+        "当前 QQ 适配器要求更新版本的 MaiBot。请先更新 MaiBot 到最新版，再回来重试。",
+        FailureAction.MaiBotUpdate
     ),
     AptMirrorSyncing(
         "APT-HASH", "软件源文件校验没通过",
