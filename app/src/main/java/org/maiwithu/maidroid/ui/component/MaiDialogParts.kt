@@ -36,8 +36,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -81,7 +79,6 @@ import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DialogInnerSurface
 import org.maiwithu.maidroid.ui.theme.JetBrainsMono
-import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -411,7 +408,7 @@ internal fun shouldStackDialogButtons(
     }
 }
 
-/** 弹窗动作按钮：竖屏饱满等高，横屏底栏下按内容定宽且不小于 84dp、高 38dp，保持靠右紧凑利落。 */
+/** 弹窗动作按钮：采用 LiquidButton 液态果冻物理与高光折射；横屏底栏下按内容定宽且不少于 84dp、高 38dp，保持靠右紧凑利落。 */
 @Composable
 internal fun MaiDialogButton(
     text: String,
@@ -421,15 +418,14 @@ internal fun MaiDialogButton(
     enabled: Boolean = true
 ) {
     val compactBar = LocalMaiDialogLandscapeBar.current
-    val (container, content) = when (style) {
-        MaiDialogButtonStyle.Primary -> BrandOrange to OnBrandOrange
-        MaiDialogButtonStyle.Secondary -> CardBorder to TextPrimary
-        MaiDialogButtonStyle.SoftAccent -> BrandOrange.copy(alpha = 0.18f) to BrandOrange
-        MaiDialogButtonStyle.Danger -> StatusDanger to TextPrimary
-        MaiDialogButtonStyle.SoftDanger -> StatusDanger.copy(alpha = 0.14f) to StatusDanger
+    val liquidStyle = when (style) {
+        MaiDialogButtonStyle.Primary -> LiquidButtonStyle.Primary
+        MaiDialogButtonStyle.Secondary -> LiquidButtonStyle.Secondary
+        MaiDialogButtonStyle.SoftAccent -> LiquidButtonStyle.SoftAccent
+        MaiDialogButtonStyle.Danger -> LiquidButtonStyle.Danger
+        MaiDialogButtonStyle.SoftDanger -> LiquidButtonStyle.SoftDanger
     }
     val minHeight = if (compactBar) 38.dp else 44.dp
-    val cornerRadius = if (compactBar) 11.dp else 14.dp
     val contentPadding = if (compactBar) {
         PaddingValues(horizontal = 14.dp, vertical = 7.dp)
     } else {
@@ -437,18 +433,14 @@ internal fun MaiDialogButton(
     }
     val labelSize = if (compactBar) 13.sp else TextSizes.Body
 
-    Button(
+    LiquidButton(
         onClick = onClick,
+        style = liquidStyle,
         enabled = enabled,
-        modifier = modifier
-            .then(if (compactBar) Modifier.defaultMinSize(minWidth = 84.dp, minHeight = minHeight) else Modifier.heightIn(min = minHeight)),
-        shape = RoundedCornerShape(cornerRadius),
+        minHeight = minHeight,
         contentPadding = contentPadding,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = container,
-            contentColor = content,
-            disabledContainerColor = CardBorder.copy(alpha = 0.55f),
-            disabledContentColor = TextFaint
+        modifier = modifier.then(
+            if (compactBar) Modifier.defaultMinSize(minWidth = 84.dp) else Modifier
         )
     ) {
         Text(

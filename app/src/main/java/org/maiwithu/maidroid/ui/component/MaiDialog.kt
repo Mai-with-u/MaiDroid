@@ -5,10 +5,10 @@ import android.os.Build
 import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -38,37 +38,36 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -79,34 +78,19 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.LocalHideNavigationBar
 import org.maiwithu.maidroid.applySystemBars
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DialogBackdropScrim
-import org.maiwithu.maidroid.ui.theme.DialogFooterTray
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
-
-/** 卡片外描边：顶部偏亮、底部收暗，模拟光从上方打下的细高光边。 */
-private val DialogEdgeHighlight = Brush.verticalGradient(
-    0f to Color.White.copy(alpha = 0.16f),
-    0.45f to Color.White.copy(alpha = 0.07f),
-    1f to Color.White.copy(alpha = 0.04f)
-)
-
-/** 卡片顶部极淡的一抹光泽，与描边高光呼应，让顶栏区域略微“抬起”。 */
-private val DialogTopSheen = Brush.verticalGradient(
-    0f to Color.White.copy(alpha = 0.035f),
-    0.32f to Color.Transparent
-)
-
-/** 卡片投影高度：深色背景下靠较大的柔和投影营造悬浮感。 */
-private val DialogShadowElevation = 22.dp
 
 /** 供子弹窗感知当前是否正处于手机横屏矮宽视口，以便决定是否展开详细预览或调整按钮排布。 */
 internal val LocalMaiDialogPhoneLandscape = compositionLocalOf { false }
@@ -152,7 +136,6 @@ internal fun resolveMaiDialogLayout(
     val isTablet = !isPhoneLandscape && safeW >= 600f && safeH >= 480f
 
     val maxWidthDp = when {
-        // 横屏短确认只用一半出头的宽度，复杂双列弹窗也给左右各留 ~70dp 背景，避免铺满整屏。
         isPhoneLandscape -> when (size) {
             MaiDialogSize.Compact -> minOf(safeW * 0.56f, 400f)
             MaiDialogSize.Medium -> minOf(safeW * 0.70f, 500f)
@@ -175,7 +158,6 @@ internal fun resolveMaiDialogLayout(
             minOf(safeH - margin * 2f, 320f).coerceAtLeast(0f)
         }
         isTablet -> minOf(safeH * 0.84f, 680f)
-        // 竖屏跟随剩余高度按比例收缩，避免弹出软键盘时把弹窗顶出屏幕范围。
         else -> safeH * 0.86f
     }
 
@@ -201,12 +183,11 @@ internal fun landscapeVerticalMarginDp(availableHeightDp: Float): Float =
     ((availableHeightDp - 240f) * 0.2f).coerceIn(6f, 24f)
 
 /**
- * 全应用统一的现代暗色圆角悬浮弹窗外壳：
- * - 弹窗窗口与主界面共用沉浸式系统栏策略（横屏隐藏状态栏/导航栏），关闭系统自带压暗，只保留一层半透明遮罩，
- *   背后页面轮廓隐约可见；点击卡片外部可关闭；
- * - 卡片按视口比例收敛尺寸并四周留出呼吸区，配高光细描边、顶部光泽与柔和投影，入场轻微放大淡入；
- * - 手机横屏切换为紧凑单行顶栏 + 可拆成左右独立滚动两列的内容区（附可滚渐隐与细滚动条）+ 左槽右按钮的单行底栏；
- * - 竖屏与平板保持舒展顶栏 + 独立滚动体 + 固定底栏，[secondaryContent] 自动顺接在主内容下方。
+ * 全应用统一的液态玻璃浮窗外壳：
+ * - 当处于 [LocalLiquidModalHost] 内部时直接注册进同窗口模态栈，实时模糊并折射底层应用画面与导航栏，
+ *   且免去独立 Dialog 窗口拉出系统栏带来的横屏闪烁问题；
+ * - 弹窗本体进一步通过 `exportedBackdrop` 把自身玻璃背景暴露给内部的 `LiquidButton` 与 `LiquidToggle`；
+ * - 在 Compose 预览等无宿主环境下自动回退至标准 `Dialog` 窗口与 `rememberSurfaceBackdrop`。
  */
 @Composable
 internal fun MaiDialog(
@@ -229,6 +210,50 @@ internal fun MaiDialog(
     secondaryContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val modalHost = LocalLiquidModalHost.current
+    val landscapeWindow = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val contentInsets = if (landscapeWindow) {
+        WindowInsets.displayCutout.union(WindowInsets.ime)
+    } else {
+        WindowInsets.safeDrawing
+    }
+
+    if (modalHost != null) {
+        val latestRenderer = rememberUpdatedState<@Composable (Backdrop) -> Unit> { backdrop ->
+            BackHandler(enabled = dismissOnBackPress) { onDismissRequest() }
+            MaiDialogOverlaySurface(
+                backdrop = backdrop,
+                contentInsets = contentInsets,
+                title = title,
+                onDismissRequest = onDismissRequest,
+                modifier = modifier,
+                subtitle = subtitle,
+                icon = icon,
+                iconBackground = iconBackground,
+                size = size,
+                headerBadge = headerBadge,
+                headerActions = headerActions,
+                showCloseButton = showCloseButton,
+                dismissOnClickOutside = dismissOnClickOutside,
+                scrollable = scrollable,
+                footerStart = footerStart,
+                landscapeFooter = landscapeFooter,
+                footer = footer,
+                secondaryContent = secondaryContent,
+                content = content
+            )
+        }
+        val modalId = remember(modalHost) { modalHost.allocateId() }
+        DisposableEffect(modalHost, modalId) {
+            modalHost.register(modalId) { backdrop -> latestRenderer.value(backdrop) }
+            onDispose { modalHost.unregister(modalId) }
+        }
+        SideEffect {
+            modalHost.update(modalId) { backdrop -> latestRenderer.value(backdrop) }
+        }
+        return
+    }
+
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(
@@ -238,162 +263,189 @@ internal fun MaiDialog(
             dismissOnClickOutside = dismissOnClickOutside
         )
     ) {
-        // 弹窗是独立的系统窗口：先让它和主界面采用同一套沉浸式系统栏策略，横屏才不会一弹窗就掉出状态栏。
         MaiDialogWindowChrome()
+        val fallbackBackdrop = rememberSurfaceBackdrop(CardSurface)
+        MaiDialogOverlaySurface(
+            backdrop = fallbackBackdrop,
+            contentInsets = contentInsets,
+            title = title,
+            onDismissRequest = onDismissRequest,
+            modifier = modifier,
+            subtitle = subtitle,
+            icon = icon,
+            iconBackground = iconBackground,
+            size = size,
+            headerBadge = headerBadge,
+            headerActions = headerActions,
+            showCloseButton = showCloseButton,
+            dismissOnClickOutside = dismissOnClickOutside,
+            scrollable = scrollable,
+            footerStart = footerStart,
+            landscapeFooter = landscapeFooter,
+            footer = footer,
+            secondaryContent = secondaryContent,
+            content = content
+        )
+    }
+}
 
-        // 入场：遮罩淡入，卡片从 96% 轻微放大并淡入，约 220ms，给出“浮起”的过渡而不拖沓。
-        val appear = remember { Animatable(0f) }
-        LaunchedEffect(Unit) {
-            appear.animateTo(1f, animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing))
-        }
-        val landscapeWindow = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-        // 横屏系统栏已隐藏（下拉呼出时只是临时盖在上面），只需避开挖孔与软键盘，绝不再为状态栏预留空隙；
-        // 竖屏状态栏常显，沿用完整安全区。
-        val contentInsets = if (landscapeWindow) {
-            WindowInsets.displayCutout.union(WindowInsets.ime)
-        } else {
-            WindowInsets.safeDrawing
-        }
+@Composable
+private fun MaiDialogOverlaySurface(
+    backdrop: Backdrop,
+    contentInsets: WindowInsets,
+    title: String,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier,
+    subtitle: String?,
+    icon: ImageVector?,
+    iconBackground: Color,
+    size: MaiDialogSize,
+    headerBadge: (@Composable () -> Unit)?,
+    headerActions: (@Composable RowScope.() -> Unit)?,
+    showCloseButton: Boolean,
+    dismissOnClickOutside: Boolean,
+    scrollable: Boolean,
+    footerStart: (@Composable RowScope.() -> Unit)?,
+    landscapeFooter: (@Composable RowScope.() -> Unit)?,
+    footer: (@Composable ColumnScope.() -> Unit)?,
+    secondaryContent: (@Composable ColumnScope.() -> Unit)?,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        appear.animateTo(1f, animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing))
+    }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind { drawRect(DialogBackdropScrim.copy(alpha = DialogBackdropScrim.alpha * appear.value)) }
+    ) {
+        // 全屏点击遮罩阻断触控穿透至下方 GeckoView/列表；允许外点关闭时触发收起
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .drawBehind { drawRect(DialogBackdropScrim.copy(alpha = DialogBackdropScrim.alpha * appear.value)) }
-        ) {
-            // 透明全屏点击层铺在安全区外部，保证横屏两侧与导航栏上方也能点空白收起弹窗。
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { if (dismissOnClickOutside) onDismissRequest() }
-                    )
-            )
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(contentInsets),
-                contentAlignment = Alignment.Center
-            ) {
-                // 外围呼吸留白全部由布局规格按视口比例给出，这里不再叠加固定边距。
-                val layoutSpec = resolveMaiDialogLayout(
-                    availableWidthDp = maxWidth.value,
-                    availableHeightDp = maxHeight.value,
-                    size = size,
-                    hasSecondaryContent = secondaryContent != null
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { if (dismissOnClickOutside) onDismissRequest() }
                 )
-                val cardShape = RoundedCornerShape(Corners.Card)
-                val tightLandscape = layoutSpec.isPhoneLandscape && maxHeight.value < 240f
+        )
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(contentInsets),
+            contentAlignment = Alignment.Center
+        ) {
+            val layoutSpec = resolveMaiDialogLayout(
+                availableWidthDp = maxWidth.value,
+                availableHeightDp = maxHeight.value,
+                size = size,
+                hasSecondaryContent = secondaryContent != null
+            )
+            val cardShape = { RoundedRectangle(Corners.Card) }
+            val dialogSurfaceBackdrop = rememberLayerBackdrop()
+            val tightLandscape = layoutSpec.isPhoneLandscape && maxHeight.value < 240f
 
-                CompositionLocalProvider(
-                    LocalMaiDialogPhoneLandscape provides layoutSpec.isPhoneLandscape,
-                    LocalMaiDialogTightLandscape provides tightLandscape
-                ) {
-                    Surface(
-                        // 宽高上限必须排在 fillMaxWidth 之前：fillMaxWidth 在前会把最小宽度锁成整个视口，
-                        // 之后的 widthIn(max) 被入参约束覆盖而失效，卡片就会横向撑满整屏。
-                        modifier = Modifier
-                            .widthIn(max = layoutSpec.maxWidthDp.dp)
-                            .heightIn(max = layoutSpec.maxHeightDp.dp)
-                            .then(modifier)
-                            .fillMaxWidth()
-                            .graphicsLayer {
+            CompositionLocalProvider(
+                LocalMaiDialogPhoneLandscape provides layoutSpec.isPhoneLandscape,
+                LocalMaiDialogTightLandscape provides tightLandscape,
+                LocalContentColor provides TextPrimary,
+                LocalLiquidBackdrop provides dialogSurfaceBackdrop
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = layoutSpec.maxWidthDp.dp)
+                        .heightIn(max = layoutSpec.maxHeightDp.dp)
+                        .then(modifier)
+                        .fillMaxWidth()
+                        .liquidGlassDialogSurface(
+                            backdrop = backdrop,
+                            shape = cardShape,
+                            layerBlock = {
                                 val scale = 0.96f + 0.04f * appear.value
                                 scaleX = scale
                                 scaleY = scale
                                 alpha = appear.value
-                            }
-                            .pointerInput(Unit) { detectTapGestures { } },
-                        shape = cardShape,
-                        color = CardSurface,
-                        contentColor = TextPrimary,
-                        shadowElevation = DialogShadowElevation,
-                        border = BorderStroke(1.dp, DialogEdgeHighlight)
-                    ) {
-                        Column(
+                            },
+                            exportedBackdrop = dialogSurfaceBackdrop
+                        )
+                        .pointerInput(Unit) { detectTapGestures { } }
+                ) {
+                    MaiDialogHeaderBar(
+                        title = title,
+                        subtitle = subtitle,
+                        icon = icon,
+                        iconBackground = iconBackground,
+                        compactLandscape = layoutSpec.isPhoneLandscape,
+                        headerBadge = headerBadge,
+                        headerActions = headerActions,
+                        showCloseButton = showCloseButton,
+                        onDismissRequest = onDismissRequest
+                    )
+
+                    val hideHeaderDivider = layoutSpec.isPhoneLandscape &&
+                        size == MaiDialogSize.Compact &&
+                        !layoutSpec.useTwoColumns
+                    if (!hideHeaderDivider) {
+                        MaiDialogDivider(horizontalPadding = 0.dp)
+                    }
+
+                    if (layoutSpec.useTwoColumns && secondaryContent != null) {
+                        val columnVerticalPadding = if (tightLandscape) 6.dp else 10.dp
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(DialogTopSheen)
+                                .weight(1f, fill = false)
+                                .padding(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            MaiDialogHeaderBar(
-                                title = title,
-                                subtitle = subtitle,
-                                icon = icon,
-                                iconBackground = iconBackground,
-                                compactLandscape = layoutSpec.isPhoneLandscape,
-                                headerBadge = headerBadge,
-                                headerActions = headerActions,
-                                showCloseButton = showCloseButton,
-                                onDismissRequest = onDismissRequest
+                            MaiDialogScrollColumn(
+                                scrollable = scrollable,
+                                contentPadding = PaddingValues(vertical = columnVerticalPadding),
+                                verticalSpacing = 8.dp,
+                                modifier = Modifier.weight(1.12f),
+                                content = content
                             )
-
-                            val hideHeaderDivider = layoutSpec.isPhoneLandscape &&
-                                size == MaiDialogSize.Compact &&
-                                !layoutSpec.useTwoColumns
-                            if (!hideHeaderDivider) {
-                                MaiDialogDivider(horizontalPadding = 0.dp)
-                            }
-
-                            if (layoutSpec.useTwoColumns && secondaryContent != null) {
-                                // 双列：左右各 20dp 内边距、列间 16dp，主列略宽承载核心信息，次列放折叠详情与说明；
-                                // 横屏弹起软键盘时进一步收紧上下内边距，把高度让给正在编辑的输入框。
-                                val columnVerticalPadding = if (tightLandscape) 6.dp else 10.dp
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f, fill = false)
-                                        .padding(horizontal = 20.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    MaiDialogScrollColumn(
-                                        scrollable = scrollable,
-                                        contentPadding = PaddingValues(vertical = columnVerticalPadding),
-                                        verticalSpacing = 8.dp,
-                                        modifier = Modifier.weight(1.12f),
-                                        content = content
-                                    )
-                                    MaiDialogScrollColumn(
-                                        scrollable = scrollable,
-                                        contentPadding = PaddingValues(vertical = columnVerticalPadding),
-                                        verticalSpacing = 8.dp,
-                                        modifier = Modifier.weight(1f),
-                                        content = secondaryContent
-                                    )
-                                }
-                            } else {
-                                val verticalPadding = when {
-                                    tightLandscape -> 6.dp
-                                    layoutSpec.isPhoneLandscape -> 12.dp
-                                    else -> 14.dp
-                                }
-                                val verticalSpacing = if (layoutSpec.isPhoneLandscape) 10.dp else 12.dp
-                                MaiDialogScrollColumn(
-                                    scrollable = scrollable,
-                                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = verticalPadding),
-                                    verticalSpacing = verticalSpacing,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f, fill = false)
-                                ) {
-                                    content()
-                                    secondaryContent?.invoke(this)
-                                }
-                            }
-
-                            val hasLandscapeActions = landscapeFooter != null || footer != null
-                            val hasFooter = footerStart != null ||
-                                (if (layoutSpec.isPhoneLandscape) hasLandscapeActions else footer != null)
-
-                            if (hasFooter) {
-                                MaiDialogFooterBar(
-                                    compactLandscape = layoutSpec.isPhoneLandscape,
-                                    footerStart = footerStart,
-                                    landscapeFooter = landscapeFooter,
-                                    footer = footer
-                                )
-                            }
+                            MaiDialogScrollColumn(
+                                scrollable = scrollable,
+                                contentPadding = PaddingValues(vertical = columnVerticalPadding),
+                                verticalSpacing = 8.dp,
+                                modifier = Modifier.weight(1f),
+                                content = secondaryContent
+                            )
                         }
+                    } else {
+                        val verticalPadding = when {
+                            tightLandscape -> 6.dp
+                            layoutSpec.isPhoneLandscape -> 12.dp
+                            else -> 14.dp
+                        }
+                        val verticalSpacing = if (layoutSpec.isPhoneLandscape) 10.dp else 12.dp
+                        MaiDialogScrollColumn(
+                            scrollable = scrollable,
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = verticalPadding),
+                            verticalSpacing = verticalSpacing,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                        ) {
+                            content()
+                            secondaryContent?.invoke(this)
+                        }
+                    }
+
+                    val hasLandscapeActions = landscapeFooter != null || footer != null
+                    val hasFooter = footerStart != null ||
+                        (if (layoutSpec.isPhoneLandscape) hasLandscapeActions else footer != null)
+
+                    if (hasFooter) {
+                        MaiDialogFooterBar(
+                            compactLandscape = layoutSpec.isPhoneLandscape,
+                            footerStart = footerStart,
+                            landscapeFooter = landscapeFooter,
+                            footer = footer
+                        )
                     }
                 }
             }
@@ -401,13 +453,6 @@ internal fun MaiDialog(
     }
 }
 
-/**
- * 弹窗窗口的系统栏同步：Compose 的 Dialog 会新建一个独立 Android 窗口，系统栏显隐跟随“当前获焦窗口”，
- * 不做处理时横屏一弹窗状态栏就会掉下来盖在页面上，还会把安全区往下挤。
- * 这里在首帧与窗口每次重新获焦时：
- * 窗口铺满全屏并延伸进挖孔区 -> 系统栏透明、关掉系统压暗（只留 Compose 遮罩一层）-> 按主界面同一套策略设置系统栏
- * （横屏全隐藏；竖屏状态栏常显，主页隐藏导航栏、OOBE 全显示）。只动系统栏，不碰软键盘模式，输入框焦点不受影响。
- */
 @Composable
 private fun MaiDialogWindowChrome() {
     val view = LocalView.current
@@ -419,7 +464,6 @@ private fun MaiDialogWindowChrome() {
         dialogWindow.prepareImmersiveDialogWindow()
         applySystemBars(dialogWindow, landscape = landscape, hideNavigationBar = hideNavigationBar)
 
-        // 下拉临时呼出系统栏、切去别的应用再回来等情况下，窗口重新获焦时再按同一策略收一次。
         val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
             if (hasFocus) {
                 applySystemBars(dialogWindow, landscape = landscape, hideNavigationBar = hideNavigationBar)
@@ -434,23 +478,18 @@ private fun MaiDialogWindowChrome() {
     }
 }
 
-/** 把弹窗窗口调成与主界面一致的边到边形态：透明系统栏、延伸进挖孔、无系统压暗、深色界面配浅色系统栏图标。 */
-// 系统栏颜色接口在 API 35 起标记废弃（边到边强制生效后本就透明），低版本仍需显式设为透明。
 @Suppress("DEPRECATION")
 private fun Window.prepareImmersiveDialogWindow() {
     WindowCompat.setDecorFitsSystemWindows(this, false)
-    // 系统自带的窗口压暗会与 Compose 遮罩叠成两层，把背后页面糊成纯黑，这里关掉只留一层。
     clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
     setDimAmount(0f)
     statusBarColor = Color.Transparent.toArgb()
     navigationBarColor = Color.Transparent.toArgb()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        // 关掉系统给三键导航栏自动加的半透明底衬，避免竖屏底部出现一条灰带。
         isStatusBarContrastEnforced = false
         isNavigationBarContrastEnforced = false
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        // 与主界面 enableEdgeToEdge 的挖孔策略保持一致，横屏遮罩才能盖住挖孔一侧的整条边。
         val cutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         } else {
@@ -481,7 +520,6 @@ private fun MaiDialogHeaderBar(
     if (compactLandscape) {
         val tightLandscape = LocalMaiDialogTightLandscape.current
         val verticalPadding = if (tightLandscape) 6.dp else 10.dp
-        // 横屏使用单行紧凑顶栏：图标 + 标题/副标题 + 状态胶囊横排，刷新与关闭钮统一靠最右。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -616,17 +654,16 @@ private fun MaiDialogFooterBar(
     landscapeFooter: (@Composable RowScope.() -> Unit)?,
     footer: (@Composable ColumnScope.() -> Unit)?
 ) {
+    val footerTrayColor = Color.Black.copy(alpha = 0.09f)
     MaiDialogDivider(horizontalPadding = 0.dp)
     if (compactLandscape) {
         val tightLandscape = LocalMaiDialogTightLandscape.current
         val verticalPadding = if (tightLandscape) 4.dp else 6.dp
-        // 横屏固定单行底栏：左槽（危险文字操作或短提示）独占剩余宽度并靠左，右侧动作组按固有宽度紧贴最右。
-        // 只让左槽一个元素吃权重：此前左槽与占位 Spacer 各持一份权重平分空间，左槽又不撑满，按钮就悬在了中间偏右。
         CompositionLocalProvider(LocalMaiDialogLandscapeBar provides true) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(DialogFooterTray)
+                    .background(footerTrayColor)
                     .padding(start = 18.dp, end = 16.dp, top = verticalPadding, bottom = verticalPadding),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -646,7 +683,6 @@ private fun MaiDialogFooterBar(
                     )
                 } else if (footer != null) {
                     Spacer(modifier = Modifier.width(12.dp))
-                    // 宽度收敛到子项固有宽度：即便子弹窗传入了 fillMaxWidth 的按钮，也只按文字宽度靠右，不会挤占左槽。
                     Column(
                         modifier = Modifier.width(IntrinsicSize.Max),
                         horizontalAlignment = Alignment.End,
@@ -657,11 +693,10 @@ private fun MaiDialogFooterBar(
             }
         }
     } else {
-        // 竖屏/平板：动作按钮整行铺满，左槽内容（危险文字操作等）居中放在按钮下方。
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(DialogFooterTray)
+                .background(footerTrayColor)
                 .padding(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -680,7 +715,7 @@ private fun MaiDialogFooterBar(
 
 /**
  * 弹窗内部可滚动列容器：
- * 当内容超出一屏时在底边叠加 20dp 柔色渐隐遮罩并在右侧绘制细圆角滚动条，给出明确的可滚动视觉线索。
+ * 改用 DstIn Alpha 渐隐羽化底边替代不透明底色盖块，确保液态玻璃底透光时滚动区边缘自然消隐。
  */
 @Composable
 private fun MaiDialogScrollColumn(
@@ -694,73 +729,68 @@ private fun MaiDialogScrollColumn(
     val showBottomFade = scrollable && scrollState.canScrollForward
     val showScrollbar = scrollable && scrollState.maxValue > 0
     val scrollbarColor = TextFaint.copy(alpha = 0.45f)
+    val fadeHeight = if (LocalMaiDialogTightLandscape.current) 10.dp else 18.dp
 
-    Box(
-        modifier = modifier.drawWithContent {
-            drawContent()
-            if (showScrollbar && scrollState.maxValue > 0 && size.height > 16.dp.toPx()) {
-                val trackTop = 8.dp.toPx()
-                val trackBottom = size.height - 8.dp.toPx()
-                val trackHeight = (trackBottom - trackTop).coerceAtLeast(1f)
-                val totalContentHeight = size.height + scrollState.maxValue
-                val thumbHeight = (trackHeight * (size.height / totalContentHeight))
-                    .coerceIn(18.dp.toPx(), trackHeight)
-                val scrollFraction = (scrollState.value.toFloat() / scrollState.maxValue.toFloat())
-                    .coerceIn(0f, 1f)
-                val thumbTop = trackTop + (trackHeight - thumbHeight) * scrollFraction
-                val barWidth = 2.5.dp.toPx()
-                val barLeft = size.width - barWidth - 3.dp.toPx()
-                drawRoundRect(
-                    color = scrollbarColor,
-                    topLeft = Offset(barLeft, thumbTop),
-                    size = Size(barWidth, thumbHeight),
-                    cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
-                )
-            }
-        }
-    ) {
-        val scrollMod = if (scrollable) Modifier.verticalScroll(scrollState) else Modifier
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(scrollMod)
-                .padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(verticalSpacing),
-            content = content
-        )
-        if (showBottomFade) {
-            val fadeHeight = if (LocalMaiDialogTightLandscape.current) 10.dp else 20.dp
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(fadeHeight)
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            1f to CardSurface
-                        )
-                    )
+    val scrollMod = if (scrollable) Modifier.verticalScroll(scrollState) else Modifier
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (showBottomFade) {
+                    Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                } else {
+                    Modifier
+                }
             )
-        }
-    }
+            .drawWithContent {
+                drawContent()
+                if (showBottomFade && size.height > 1f) {
+                    val fadePx = fadeHeight.toPx().coerceAtMost(size.height * 0.45f)
+                    val startFraction = ((size.height - fadePx) / size.height).coerceIn(0f, 0.99f)
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Black,
+                            startFraction to Color.Black,
+                            1f to Color.Transparent
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+                if (showScrollbar && scrollState.maxValue > 0 && size.height > 16.dp.toPx()) {
+                    val trackTop = 8.dp.toPx()
+                    val trackBottom = size.height - 8.dp.toPx()
+                    val trackHeight = (trackBottom - trackTop).coerceAtLeast(1f)
+                    val totalContentHeight = size.height + scrollState.maxValue
+                    val thumbHeight = (trackHeight * (size.height / totalContentHeight))
+                        .coerceIn(18.dp.toPx(), trackHeight)
+                    val scrollFraction = (scrollState.value.toFloat() / scrollState.maxValue.toFloat())
+                        .coerceIn(0f, 1f)
+                    val thumbTop = trackTop + (trackHeight - thumbHeight) * scrollFraction
+                    val barWidth = 2.5.dp.toPx()
+                    val barLeft = size.width - barWidth - 3.dp.toPx()
+                    drawRoundRect(
+                        color = scrollbarColor,
+                        topLeft = Offset(barLeft, thumbTop),
+                        size = Size(barWidth, thumbHeight),
+                        cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
+                    )
+                }
+            }
+            .then(scrollMod)
+            .padding(contentPadding),
+        verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+        content = content
+    )
 }
 
 @Composable
 private fun DialogCloseButton(size: Dp, iconSize: Dp, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(CardBorder)
-            .clickable(role = Role.Button, onClickLabel = "关闭", onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Close,
-            contentDescription = "关闭",
-            tint = TextMuted,
-            modifier = Modifier.size(iconSize)
-        )
-    }
+    LiquidGlassIconButton(
+        icon = Icons.Outlined.Close,
+        contentDescription = "关闭",
+        onClick = onClick,
+        size = size,
+        iconSize = iconSize,
+        tint = TextMuted
+    )
 }
