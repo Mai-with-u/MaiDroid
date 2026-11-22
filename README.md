@@ -147,7 +147,7 @@ sequenceDiagram
     N->>Q: 以你登录的 QQ 发出
 ```
 
-适配器是 MaiBot 的插件，装在 MaiBot 的 `plugins` 目录里。装好或改了配置之后要重启 MaiBot 才会加载，MaiDroid 会自己处理。上图是 NapCat 那条路，用的是 SnowLuma 适配器（MaiBot-SnowLuma-Adapter，界面上叫“QQ 适配器”）。SnowLuma 那条路只是把 NapCat 换成 SnowLuma，地址、端口和适配器都不变；QQ 官方机器人那条路没有 NapCat，由 QQ 官方机器人适配器（MaiBot-QQ-Adapter）直接连 QQ 开放平台。几个名字的区别见 [消息平台接入](docs/platforms.md) 的术语表。
+适配器是 MaiBot 的插件，装在活跃 MaiBot 实例（旧单实例为根目录 `/opt/MaiBot`，多实例宿主为 `bots/<id>/`）的 `plugins` 目录里（新版 QQ 官方机器人适配器已随 MaiBot 内置于源码 `src/plugins/built_in/`）。装好或改了配置之后要重启 MaiBot 才会加载，MaiDroid 会自己处理。上图是 NapCat 那条路，用的是 SnowLuma 适配器（MaiBot-SnowLuma-Adapter，界面上叫“QQ 适配器”）。SnowLuma 那条路只是把 NapCat 换成 SnowLuma，地址、端口和适配器都不变；QQ 官方机器人那条路没有 NapCat，由 QQ 官方机器人适配器（内置插件或 MaiBot-QQ-Adapter）直接连 QQ 开放平台。几个名字的区别见 [消息平台接入](docs/platforms.md) 的术语表。
 
 ### 代码在哪
 
@@ -156,7 +156,7 @@ sequenceDiagram
 | 想看什么 | 去哪里 |
 | --- | --- |
 | 各组件在哪创建、谁依赖谁 | 根包的 `AppDependencies` |
-| 界面 | `ui/`，按页面分为 `oobe`、`home`、`platform`、`settings`、`terminal`、`splash`，公共组件在 `component`，配色字体在 `theme` |
+| 界面 | `ui/`，按页面分为 `oobe`、`home`、`platform`、`settings`、`diagnostics`、`cleanup`、`remote`、`terminal`、`splash`，公共组件在 `component`，配色字体在 `theme` |
 | 首次引导的安装步骤 | `oobe/` |
 | 容器怎么搭、命令怎么跑 | `runtime/`：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 镜像、DNS、时区 |
 | MaiBot 的安装、启动、更新 | `maibot/`，在线更新在 `maibot/update/` |
@@ -189,7 +189,7 @@ MaiBot 在设置页的“MaiBot 更新”里更新，弹窗底部还能在正式
 
 ### 国内网络装不上怎么办？
 
-MaiBot 源码、适配器、uv、Python 以及来自 GitHub 的自定义 QQ 协议端仓库或发行包，都会依次尝试多个 GitHub 镜像和直连，系统包用清华源。非 GitHub 直链走直连。LinuxQQ 在 NapCat 路径下从腾讯官方地址下载，SnowLuma 路径下先从腾讯官方下载、失败时再经 GitHub 镜像兜底。
+MaiBot 源码、适配器、uv、Python 以及来自 GitHub 的自定义 QQ 协议端仓库或发行包，都会依次尝试多个 GitHub 镜像和直连，系统包用清华源。非 GitHub 直链走直连。LinuxQQ 支持断点续传与失败重试：在 NapCat 路径下从腾讯官方地址下载并在 404 时立即切换备选官方构建，在 SnowLuma 路径下先从腾讯官方下载、失败时再经 GitHub 镜像兜底。
 
 ### 出问题了怎么反馈？
 

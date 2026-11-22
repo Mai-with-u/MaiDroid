@@ -16,10 +16,10 @@ MaiBot 通过插件（适配器）连接聊天平台。MaiDroid 的“消息平�
 
 | 说法 | 指的是 | 代码里 |
 | --- | --- | --- |
-| 适配器 | MaiBot 的插件，把某个聊天平台的消息转成 MaiBot 能处理的格式。装在容器里 MaiBot 的 `plugins/` 下 | 各平台包里的 `*Adapter*` |
+| 适配器 | MaiBot 的插件，把某个聊天平台的消息转成 MaiBot 能处理的格式。装在容器里活跃 MaiBot 实例的 `plugins/` 下（兼容旧单实例 `/opt/MaiBot/plugins/` 与多实例 `bots/<id>/plugins/`，由 `MaiBotInstances` 发现；内置插件随源码在 `src/plugins/built_in/`） | 各平台包里的 `*Adapter*` |
 | SnowLuma 适配器 | MaiBot-SnowLuma-Adapter，NapCat 和 SnowLuma 客户端两种接入方式共用的适配器。它同时支持这两种 QQ 协议端，MaiDroid 让它连本机 `127.0.0.1:8095`，连上后它自己认出对端是哪种。界面和终端日志里对用户说的“QQ 适配器”就是它 | `platform/qq/SnowLumaAdapter*` |
 | 旧 NapCat 适配器 | MaiBot-Napcat-Adapter，已停更。早期版本的 MaiDroid 装的是它，启动 NapCat 前会自动换成 SnowLuma 适配器 | `SnowLumaAdapterScripts.LEGACY_*` |
-| QQ 官方机器人适配器 | MaiBot-QQ-Adapter，官方机器人接入方式用的适配器，直连 QQ 开放平台。注意它的仓库名里也有“QQ-Adapter”，但界面上的“QQ 适配器”不是它 | `platform/qqofficial/QqOfficialAdapter*` |
+| QQ 官方机器人适配器 | MaiBot 内置 `qq_official_adapter` 或外置 `MaiBot-QQ-Adapter` 插件，官方机器人接入方式用的适配器，直连 QQ 开放平台。注意外置仓库名里也有“QQ-Adapter”，但界面上的“QQ 适配器”不是它 | `platform/qqofficial/QqOfficialAdapter*` |
 | QQ 协议端 | 在容器里登录个人 QQ、对外提供 OneBot 服务的程序，有 NapCat 和 SnowLuma 客户端两种，同一时刻只启用一种 | `platform/qq/QqClient.kt` |
 | NapCat | QQ 协议端：容器里跑的 LinuxQQ + NapCat，扫码登录个人 QQ，对外提供 OneBot 服务 | `platform/napcat/NapCat*` |
 | SnowLuma 客户端 | 另一种 QQ 协议端：容器里跑原版 LinuxQQ，SnowLuma 注入进去，对外提供 OneBot 服务。界面上的“SnowLuma”选项就是它，和 SnowLuma 适配器不是一回事 | `platform/snowluma/`、`AccessMethod.SnowLumaClient` |
@@ -32,7 +32,7 @@ MaiBot 通过插件（适配器）连接聊天平台。MaiDroid 的“消息平�
 - `PlatformRows.kt`：手机用的分组列表，已连接行、发现行和分类小胶囊，样子和设置页一致。
 - `PlatformCards.kt`：平板用的已安装小卡片、平台安装卡片。右侧按钮按选中的接入方式显示下载 / 进度环 / 设置，这个状态和点击逻辑（`platformInstallAction`）卡片和列表行共用。
 - `AccessMethodSelector.kt`：接入方式选择器。
-- `PlatformConfigDialogParts.kt`、`QqCustomSourceParts.kt`：协议端弹窗共用的扁平外壳、可折叠卡片与键值行，以及首次安装的自定义来源填写/风险确认弹窗和弹窗内的自定义来源面板。
+- `PlatformConfigDialogParts.kt`、`QqCustomSourceParts.kt`：基于 `MaiDialog` 封装的协议端配置弹窗壳体、可折叠卡片与键值行，以及首次安装的自定义来源填写/风险确认弹窗和弹窗内的自定义来源面板。
 - `NapCatDialogs.kt`、`SnowLumaDialogs.kt`、`QqOfficialConfigDialog.kt`：三种接入方式各自的弹窗。
 
 Discord、WhatsApp、Signal 目前只是展示：平板卡片上点下载会提示“暂未适配”，手机列表里没适配的平台直接标“暂未适配”，不放下载按钮。QQ 的“SnowLuma”选项是 SnowLuma 客户端，和 NapCat 选项装的 SnowLuma 适配器不是一回事，见上面的术语表。
@@ -43,18 +43,18 @@ Discord、WhatsApp、Signal 目前只是展示：平板卡片上点下载会提�
 
 点下载打开凭据弹窗，填好 AppID、AppSecret 后：
 
-1. 检查容器和 MaiBot 源码。
-2. 已经装过（包括用户从 MaiBot WebUI 插件市场装的副本）就跳过下载；否则经 GitHub 镜像把 MaiBot-QQ-Adapter 克隆到 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-QQ-Adapter`。点开头的目录 MaiBot 扫插件时会跳过，不会加载克隆了一半的插件。
-3. 宿主侧直接改写插件的 `config.toml`（先写临时文件再改名），AppSecret 不经过命令行，不会出现在进程参数和日志里。
+1. 检查容器和 MaiBot 源码，并经 `MaiBotInstances` 确定目标活跃实例。
+2. 若 MaiBot 源码已内置 `src/plugins/built_in/qq_official_adapter/_manifest.json`，或外置版已经装过（包括用户从 MaiBot WebUI 插件市场装的副本）就跳过下载；否则经 GitHub 镜像把 MaiBot-QQ-Adapter 克隆到活跃实例 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-QQ-Adapter`。点开头的目录 MaiBot 扫插件时会跳过，不会加载克隆了一半的插件。
+3. 宿主侧直接改写目标配置文件（内置版为 `<instance>/config/builtin_plugins/qq_official_adapter/config.toml`，外置版为插件目录下的 `config.toml`），先写临时文件再改名，AppSecret 不经过命令行，不会出现在进程参数和日志里；内置版仅在 `enabled = true` 或填过 AppID/AppSecret 时才视为已激活展示。
 4. 重启 MaiBot。
 
 已安装后点齿轮打开同一个弹窗，凭据没变就不重启。
 
-“是否已安装”按清单 ID 判断（`QqOfficialAdapterFiles` -> `maibot/MaiBotPlugins.findPluginDirById`）：插件市场装的目录名是 `Mai-with-u_qq-adapter`，只认固定目录名会再装一份，同一插件 ID 出现两份会冲突。
+外置版的“是否已安装”按清单 ID 判断（`QqOfficialAdapterFiles` -> `maibot/MaiBotPlugins.findPluginDirById`）：插件市场装的目录名是 `Mai-with-u_qq-adapter`，只认固定目录名会再装一份，同一插件 ID 出现两份会冲突。
 
 ### config.toml 读写（`QqOfficialAdapterConfig`）
 
-只读写三项：`[plugin].enabled`、`[qq_official].app_id`、`[qq_official].app_secret`，其余内容（用户在 MaiBot WebUI 里改过的禁言、撤回等配置、注释）原样保留。逐行读写交给 `maibot/PluginConfigToml`，它不是通用 TOML 解析器，只认 MaiBot 写回配置时用的单行写法。
+只读写三项：`[plugin].enabled`、`[qq_official].app_id`、`[qq_official].app_secret`，其余内容（用户在 MaiBot WebUI 里改过的禁言、撤回等配置、注释）原样保留。首次创建空白配置时优先从插件 `settings.py` 动态解析默认 `config_version`（读不到时再回退兜底值），已有配置始终保留原版本号。逐行读写交给 `maibot/PluginConfigToml`，它不是通用 TOML 解析器，只认 MaiBot 写回配置时用的单行写法。
 
 ### 连接状态怎么来的
 
@@ -72,15 +72,15 @@ Discord、WhatsApp、Signal 目前只是展示：平板卡片上点下载会提�
 
 上游原仓库不可用后，应用内不再写死任何第三方 fork 地址，由用户自己在界面填入仓库地址或 `NapCat.Shell.zip` 直链（由 `QqCustomSource.kt` 的 `parseQqCustomSource` 解析并校验合法性，支持 `/releases/tag/<tag>` 锁定特定版本，保存在 `AppSettings.napCatCustomSourceUrl`）。首次安装需先确认自定义来源安全提示；装好后也可以在 NapCat 配置弹窗里保存新地址或直接覆盖重装。
 
-1. 检查容器、MaiBot 源码和 MaiBot 版本：SnowLuma 适配器对 MaiBot 有最低版本要求（`SnowLumaAdapterScripts.MIN_MAIBOT_VERSION`），MaiBot 会直接拒绝加载版本范围外的插件，所以版本不够时提示先去设置页更新 MaiBot。版本号读自 `pyproject.toml` 的 `[project].version`。
+1. 检查容器、MaiBot 源码和 MaiBot 版本：SnowLuma 适配器对 MaiBot 的兼容区间记在插件 `_manifest.json` 的 `host_application` 中（`readPluginHostVersionRange` / `pluginHostVersionProblem`），MaiBot 会直接拒绝加载版本范围外的插件，所以版本不满足时提示先去设置页更新 MaiBot。版本号读自 `pyproject.toml` 的 `[project].version`。
 2. 首次安装或用户主动触发覆盖重装（`forceReinstall`）时执行安装脚本，进度通过容器 `$TMPDIR/progress`、`progress_des` 汇报，每 500 毫秒读一次显示在卡片的进度环上：
    - 沿用或生成 OneBot 访问 token（存在 `/root/.maidroid/napcat_token`，重装沿用）；
    - 安装 `zip`、`unzip`、`jq`、`curl`、`xvfb`、`procps`、`ca-certificates` 等系统包，并检测 `unzip` 是否因容器绝对路径变化（`/data/data` 与 `/data/user/0` 之间）导致 `--link2symlink` 软链失效，若失效则强制重装 `unzip`；
-   - 若已装有满足最低构建号（`NapCatScripts.QQ_MIN_BUILD_VERSION`）的官方 LinuxQQ 则跳过；否则从腾讯官方下载地址拉取 `.deb` 并用 `dpkg-deb -I` 核验后安装（安装失败清理安装包，成功则补装运行依赖）；
+   - 若已装有满足最低构建号（`NapCatScripts.QQ_MIN_BUILD_VERSION`）的官方 LinuxQQ 则跳过；否则经断点续传（`curl -C -`）与失败重试从腾讯官方下载地址拉取 `.deb`（主地址返回 HTTP 404 时立即切换备选构建 `NapCatScripts.QQ_FALLBACK_VERSION`），并用 `dpkg-deb -I` 核验后安装（安装失败清理安装包，成功则补装运行依赖）；
    - 通过 `maidroid_download_urls`（GitHub 地址自动尝试镜像与直连，直链直接请求）下载 `NapCat.Shell.zip` 并当场运行 `unzip -t` 校验压缩包完整性（防止镜像返回 200 HTML 限流页），解包更新程序文件时保留已有 `config/` 与 `plugins/`；
    - 通过临时文件再 `mv -f` 原子写入 `/root/napcat/config/onebot11.json`（在 `127.0.0.1:8095` 开 WebSocket 服务端并带上 token）与 `/root/.maidroid/napcat_ready` 标记；覆盖重装期间不提前删掉已有就绪标记，若下载或解包失败导致新包未就位，宿主还会自动重新拉起原本可用的协议端服务。
    - 生成 `/root/loadNapCat.cjs`、`/root/napcat/qq-package.json` 与 `/root/launcher.sh`。
-3. 装 MaiBot 侧的 SnowLuma 适配器（`SnowLumaAdapterScripts.install`）：没装过（按清单 ID `maibot-team.snowluma-adapter` 找，插件市场装的副本也算）就经 GitHub 镜像把 MaiBot-SnowLuma-Adapter 克隆到 `plugins/` 下以点开头的临时目录，再改名为 `plugins/MaiBot-SnowLuma-Adapter`；然后删掉清单 ID 为 `maibot-team.napcat-adapter` 的旧适配器（两个适配器同时连 NapCat 会把每条消息收两遍）。删之前先把旧适配器的 `config.toml` 读进内存，留给第 5 步搬设置。
+3. 装 MaiBot 侧的 SnowLuma 适配器（`SnowLumaAdapterInstaller` + `SnowLumaAdapterScripts.cloneToStaging`）：经 `MaiBotInstances` 解析活跃实例，没装过（按清单 ID `maibot-team.snowluma-adapter` 找，插件市场装的副本也算）时持克隆互斥锁（与 `QqAdapterUpkeep` 串行防止并发 `git shallow.lock` 冲突），经 GitHub 镜像克隆到目标实例 `plugins/` 下以点开头的临时目录，读取 `_manifest.json` 校验版本兼容后改名为 `plugins/MaiBot-SnowLuma-Adapter`；随后删掉清单 ID 为 `maibot-team.napcat-adapter` 的旧适配器（两个适配器同时连 NapCat 会把每条消息收两遍）。删之前先把旧适配器的 `config.toml` 读进内存，留给第 5 步搬设置。
 4. 改用 NapCat（启用的是 SnowLuma 就先等它的 QQ 下线，见下面“和 NapCat 二选一”），经前台服务拉起 NapCat 并重启 MaiBot。整个目录移进 `plugins/` 时 MaiBot 不一定能热加载，所以要重启；重启时 MaiBot 发现插件没有 `config.toml`，会按适配器自己的默认值生成一份（带 MaiBot 强制要求的 `plugin.config_version`，默认 `enabled = false`，适配器先空闲着）。新适配器依赖 `silk-python`（语音转码），MaiBot 加载插件时自己用 uv 补装，有 aarch64 预编译包。
 5. 等配置生成后迁移（`SnowLumaAdapterInstaller.migrateConfigWhenReady` -> `SnowLumaAdapterConfig.migrate`）：每 2 秒看一次，最多等 5 分钟；看到带 `config_version` 的配置后再等 5 秒（MaiBot 写完配置才订阅它的变化，改早了会错过热重载），然后在生成的配置上改：`[plugin].enabled = true`，`[client]` 的 `server`、`port`、`token` 写成 `127.0.0.1`、8095 和上面的 token，再把旧适配器里有对应项的设置搬过来（见下）。其余内容原样保留。MaiBot 监听插件配置文件，发现启用了会补装依赖并热启用适配器，不用再重启。
 
@@ -150,7 +150,7 @@ NapCat 和 SnowLuma 都在容器里跑 LinuxQQ（共用 `/opt/QQ` 和 QQ 的登�
 2. 首次安装或用户主动触发覆盖重装（`forceReinstall`）时运行安装脚本，进度经 `/tmp/snowluma_progress`、`snowluma_progress_des` 汇报（和 NapCat 的进度文件分开）：
    - 沿用或生成 OneBot token；第一次安装时生成 SnowLuma 管理页（WebUI）的密码，存在 `/root/.maidroid/snowluma_webui_password`；记下协议同意。
    - apt 装 `xvfb`、`xdotool`（往 QQ 窗口里点击）、`procps`、`curl`、`ca-certificates`、`tar`、`jq` 和中文字体 `fonts-wqy-zenhei`（不然 QQ 窗口里的字显示成方块）。
-   - `/opt/QQ/resources/app/package.json` 里的 QQ 版本不是 SnowLuma 上游钉的那一版时，下载这一版的 deb 装上（安装失败立即删除残留 `.deb`）。同一版 QQ 有两种写法：安装包名里是“版本号_发布日期”（`SnowLumaScripts.QQ_VERSION`，`3.2.32_260812`），`package.json` 里是“版本号-构建号”（`QQ_PACKAGE_JSON_VERSION`，`3.2.32-52194`，真机上读出来的），比对用后者；NapCat 装过别的版本也换掉（允许降级）。先试 QQ 官方下载地址，再经 GitHub 镜像试备份地址，下到的都要对得上固定 sha256。再往 `/etc/hosts` 里挡住 `qqpatch.gtimg.cn`，免得 QQ 热更新换掉组件、注入对不上。
+   - `/opt/QQ/resources/app/package.json` 里的 QQ 版本不是 SnowLuma 上游钉的那一版时，经断点续传（`curl -C -`）与失败重试下载这一版的 deb 装上（安装失败立即删除残留 `.deb`）。同一版 QQ 有两种写法：安装包名里是“版本号_发布日期”（`SnowLumaScripts.QQ_VERSION`，`3.2.32_260812`），`package.json` 里是“版本号-构建号”（`QQ_PACKAGE_JSON_VERSION`，`3.2.32-52194`，真机上读出来的），比对用后者；NapCat 装过别的版本也换掉（允许降级）。先试 QQ 官方下载地址，再经 GitHub 镜像试备份地址，下到的都要对得上固定 sha256。再往 `/etc/hosts` 里挡住 `qqpatch.gtimg.cn`，免得 QQ 热更新换掉组件、注入对不上。
    - 经 `maidroid_download_urls` 从用户指定的仓库（通过 GitHub API 或锁定 tag 查找不含 `-lite` 的完整 `linux-arm64` 归档）或直链下载 SnowLuma 发行包，立即运行 `tar -tzf` 校验归档完整性（过滤 200 HTML 限流页）后解到 `/root/snowluma/app.tmp`，入口和 node 都在才换成 `/root/snowluma/app`。
    - 用临时文件再 `mv -f` 原子写入全局 OneBot 配置 `/root/snowluma/data/config/onebot.json`：只开一个 `127.0.0.1:8095` 的 WebSocket 服务端，带上 token，消息用 array 格式。SnowLuma 默认的 HTTP 3000、WS 3001 不开；`#sl` 状态命令关掉，不然群里有人发 `#sl` 时机器人会自动回一条状态。
    - 优先从 `/root/snowluma/app/package.json` 提取实际解压出的版本号（读不到再回退默认版本号），原子写入 `/root/.maidroid/snowluma_ready` 标记（配置弹窗会直接读取展示实际版本），再生成启动脚本 `/root/snowluma-launcher.sh`。覆盖重装同样不提前删掉已有标记，失败时会自动拉起原本可用的协议端。

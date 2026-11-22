@@ -68,8 +68,9 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `platform/snowluma/SnowLumaScriptsTest` | SnowLuma 安装与运行脚本：从自定义源或锁定 tag 下载归档并校验 `tar -tzf`、LinuxQQ 断点续传与失败重试、从 `package.json` 提取真实版本、LinuxQQ 按固定 sha256 校验、OneBot 配置共用端口和 token、`wait -n` 保育与 Node 堆上限设置 |
 | `platform/snowluma/SnowLumaWebUiTest`、`platform/snowluma/SnowLumaPlatformStateTest` | SnowLuma 管理页接口的进程列表解析、登录进度归类（多个 QQ 时已登录的优先）；已登录的判断、“已连接”卡片的登录提示 |
 | `platform/snowluma/XwdScreenTest` | 解析 Xvfb 的屏幕文件：裁出 QQ 窗口、屏幕上还没窗口、文件写了一半或不是 XWD、画面变了才换签名 |
-| `platform/qqofficial/QqOfficialPlatformTest` | MaiBot 1.4 内置 QQ 官方机器人适配器检测、多实例 `config.toml` 读写、连接报错识别、状态文案 |
+| `platform/qqofficial/QqOfficialPlatformTest` | MaiBot 内置 QQ 官方机器人适配器检测、`settings.py` 动态解析默认 `config_version`、多实例 `config.toml` 读写、连接报错识别、状态文案 |
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
+| `runtime/LoopbackHttpTest` | 回环主机地址判定（支持 IPv4/localhost/IPv6，供回环请求强制直连免代理） |
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
 | `runtime/GitHubMirrorsTest` | 宿主侧可用的下载线路、容器脚本里的镜像列表 |
 | `runtime/AptMirrorsTest` | apt 换源：默认清华、都用 http、只在下载失败时换、容器 SSH 装 sshd 也用；下载 30 秒没动静算失败 |
