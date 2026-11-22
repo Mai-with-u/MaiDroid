@@ -33,20 +33,23 @@ internal val DefaultPillDockSide = PillDockSide.Left
 private const val MinValidGravity = 5.0f
 private const val MaxValidGravity = 15.0f
 
-// 屏幕平面（X/Y 轴）重力合量低于此值时判定为平放（约 <20 度倾角，覆盖桌面摄像头凸起带来的微小斜度）
-private const val FlatPlaneGravityLimit = 3.4f
+// 屏幕平面（X/Y 轴）重力合量低于此值时判定为平放（约 <14.8 度倾角，保留桌面微斜平放保护并支持低俯角握持）
+private const val FlatPlaneGravityLimit = 2.5f
 
-// 左右倾斜触发阈值（m/s^2，约 12.6 度+）：+X 指向屏幕右缘，左倾时重力在 +X 投影为正值，右倾为负值
-private const val TiltTriggerThreshold = 2.15f
+// 左右倾斜触发阈值（m/s^2，竖直约 5.3 度+、常规斜持约 6~8 度偏转）：+X 指向屏幕右缘，左倾为正，右倾为负
+private const val TiltTriggerThreshold = 0.90f
 
-// 一阶低通滤波时间常数（秒）：滤除步行颠簸和点击屏幕瞬间的微震动
-private const val LowPassTauSeconds = 0.28f
+// 瞬时采样同向支撑下限（m/s^2）：过滤值达标时若瞬时采样已回正或反向，则认定为惯性余尾并阻断累计
+private const val RawSupportThreshold = TiltTriggerThreshold * 0.5f
 
-// 反向倾斜持续驻留阻尼时长（秒）：必须连续朝对侧倾斜稳定达标后才换边，杜绝轻微晃动秒切
-private const val DwellThresholdSeconds = 0.65f
+// 一阶低通滤波时间常数（秒）：滤除步行颠簸和点击震动的同时降低小角度换手滞后
+private const val LowPassTauSeconds = 0.18f
 
-// 切换完成或手动拖拽后的冷却时长（秒），防止在临界倾角附近来回反复横跳
-private const val SwitchCooldownSeconds = 1.2f
+// 反向倾斜持续驻留阻尼时长（秒）：连续朝对侧倾斜稳定达标后平稳换边，杜绝轻微晃动秒切
+private const val DwellThresholdSeconds = 0.35f
+
+// 切换完成或手动拖拽后的冷却时长（秒），覆盖侧移弹簧动画并防止临界倾角反复横跳
+private const val SwitchCooldownSeconds = 0.70f
 
 /**
  * 将传感器坐标系下的重力向量 (rawX, rawY) 旋正到当前窗口旋转方向对应的屏幕坐标系 (screenGx, screenGy)。
@@ -158,12 +161,22 @@ internal class PillTiltDamper {
             return currentSide
         }
 
+        // 瞬时采样已回正或反向时说明过滤值只是短促晃动的惯性余尾，立即停止累计并回落驻留计数，避免甩手回正后延迟误切
+        val rawSupportsDesired = when (desiredSide) {
+            PillDockSide.Left -> screenGx >= RawSupportThreshold
+            PillDockSide.Right -> screenGx <= -RawSupportThreshold
+        }
+        if (!rawSupportsDesired) {
+            oppositeHoldSeconds = (oppositeHoldSeconds - dt * 2.0f).coerceAtLeast(0f)
+            return currentSide
+        }
+
         if (cooldownRemaining > 0f) {
             return currentSide
         }
 
-        // 倾角越明显驻留积攒略快但仍有上限，既保留阻尼感又兼顾主动甩手切换时的跟手度
-        val speedFactor = (1f + (abs(filteredGx) - TiltTriggerThreshold) * 0.22f).coerceIn(1f, 1.75f)
+        // 倾角越明显驻留积攒越快但仍有上限，既保留防抖阻尼又兼顾轻幅与主动换手时的跟手度
+        val speedFactor = (1f + (abs(filteredGx) - TiltTriggerThreshold) * 0.25f).coerceIn(1f, 1.8f)
         oppositeHoldSeconds += dt * speedFactor
 
         if (oppositeHoldSeconds >= DwellThresholdSeconds) {
