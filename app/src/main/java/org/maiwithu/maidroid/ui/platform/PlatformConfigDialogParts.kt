@@ -13,6 +13,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -91,67 +92,10 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// 消息平台各配置弹窗与二级确认框共用的扁平外壳与结构化小部件。
+// 消息平台各配置弹窗共用的扁平外壳与结构化小部件。
 
 private val SectionInnerSurface = PageBackground.copy(alpha = 0.55f)
-
-@Composable
-internal fun PlatformDialogTitle(text: String) {
-    Text(
-        text = text,
-        color = TextPrimary,
-        fontSize = TextSizes.TitleLarge,
-        fontWeight = FontWeight.Bold,
-        lineHeight = 22.sp
-    )
-}
-
-@Composable
-internal fun PlatformDialogBody(text: String) {
-    Text(text = text, color = TextMuted, fontSize = TextSizes.Body, lineHeight = 18.sp)
-}
-
-@Composable
-internal fun PlatformPrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = BrandOrange,
-            contentColor = TextPrimary,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        )
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-internal fun PlatformSecondaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = CardBorder,
-            contentColor = TextPrimary,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        )
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-internal fun PlatformDangerButton(text: String, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = StatusDanger, contentColor = TextPrimary)
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
-}
+private val ShellSurfaceStroke = Color(0x1EFFFFFF)
 
 /**
  * 协议端配置详情的统一扁平卡片弹窗壳：
@@ -200,7 +144,8 @@ internal fun PlatformConfigDialogShell(
                     .pointerInput(Unit) { detectTapGestures { } },
                 shape = RoundedCornerShape(Corners.Card),
                 color = CardSurface,
-                contentColor = TextPrimary
+                contentColor = TextPrimary,
+                border = BorderStroke(1.dp, ShellSurfaceStroke)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // 固定顶栏：标题 + 在线状态圆点副标题，右侧轻量刷新与关闭圆钮
