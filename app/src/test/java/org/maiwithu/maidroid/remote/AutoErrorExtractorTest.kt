@@ -391,5 +391,23 @@ class AutoErrorExtractorTest {
         )
         assertFalse(dpkgDraft.title.contains("liberror-perl"))
         assertTrue(dpkgDraft.title.contains("Debian rootfs 未就绪"))
+
+        // 成功退出码（exit code: 0 / 退出码: 0）不得因匹配 "exit code"/"退出码" 而抢走错误标题
+        val zeroExitLogs = listOf(
+            "done.",
+            "exit code: 0",
+            "进程退出码: 0"
+        )
+        val zeroExitDraft = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.UpdatePrecheck,
+            cause = null,
+            message = "Debian rootfs 未就绪：OOBE 需要先解包 runtime/debian-rootfs.tar.xz",
+            terminalPlainLines = zeroExitLogs,
+            setupComplete = false,
+            redactor = testRedactor()
+        )
+        assertFalse(zeroExitDraft.title.contains("exit code: 0"))
+        assertFalse(zeroExitDraft.title.contains("退出码: 0"))
+        assertTrue(zeroExitDraft.title.contains("Debian rootfs 未就绪"))
     }
 }

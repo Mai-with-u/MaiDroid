@@ -14,6 +14,10 @@ internal val ContainerSshPortRange = 1024..65535
  */
 internal object ContainerSshScripts {
 
+    // 仅匹配 ps -eo pid=,args= 中以 /usr/sbin/sshd 或 sshd: 开头的真正 sshd 进程，
+    // 防止误杀通过 /bin/sh -c 传参执行的 configure 安装脚本及其 apt 子进程。
+    internal const val SSHD_CLEANUP_PATTERN = "^[ \\t]*[0-9]+[ \\t]+(\\/usr\\/sbin\\/sshd([ \\t]|\$)|sshd: )"
+
     /**
      * 首次启用或改了端口、密码时执行：
      * 修复 dpkg 半装状态 -> 没有 sshd 就 apt 安装 openssh-server -> 补齐 sshd 运行所需的用户和目录 ->
@@ -136,7 +140,7 @@ internal object ContainerSshScripts {
             "set +e",
             "if command -v ps >/dev/null 2>&1; then",
             killMatchingProcessesScript(
-                pattern = "\\/usr\\/sbin\\/sshd|sshd: ",
+                pattern = SSHD_CLEANUP_PATTERN,
                 processName = "sshd process"
             ),
             "fi",

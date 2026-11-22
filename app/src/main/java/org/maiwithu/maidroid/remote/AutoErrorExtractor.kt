@@ -122,6 +122,9 @@ internal object AutoErrorExtractor {
 
     private val CRASH_HEADER_VERSION_RE = Regex("""^MaiDroid\s+([0-9A-Za-z._-]+)""")
 
+    // 正常退出码（如 apt/git 成功输出 exit code: 0）不得因匹配到 "exit code" 关键词而被当成错误标题
+    private val ZERO_EXIT_CODE_RE = Regex("""(?i)(?:exit code|退出码)\s*[:：]?\s*0\b""")
+
     private val EXCEPTION_CLASS_LINE =
         Regex("""^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit|Interrupt)|SyntaxError|IndentationError|MemoryError|SystemExit|TOMLDecodeError|ModuleNotFoundError|ImportError)\b.*""")
 
@@ -288,6 +291,7 @@ internal object AutoErrorExtractor {
                 (allowMaiBotSignal || !line.startsWith("[MaiBot]")) &&
                 (!allowMaiBotSignal || !NAPCAT_LOGIN_ERROR_RE.containsMatchIn(line)) &&
                 DPKG_PROGRESS_PREFIXES.none { strippedLower.startsWith(it) } &&
+                !ZERO_EXIT_CODE_RE.containsMatchIn(line) &&
                 INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
         } ?: redactedMessage
 
