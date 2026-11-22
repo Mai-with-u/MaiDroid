@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,9 +44,17 @@ import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.QrCanvasBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
@@ -72,54 +80,68 @@ internal fun NapCatInstallDialog(
     var sourceUrlText by rememberSaveable { mutableStateOf(state.customSourceUrl) }
     val validSource = parseQqCustomSource(QqClient.NapCat, sourceUrlText) as? QqSourceParseResult.Valid
 
-    AlertDialog(
+    MaiDialog(
+        title = "安装 NapCat",
+        subtitle = "需填写 Fork 仓库或 NapCat.Shell.zip 直链",
+        icon = FlatFeatureIcons.Platforms,
+        iconBackground = IconSkyBlue,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("安装 NapCat") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                state.failure?.let { failure ->
-                    Text(
-                        text = "上次安装失败：${failure.message}",
-                        color = StatusDanger,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 15.sp
-                    )
-                    FailureNotice(failure = failure)
-                }
-
-                PlatformDialogBody(
-                    "原上游仓库已不可用，请填写 NapCat 的 fork 仓库地址（从 Release 下载 NapCat.Shell.zip）" +
-                        "或安装包 .zip 直链。MaiDroid 会在容器里安装官方 LinuxQQ ${NapCatScripts.QQ_VERSION} 与 NapCat（约占 1 GB）。"
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
                 )
-
-                if (snowLumaInstalled) {
-                    PlatformDialogBody("装好后改用 NapCat 登录 QQ，SnowLuma 会停用（不卸载，随时可以切回）。")
-                }
-
-                CustomSourceTextField(
-                    client = QqClient.NapCat,
-                    value = sourceUrlText,
-                    onValueChange = { sourceUrlText = it }
+                MaiDialogButton(
+                    text = "了解风险并安装",
+                    style = MaiDialogButtonStyle.Primary,
+                    enabled = validSource != null && !state.isInstalling,
+                    modifier = Modifier.weight(1f),
+                    onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
                 )
-
-                CustomSourceRiskNotice(clientLabel = "NapCat")
             }
-        },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = {
-            PlatformPrimaryButton(
-                text = "了解风险并安装",
-                enabled = validSource != null && !state.isInstalling,
-                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
+        }
+    ) {
+        state.failure?.let { failure ->
+            FailureNotice(failure = failure, summary = failure.message)
+        }
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            MaiDialogInfoChip(text = "LinuxQQ ${NapCatScripts.QQ_VERSION}", color = TextPrimary, containerColor = CardBorder)
+            MaiDialogInfoChip(text = "约占 1 GB 空间", color = TextMuted, containerColor = CardBorder)
+        }
+
+        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "原上游仓库已不可用，请填写 NapCat 的 Fork 仓库地址（从 Release 下载 NapCat.Shell.zip）或安装包直链。",
+                color = TextMuted,
+                fontSize = TextSizes.Caption,
+                lineHeight = 16.sp
             )
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+
+            CustomSourceTextField(
+                client = QqClient.NapCat,
+                value = sourceUrlText,
+                onValueChange = { sourceUrlText = it }
+            )
+
+            if (snowLumaInstalled) {
+                Text(
+                    text = "提示：装好后将改用 NapCat 登录 QQ，SnowLuma 会自动停用（不卸载，可随时切回）。",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        CustomSourceRiskNotice(clientLabel = "NapCat")
+    }
 }
 
 /** 退出 QQ 会让 MaiBot 断开 QQ，先让用户确认。 */
@@ -128,18 +150,36 @@ internal fun QqLogoutConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MaiDialog(
+        title = "退出 QQ 登录？",
+        subtitle = "当前账号下线，后续需重新扫码登录",
+        icon = FlatFeatureIcons.Platforms,
+        iconBackground = IconRoseAlert,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("退出 QQ 登录？") },
-        text = {
-            PlatformDialogBody("将重启 NapCat，当前 QQ 账号下线，MaiBot 暂时无法收发 QQ 消息。之后需要重新扫码登录，也可以换别的账号。")
-        },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = { PlatformDangerButton(text = "退出登录", onClick = onConfirm) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = "退出登录",
+                    style = MaiDialogButtonStyle.Danger,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm
+                )
+            }
+        }
+    ) {
+        Text(
+            text = "将重启 NapCat 并清除自动登录凭据：MaiBot 暂时无法收发 QQ 消息，之后可以重新扫码或更换其他 QQ 账号。",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+    }
 }
 
 /**
@@ -167,62 +207,71 @@ internal fun NapCatQrCodeDialog(
         value = decoded ?: value.takeIf { state.qrCodePath != null }
     }
 
-    AlertDialog(
+    MaiDialog(
+        title = "QQ 登录二维码",
+        subtitle = napCatQrLoginHint(state) ?: "等待获取登录状态",
+        icon = FlatFeatureIcons.Platforms,
+        iconBackground = IconSkyBlue,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("QQ 登录二维码") },
-        text = {
-            // 竖排（二维码在上、说明在下）放得下就竖排；手机横屏时弹窗只有一两百 dp 高，
-            // 改成二维码在左、说明在右，二维码按可用高度缩小，说明文字太长时可以滚动。
-            BoxWithConstraints {
-                val availableHeight = maxHeight
-                val sideBySide = availableHeight != Dp.Infinity && availableHeight < QrCodeSize + QrHintsMinHeight
-                if (sideBySide) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        QrCodeImage(
-                            bitmap = qrBitmap,
-                            installed = state.installed,
-                            size = minOf(QrCodeSize, availableHeight),
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
+        footer = {
+            MaiDialogButtonRow {
+                // 刷新请求进行中禁用按钮，避免连点把 QQ 登录服务打成频繁出码。
+                MaiDialogButton(
+                    text = if (state.qrRefreshing) "刷新中…" else "刷新二维码",
+                    style = MaiDialogButtonStyle.Secondary,
+                    enabled = !state.qrRefreshing,
+                    modifier = Modifier.weight(1f),
+                    onClick = onRefresh
+                )
+                MaiDialogButton(
+                    text = "关闭",
+                    style = MaiDialogButtonStyle.Primary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+            }
+        }
+    ) {
+        // 竖排（二维码在上、说明在下）放得下就竖排；手机横屏时改成左右并排，避免截断二维码。
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val availableHeight = maxHeight
+            val sideBySide = availableHeight != Dp.Infinity && availableHeight < QrCodeSize + QrHintsMinHeight
+            if (sideBySide) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    QrCodeImage(
+                        bitmap = qrBitmap,
+                        installed = state.installed,
+                        size = minOf(QrCodeSize, availableHeight),
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
 
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            QrLoginHints(state)
-                        }
-                    }
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        QrCodeImage(bitmap = qrBitmap, installed = state.installed, size = QrCodeSize)
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         QrLoginHints(state)
                     }
                 }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    QrCodeImage(bitmap = qrBitmap, installed = state.installed, size = QrCodeSize)
+                    QrLoginHints(state)
+                }
             }
-        },
-        dismissButton = {
-            // 刷新请求进行中禁用按钮，避免连点把 QQ 登录服务打成频繁出码。
-            PlatformSecondaryButton(
-                text = if (state.qrRefreshing) "刷新中…" else "刷新",
-                enabled = !state.qrRefreshing,
-                onClick = onRefresh
-            )
-        },
-        confirmButton = { PlatformPrimaryButton(text = "关闭", onClick = onDismiss) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    }
 }
 
 /** 二维码边长：竖屏时的固定大小，横屏时按弹窗可用高度缩小，但不超过它。 */
-private val QrCodeSize = 260.dp
+private val QrCodeSize = 240.dp
 
 /** 二维码下方说明文字大约要占的高度，用来判断竖排放不放得下。 */
 private val QrHintsMinHeight = 96.dp
@@ -239,7 +288,7 @@ private fun QrCodeImage(
         Box(
             modifier = modifier
                 .size(size)
-                .clip(RoundedCornerShape(Corners.Control))
+                .clip(RoundedCornerShape(Corners.Panel))
                 .background(QrCanvasBackground)
                 .padding(10.dp),
             contentAlignment = Alignment.Center
@@ -252,17 +301,18 @@ private fun QrCodeImage(
             )
         }
     } else {
-        Text(
-            text = if (installed) {
-                "NapCat 尚未生成二维码，请稍等片刻后刷新。"
-            } else {
-                "NapCat 尚未安装。"
-            },
-            color = TextMuted,
-            fontSize = TextSizes.Body,
-            lineHeight = 17.sp,
-            modifier = modifier
-        )
+        MaiDialogSectionCard(modifier = modifier) {
+            Text(
+                text = if (installed) {
+                    "NapCat 尚未生成二维码，请稍等片刻后点下方刷新。"
+                } else {
+                    "NapCat 尚未安装。"
+                },
+                color = TextMuted,
+                fontSize = TextSizes.Body,
+                lineHeight = 18.sp
+            )
+        }
     }
 }
 
@@ -270,38 +320,24 @@ private fun QrCodeImage(
 @Composable
 private fun QrLoginHints(state: NapCatPlatformState) {
     Text(
-        text = "请使用QQ扫码登录……或者截图发给其他设备，然后用QQ扫码",
+        text = "请使用 QQ 扫码登录；也可以截图发给其他设备后再用 QQ 扫描。",
         color = TextFaint,
         fontSize = TextSizes.Caption,
-        lineHeight = 14.sp
+        lineHeight = 15.sp
     )
 
-    // 扫码进度来自 NapCat：已扫码时提示去手机确认，换码中提示稍等，二维码过期会自动换新。
-    napCatQrLoginHint(state)?.let { hint ->
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = hint,
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
-            lineHeight = 15.sp
+    val error = state.qrRefreshError ?: state.errorMessage
+    if (error != null && (state.qrRefreshError != null || state.failure == null)) {
+        MaiDialogCallout(
+            title = "扫码提示",
+            body = error,
+            accentColor = StatusDanger
         )
     }
 
-    (state.qrRefreshError ?: state.errorMessage)?.let { error ->
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = error,
-            color = StatusDanger,
-            fontSize = TextSizes.Caption,
-            lineHeight = 15.sp
-        )
-    }
-
-    // 安装失败时再给错误码、建议和“反馈问题”
     if (state.qrRefreshError == null) {
         state.failure?.let { failure ->
-            Spacer(modifier = Modifier.height(8.dp))
-            FailureNotice(failure = failure)
+            FailureNotice(failure = failure, summary = failure.message)
         }
     }
 }
@@ -348,15 +384,7 @@ internal fun NapCatConfigDialog(
         onDismiss = onDismiss
     ) {
         state.failure?.let { failure ->
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "上次操作失败：${failure.message}",
-                    color = StatusDanger,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 15.sp
-                )
-                FailureNotice(failure = failure)
-            }
+            FailureNotice(failure = failure, summary = failure.message)
         }
 
         ConfigCardGroup {
