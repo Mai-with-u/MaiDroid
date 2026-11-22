@@ -13,6 +13,7 @@ commonsCompress = "1.26.2"
 xz = "1.9"
 blurview = "version-3.2.0"
 liquidGlassBackdrop = "1.0.6"
+liquidGlassShapes = "1.2.0"
 geckoview = "153.0.20260810162159"
 mmkv = "2.4.0"
 junit = "4.13.2"
@@ -63,6 +64,7 @@ xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 # Blur / Liquid Glass
 blurview = { group = "com.github.Dimezis", name = "BlurView", version.ref = "blurview" }
 liquid-glass-backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "liquidGlassBackdrop" }
+liquid-glass-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "liquidGlassShapes" }
 
 # Browser Engine
 geckoview = { group = "org.mozilla.geckoview", name = "geckoview-arm64-v8a", version.ref = "geckoview" }

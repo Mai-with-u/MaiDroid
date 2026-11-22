@@ -132,6 +132,7 @@ dependencies {
     // Blur / Liquid Glass
     implementation(libs.blurview)
     implementation(libs.liquid.glass.backdrop)
+    implementation(libs.liquid.glass.shapes)
 
     // Embedded Web Engine (GeckoView arm64)
     implementation(libs.geckoview)

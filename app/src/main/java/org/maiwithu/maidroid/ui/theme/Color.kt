@@ -67,6 +67,9 @@ val SubtleGlassSurface = Color(0x2E202228)      // ~18% 轻透冷灰遮罩
 val GlassButtonSurface = Color(0x40202228)      // ~25% 清透圆形小按钮与信息卡边框底
 val GlassSelectedIndicator = Color(0x26FFFFFF)  // 15% 轻透选中胶囊滑块，保持背景透光感
 val GlassShadow = Color(0x3D000000)             // 24% 柔和黑阴影，用于悬浮毛玻璃导航条轮廓衬托
+val LiquidBarSurface = Color(0x70121418)        // 导航胶囊/侧栏暗底液态玻璃叠加色，兼顾透光折射与文字对比度
+val DialogGlassSurface = Color(0xBA14161B)      // 弹窗液态玻璃底色，保留背景模糊同时确保长表单与日志高可读
+val LiquidButtonSurface = Color(0x26FFFFFF)     // 次级液态玻璃按钮叠色
 const val SubtleGlassBlurRadius = 8f
 
 // ── 终端输出 ─────────────────────────────────────────────────────
