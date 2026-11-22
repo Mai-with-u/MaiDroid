@@ -25,6 +25,10 @@ private val FAILURE_RULES = listOf(
         extra = listOf(Regex("""^\s*Killed\s*$""", RegexOption.MULTILINE))
     ),
     rule(FailureCause.UnsupportedCpu, "Exec format error", "cannot execute binary file"),
+    // proot ELF loader 无法在兼容沙箱（如纯血鸿蒙卓易通）完成映射时会以固定退出码 182 零输出终止
+    rule(FailureCause.ProotLoaderFailed, "命令退出码: 182", "exit code: 182", "exit code 182"),
+    // QQ 适配器与 MaiBot 版本不兼容时的安装前置校验提示与运行期加载拒绝报错
+    rule(FailureCause.MaiBotTooOld, "需要 MaiBot ", "低于最小要求"),
     // MaiBot 启动时发现数据库比代码新会拒绝启动（上游 src/common/database/migrations/bootstrap.py 的报错原文）
     rule(FailureCause.DatabaseDowngrade, "当前数据库版本高于代码内注册的最新迁移版本"),
     // apt 的 Release 文件“还没生效 / 已经过期”，以及 TLS 证书“还没生效”，都是手机时间偏差太大

@@ -23,14 +23,20 @@ internal fun countOwnChildProcesses(
     myPid: Int = AndroidProcess.myPid()
 ): Int = listOwnProcessDirs(procRoot, myUid, myPid).size
 
-/** 容器非主动停止却以 SIGKILL(137) 退出时打一行进程水位日志，便于现场判断是幻影上限还是其他系统强杀。 */
+/**
+ * 容器非主动停止却以 SIGKILL(137) 退出时打一行本轮运行时长与进程水位日志，
+ * 便于现场分辨是刚启动即死、幻影进程上限还是后台长跑强杀。
+ */
 internal fun logUnexpectedSigkill(
     exitCode: Int,
     intentionallyStopped: Boolean,
+    uptimeMs: Long? = null,
+    childCountProvider: () -> Int = ::countOwnChildProcesses,
     onLog: (String) -> Unit
 ) {
     if (exitCode == 137 && !intentionallyStopped) {
-        onLog("[MaiDroid] 容器进程收到 SIGKILL(137)，当前本应用子进程数：${countOwnChildProcesses()}")
+        val uptimeNote = uptimeMs?.takeIf { it >= 0L }?.let { "，本轮已运行 ${it / 1000L}s" }.orEmpty()
+        onLog("[MaiDroid] 容器进程收到 SIGKILL(137)$uptimeNote，当前本应用子进程数：${childCountProvider()}")
     }
 }
 

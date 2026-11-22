@@ -186,7 +186,7 @@ internal class SnowLumaPlatformManager(
     fun activate() {
         if (_state.value.switching || installJob?.isActive == true) return
         scope.launch {
-            _state.update { it.copy(switching = true) }
+            _state.update { it.copy(switching = true, failure = null) }
             switcher.activate(QqClient.SnowLuma)
             restartRuntime()
             refreshStatus()
@@ -268,7 +268,8 @@ internal class SnowLumaPlatformManager(
                 }
         }
         if (validationError != null) {
-            fail(Failure(FailureStep.SnowLumaPrecheck, validationError))
+            // 经过 failureOf 匹配内置原因（如 MaiBot 版本过低）和远端热规则，提供直接可操作的按钮。
+            fail(failureOf(FailureStep.SnowLumaPrecheck, validationError))
             return
         }
         // SnowLuma、LinuxQQ 和 QQ 适配器都要从网上下载，没连网、空间明摆着不够时直接说
@@ -345,7 +346,8 @@ internal class SnowLumaPlatformManager(
         restartRuntime()
         val migrationError = adapterInstaller.migrateConfigWhenReady()
         if (migrationError != null) {
-            fail(Failure(FailureStep.SnowLumaAdapterConfig, migrationError))
+            // 配置等待失败走 failureOf，确保能认出 MaiBot 拒绝加载原因或命中远端排障热规则。
+            fail(failureOf(FailureStep.SnowLumaAdapterConfig, migrationError))
             return
         }
 
@@ -435,11 +437,15 @@ internal class SnowLumaPlatformManager(
         }
         val (active, installed, reachable) = snapshot
         val installedVersion = withContext(Dispatchers.IO) { files.readInstalledVersion() }
+        val adapterConfigured = withContext(Dispatchers.IO) { !adapterInstaller.needsConfigMigration() }
         val running = snowLumaProcess.isRunning
         val processes = if (active && running) webUiClient.processes() else null
         val primary = processes?.let(::primaryQqProcess)
         val accountFromConfig = withContext(Dispatchers.IO) { newestAccountConfigUin() }
         _state.update { current ->
+            // 协议端恢复连通或后台自愈完成适配器配置后清掉过期失败态，防止旧错误卡片长期挂在配置弹窗中。
+            val clearFailure = current.failure != null &&
+                (reachable || (current.failure.step == FailureStep.SnowLumaAdapterConfig && adapterConfigured))
             current.copy(
                 phase = when {
                     current.isInstalling -> SnowLumaInstallPhase.Installing
@@ -460,7 +466,8 @@ internal class SnowLumaPlatformManager(
                 // 账号只看 SnowLuma 这次认出来的，不看按 QQ 号另存的旧配置（以前登录过也会有）
                 accountDetected = !primary?.uin.isNullOrBlank(),
                 customSourceUrl = settings.snowLumaCustomSourceUrl,
-                installedVersion = installedVersion
+                installedVersion = installedVersion,
+                failure = if (clearFailure) null else current.failure
             )
         }
     }

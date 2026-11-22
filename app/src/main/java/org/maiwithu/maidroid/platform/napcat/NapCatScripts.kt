@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.platform.napcat
 
+import org.maiwithu.maidroid.platform.qq.LinuxQqRuntimeDeps
 import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
 import org.maiwithu.maidroid.runtime.AptMirrors
@@ -60,8 +61,20 @@ internal object NapCatScripts {
         workingDirectory = "/root"
     )
 
-    /** 每次启动 NapCat 前执行：补齐目录，更新 loadNapCat.cjs / qq-package.json，并重新生成 /root/launcher.sh。 */
-    fun prepareRuntime(): ContainerScript = ContainerScript(prepareRuntimeBody(), workingDirectory = "/root")
+    /** 每次启动 NapCat 前执行：检测并自愈补装缺失的 LinuxQQ 运行依赖库，补齐目录，更新 loadNapCat.cjs / qq-package.json，并重新生成 /root/launcher.sh。 */
+    fun prepareRuntime(): ContainerScript = ContainerScript(
+        body = listOf(
+            "set -e",
+            AptMirrors.shellFunctions(),
+            LinuxQqRuntimeDeps.ensureScript(
+                logPrefix = "[NapCat]",
+                failOnError = false,
+                requireQqInstalled = true
+            ),
+            prepareRuntimeBody()
+        ).joinToString("\n"),
+        workingDirectory = "/root"
+    )
 
     /**
      * 前台直接以 exec bash 接管 /root/launcher.sh（Xvfb + LinuxQQ），省掉额外 sh 与 script 伪终端进程。
@@ -225,17 +238,11 @@ internal object NapCatScripts {
                 exit 1
             fi
             rm -f $DOWNLOAD_DIR/$QQ_PACKAGE
-
-            if apt-cache show libasound2t64 >/dev/null 2>&1; then
-                asound_pkg="libasound2t64"
-            else
-                asound_pkg="libasound2"
-            fi
-            if ! maidroid_apt_install libnss3 libgbm1 libgssapi-krb5-2 "${'$'}asound_pkg"; then
-                printf "LinuxQQ 运行依赖安装失败（%s），请检查网络后重试\n" "${'$'}{maidroid_apt_failed_step:-unknown}"
-                exit 1
-            fi
         fi
+        """.trimIndent() + "\n" +
+        // 运行依赖校验与补装放在 LinuxQQ if/else 外：避免此前由 SnowLuma 等方式已装过 /opt/QQ 时跳过补库。
+        LinuxQqRuntimeDeps.ensureScript(logPrefix = "[NapCat]", failOnError = true) + "\n" +
+        """
 
         maidroid_progress 0.55 "Download NapCat package"
         """.trimIndent() + "\n" +

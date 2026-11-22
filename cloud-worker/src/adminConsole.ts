@@ -386,7 +386,9 @@ export const ADMIN_CONSOLE_SCRIPT = `
       let extra = {};
       try { extra = JSON.parse(s.extra_json || "{}"); } catch (e) { extra = {}; }
       const parts = [];
-      if (extra.oobeStep) parts.push("OOBE <b>" + esc(extra.oobeStep) + "</b>");
+      // 已完成首次引导的设备不再展示残留的 oobeStep（Install），避免将日常运维报错误判为引导中断
+      if (extra.setupComplete === true) parts.push("阶段 <b>已完成引导</b>");
+      else if (extra.oobeStep) parts.push("OOBE <b>" + esc(extra.oobeStep) + "</b>");
       if (extra.activeQqClient) parts.push("协议端 <b>" + esc(extra.activeQqClient) + "</b>");
       if (extra.availableStorageMb != null) parts.push("存储 <b>" + esc(extra.availableStorageMb) + "MB</b>");
       if (extra.availableMemMb != null) parts.push("内存 <b>" + esc(extra.availableMemMb) + "MB</b>");

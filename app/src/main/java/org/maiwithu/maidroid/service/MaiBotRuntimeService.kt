@@ -38,6 +38,7 @@ import org.maiwithu.maidroid.maibot.MaiBotStartup
 import org.maiwithu.maidroid.maibot.MaiBotStartupResult
 import org.maiwithu.maidroid.maibot.failure
 import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
+import org.maiwithu.maidroid.maibot.shouldReportBackgroundMaiBotCrash
 import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
@@ -228,9 +229,10 @@ class MaiBotRuntimeService : Service() {
         }
         // 服务刚起或开机自启时先补发一次上次尚未上报的崩溃记录
         appDependencies.remoteOps.reportPendingCrashIfNeeded()
-        // 监听后台 MaiBot 启动阶段异常（例如开机自启无人盯盘时连续退出），提取纯 Python Traceback 上报
+        // 监听后台 MaiBot 启动阶段异常（例如开机自启无人盯盘时连续退出），提取纯 Python Traceback 上报；
+        // 改看稳定运行后会归零的 consecutiveExits，避免长跑偶发被系统 SIGKILL 强杀累计 2 次后误报 MB-CRASH。
         serviceScope.launch {
-            var lastReportedExitCount = 0
+            var lastReportedConsecutiveExits = 0
             var lastReportedBlockedReason: String? = null
             maiBotProcess.status.collect { status ->
                 if (!runtimeRequested || lowBatteryPaused || safeExitRunning) return@collect
@@ -243,12 +245,12 @@ class MaiBotRuntimeService : Service() {
                 } else if (blocked == null) {
                     lastReportedBlockedReason = null
                 }
-                if (status.exitCount >= MaiBotStartup.MAX_EXITS &&
-                    status.exitCount >= lastReportedExitCount + MaiBotStartup.MAX_EXITS
-                ) {
-                    lastReportedExitCount = status.exitCount
+                if (status.consecutiveExits < MaiBotStartup.MAX_EXITS) {
+                    lastReportedConsecutiveExits = 0
+                } else if (shouldReportBackgroundMaiBotCrash(status.consecutiveExits, lastReportedConsecutiveExits)) {
+                    lastReportedConsecutiveExits = status.consecutiveExits
                     val recentOut = maiBotRecentRunOutput(TerminalLog.logs.value.map(AnsiText::plain))
-                    MaiBotStartupResult.Crashed(status.exitCount, status.lastExitCode).failure(recentOut)?.let { failure ->
+                    MaiBotStartupResult.Crashed(status.consecutiveExits, status.lastExitCode).failure(recentOut)?.let { failure ->
                         appDependencies.remoteOps.reportMaiBotStartupFailure(failure)
                     }
                 }

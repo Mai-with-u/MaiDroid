@@ -43,7 +43,8 @@ internal data class AnnouncementFilter(
     val manufacturers: List<String> = emptyList(),
     val minSdkInt: Int? = null,
     val activeQqClients: List<String> = emptyList(),
-    val onlyDuringOobe: Boolean = false
+    val onlyDuringOobe: Boolean = false,
+    val onlyAfterOobe: Boolean = false
 )
 
 @Serializable
@@ -98,6 +99,7 @@ internal fun RemoteAnnouncement.matches(env: ClientEnvironment): Boolean {
     if (id.isBlank() || title.isBlank() || body.isBlank()) return false
     if (expiresAt != null && env.nowEpochSeconds >= expiresAt) return false
     if (filter.onlyDuringOobe && env.setupComplete) return false
+    if (filter.onlyAfterOobe && !env.setupComplete) return false
     if (filter.minSdkInt != null && env.sdkInt < filter.minSdkInt) return false
 
     if (filter.manufacturers.isNotEmpty()) {

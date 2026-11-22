@@ -13,7 +13,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,10 +67,7 @@ internal fun FailureNotice(
     val remoteActionTarget = remember(remoteHint?.actionTarget) { parseRemoteActionTarget(remoteHint?.actionTarget) }
     val cause = failure.cause
 
-    LaunchedEffect(failure.code) {
-        remoteOps.reportFailure(failure)
-    }
-
+    // 失败遥测与自动报错提取已统一在业务层写出 failure.logLine() 时抓当下现场上报，UI 层只做展示与手动求助码上传，避免重绘时刷旧日志重报。
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "错误码 ${failure.code}",
@@ -116,7 +112,14 @@ internal fun FailureNotice(
             } else {
                 cause?.action?.let { action ->
                     NoticeButton(text = action.label, highlighted = true) {
-                        if (action == FailureAction.FreeUpStorage) showCleanup = true else openSystemSettings(context, action)
+                        when (action) {
+                            FailureAction.FreeUpStorage -> showCleanup = true
+                            FailureAction.MaiBotUpdate ->
+                                // 复用远端动作宿主弹出 MaiBot 更新对话框，避免在错误卡片里再复制一份状态弹窗。
+                                dispatchRemoteAction(context, "open:maibot_update") { remoteModalKey = it }
+                            FailureAction.NetworkSettings,
+                            FailureAction.DateSettings -> openSystemSettings(context, action)
+                        }
                     }
                 }
             }
@@ -179,12 +182,13 @@ private fun NoticeButton(
     }
 }
 
-// 原因带的跳转里打开系统设置的那几种：网络、日期时间（清理空间用应用自己的清理弹窗，那里还能再去系统存储设置）。
+// 原因带的跳转里打开系统设置的那几种：网络、日期时间（清理空间和 MaiBot 更新走应用内弹窗）。
 private fun openSystemSettings(context: Context, action: FailureAction) {
     val intentAction = when (action) {
         FailureAction.NetworkSettings -> Settings.ACTION_WIRELESS_SETTINGS
         FailureAction.DateSettings -> Settings.ACTION_DATE_SETTINGS
         FailureAction.FreeUpStorage -> Settings.ACTION_INTERNAL_STORAGE_SETTINGS
+        FailureAction.MaiBotUpdate -> return
     }
     runCatching {
         context.startActivity(Intent(intentAction).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

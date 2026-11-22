@@ -73,6 +73,40 @@ class OwnChildProcessesTest {
         )
     }
 
+    @Test
+    fun `logUnexpectedSigkill logs uptime and child count only for unexpected 137 exit`() {
+        val logs = mutableListOf<String>()
+
+        logUnexpectedSigkill(
+            exitCode = 137,
+            intentionallyStopped = false,
+            uptimeMs = 305_900L,
+            childCountProvider = { 19 },
+            onLog = { logs += it }
+        )
+        logUnexpectedSigkill(
+            exitCode = 137,
+            intentionallyStopped = false,
+            uptimeMs = null,
+            childCountProvider = { 18 },
+            onLog = { logs += it }
+        )
+        logUnexpectedSigkill(exitCode = 137, intentionallyStopped = true, uptimeMs = 5_000L, childCountProvider = { 10 }) {
+            logs += it
+        }
+        logUnexpectedSigkill(exitCode = 1, intentionallyStopped = false, uptimeMs = 5_000L, childCountProvider = { 10 }) {
+            logs += it
+        }
+
+        assertEquals(
+            listOf(
+                "[MaiDroid] 容器进程收到 SIGKILL(137)，本轮已运行 305s，当前本应用子进程数：19",
+                "[MaiDroid] 容器进程收到 SIGKILL(137)，当前本应用子进程数：18"
+            ),
+            logs
+        )
+    }
+
     private fun writeFakeProc(procRoot: File, pid: Int, uid: Int, cmdline: String): File {
         val dir = File(procRoot, pid.toString()).apply { mkdirs() }
         File(dir, "status").writeText("Uid:\t$uid\t$uid\t$uid\t$uid\n")

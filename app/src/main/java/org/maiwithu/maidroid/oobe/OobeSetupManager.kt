@@ -245,6 +245,7 @@ internal class OobeSetupManager(
             }
 
             val setupSteps = listOf(
+                Triple("正在验证 proot 容器启动...", FailureStep.ContainerProot, ContainerSetupScripts.verifyProot()),
                 Triple("正在配置共享存储入口...", FailureStep.ContainerStorage, ContainerSetupScripts.setupStorageBridge()),
                 Triple(
                     "正在配置容器 DNS...",

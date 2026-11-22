@@ -72,13 +72,58 @@ internal object AutoErrorExtractor {
     private val INSTALL_ERROR_KEYWORDS = listOf(
         "error", "fatal", "failed", "exception", "cannot", "permission denied",
         "exit code", "not found", "returned error", "no such file", "unable to",
-        "segmentation fault", "killed", "exec format", "traceback"
+        "segmentation fault", "killed", "exec format", "traceback",
+        "安装失败", "配置失败", "退出码", "需要 maibot", "还没生成", "不完整", "失败：", "失败:"
     )
 
-    private val MAIBOT_LIFECYCLE_OR_ERROR_WORDS = listOf(
-        "Process started", "Process exited", "Failed to start", "Runtime validation",
-        "Traceback", "Error", "Exception", "Killed", "Segmentation fault", "TOMLDecodeError"
+    // QQ 适配器配置等待期只放行插件加载/依赖相关的 MaiBot 输出，剔除图片嵌入、聊天推理等无关业务异常
+    private val ADAPTER_RELEVANT_MAIBOT_KEYWORDS = listOf(
+        "snowluma", "adapter", "manifest", "插件", "silk-python", "低于最小要求"
     )
+
+    private val ADAPTER_CONFIG_STEPS = setOf(
+        FailureStep.NapCatAdapterConfig,
+        FailureStep.SnowLumaAdapterConfig
+    )
+
+    // 识别终端里的 NapCat 字符画二维码、扫码提示噪音以及扫码风控失败行，避免占满 50 行上报窗口或误充当配置失败标题
+    private val QR_ASCII_ART_LINE = Regex("""^(?:\[[^\]]+]\s*)?[█▄▀ ]*[▄▀][█▄▀ ]{7,}$""")
+
+    private val NAPCAT_QR_NOISE_KEYWORDS = listOf(
+        "二维码解码url",
+        "如果控制台二维码无法扫码",
+        "请扫描下面的二维码",
+        "二维码已保存到",
+        "请求刷新二维码",
+        "二维码已被扫描"
+    )
+
+    private val NAPCAT_LOGIN_ERROR_RE = Regex("""\[Core]\s*\[Login]\s*Login Error""", RegexOption.IGNORE_CASE)
+
+    // 过滤容器内 Electron/QQ 必刷的无害调试与日志指纹行，避免挤占窗口并按随机哈希分裂错误指纹
+    private val PURE_HEX64_LINE = Regex("""^(?:\[[^\]]+]\s*)?[0-9a-f]{64}$""", RegexOption.IGNORE_CASE)
+
+    private val BENIGN_RUNTIME_NOISE_MARKERS = listOf(
+        "error:dbus/",
+        "file_path_watcher_inotify",
+        "[nativecrashhandler.cpp]",
+        "[buglymanager.cpp]",
+        "[qq hotupdate]",
+        "droppedframe("
+    )
+
+    // dpkg 安装正常解包/配置包列表的进度行，避免包名本身带 "error"（如 liberror-perl）抢占错误标题
+    private val DPKG_PROGRESS_PREFIXES = listOf(
+        "unpacking ",
+        "preparing to unpack ",
+        "selecting previously unselected package",
+        "setting up "
+    )
+
+    private val CRASH_HEADER_VERSION_RE = Regex("""^MaiDroid\s+([0-9A-Za-z._-]+)""")
+
+    // 正常退出码（如 apt/git 成功输出 exit code: 0）不得因匹配到 "exit code" 关键词而被当成错误标题
+    private val ZERO_EXIT_CODE_RE = Regex("""(?i)(?:exit code|退出码)\s*[:：]?\s*0\b""")
 
     private val EXCEPTION_CLASS_LINE =
         Regex("""^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit|Interrupt)|SyntaxError|IndentationError|MemoryError|SystemExit|TOMLDecodeError|ModuleNotFoundError|ImportError)\b.*""")
@@ -91,6 +136,8 @@ internal object AutoErrorExtractor {
 
     private val MAIBOT_BOOT_WHITELIST_REGEXES = listOf(
         Regex("""\[MaiBot]\s+(?:Process started|Process exited with code:|Failed to start process:|Runtime validation failed:)"""),
+        // 放行被系统 SIGKILL 强杀时的本轮运行时长与子进程水位日志，便于现场分辨冷启动崩溃与后台长跑被杀
+        Regex("""\[MaiDroid]\s+容器进程收到\s+SIGKILL\(137\)"""),
         Regex("""proot\s+(?:error|warning):""", RegexOption.IGNORE_CASE),
         Regex("""(?:Exec format error|cannot execute binary file|Segmentation fault|Illegal instruction|^\s*Killed\s*$)"""),
         Regex("""(?:TOMLDecodeError|tomlkit\.exceptions|Invalid TOML|ModuleNotFoundError|No module named|ImportError)"""),
@@ -130,6 +177,16 @@ internal object AutoErrorExtractor {
         val step = FailureStep.entries.firstOrNull { it.code == stepCode } ?: return null
         val cause = causeCode?.let { target -> FailureCause.entries.firstOrNull { it.code == target } }
         return step to cause
+    }
+
+    /** 从本地崩溃文件第一行表头提取崩溃发生时的应用版本号，避免升级后仍按当前新版本重复上报旧版本残留崩溃。 */
+    fun extractCrashHeaderVersion(crashFileText: String?): String? {
+        val firstLine = crashFileText
+            ?.lineSequence()
+            ?.firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?: return null
+        return CRASH_HEADER_VERSION_RE.find(firstLine)?.groupValues?.getOrNull(1)?.takeIf { it.isNotEmpty() }
     }
 
     /** 构造 App 闪退/原生崩溃/ANR 自动上报草稿，彻底剥离闪退前的终端日志。 */
@@ -212,7 +269,9 @@ internal object AutoErrorExtractor {
                 if (trimmed.isEmpty()) return@filter false
                 if (trimmed.contains(FAILURE_LOG_PREFIX)) return@filter false
                 if (containsChatPrivacyKeyword(trimmed)) return@filter false
-                if (setupComplete && isLikelyMaiBotRuntimeLine(trimmed)) return@filter false
+                if (isQqQrNoiseLine(trimmed)) return@filter false
+                if (isBenignRuntimeNoiseLine(trimmed)) return@filter false
+                if (!shouldKeepMaiBotLineInInstall(trimmed, step, setupComplete)) return@filter false
                 true
             }
             .takeLast(MAX_INSTALL_TAIL_LINES)
@@ -224,10 +283,17 @@ internal object AutoErrorExtractor {
         }
 
         val sigSourceLines = contextText.lines().map(String::trim).filter(String::isNotEmpty)
+        val allowMaiBotSignal = step in ADAPTER_CONFIG_STEPS
         val highSignalLine = sigSourceLines.lastOrNull { line ->
             val lower = line.lowercase()
-            !line.startsWith("[MaiDroid] ") && INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
-        } ?: sigSourceLines.lastOrNull() ?: redactedMessage
+            val strippedLower = if (lower.startsWith("[")) lower.substringAfter("]", lower).trimStart() else lower
+            !line.startsWith("[MaiDroid] ") &&
+                (allowMaiBotSignal || !line.startsWith("[MaiBot]")) &&
+                (!allowMaiBotSignal || !NAPCAT_LOGIN_ERROR_RE.containsMatchIn(line)) &&
+                DPKG_PROGRESS_PREFIXES.none { strippedLower.startsWith(it) } &&
+                !ZERO_EXIT_CODE_RE.containsMatchIn(line) &&
+                INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
+        } ?: redactedMessage
 
         val normalizedSig = normalizeSignatureLine(highSignalLine)
         val fingerprint = sha256Hex("install|$errorCode|$normalizedSig").take(32)
@@ -306,7 +372,13 @@ internal object AutoErrorExtractor {
             }.orEmpty()
             "maibot_boot|$errorCode|${normalizeSignatureLine(pyErrLine)}|$pyFrameKey"
         } else {
-            val fallbackSig = contextText.lines().lastOrNull { it.isNotBlank() } ?: redactedMessage
+            // 计算无 Traceback 指纹时跳过带运行时长与子进程数动态数值的 SIGKILL 补充行，避免同因报错按秒分裂指纹
+            val fallbackSig = contextText.lines()
+                .lastOrNull { line ->
+                    line.isNotBlank() && !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)")
+                }
+                ?: contextText.lines().lastOrNull { it.isNotBlank() }
+                ?: redactedMessage
             "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(fallbackSig)}"
         }
 
@@ -389,9 +461,27 @@ internal object AutoErrorExtractor {
         return CHAT_PRIVACY_KEYWORDS.any { lower.contains(it) }
     }
 
-    private fun isLikelyMaiBotRuntimeLine(trimmed: String): Boolean {
-        if (!trimmed.startsWith("[MaiBot]")) return false
-        return MAIBOT_LIFECYCLE_OR_ERROR_WORDS.none { trimmed.contains(it) }
+    // 剔除 NapCat 输出的字符画二维码与扫码提示，防止其占满 50 行尾部上下文并掩盖前置真实异常。
+    private fun isQqQrNoiseLine(trimmed: String): Boolean {
+        if (QR_ASCII_ART_LINE.matches(trimmed)) return true
+        val lower = trimmed.lowercase()
+        return NAPCAT_QR_NOISE_KEYWORDS.any { lower.contains(it) }
+    }
+
+    // 过滤容器环境下 Electron/LinuxQQ 常见无害输出与纯 SHA-256 哈希行，提升有效报错密度并稳定聚合指纹。
+    private fun isBenignRuntimeNoiseLine(trimmed: String): Boolean {
+        if (PURE_HEX64_LINE.matches(trimmed)) return true
+        val lower = trimmed.lowercase()
+        return BENIGN_RUNTIME_NOISE_MARKERS.any { lower.contains(it) }
+    }
+
+    // OOBE 完成后在安装/协议端阶段排障时，屏蔽无关的 MaiBot 后台运行异常（如图片嵌入/模型调用错误），
+    // 仅在等待 QQ 适配器配置生成时保留插件加载与依赖提示。
+    private fun shouldKeepMaiBotLineInInstall(trimmed: String, step: FailureStep, setupComplete: Boolean): Boolean {
+        if (!setupComplete || !trimmed.startsWith("[MaiBot]")) return true
+        if (step !in ADAPTER_CONFIG_STEPS) return false
+        val lower = trimmed.lowercase()
+        return ADAPTER_RELEVANT_MAIBOT_KEYWORDS.any { lower.contains(it) }
     }
 
     private fun normalizeSignatureLine(line: String): String {

@@ -4,10 +4,16 @@ package org.maiwithu.maidroid.runtime
  * OOBE“配置容器”一步里对刚解包的 Debian rootfs 做的初始化。
  *
  * 执行顺序（见 OobeSetupManager.prepareContainer）：
- * 共享存储入口 -> DNS -> apt 换清华源 -> 安装 git、curl、CA 证书。
+ * proot 启动冒烟校验 -> 共享存储入口 -> DNS -> apt 换清华源 -> 安装 git、curl、CA 证书。
  * 每段脚本都可重复执行：已有的备份不会被覆盖，重跑只会把配置恢复成 MaiDroid 期望的样子。
  */
 internal object ContainerSetupScripts {
+
+    /**
+     * 首次进入容器的空跑探针：确保 proot loader 能在当前设备/兼容层顺利执行 `/bin/sh -c ... true`，
+     * 避免底层容器启动失败错误地记在后续“配置共享存储入口（CT-STORAGE）”步骤头上。
+     */
+    fun verifyProot(): ContainerScript = ContainerScript("true")
 
     /** 在 /root/storage 下建到 /sdcard 各常用目录的链接，方便在容器里存取手机文件。 */
     fun setupStorageBridge(): ContainerScript = ContainerScript(

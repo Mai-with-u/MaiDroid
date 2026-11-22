@@ -57,6 +57,39 @@ class RemoteManifestTest {
     }
 
     @Test
+    fun afterOobeOnlyAnnouncementSkipsIncompleteOobeDevices() {
+        val afterOobeAnn = RemoteAnnouncement(
+            id = "ann-after-oobe",
+            title = "引导后提醒",
+            body = "完成后才展示",
+            filter = AnnouncementFilter(onlyAfterOobe = true)
+        )
+        assertFalse(afterOobeAnn.matches(baseEnv.copy(setupComplete = false)))
+        assertTrue(afterOobeAnn.matches(baseEnv.copy(setupComplete = true)))
+
+        // 缺少新字段的旧版清单 JSON 仍应反序列化成功并默认 onlyAfterOobe = false
+        val legacyJson = """
+            {
+              "version": 1,
+              "generatedAt": 1795000000,
+              "announcements": [
+                {
+                  "id": "ann-legacy",
+                  "level": "warning",
+                  "title": "旧版公告",
+                  "body": "内容",
+                  "filter": { "onlyDuringOobe": false }
+                }
+              ],
+              "failureHints": []
+            }
+        """.trimIndent()
+        val parsed = parseRemoteManifest(legacyJson)
+        assertNotNull(parsed)
+        assertFalse(parsed!!.announcements.single().filter.onlyAfterOobe)
+    }
+
+    @Test
     fun remoteFailureHintsAttachOverrideWithoutAlteringErrorCode() {
         try {
             updateRemoteFailureHints(
@@ -82,6 +115,28 @@ class RemoteManifestTest {
             assertNull(
                 failureOf(FailureStep.AptInstall, "失败", "protocol_rejected_v9").remoteHint
             )
+        } finally {
+            updateRemoteFailureHints(emptyList())
+        }
+    }
+
+    @Test
+    fun remoteFailureHintsMatchZeroOutputExitCodeViaSummaryFallback() {
+        try {
+            updateRemoteFailureHints(
+                listOf(
+                    RemoteFailureHint(
+                        id = "h-proot-182",
+                        steps = listOf("CT-STORAGE", "CT-PROOT"),
+                        containsAny = listOf("exit code: 182", "命令退出码: 182"),
+                        title = "暂不支持鸿蒙卓易通容器",
+                        advice = "proot 加载器退出码 182，请在原生安卓设备运行。"
+                    )
+                )
+            )
+            val failure = failureOf(FailureStep.ContainerStorage, "命令退出码: 182", output = "")
+            assertEquals("CT-STORAGE/PROOT-182", failure.code)
+            assertEquals("暂不支持鸿蒙卓易通容器", failure.remoteHint?.title)
         } finally {
             updateRemoteFailureHints(emptyList())
         }

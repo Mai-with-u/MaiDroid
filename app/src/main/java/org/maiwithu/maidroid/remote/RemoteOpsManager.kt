@@ -320,6 +320,12 @@ internal class RemoteOpsManager(
                 val record = crashRecorder.latestCrash() ?: return@withLock
                 if (record.timeMillis <= settings.lastAutoReportedCrashMillis) return@withLock
                 val crashText = crashRecorder.readCrashFile(record)
+                // 旧版本残留的本地崩溃文件不再按当前版本上报，记录为已处理以免升级后误导看板。
+                val crashVersion = AutoErrorExtractor.extractCrashHeaderVersion(crashText)
+                if (crashVersion != null && !crashVersion.equals(BuildConfig.VERSION_NAME, ignoreCase = true)) {
+                    settings.lastAutoReportedCrashMillis = record.timeMillis
+                    return@withLock
+                }
                 val redactor = diagnosticsProvider().createRedactor()
                 val draft = AutoErrorExtractor.buildCrashDraft(record.summary, crashText, redactor)
                 if (sendAutoErrorLocked(draft)) {
@@ -401,7 +407,8 @@ internal class RemoteOpsManager(
             message = draft.message,
             contextText = draft.contextText,
             extra = ErrorReportExtraPayload(
-                oobeStep = settings.oobeStep,
+                // OOBE 完成后 settings.oobeStep 仍保留最后一步 Install，仅未完成引导时才上报步骤以免看板误导
+                oobeStep = if (settings.setupComplete) null else settings.oobeStep,
                 setupComplete = settings.setupComplete,
                 activeQqClient = activeQq,
                 availableStorageMb = lightMeta.availableStorageMb,

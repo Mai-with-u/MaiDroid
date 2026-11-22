@@ -72,6 +72,33 @@ class SnowLumaScriptsTest {
     }
 
     @Test
+    fun `linux qq runtime libraries are ensured even when qq deb install is skipped`() {
+        // 即使容器内早已装过 /opt/QQ 而跳过 deb 安装，也要在 if/else 外检查并补齐运行所需的四个共享库。
+        val qqBranchEnd = install.indexOf("rm -f /root/.cache/maidroid-snowluma/QQ_3.2.32_260812_arm64_01.deb\nfi")
+        assertTrue(qqBranchEnd >= 0)
+        val afterQqBranch = install.substring(qqBranchEnd)
+
+        val readyCall = afterQqBranch.indexOf("if ! maidroid_linuxqq_deps_ready; then")
+        assertTrue(readyCall > 0)
+        assertTrue(afterQqBranch.indexOf("maidroid_linuxqq_install_deps", readyCall) > readyCall)
+        assertTrue(install.contains("libnss3 libgbm1 libgssapi-krb5-2"))
+        assertTrue(install.contains("libasound2t64"))
+        assertTrue(install.contains("libasound2"))
+        assertTrue(install.contains("LinuxQQ 运行依赖安装失败"))
+    }
+
+    @Test
+    fun `prepare runtime checks and self-heals missing linux qq shared libraries without blocking startup`() {
+        // 每次启动前注入 AptMirrors 并仅在已装 qq 时检查四库，缺库自动补装且失败时不 exit 1 阻断生成启动脚本。
+        val selfHealSection = launcher.substringBefore("mkdir -p /root/snowluma/data")
+        assertTrue(selfHealSection.contains("maidroid_apt_install()"))
+        assertTrue(selfHealSection.contains("if command -v qq >/dev/null 2>&1 && ! maidroid_linuxqq_deps_ready; then"))
+        assertTrue(selfHealSection.contains("[自动修复]"))
+        assertTrue(selfHealSection.contains("maidroid_linuxqq_install_deps"))
+        assertFalse(selfHealSection.contains("exit 1"))
+    }
+
+    @Test
     fun `onebot config serves maibot on the shared port with the shared token`() {
         val config = install.substringAfter("cat > /root/snowluma/data/config/onebot.json.tmp <<EOF").substringBefore("\nEOF\n")
 

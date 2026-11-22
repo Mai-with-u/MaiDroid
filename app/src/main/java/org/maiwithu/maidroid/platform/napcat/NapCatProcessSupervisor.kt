@@ -238,6 +238,7 @@ internal class NapCatProcessSupervisor(
         var startedProcess: Process? = null
         try {
             val currentProcess = commandRunner.start(NapCatScripts.launch())
+            val startedAtMs = System.currentTimeMillis()
             startedProcess = currentProcess
             // 停止（含安全退出、低电量暂停）可能恰好在启动途中发生：terminateProcess 在同一把锁里取消本协程，
             // 所以要么停止流程看得到这个进程、请 QQ 退出，要么这里看到本协程已被取消、正在退出或暂停着，
@@ -257,9 +258,10 @@ internal class NapCatProcessSupervisor(
                 }
             }
             val exitCode = currentProcess.waitFor()
+            val uptimeMs = (System.currentTimeMillis() - startedAtMs).coerceAtLeast(0L)
             // launcher 随 QQ 退出：只要不是被下令停掉，都交给监管循环整树重启。
             TerminalLog.append("[NapCat] 进程退出码: $exitCode")
-            logUnexpectedSigkill(exitCode, shouldStopSupervising()) { TerminalLog.append(it) }
+            logUnexpectedSigkill(exitCode, shouldStopSupervising(), uptimeMs = uptimeMs) { TerminalLog.append(it) }
             return true
         } catch (e: Exception) {
             TerminalLog.append("[NapCat] 启动异常: ${e.message.orEmpty()}")

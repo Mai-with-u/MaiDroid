@@ -226,6 +226,7 @@ internal class NapCatPlatformManager(
         }
 
         if (!forceReinstall && files.isInstalled() && !adapterInstaller.needsInstall()) {
+            _state.update { it.copy(failure = null) }
             scope.launch {
                 switcher.activate(QqClient.NapCat)
                 refreshStatus()
@@ -281,7 +282,8 @@ internal class NapCatPlatformManager(
                 }
         }
         if (validationError != null) {
-            fail(Failure(FailureStep.NapCatPrecheck, validationError))
+            // 经过 failureOf 匹配内置原因（如 MaiBot 版本过低）和远端热规则，提供直接可操作的按钮。
+            fail(failureOf(FailureStep.NapCatPrecheck, validationError))
             return
         }
         // NapCat、LinuxQQ 和 QQ 适配器都要从网上下载，没连网、空间明摆着不够时直接说
@@ -349,7 +351,8 @@ internal class NapCatPlatformManager(
         restartRuntime()
         val migrationError = adapterInstaller.migrateConfigWhenReady()
         if (migrationError != null) {
-            fail(Failure(FailureStep.NapCatAdapterConfig, migrationError))
+            // 配置等待失败走 failureOf，确保能认出 MaiBot 拒绝加载原因或命中远端排障热规则。
+            fail(failureOf(FailureStep.NapCatAdapterConfig, migrationError))
             return
         }
 
@@ -443,7 +446,11 @@ internal class NapCatPlatformManager(
             }
         }
         val account = loginAccount
+        val adapterConfigured = withContext(Dispatchers.IO) { !adapterInstaller.needsConfigMigration() }
         _state.update { current ->
+            // OneBot 已恢复连接或后台已完成适配器配置迁移时撤销过期的失败提示。
+            val clearFailure = current.failure != null &&
+                (snapshot.oneBotReachable || (current.failure.step == FailureStep.NapCatAdapterConfig && adapterConfigured))
             current.copy(
                 phase = when {
                     current.isInstalling -> NapCatInstallPhase.Installing
@@ -465,7 +472,8 @@ internal class NapCatPlatformManager(
                 accountId = account?.uin ?: snapshot.accountId,
                 accountName = account?.nick,
                 active = active,
-                customSourceUrl = settings.napCatCustomSourceUrl
+                customSourceUrl = settings.napCatCustomSourceUrl,
+                failure = if (clearFailure) null else current.failure
             )
         }
     }
