@@ -192,6 +192,19 @@ internal class DesktopPetManager(
         }
     }
 
+    /** 断开并重新建立悬浮桌宠连接，绕过活动期防抖保护以恢复异常连接。 */
+    fun reconnect() {
+        runOnMain {
+            if (!Settings.canDrawOverlays(appContext)) {
+                startOnMain()
+                return@runOnMain
+            }
+            // 先清理旧会话再重拉连接，避免 startOnMain 被 Connecting/Running 防重入保护拦截
+            stopOnMain(resetStatus = true)
+            startOnMain()
+        }
+    }
+
     /** 断开传输并关闭悬浮桌宠；允许从 IO 线程（如安全退出流程）安全调用。 */
     fun stop() {
         if (Looper.myLooper() == Looper.getMainLooper()) {
