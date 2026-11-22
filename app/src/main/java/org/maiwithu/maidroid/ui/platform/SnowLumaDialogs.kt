@@ -264,6 +264,26 @@ internal fun QqWindowDialog(
         iconBackground = IconPeachOrange,
         size = MaiDialogSize.Medium,
         onDismissRequest = onDismiss,
+        // 说明与报错放进次列：横屏宽度够时画面在左、说明在右并排，画面不必为文字让出高度；竖屏仍顺接在画面下方。
+        secondaryContent = {
+            Text(
+                text = "点击画面位置即可操作 QQ 窗口；也可截图发给另一台设备，用手机 QQ 扫码登录。",
+                color = TextFaint,
+                fontSize = TextSizes.Caption,
+                lineHeight = 15.sp
+            )
+            if (state.hookPhase == SnowLumaHookPhase.Failed && state.failure == null) {
+                Text(
+                    text = snowLumaLoginHint(state),
+                    color = StatusDanger,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 15.sp
+                )
+            }
+            state.failure?.let { failure ->
+                FailureNotice(failure = failure, summary = failure.message)
+            }
+        },
         footer = {
             MaiDialogButton(
                 text = "关闭",
@@ -279,32 +299,17 @@ internal fun QqWindowDialog(
         ) {
             QqWindowImage(frame = frame, onTap = onTap)
         }
-        Text(
-            text = "点击画面位置即可操作 QQ 窗口；也可截图发给另一台设备，用手机 QQ 扫码登录。",
-            color = TextFaint,
-            fontSize = TextSizes.Caption,
-            lineHeight = 15.sp
-        )
-        if (state.hookPhase == SnowLumaHookPhase.Failed && state.failure == null) {
-            Text(
-                text = snowLumaLoginHint(state),
-                color = StatusDanger,
-                fontSize = TextSizes.Caption,
-                lineHeight = 15.sp
-            )
-        }
-        state.failure?.let { failure ->
-            FailureNotice(failure = failure, summary = failure.message)
-        }
     }
 }
 
-/** QQ 窗口的画面，按窗口的宽高比铺满弹窗宽度；横屏时限高，免得把说明挤出去。还没有画面时换成一句原因。 */
+/** QQ 窗口的画面，按窗口的宽高比铺满弹窗宽度；横屏时限高到弹窗内容区一屏以内，免得要先滚动才能点到画面。还没有画面时换成一句原因。 */
 @Composable
 private fun QqWindowImage(
     frame: QqScreenFrame?,
     onTap: (QqScreenFrame, Float, Float) -> Unit
 ) {
+    // 横屏弹窗内容区约 180dp 高，画面限高 176dp 以内整屏可见；竖屏保持最高 400dp 的大画面。
+    val maxImageHeight = if (LocalMaiDialogPhoneLandscape.current) 176.dp else 400.dp
     if (frame == null) {
         MaiDialogSectionCard {
             Text(
@@ -322,7 +327,7 @@ private fun QqWindowImage(
     }
     Box(
         modifier = Modifier
-            .heightIn(max = 400.dp)
+            .heightIn(max = maxImageHeight)
             .aspectRatio(frame.width.toFloat() / frame.height.toFloat())
             .clip(RoundedCornerShape(Corners.Control))
             .background(QrCanvasBackground)

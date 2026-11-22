@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.remote.AnnouncementLevel
 import org.maiwithu.maidroid.remote.RemoteAnnouncement
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -214,9 +215,11 @@ internal fun AnnouncementModalDialogHost(
                         )
                     }
                 } else {
+                    // 只有一个按钮时：竖屏铺满整行与其他弹窗对齐，横屏按文字定宽紧贴底栏右侧。
                     MaiDialogButton(
                         text = "知道了",
                         onClick = onDismiss,
+                        modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
                         style = MaiDialogButtonStyle.Primary
                     )
                 }

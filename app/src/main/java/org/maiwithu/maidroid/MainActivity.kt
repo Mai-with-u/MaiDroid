@@ -10,6 +10,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,15 +56,18 @@ class MainActivity : ComponentActivity() {
                     applySystemBars(window, landscape = landscape, hideNavigationBar = setupComplete)
                 }
 
-                MaiDroidApp(
-                    viewModel = viewModel,
-                    permissions = permissions,
-                    versionName = BuildConfig.VERSION_NAME,
-                    onOpenWebUi = ::openWebUi,
-                    onExit = ::finish,
-                    // 安全退出进度弹窗的“切到后台”：只把任务退到后台，退出照样在前台服务里做完
-                    onMoveToBackground = { moveTaskToBack(true) }
-                )
+                // 把系统栏策略传给界面里的弹窗：弹窗是独立窗口，要对自己的窗口套用同一套显隐规则。
+                CompositionLocalProvider(LocalHideNavigationBar provides setupComplete) {
+                    MaiDroidApp(
+                        viewModel = viewModel,
+                        permissions = permissions,
+                        versionName = BuildConfig.VERSION_NAME,
+                        onOpenWebUi = ::openWebUi,
+                        onExit = ::finish,
+                        // 安全退出进度弹窗的“切到后台”：只把任务退到后台，退出照样在前台服务里做完
+                        onMoveToBackground = { moveTaskToBack(true) }
+                    )
+                }
             }
         }
     }

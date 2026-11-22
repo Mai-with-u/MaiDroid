@@ -135,7 +135,8 @@ internal fun OobeAuthorizationDialog(
 
             if (useAdaptiveLayout) {
                 val isShort = maxHeight < 420.dp
-                val screenPadding = if (isShort) 10.dp else 24.dp
+                // 手机横屏也留出清晰的上下边距，让授权卡读起来是浮在引导页上的一张卡片。
+                val screenPadding = if (isShort) 18.dp else 24.dp
 
                 BoxWithConstraints(
                     modifier = Modifier
@@ -147,6 +148,8 @@ internal fun OobeAuthorizationDialog(
                     val fontScale = LocalDensity.current.fontScale
                     val useSideBySide = maxWidth >= 560.dp * fontScale.coerceAtMost(1.6f)
                     val cardHeightLimit = minOf(maxHeight, if (isShort) 340.dp else 420.dp)
+                    // 手机横屏宽度按比例收敛并封顶 600dp，左右露出背景，避免横向铺满整屏；平板仍最多 720dp。
+                    val cardWidthLimit = if (isShort) minOf(maxWidth * 0.84f, 600.dp) else 720.dp
 
                     AdaptiveAuthorizationCard(
                         blurTarget = blurTarget,
@@ -155,7 +158,7 @@ internal fun OobeAuthorizationDialog(
                         onAgree = onAgree,
                         onExit = onExit,
                         modifier = Modifier
-                            .widthIn(max = 720.dp)
+                            .widthIn(max = cardWidthLimit)
                             .fillMaxWidth()
                             .heightIn(max = cardHeightLimit)
                     )

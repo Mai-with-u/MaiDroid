@@ -1,8 +1,16 @@
 package org.maiwithu.maidroid
 
 import android.view.Window
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+
+/**
+ * 当前页面是否隐藏导航栏（即 applySystemBars 的 hideNavigationBar），由 MainActivity 按 OOBE 是否完成提供。
+ * 弹窗是独立窗口，打开时会接管系统栏显隐；弹窗读取这个值后对自己的窗口套用同一策略，
+ * 保证弹窗内外系统栏状态一致：横屏全隐藏，竖屏主页只露状态栏，OOBE 全显示。
+ */
+internal val LocalHideNavigationBar = staticCompositionLocalOf { false }
 
 /**
  * 按屏幕方向设置系统栏，MainActivity 和 WebUiActivity 共用。
