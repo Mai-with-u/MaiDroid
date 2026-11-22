@@ -134,10 +134,30 @@ internal object AutoErrorExtractor {
     private val LOG_TIMESTAMP_LINE =
         Regex("""^(?:\d{2,4}[-/]\d{2}[-/]\d{2}|\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}|\[\d{2}:\d{2}:\d{2})""")
 
+    // 协议端互斥提示（另一侧正在安装）和自定义源表单输入校验属于用户操作拦截，不应污染远端 ops 报错看板
+    private val USER_GUARDRAIL_PRECHECK_MARKERS = listOf(
+        "正在安装，等它装完再装",
+        "请填写",
+        "地址不能包含",
+        "请输入合法的",
+        "地址必须以",
+        "地址缺少域名",
+        "地址中请勿包含",
+        "仓库地址不完整",
+        "需要填写仓库地址",
+        "不能使用 .zip 包",
+        "直链需指向",
+        "直接下载地址"
+    )
+
     private val MAIBOT_BOOT_WHITELIST_REGEXES = listOf(
         Regex("""\[MaiBot]\s+(?:Process started|Process exited with code:|Failed to start process:|Runtime validation failed:)"""),
         // 放行被系统 SIGKILL 强杀时的本轮运行时长与子进程水位日志，便于现场分辨冷启动崩溃与后台长跑被杀
         Regex("""\[MaiDroid]\s+容器进程收到\s+SIGKILL\(137\)"""),
+        // 收录 1.4.x 宿主无 Traceback 直接以退出码 2 退出的硬报错行（仅限宿主引导/系统动态库前缀，不放行聊天日志）
+        Regex("""(?:宿主启动失败|MaiBot 宿主关闭未完成|WebUI 凭据文件|WebUI 前端资源不可用)[：:]"""),
+        Regex("""(?:error while loading shared libraries|cannot open shared object file|Permission denied)"""),
+        Regex("""^(?:/bin/sh:|sh:|bash:|uv:|python[0-9.]*:)\s+"""),
         Regex("""proot\s+(?:error|warning):""", RegexOption.IGNORE_CASE),
         Regex("""(?:Exec format error|cannot execute binary file|Segmentation fault|Illegal instruction|^\s*Killed\s*$)"""),
         Regex("""(?:TOMLDecodeError|tomlkit\.exceptions|Invalid TOML|ModuleNotFoundError|No module named|ImportError)"""),
@@ -155,7 +175,11 @@ internal object AutoErrorExtractor {
     private val WHITESPACE_RE = Regex("""\s+""")
 
     /** 判断某类报错是否需要自动携带脱敏现场上报；返回 null 时仅做原有计数统计。 */
-    fun classifyForAutoReport(step: FailureStep, cause: FailureCause?): AutoErrorCategory? = when (step) {
+    fun classifyForAutoReport(
+        step: FailureStep,
+        cause: FailureCause?,
+        message: String = ""
+    ): AutoErrorCategory? = when (step) {
         FailureStep.AppCrash -> AutoErrorCategory.Crash
         FailureStep.MaiBotBlocked,
         FailureStep.MaiBotCrash,
@@ -164,6 +188,13 @@ internal object AutoErrorExtractor {
             if (cause in MAIBOT_NOISE_CAUSES) null else AutoErrorCategory.MaiBotBoot
         // QQ 官方机器人连接期已处于消息收发运行期，保守拦截自动上下文上报
         FailureStep.QqOfficialConnect -> null
+        FailureStep.NapCatPrecheck,
+        FailureStep.SnowLumaPrecheck ->
+            if (cause in INSTALL_NOISE_CAUSES || (cause == null && isUserGuardrailPrecheckMessage(message))) {
+                null
+            } else {
+                AutoErrorCategory.Install
+            }
         else ->
             if (cause in INSTALL_NOISE_CAUSES) null else AutoErrorCategory.Install
     }
@@ -365,6 +396,21 @@ internal object AutoErrorExtractor {
         val pyErrLine = redactedTbLines.lastOrNull { EXCEPTION_CLASS_LINE.matches(it.trim()) }?.trim()
         val lastFileMatch = redactedTbLines.asReversed().firstNotNullOfOrNull { PYTHON_FILE_FRAME.find(it) }
 
+        // 没有 Traceback 时优先挑出真正的宿主/系统报错行，跳过 Process started / exited 等泛化状态行，避免指纹错聚或丢失标题。
+        val highSignalLine = if (pyErrLine == null) {
+            contextText.lines()
+                .map(String::trim)
+                .lastOrNull { line ->
+                    line.isNotEmpty() &&
+                        !line.startsWith("[MaiBot] Process started") &&
+                        !line.startsWith("[MaiBot] Process exited with code:") &&
+                        !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)") &&
+                        !line.startsWith("（未提取到")
+                }
+        } else {
+            null
+        }
+
         val fingerprintSeed = if (pyErrLine != null) {
             val pyFrameKey = lastFileMatch?.let { m ->
                 val fileTail = m.groupValues[1].replace('\\', '/').split('/').takeLast(2).joinToString("/")
@@ -373,16 +419,17 @@ internal object AutoErrorExtractor {
             "maibot_boot|$errorCode|${normalizeSignatureLine(pyErrLine)}|$pyFrameKey"
         } else {
             // 计算无 Traceback 指纹时跳过带运行时长与子进程数动态数值的 SIGKILL 补充行，避免同因报错按秒分裂指纹
-            val fallbackSig = contextText.lines()
-                .lastOrNull { line ->
-                    line.isNotBlank() && !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)")
-                }
+            val fallbackSig = highSignalLine
+                ?: contextText.lines()
+                    .lastOrNull { line ->
+                        line.isNotBlank() && !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)")
+                    }
                 ?: contextText.lines().lastOrNull { it.isNotBlank() }
                 ?: redactedMessage
             "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(fallbackSig)}"
         }
 
-        val title = (pyErrLine ?: cause?.title ?: redactedMessage).take(MAX_TITLE_CHARS)
+        val title = (pyErrLine ?: highSignalLine ?: cause?.title ?: redactedMessage).take(MAX_TITLE_CHARS)
         return AutoErrorDraft(
             category = AutoErrorCategory.MaiBotBoot,
             errorCode = errorCode,
@@ -459,6 +506,12 @@ internal object AutoErrorExtractor {
     private fun containsChatPrivacyKeyword(line: String): Boolean {
         val lower = line.lowercase()
         return CHAT_PRIVACY_KEYWORDS.any { lower.contains(it) }
+    }
+
+    private fun isUserGuardrailPrecheckMessage(message: String): Boolean {
+        val trimmed = message.trim()
+        if (trimmed.isEmpty()) return false
+        return USER_GUARDRAIL_PRECHECK_MARKERS.any { trimmed.contains(it, ignoreCase = true) }
     }
 
     // 剔除 NapCat 输出的字符画二维码与扫码提示，防止其占满 50 行尾部上下文并掩盖前置真实异常。

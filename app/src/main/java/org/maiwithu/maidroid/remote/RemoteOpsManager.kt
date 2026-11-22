@@ -342,7 +342,7 @@ internal class RemoteOpsManager(
         terminalPlainLines: List<String>
     ) {
         if (!settings.telemetryEnabled) return
-        val category = AutoErrorExtractor.classifyForAutoReport(step, cause) ?: return
+        val category = AutoErrorExtractor.classifyForAutoReport(step, cause, message) ?: return
         // MD-CRASH 统一由 reportPendingCrashIfNeeded 从本地崩溃堆栈文件提取完整栈帧，不从无栈提示处上报空记录
         if (category == AutoErrorCategory.Crash) return
 
