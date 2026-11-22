@@ -12,6 +12,7 @@ kotlinxSerializationJson = "1.7.3"
 commonsCompress = "1.26.2"
 xz = "1.9"
 blurview = "version-3.2.0"
+geckoview = "153.0.20260810162159"
 mmkv = "2.4.0"
 junit = "4.13.2"
 
@@ -60,6 +61,9 @@ xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 
 # Blur
 blurview = { group = "com.github.Dimezis", name = "BlurView", version.ref = "blurview" }
+
+# Browser Engine
+geckoview = { group = "org.mozilla.geckoview", name = "geckoview-arm64-v8a", version.ref = "geckoview" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 2,
+  "name": "MaiDroid WebUI Bridge",
+  "version": "1.0.0",
+  "description": "MaiDroid 内置 WebExtension：主题初始化、桌面/竖屏视口适配、底色上报、两指滚动与 Blob 下载桥接",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "maidroid-bridge@maiwithu.org"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons"
+  ]
+}

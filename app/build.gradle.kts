@@ -132,6 +132,9 @@ dependencies {
     // Blur
     implementation(libs.blurview)
 
+    // Embedded Web Engine (GeckoView arm64)
+    implementation(libs.geckoview)
+
     // Testing：只有 JVM 单元测试，没有设备上的仪器测试
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
