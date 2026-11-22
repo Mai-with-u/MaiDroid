@@ -220,7 +220,8 @@ internal fun MaiBotUpdateDialog(
 
     MaiDialog(
         title = "MaiBot 更新",
-        subtitle = state.branch?.let { "${maiBotBranchLabel(it)}（$it）" } ?: "从上游仓库检查最新提交",
+        // maiBotBranchLabel 已自带“正式版（main）”括号分支名，不再重复拼接。
+        subtitle = state.branch?.let(::maiBotBranchLabel) ?: "从上游仓库检查最新提交",
         icon = FlatFeatureIcons.MaiBotUpdate,
         iconBackground = IconSkyBlue,
         headerBadge = state.installed?.let {
