@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -64,6 +65,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,60 +110,83 @@ import kotlin.math.roundToInt
 
 private val DialogSurfaceStroke = Color(0x1EFFFFFF)
 private val DialogInnerSurface = PageBackground.copy(alpha = 0.56f)
-private val SplitLeftPaneBackdrop = PageBackground.copy(alpha = 0.24f)
+private val DialogBackdropScrim = Color.Black.copy(alpha = 0.62f)
 
-private val LocalMaiDialogLandscapeSplit = compositionLocalOf { false }
+/** 供子弹窗感知当前是否正处于手机横屏矮宽视口，以便决定是否展开详细预览或调整按钮排布。 */
+internal val LocalMaiDialogPhoneLandscape = compositionLocalOf { false }
 
-/** 弹窗自适应形态：竖屏单栏、手机横屏左右分栏、平板宽屏居中扩展。 */
-internal enum class MaiDialogLayoutMode {
-    Portrait,
-    LandscapeSplit,
+/** 标记当前正在渲染手机横屏紧凑单行底栏，供按钮行与按钮自动靠右紧排并收紧规格。 */
+private val LocalMaiDialogLandscapeBar = compositionLocalOf { false }
+
+/** 弹窗内容量分档：短确认保持紧凑小窗，单列列表用中等宽度，复杂双列信息/表单用扩展宽度。 */
+internal enum class MaiDialogSize {
+    Compact,
+    Medium,
     Expanded
 }
 
-/** 弹窗外框及横屏左栏尺寸规格（单位为 dp）。 */
+/** 弹窗容器的响应式规格（单位均为 dp）。 */
 internal data class MaiDialogLayoutSpec(
-    val mode: MaiDialogLayoutMode,
+    val isPhoneLandscape: Boolean,
     val maxWidthDp: Float,
     val maxHeightDp: Float,
-    val leftPaneWidthDp: Float = 0f
+    val useTwoColumns: Boolean
 )
 
-/** 根据安全区与软键盘扣除后的可用宽高，决定弹窗采用竖屏单栏、横屏左右双栏或平板宽屏排版。 */
-internal fun resolveMaiDialogLayout(availableWidthDp: Float, availableHeightDp: Float): MaiDialogLayoutSpec {
+/**
+ * 根据安全区与软键盘扣除后的可用宽高、弹窗分档及是否存在第二列内容，
+ * 计算容器最大宽高与是否启用内容双列布局：
+ * - Compact 横竖屏保持小巧卡片，避免短确认框拉成大黑板；
+ * - Medium 适度加宽，适合多行清理列表与扫码并排弹窗；
+ * - Expanded 在横屏/平板上拓宽到最多 680dp，由主列与次列在内容区各自独立滚动。
+ */
+internal fun resolveMaiDialogLayout(
+    availableWidthDp: Float,
+    availableHeightDp: Float,
+    size: MaiDialogSize = MaiDialogSize.Compact,
+    hasSecondaryContent: Boolean = false
+): MaiDialogLayoutSpec {
     val safeW = availableWidthDp.coerceAtLeast(0f)
     val safeH = availableHeightDp.coerceAtLeast(0f)
-    return when {
-        // 手机横屏高矮较局促（高 < 480dp 且明显宽于高）：放宽弹窗总宽并拆成左控制栏 + 右滚动区，避免上下挤成窄缝。
-        safeW >= 500f && safeH < 480f && safeW > safeH * 1.15f -> {
-            val width = (safeW * 0.94f).coerceAtMost(660f)
-            val height = (safeH * 0.94f).coerceAtMost(380f)
-            val leftPane = (width * 0.36f).coerceIn(208f, 244f)
-            MaiDialogLayoutSpec(
-                mode = MaiDialogLayoutMode.LandscapeSplit,
-                maxWidthDp = width,
-                maxHeightDp = height,
-                leftPaneWidthDp = leftPane
-            )
+    val isPhoneLandscape = safeW > safeH && safeH < 480f && safeW >= 500f
+    val isTablet = safeW >= 600f && safeH >= 480f
+
+    val maxWidthDp = when (size) {
+        MaiDialogSize.Compact -> minOf(safeW * 0.92f, 380f)
+        MaiDialogSize.Medium -> if (isPhoneLandscape || isTablet) {
+            minOf((safeW - 32f).coerceAtLeast(0f), 520f)
+                .coerceAtLeast(minOf(safeW * 0.92f, 420f))
+        } else {
+            minOf(safeW * 0.92f, 420f)
         }
-        // 平板等大屏设备在垂直方向同样舒展时保持单栏流式居中，并将上限拓宽到 520dp。
-        safeW >= 600f && safeH >= 480f -> MaiDialogLayoutSpec(
-            mode = MaiDialogLayoutMode.Expanded,
-            maxWidthDp = (safeW * 0.80f).coerceIn(440f, 520f),
-            maxHeightDp = (safeH * 0.84f).coerceAtMost(680f)
-        )
-        else -> MaiDialogLayoutSpec(
-            mode = MaiDialogLayoutMode.Portrait,
-            maxWidthDp = (safeW * 0.92f).coerceAtMost(420f),
-            // 取消保底最小高度限制，防止软键盘弹起后将弹窗撑出剩余屏幕范围。
-            maxHeightDp = safeH * 0.86f
-        )
+        MaiDialogSize.Expanded -> when {
+            isPhoneLandscape -> minOf((safeW - 32f).coerceAtLeast(0f), 680f)
+            isTablet -> minOf(safeW * 0.84f, 600f)
+            else -> minOf(safeW * 0.92f, 420f)
+        }
     }
+
+    val maxHeightDp = when {
+        isPhoneLandscape -> minOf(safeH - 20f, 344f).coerceAtLeast(0f)
+        isTablet -> minOf(safeH * 0.84f, 680f)
+        // 竖屏跟随剩余高度按比例收缩，避免弹出软键盘时把弹窗顶出屏幕范围。
+        else -> safeH * 0.86f
+    }
+
+    val useTwoColumns = hasSecondaryContent &&
+        ((isPhoneLandscape && maxWidthDp >= 500f) || (safeW >= 640f && maxWidthDp >= 540f))
+
+    return MaiDialogLayoutSpec(
+        isPhoneLandscape = isPhoneLandscape,
+        maxWidthDp = maxWidthDp,
+        maxHeightDp = maxHeightDp,
+        useTwoColumns = useTwoColumns
+    )
 }
 
 /**
- * 判定底部动作按钮行在当前宽度与权重下是否应切换为垂直堆叠，
- * 确保横屏窄栏或大字号下不会把较长文案挤成省略号。
+ * 判定固定宽度按钮行是否需要从并排切换为垂直全宽堆叠，
+ * 确保大字号或窄宽弹窗中较长动作文案绝不会挤成省略号。
  */
 internal fun shouldStackDialogButtons(
     intrinsicWidthsPx: List<Int>,
@@ -190,8 +219,9 @@ internal enum class MaiDialogButtonStyle {
 
 /**
  * 全应用统一的现代暗色圆角弹窗外壳：
- * 固定满屏容器承载安全区避让与键盘避让，消除内容折叠或状态切换导致的 WindowManager 抖动重排；
- * 在竖屏与平板上采用“顶栏 + 滚动体 + 底栏”，在手机横屏自动切换为“左栏信息/按钮 + 右侧全高内容区”双栏排版。
+ * - 全屏深色遮罩覆盖含导航栏与挖孔边缘的整个窗口，点击弹窗外部可关闭；
+ * - 手机横屏切换为全宽紧凑顶栏 + 可按需拆成左右独立滚动两列的内容区（附可滚渐隐与细滚动条）+ 靠右统一单行底栏；
+ * - 竖屏与平板保持舒展顶栏 + 独立滚动体 + 固定底栏，[secondaryContent] 自动顺接在主内容下方。
  */
 @Composable
 internal fun MaiDialog(
@@ -201,24 +231,34 @@ internal fun MaiDialog(
     subtitle: String? = null,
     icon: ImageVector? = null,
     iconBackground: Color = BrandOrange,
+    size: MaiDialogSize = MaiDialogSize.Compact,
     headerBadge: (@Composable () -> Unit)? = null,
+    headerActions: (@Composable RowScope.() -> Unit)? = null,
     showCloseButton: Boolean = true,
     dismissOnBackPress: Boolean = true,
     dismissOnClickOutside: Boolean = true,
     scrollable: Boolean = true,
+    footerStart: (@Composable RowScope.() -> Unit)? = null,
+    landscapeFooter: (@Composable RowScope.() -> Unit)? = null,
     footer: (@Composable ColumnScope.() -> Unit)? = null,
+    secondaryContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
             dismissOnBackPress = dismissOnBackPress,
             dismissOnClickOutside = dismissOnClickOutside
         )
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // 透明全屏点击层放在安全区缩进之外，确保横屏两侧刘海安全区边缘同样支持点击关闭。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DialogBackdropScrim)
+        ) {
+            // 透明全屏点击层铺在安全区外部，保证横屏两侧与导航栏上方也能点空白收起弹窗。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -233,56 +273,100 @@ internal fun MaiDialog(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .imePadding()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                val layoutSpec = resolveMaiDialogLayout(maxWidth.value, maxHeight.value)
-                val surfaceSizeModifier = if (layoutSpec.mode == MaiDialogLayoutMode.LandscapeSplit) {
-                    Modifier
-                        .width(layoutSpec.maxWidthDp.dp)
-                        .heightIn(max = layoutSpec.maxHeightDp.dp)
-                } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = layoutSpec.maxWidthDp.dp)
-                        .heightIn(max = layoutSpec.maxHeightDp.dp)
-                }
-                Surface(
-                    modifier = modifier
-                        .then(surfaceSizeModifier)
-                        .pointerInput(Unit) { detectTapGestures { } },
-                    shape = RoundedCornerShape(Corners.Card),
-                    color = CardSurface,
-                    contentColor = TextPrimary,
-                    border = BorderStroke(1.dp, DialogSurfaceStroke)
-                ) {
-                    if (layoutSpec.mode == MaiDialogLayoutMode.LandscapeSplit) {
-                        SplitDialogBodyLayout(
-                            leftPaneWidth = layoutSpec.leftPaneWidthDp.dp,
-                            title = title,
-                            subtitle = subtitle,
-                            icon = icon,
-                            iconBackground = iconBackground,
-                            headerBadge = headerBadge,
-                            showCloseButton = showCloseButton,
-                            onDismissRequest = onDismissRequest,
-                            scrollable = scrollable,
-                            footer = footer,
-                            content = content
-                        )
-                    } else {
-                        PortraitDialogBodyLayout(
-                            title = title,
-                            subtitle = subtitle,
-                            icon = icon,
-                            iconBackground = iconBackground,
-                            headerBadge = headerBadge,
-                            showCloseButton = showCloseButton,
-                            onDismissRequest = onDismissRequest,
-                            scrollable = scrollable,
-                            footer = footer,
-                            content = content
-                        )
+                val layoutSpec = resolveMaiDialogLayout(
+                    availableWidthDp = maxWidth.value,
+                    availableHeightDp = maxHeight.value,
+                    size = size,
+                    hasSecondaryContent = secondaryContent != null
+                )
+
+                CompositionLocalProvider(LocalMaiDialogPhoneLandscape provides layoutSpec.isPhoneLandscape) {
+                    Surface(
+                        modifier = modifier
+                            .fillMaxWidth()
+                            .widthIn(max = layoutSpec.maxWidthDp.dp)
+                            .heightIn(max = layoutSpec.maxHeightDp.dp)
+                            .pointerInput(Unit) { detectTapGestures { } },
+                        shape = RoundedCornerShape(Corners.Card),
+                        color = CardSurface,
+                        contentColor = TextPrimary,
+                        border = BorderStroke(1.dp, DialogSurfaceStroke)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            MaiDialogHeaderBar(
+                                title = title,
+                                subtitle = subtitle,
+                                icon = icon,
+                                iconBackground = iconBackground,
+                                compactLandscape = layoutSpec.isPhoneLandscape,
+                                headerBadge = headerBadge,
+                                headerActions = headerActions,
+                                showCloseButton = showCloseButton,
+                                onDismissRequest = onDismissRequest
+                            )
+
+                            val hideHeaderDivider = layoutSpec.isPhoneLandscape &&
+                                size == MaiDialogSize.Compact &&
+                                !layoutSpec.useTwoColumns
+                            if (!hideHeaderDivider) {
+                                MaiDialogDivider(horizontalPadding = 0.dp)
+                            }
+
+                            if (layoutSpec.useTwoColumns && secondaryContent != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f, fill = false)
+                                        .padding(horizontal = 18.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    MaiDialogScrollColumn(
+                                        scrollable = scrollable,
+                                        contentPadding = PaddingValues(vertical = 12.dp),
+                                        verticalSpacing = 10.dp,
+                                        modifier = Modifier.weight(1.12f),
+                                        content = content
+                                    )
+                                    MaiDialogScrollColumn(
+                                        scrollable = scrollable,
+                                        contentPadding = PaddingValues(vertical = 12.dp),
+                                        verticalSpacing = 10.dp,
+                                        modifier = Modifier.weight(1f),
+                                        content = secondaryContent
+                                    )
+                                }
+                            } else {
+                                val verticalPadding = if (layoutSpec.isPhoneLandscape) 12.dp else 14.dp
+                                val verticalSpacing = if (layoutSpec.isPhoneLandscape) 10.dp else 12.dp
+                                MaiDialogScrollColumn(
+                                    scrollable = scrollable,
+                                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = verticalPadding),
+                                    verticalSpacing = verticalSpacing,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f, fill = false)
+                                ) {
+                                    content()
+                                    secondaryContent?.invoke(this)
+                                }
+                            }
+
+                            val hasLandscapeActions = landscapeFooter != null || footer != null
+                            val hasFooter = footerStart != null ||
+                                (if (layoutSpec.isPhoneLandscape) hasLandscapeActions else footer != null)
+
+                            if (hasFooter) {
+                                MaiDialogFooterBar(
+                                    compactLandscape = layoutSpec.isPhoneLandscape,
+                                    footerStart = footerStart,
+                                    landscapeFooter = landscapeFooter,
+                                    footer = footer
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -291,19 +375,82 @@ internal fun MaiDialog(
 }
 
 @Composable
-private fun PortraitDialogBodyLayout(
+private fun MaiDialogHeaderBar(
     title: String,
     subtitle: String?,
     icon: ImageVector?,
     iconBackground: Color,
+    compactLandscape: Boolean,
     headerBadge: (@Composable () -> Unit)?,
+    headerActions: (@Composable RowScope.() -> Unit)?,
     showCloseButton: Boolean,
-    onDismissRequest: () -> Unit,
-    scrollable: Boolean,
-    footer: (@Composable ColumnScope.() -> Unit)?,
-    content: @Composable ColumnScope.() -> Unit
+    onDismissRequest: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    if (compactLandscape) {
+        // 横屏使用单行紧凑顶栏：图标 + 标题/副标题 + 状态胶囊横排，刷新与关闭钮统一靠最右。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                FlatFeatureIconBadge(
+                    icon = icon,
+                    backgroundColor = iconBackground,
+                    size = 28.dp,
+                    iconSize = 18.dp
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = title,
+                        color = TextPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 21.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            text = " · $subtitle",
+                            color = TextMuted,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                }
+                headerBadge?.invoke()
+            }
+
+            if (headerActions != null || showCloseButton) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    headerActions?.invoke(this)
+                    if (showCloseButton) {
+                        DialogCloseButton(size = 30.dp, iconSize = 16.dp, onClick = onDismissRequest)
+                    }
+                }
+            }
+        }
+    } else {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -352,167 +499,147 @@ private fun PortraitDialogBodyLayout(
                 }
             }
 
-            if (showCloseButton) {
+            if (headerActions != null || showCloseButton) {
                 Spacer(modifier = Modifier.width(8.dp))
-                DialogCloseButton(size = 32.dp, iconSize = 17.dp, onClick = onDismissRequest)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    headerActions?.invoke(this)
+                    if (showCloseButton) {
+                        DialogCloseButton(size = 32.dp, iconSize = 17.dp, onClick = onDismissRequest)
+                    }
+                }
             }
         }
+    }
+}
 
-        MaiDialogDivider(horizontalPadding = 0.dp)
-
-        val bodyScroll = if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier
+@Composable
+private fun MaiDialogFooterBar(
+    compactLandscape: Boolean,
+    footerStart: (@Composable RowScope.() -> Unit)?,
+    landscapeFooter: (@Composable RowScope.() -> Unit)?,
+    footer: (@Composable ColumnScope.() -> Unit)?
+) {
+    MaiDialogDivider(horizontalPadding = 0.dp)
+    if (compactLandscape) {
+        // 横屏固定单行底栏：左侧放置危险操作或短提示，右侧紧凑靠右对齐，省出垂直空间给内容区。
+        CompositionLocalProvider(LocalMaiDialogLandscapeBar provides true) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (footerStart != null) {
+                    Row(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        content = footerStart
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (landscapeFooter != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        content = landscapeFooter
+                    )
+                } else if (footer != null) {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = footer
+                    )
+                }
+            }
+        }
+    } else {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false)
-                .then(bodyScroll)
                 .padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            content = content
-        )
-
-        if (footer != null) {
-            MaiDialogDivider(horizontalPadding = 0.dp)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                content = footer
-            )
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            footer?.invoke(this)
+            if (footerStart != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    content = footerStart
+                )
+            }
         }
     }
 }
 
 /**
- * 手机横屏双栏容器：用自定义 Layout 协调左栏（微暗背景 + 头部信息 + 沉底动作按钮）与右侧全高内容区，
- * 避免使用 IntrinsicSize 与子项 BoxWithConstraints（如二维码自适应排版）产生测量冲突。
+ * 弹窗内部可滚动列容器：
+ * 当内容超出一屏时在底边叠加 20dp 柔色渐隐遮罩并在右侧绘制细圆角滚动条，给出明确的可滚动视觉线索。
  */
 @Composable
-private fun SplitDialogBodyLayout(
-    leftPaneWidth: Dp,
-    title: String,
-    subtitle: String?,
-    icon: ImageVector?,
-    iconBackground: Color,
-    headerBadge: (@Composable () -> Unit)?,
-    showCloseButton: Boolean,
-    onDismissRequest: () -> Unit,
+private fun MaiDialogScrollColumn(
     scrollable: Boolean,
-    footer: (@Composable ColumnScope.() -> Unit)?,
+    contentPadding: PaddingValues,
+    verticalSpacing: Dp,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    CompositionLocalProvider(LocalMaiDialogLandscapeSplit provides true) {
-        Layout(
-            content = {
-                Box(modifier = Modifier.background(SplitLeftPaneBackdrop))
+    val scrollState = rememberScrollState()
+    val showBottomFade = scrollable && scrollState.canScrollForward
+    val showScrollbar = scrollable && scrollState.maxValue > 0
+    val scrollbarColor = TextFaint.copy(alpha = 0.45f)
 
-                Column(
-                    modifier = Modifier
-                        .verticalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (icon != null || showCloseButton) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (icon != null) {
-                                FlatFeatureIconBadge(
-                                    icon = icon,
-                                    backgroundColor = iconBackground,
-                                    size = 34.dp,
-                                    iconSize = 22.dp
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (showCloseButton) {
-                                DialogCloseButton(size = 30.dp, iconSize = 16.dp, onClick = onDismissRequest)
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = title,
-                        color = TextPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 22.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (!subtitle.isNullOrBlank()) {
-                        Text(
-                            text = subtitle,
-                            color = TextMuted,
-                            fontSize = TextSizes.Caption,
-                            lineHeight = 15.sp,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    headerBadge?.invoke()
-                }
-
-                if (footer != null) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        MaiDialogDivider(horizontalPadding = 0.dp)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            content = footer
-                        )
-                    }
-                } else {
-                    Box(modifier = Modifier)
-                }
-
-                Box(modifier = Modifier.background(CardDivider))
-
-                val bodyScroll = if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier
-                Column(
-                    modifier = Modifier
-                        .then(bodyScroll)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    content = content
+    Box(
+        modifier = modifier.drawWithContent {
+            drawContent()
+            if (showScrollbar && scrollState.maxValue > 0 && size.height > 16.dp.toPx()) {
+                val trackTop = 8.dp.toPx()
+                val trackBottom = size.height - 8.dp.toPx()
+                val trackHeight = (trackBottom - trackTop).coerceAtLeast(1f)
+                val totalContentHeight = size.height + scrollState.maxValue
+                val thumbHeight = (trackHeight * (size.height / totalContentHeight))
+                    .coerceIn(18.dp.toPx(), trackHeight)
+                val scrollFraction = (scrollState.value.toFloat() / scrollState.maxValue.toFloat())
+                    .coerceIn(0f, 1f)
+                val thumbTop = trackTop + (trackHeight - thumbHeight) * scrollFraction
+                val barWidth = 2.5.dp.toPx()
+                val barLeft = size.width - barWidth - 3.dp.toPx()
+                drawRoundRect(
+                    color = scrollbarColor,
+                    topLeft = Offset(barLeft, thumbTop),
+                    size = Size(barWidth, thumbHeight),
+                    cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
                 )
             }
-        ) { measurables, constraints ->
-            val maxW = constraints.maxWidth.coerceAtLeast(3)
-            val maxH = constraints.maxHeight.coerceAtLeast(1)
-            val leftW = leftPaneWidth.roundToPx().coerceIn(1, maxW / 2)
-            val divW = 0.5.dp.roundToPx().coerceAtLeast(1)
-            val rightW = (maxW - leftW - divW).coerceAtLeast(1)
-
-            val footerPlaceable = measurables[2].measure(
-                Constraints(minWidth = leftW, maxWidth = leftW, minHeight = 0, maxHeight = maxH)
+        }
+    ) {
+        val scrollMod = if (scrollable) Modifier.verticalScroll(scrollState) else Modifier
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(scrollMod)
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+            content = content
+        )
+        if (showBottomFade) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(20.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            1f to CardSurface
+                        )
+                    )
             )
-            val headerMaxH = (maxH - footerPlaceable.height).coerceAtLeast(0)
-            val headerPlaceable = measurables[1].measure(
-                Constraints(minWidth = leftW, maxWidth = leftW, minHeight = 0, maxHeight = headerMaxH)
-            )
-            val rightPlaceable = measurables[4].measure(
-                Constraints(minWidth = rightW, maxWidth = rightW, minHeight = 0, maxHeight = maxH)
-            )
-
-            val finalH = maxOf(rightPlaceable.height, headerPlaceable.height + footerPlaceable.height)
-                .coerceIn(1, maxH)
-            val backdropPlaceable = measurables[0].measure(Constraints.fixed(leftW, finalH))
-            val dividerPlaceable = measurables[3].measure(Constraints.fixed(divW, finalH))
-
-            layout(leftW + divW + rightW, finalH) {
-                backdropPlaceable.placeRelative(0, 0)
-                headerPlaceable.placeRelative(0, 0)
-                footerPlaceable.placeRelative(0, finalH - footerPlaceable.height)
-                dividerPlaceable.placeRelative(leftW, 0)
-                rightPlaceable.placeRelative(leftW + divW, 0)
-            }
         }
     }
 }
@@ -624,7 +751,7 @@ internal fun MaiDialogCollapsible(
     initiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
@@ -690,7 +817,7 @@ internal fun MaiDialogCollapsible(
     }
 }
 
-/** 弹窗内统一规格的圆角输入框，支持错误态、占位提示与密码明文切换。 */
+/** 弹窗内统一规格的圆角输入框，支持错误态、占位提示与密码明文切换；横屏适当缩减垂直边距省出高度。 */
 @Composable
 internal fun MaiDialogTextField(
     value: String,
@@ -704,11 +831,14 @@ internal fun MaiDialogTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    val compactLandscape = LocalMaiDialogPhoneLandscape.current
     Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (compactLandscape) Modifier.heightIn(min = 48.dp) else Modifier),
             singleLine = singleLine,
             isError = errorText != null,
             label = { Text(text = label) },
@@ -789,7 +919,7 @@ internal fun MaiDialogInfoChip(
     )
 }
 
-/** 弹窗底栏动作按钮：横屏双栏左栏中自动收紧高度、圆角与字号以适应窄栏宽度。 */
+/** 弹窗动作按钮：竖屏饱满等高，横屏底栏下按内容定宽且不小于 84dp、高 38dp，保持靠右紧凑利落。 */
 @Composable
 internal fun MaiDialogButton(
     text: String,
@@ -798,7 +928,7 @@ internal fun MaiDialogButton(
     style: MaiDialogButtonStyle = MaiDialogButtonStyle.Primary,
     enabled: Boolean = true
 ) {
-    val compactSplit = LocalMaiDialogLandscapeSplit.current
+    val compactBar = LocalMaiDialogLandscapeBar.current
     val (container, content) = when (style) {
         MaiDialogButtonStyle.Primary -> BrandOrange to OnBrandOrange
         MaiDialogButtonStyle.Secondary -> CardBorder to TextPrimary
@@ -806,19 +936,20 @@ internal fun MaiDialogButton(
         MaiDialogButtonStyle.Danger -> StatusDanger to TextPrimary
         MaiDialogButtonStyle.SoftDanger -> StatusDanger.copy(alpha = 0.14f) to StatusDanger
     }
-    val minHeight = if (compactSplit) 38.dp else 44.dp
-    val cornerRadius = if (compactSplit) 12.dp else 14.dp
-    val contentPadding = if (compactSplit) {
-        PaddingValues(horizontal = 10.dp, vertical = 7.dp)
+    val minHeight = if (compactBar) 38.dp else 44.dp
+    val cornerRadius = if (compactBar) 11.dp else 14.dp
+    val contentPadding = if (compactBar) {
+        PaddingValues(horizontal = 14.dp, vertical = 7.dp)
     } else {
         PaddingValues(horizontal = 14.dp, vertical = 10.dp)
     }
-    val labelSize = if (compactSplit) 13.sp else TextSizes.Body
+    val labelSize = if (compactBar) 13.sp else TextSizes.Body
 
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = minHeight),
+        modifier = modifier
+            .then(if (compactBar) Modifier.defaultMinSize(minWidth = 84.dp, minHeight = minHeight) else Modifier.heightIn(min = minHeight)),
         shape = RoundedCornerShape(cornerRadius),
         contentPadding = contentPadding,
         colors = ButtonDefaults.buttonColors(
@@ -870,44 +1001,76 @@ private object MaiDialogButtonRowScope : RowScope {
 }
 
 /**
- * 自适应动作按钮行：宽屏或短标签时按权重水平并排；在横屏窄栏等放不下全部按钮固有宽度时自动转为竖向全宽堆叠，
- * 确保任意按钮文字都不会被强行裁切或挤出省略号。
+ * 动作按钮行：
+ * - 在横屏单行底栏中自动紧排并靠右对齐（不拉伸占满整宽），避免抢占左侧状态/提示区空间；
+ * - 在竖屏或平板底栏中按权重铺满整行，放不下固有宽度时自动转成全宽垂直堆叠防止省略号截断。
  */
 @Composable
 internal fun MaiDialogButtonRow(
     modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit
 ) {
-    val spacingDp = if (LocalMaiDialogLandscapeSplit.current) 8.dp else 10.dp
+    val compactBar = LocalMaiDialogLandscapeBar.current
+    val spacingDp = if (compactBar) 8.dp else 10.dp
+    val rowModifier = if (compactBar) modifier else modifier.fillMaxWidth()
+
     Layout(
         content = { MaiDialogButtonRowScope.content() },
-        modifier = modifier.fillMaxWidth()
+        modifier = rowModifier
     ) { measurables, constraints ->
         if (measurables.isEmpty()) {
             return@Layout layout(0, 0) {}
         }
         val spacingPx = spacingDp.roundToPx()
-        val maxW = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
+        val maxW = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+
+        if (compactBar) {
+            val childMax = if (maxW == Int.MAX_VALUE) Constraints.Infinity else maxW
+            val naturalPlaceables = measurables.map {
+                it.measure(
+                    Constraints(
+                        minWidth = 0,
+                        maxWidth = childMax,
+                        minHeight = 0,
+                        maxHeight = constraints.maxHeight
+                    )
+                )
+            }
+            val naturalTotal = naturalPlaceables.sumOf { it.width } + spacingPx * (naturalPlaceables.size - 1)
+            if (naturalTotal <= maxW) {
+                val rowHeight = naturalPlaceables.maxOfOrNull { it.height } ?: 0
+                return@Layout layout(naturalTotal.coerceAtLeast(0), rowHeight) {
+                    var x = 0
+                    naturalPlaceables.forEach { placeable ->
+                        val y = (rowHeight - placeable.height) / 2
+                        placeable.placeRelative(x, y)
+                        x += placeable.width + spacingPx
+                    }
+                }
+            }
+        }
+
+        val boundedMaxW = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
         val weights = measurables.map { (it.parentData as? Float) ?: 1f }
         val intrinsicWidths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
         val stackVertically = shouldStackDialogButtons(
             intrinsicWidthsPx = intrinsicWidths,
             weights = weights,
             spacingPx = spacingPx,
-            maxWidthPx = maxW
+            maxWidthPx = boundedMaxW
         )
 
         if (stackVertically) {
             val itemConstraints = Constraints(
-                minWidth = maxW.coerceAtLeast(0),
-                maxWidth = maxW.coerceAtLeast(0),
+                minWidth = boundedMaxW.coerceAtLeast(0),
+                maxWidth = boundedMaxW.coerceAtLeast(0),
                 minHeight = 0,
                 maxHeight = constraints.maxHeight
             )
             val placeables = measurables.map { it.measure(itemConstraints) }
             val totalH = placeables.sumOf { it.height } + spacingPx * (placeables.size - 1)
             val finalH = totalH.coerceAtMost(constraints.maxHeight)
-            layout(maxW, finalH) {
+            layout(boundedMaxW, finalH) {
                 var y = 0
                 placeables.forEach { placeable ->
                     placeable.placeRelative(0, y)
@@ -915,7 +1078,7 @@ internal fun MaiDialogButtonRow(
                 }
             }
         } else {
-            val availableW = (maxW - spacingPx * (measurables.size - 1)).coerceAtLeast(0)
+            val availableW = (boundedMaxW - spacingPx * (measurables.size - 1)).coerceAtLeast(0)
             val totalWeight = weights.sum().coerceAtLeast(1f)
             var remainingW = availableW
             val placeables = measurables.mapIndexed { index, measurable ->
@@ -935,7 +1098,7 @@ internal fun MaiDialogButtonRow(
                 )
             }
             val rowHeight = placeables.maxOfOrNull { it.height } ?: 0
-            layout(maxW, rowHeight) {
+            layout(boundedMaxW, rowHeight) {
                 var x = 0
                 placeables.forEach { placeable ->
                     val y = (rowHeight - placeable.height) / 2
