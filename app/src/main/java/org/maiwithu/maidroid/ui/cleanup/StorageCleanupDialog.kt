@@ -104,13 +104,13 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                     MaiDialogButton(
                         text = "关闭",
                         style = MaiDialogButtonStyle.Secondary,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(0.78f),
                         onClick = onDismiss
                     )
                     MaiDialogButton(
                         text = "打开存储设置",
                         style = MaiDialogButtonStyle.Primary,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1.22f),
                         onClick = {
                             openStorageSettings(context)
                             onDismiss()
@@ -119,8 +119,9 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                 }
                 is CleanupStage.Ready -> {
                     val selectedBytes = selected.sumOf { current.sizes.sizes[it] ?: 0L }
+                    // 精简前缀并适当加宽主按钮占比，防止“清理（约 x.xx GB）”在半宽按钮里截断成省略号。
                     val cleanLabel = if (selected.isNotEmpty() && selectedBytes > 0L) {
-                        "清理（约 ${formatBytes(selectedBytes)}）"
+                        "清理约 ${formatBytes(selectedBytes)}"
                     } else {
                         "清理"
                     }
@@ -128,14 +129,14 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                         MaiDialogButton(
                             text = "取消",
                             style = MaiDialogButtonStyle.Secondary,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(0.78f),
                             onClick = onDismiss
                         )
                         MaiDialogButton(
                             text = cleanLabel,
                             style = MaiDialogButtonStyle.Primary,
                             enabled = selected.isNotEmpty(),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1.22f),
                             onClick = {
                                 val items = selected
                                 stage = CleanupStage.Cleaning
