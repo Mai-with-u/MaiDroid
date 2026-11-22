@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,14 +24,12 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -47,10 +44,8 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
-import org.maiwithu.maidroid.ui.component.computeLargeHeaderAlpha
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
-import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -94,14 +89,17 @@ internal fun PermissionManagementPage(
         firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
         collapseDistancePx = collapseDistancePx
     )
-    val largeHeaderAlpha = computeLargeHeaderAlpha(collapseProgress)
-
-    // 大标题滑出视口后于顶栏保留返回按钮与小号“权限管理”标题，卡片穿过状态栏时提供渐进毛玻璃模糊。
+    // 单一“权限管理”标题与返回按钮随滚动平滑缩小吸顶，卡片穿过状态栏时提供渐进毛玻璃模糊。
     CollapsingGlassHeaderContainer(
         title = "权限管理",
         collapseProgress = collapseProgress,
         statusBarTop = statusBarTop,
         horizontalPadding = 16.dp,
+        expandedTopOffset = 40.dp,
+        expandedFontSize = TextSizes.Display,
+        collapsedFontSize = 19.sp,
+        topBarHeight = 52.dp,
+        headerOverscrollPx = overscroll.headerOverscrollPx,
         leadingAction = if (showBackButton) {
             {
                 GlassHeaderCircleButton(
@@ -130,40 +128,8 @@ internal fun PermissionManagementPage(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .overscrollHeader(overscroll)
-                        .graphicsLayer { alpha = largeHeaderAlpha }
-                        .padding(bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (showBackButton) {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(CardSurface)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回",
-                                tint = TextPrimary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-                    }
-
-                    Text(
-                        text = "权限管理",
-                        color = TextPrimary,
-                        fontSize = TextSizes.Display,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 32.sp
-                    )
-                }
+                // 顶部标题与返回钮已由外层连续缩放顶栏承接，列表首项只保留占位呼吸留白。
+                Spacer(modifier = Modifier.height(50.dp))
             }
 
             item {

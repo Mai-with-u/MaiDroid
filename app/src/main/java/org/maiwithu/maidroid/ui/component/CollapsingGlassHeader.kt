@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -38,14 +40,18 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextPrimary
+import org.maiwithu.maidroid.ui.theme.TextSizes
+import kotlin.math.roundToInt
 
-private val TopBarContentHeight = 52.dp
+private val HeaderRowHeight = 42.dp
 private val TopBarFeatherHeight = 32.dp
 private val TopBarBlurRadius = 18.dp
 private val TopBarBlurExtraSampleHeight = 24.dp
@@ -83,19 +89,51 @@ internal fun computeScrollHeaderCollapseProgress(
 internal fun computeGlassBarScrimAlpha(collapseProgress: Float): Float =
     (collapseProgress.coerceIn(0f, 1f) / 0.65f).coerceIn(0f, 1f)
 
-/** 吸顶小标题的浮现比例：待列表中大标题向上退去后平滑接力，防止大小标题同时叠加。 */
-internal fun computePinnedTitleReveal(collapseProgress: Float): Float =
-    ((collapseProgress.coerceIn(0f, 1f) - 0.35f) / 0.65f).coerceIn(0f, 1f)
+/** 单一标题随折叠进度的连续缩放比例：从 1.0 倍大标题顺滑缩小至紧凑吸顶字号，消除双标题硬切与叠影。 */
+internal fun computeCollapsingTitleScale(
+    collapseProgress: Float,
+    expandedSp: Float,
+    collapsedSp: Float
+): Float {
+    if (expandedSp <= 0f) return 1f
+    val minScale = (collapsedSp / expandedSp).coerceIn(0.4f, 1f)
+    val progress = collapseProgress.coerceIn(0f, 1f)
+    return 1f + (minScale - 1f) * progress
+}
 
-/** 列表内部大标题的渐隐透明度：滚出前提前收淡，避免经过毛玻璃层时产生双影重叠。 */
-internal fun computeLargeHeaderAlpha(collapseProgress: Float): Float =
-    (1f - collapseProgress.coerceIn(0f, 1f) * 1.45f).coerceIn(0f, 1f)
+/** 顶栏圆形动作按钮随折叠进度的连续缩放比例：与标题同步微缩至吸顶尺寸。 */
+internal fun computeCollapsingActionScale(
+    collapseProgress: Float,
+    expandedDp: Float = 42f,
+    collapsedDp: Float = 38f
+): Float {
+    if (expandedDp <= 0f) return 1f
+    val minScale = (collapsedDp / expandedDp).coerceIn(0.6f, 1f)
+    val progress = collapseProgress.coerceIn(0f, 1f)
+    return 1f + (minScale - 1f) * progress
+}
+
+/** 标题行相对状态栏下沿的垂直位移（px）：随折叠平滑上移收进顶栏，展开态下同步跟随顶部下拉视差过冲。 */
+internal fun computeCollapsingHeaderOffsetY(
+    collapseProgress: Float,
+    expandedTopPx: Float,
+    collapsedTopPx: Float,
+    headerOverscrollPx: Float = 0f
+): Float {
+    val progress = collapseProgress.coerceIn(0f, 1f)
+    return expandedTopPx + (collapsedTopPx - expandedTopPx) * progress + headerOverscrollPx * (1f - progress)
+}
+
+/** 列表大标题下方的副标题透明度：在标题折叠过半前提前淡出，避免上滑过程中撞入缩小的标题。 */
+internal fun computeHeaderSubtitleAlpha(collapseProgress: Float): Float =
+    (1f - collapseProgress.coerceIn(0f, 1f) * 2.2f).coerceIn(0f, 1f)
 
 /**
- * 吸顶折叠标题 + 毛玻璃渐进模糊容器。
+ * 吸顶连续缩小标题 + 毛玻璃渐进模糊容器。
  *
- * 将滚动内容录制成同一 Compose 层的 [GraphicsLayer]，在 Android 12+ 上直接于顶栏内做高羽化渐进高斯模糊与融合渐变，
- * 不额外嵌套 AndroidView BlurTarget，从而与外层底部悬浮胶囊导航的毛玻璃宿主完全兼容。
+ * 全程只渲染唯一标题与动作按钮，随滚动通过 GPU 层缩放与垂直位移平滑收进状态栏下方顶栏，
+ * 同时将滚动内容录制成同一 Compose 层的 [GraphicsLayer]，在 Android 12+ 上直接做高羽化渐进高斯模糊，
+ * 不额外嵌套 AndroidView BlurTarget，与外层底部悬浮胶囊导航的毛玻璃宿主完全兼容。
  */
 @Composable
 internal fun CollapsingGlassHeaderContainer(
@@ -103,17 +141,39 @@ internal fun CollapsingGlassHeaderContainer(
     collapseProgress: Float,
     statusBarTop: Dp,
     horizontalPadding: Dp,
+    expandedTopOffset: Dp,
     modifier: Modifier = Modifier,
+    expandedFontSize: TextUnit = TextSizes.Display,
+    collapsedFontSize: TextUnit = 19.sp,
+    topBarHeight: Dp = 52.dp,
+    headerOverscrollPx: Float = 0f,
     leadingAction: (@Composable () -> Unit)? = null,
     trailingAction: (@Composable () -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val clampedProgress = collapseProgress.coerceIn(0f, 1f)
     val glassAlpha = computeGlassBarScrimAlpha(clampedProgress)
-    val titleReveal = computePinnedTitleReveal(clampedProgress)
-    val totalBarHeight = statusBarTop + TopBarContentHeight + TopBarFeatherHeight
+    val totalBarHeight = statusBarTop + topBarHeight + TopBarFeatherHeight
+    val collapsedTopOffset = ((topBarHeight - HeaderRowHeight) / 2f).coerceAtLeast(0.dp)
+    val safeExpandedTopOffset = maxOf(expandedTopOffset, collapsedTopOffset)
+
     val density = LocalDensity.current
-    val titleTravelPx = with(density) { 6.dp.toPx() }
+    val expandedTopPx = with(density) { safeExpandedTopOffset.toPx() }
+    val collapsedTopPx = with(density) { collapsedTopOffset.toPx() }
+    val leadingTightenPx = with(density) { 4.dp.toPx() }
+
+    val headerOffsetY = computeCollapsingHeaderOffsetY(
+        collapseProgress = clampedProgress,
+        expandedTopPx = expandedTopPx,
+        collapsedTopPx = collapsedTopPx,
+        headerOverscrollPx = headerOverscrollPx
+    )
+    val titleScale = computeCollapsingTitleScale(
+        collapseProgress = clampedProgress,
+        expandedSp = expandedFontSize.value,
+        collapsedSp = collapsedFontSize.value
+    )
+    val actionScale = computeCollapsingActionScale(clampedProgress)
 
     val useProgressiveBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && glassAlpha > 0.005f
     val contentLayer = rememberGraphicsLayer()
@@ -129,12 +189,12 @@ internal fun CollapsingGlassHeaderContainer(
         Modifier
     }
 
-    // 在暗色背景上叠加渐进渐变遮罩：Android 12+ 搭配底层模糊留出透色，旧版加大不透明度保障标题对比度。
+    // 在暗色背景上叠加渐进渐变遮罩：Android 12+ 搭配底层模糊留出透色，加厚上半区以稳住白色标题对比度。
     val topScrimBrush = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         Brush.verticalGradient(
-            0.0f to PageBackground.copy(alpha = 0.86f * glassAlpha),
-            0.46f to PageBackground.copy(alpha = 0.68f * glassAlpha),
-            0.78f to PageBackground.copy(alpha = 0.28f * glassAlpha),
+            0.0f to PageBackground.copy(alpha = 0.90f * glassAlpha),
+            0.48f to PageBackground.copy(alpha = 0.74f * glassAlpha),
+            0.78f to PageBackground.copy(alpha = 0.30f * glassAlpha),
             1.0f to Color.Transparent
         )
     } else {
@@ -199,48 +259,59 @@ internal fun CollapsingGlassHeaderContainer(
             }
         }
 
-        // 标题与动作按钮独立盖在渐变顶部之上，只在浮现后渲染按钮，防止顶部静止时拦截列表大标题内操作区点击。
+        // 单一标题行盖在渐变毛玻璃顶部之上，用 offset 保持点击热区、无障碍边界与视觉位置始终一致。
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .padding(top = statusBarTop, start = horizontalPadding, end = horizontalPadding)
-                .height(TopBarContentHeight),
+                .offset { IntOffset(0, headerOffsetY.roundToInt()) }
+                .height(HeaderRowHeight),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (leadingAction != null && titleReveal > 0.05f) {
+            if (leadingAction != null) {
                 Box(
-                    modifier = Modifier.graphicsLayer { alpha = titleReveal }
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = actionScale
+                        scaleY = actionScale
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    }
                 ) {
                     leadingAction()
                 }
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
             }
 
-            if (titleReveal > 0.01f) {
-                Text(
-                    text = title,
-                    color = TextPrimary,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 22.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .graphicsLayer {
-                            alpha = titleReveal
-                            translationY = (1f - titleReveal) * titleTravelPx
+            // 以展开大字号一次性光栅化后在 GPU 层连续缩小，避免字号阶跃与双影重叠；右侧留空随缩放安全收窄。
+            Text(
+                text = title,
+                color = TextPrimary,
+                fontSize = expandedFontSize,
+                fontWeight = FontWeight.Bold,
+                lineHeight = (expandedFontSize.value + 4f).sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer {
+                        scaleX = titleScale
+                        scaleY = titleScale
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                        if (leadingAction != null) {
+                            translationX = -leadingTightenPx * clampedProgress
                         }
-                )
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-            }
+                    }
+            )
 
-            if (trailingAction != null && titleReveal > 0.05f) {
+            if (trailingAction != null) {
                 Spacer(modifier = Modifier.width(10.dp))
                 Box(
-                    modifier = Modifier.graphicsLayer { alpha = titleReveal }
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = actionScale
+                        scaleY = actionScale
+                        transformOrigin = TransformOrigin(1f, 0.5f)
+                    }
                 ) {
                     trailingAction()
                 }
@@ -249,7 +320,7 @@ internal fun CollapsingGlassHeaderContainer(
     }
 }
 
-/** 吸顶顶栏共用的 38dp 玻璃圆形图标按钮，与列表页大标题区风格统一。 */
+/** 顶栏共用的 42dp 玻璃圆形图标按钮，展开态 1.0x 大方易点，吸顶态平滑微缩至约 38dp。 */
 @Composable
 internal fun GlassHeaderCircleButton(
     icon: ImageVector,
@@ -260,7 +331,7 @@ internal fun GlassHeaderCircleButton(
     val shape = CircleShape
     Box(
         modifier = modifier
-            .size(38.dp)
+            .size(42.dp)
             .clip(shape)
             .background(GlassButtonSurface)
             .border(0.8.dp, GlassStroke, shape)
@@ -271,7 +342,7 @@ internal fun GlassHeaderCircleButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = TextPrimary,
-            modifier = Modifier.size(21.dp)
+            modifier = Modifier.size(22.dp)
         )
     }
 }

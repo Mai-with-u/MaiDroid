@@ -68,7 +68,7 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
-import org.maiwithu.maidroid.ui.component.computeLargeHeaderAlpha
+import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
@@ -418,15 +418,21 @@ private fun SettingsNavigationPane(
         firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
         collapseDistancePx = collapseDistancePx
     )
-    val largeHeaderAlpha = computeLargeHeaderAlpha(collapseProgress)
+    val subtitleAlpha = computeHeaderSubtitleAlpha(collapseProgress)
     val horizontalPadding = if (compact) 16.dp else 20.dp
+    val expandedTopOffset = if (compact) compactTop else 44.dp
 
-    // 将大标题滚出后在顶栏保留小号“设置”与渐进毛玻璃模糊，内容卡片可在状态栏背后全出血穿过。
+    // 单一“设置”标题随滚动平滑缩小吸顶，卡片在状态栏后穿过时呈现渐进羽化毛玻璃效果。
     CollapsingGlassHeaderContainer(
         title = "设置",
         collapseProgress = collapseProgress,
         statusBarTop = statusBarTop,
         horizontalPadding = horizontalPadding,
+        expandedTopOffset = expandedTopOffset,
+        expandedFontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
+        collapsedFontSize = if (compact) 18.sp else 19.sp,
+        topBarHeight = if (compact) 46.dp else 52.dp,
+        headerOverscrollPx = overscroll.headerOverscrollPx,
         modifier = modifier.background(PageBackground)
     ) {
         LazyColumn(
@@ -434,7 +440,7 @@ private fun SettingsNavigationPane(
             modifier = Modifier.fillMaxSize(),
             overscrollEffect = overscroll,
             contentPadding = PaddingValues(
-                top = statusBarTop + if (compact) compactTop else 44.dp,
+                top = statusBarTop + expandedTopOffset,
                 start = if (compact) 12.dp else 18.dp,
                 end = if (compact) 12.dp else 18.dp,
                 bottom = LocalBottomNavigationClearance.current
@@ -445,27 +451,20 @@ private fun SettingsNavigationPane(
                 Column(
                     modifier = Modifier
                         .overscrollHeader(overscroll)
-                        .graphicsLayer { alpha = largeHeaderAlpha }
                         .padding(horizontal = if (compact) 4.dp else 2.dp)
                 ) {
-                Text(
-                    text = "设置",
-                    color = TextPrimary,
-                    fontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = if (compact) 30.sp else 34.sp
-                )
+                    // 顶部主标题改由连续缩小顶栏直接渲染，首项仅留标题占位与副标题。
+                    Spacer(modifier = Modifier.height(if (compact) 38.dp else 44.dp))
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = if (compact) "MaiDroid 控制中心" else "管理服务、权限和应用状态",
-                    color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    lineHeight = 17.sp
-                )
+                    Text(
+                        text = if (compact) "MaiDroid 控制中心" else "管理服务、权限和应用状态",
+                        color = TextMuted,
+                        fontSize = TextSizes.Body,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.graphicsLayer { alpha = subtitleAlpha }
+                    )
+                }
             }
-        }
 
         if (bannerAnnouncements.isNotEmpty()) {
             item {

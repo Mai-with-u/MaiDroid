@@ -24,25 +24,35 @@ class CollapsingGlassHeaderTest {
     }
 
     @Test
-    fun `glass scrim appears before pinned title and large header fades out cleanly`() {
-        // 顶部静止时所有遮罩和小标题全透明，大标题完全可见
+    fun `title and action shrink continuously while scrim rises and subtitle fades early`() {
+        // 顶部静止时毛玻璃透明、副标题可见、标题与动作按钮保持 1.0 倍展开尺寸
         assertEquals(0f, computeGlassBarScrimAlpha(0f), 0.001f)
-        assertEquals(0f, computePinnedTitleReveal(0f), 0.001f)
-        assertEquals(1f, computeLargeHeaderAlpha(0f), 0.001f)
+        assertEquals(1f, computeHeaderSubtitleAlpha(0f), 0.001f)
+        assertEquals(1f, computeCollapsingTitleScale(0f, expandedSp = 30f, collapsedSp = 19f), 0.001f)
+        assertEquals(1f, computeCollapsingActionScale(0f), 0.001f)
+        assertEquals(100f, computeCollapsingHeaderOffsetY(0f, expandedTopPx = 100f, collapsedTopPx = 10f), 0.001f)
+        assertEquals(
+            120f,
+            computeCollapsingHeaderOffsetY(0f, expandedTopPx = 100f, collapsedTopPx = 10f, headerOverscrollPx = 20f),
+            0.001f
+        )
 
-        // 刚向上滚动到 0.25 时毛玻璃渐变已开始显现，小标题尚未冒头避免与大标题同时存在
+        // 中途阶段标题与按钮按比例平滑缩小并上移，副标题提前大幅淡出避免相撞
+        val midTitleScale = computeCollapsingTitleScale(0.5f, expandedSp = 30f, collapsedSp = 19f)
+        assertEquals(0.5f * (1f + 19f / 30f), midTitleScale, 0.001f)
+        assertTrue(computeCollapsingActionScale(0.5f) in 0.94f..0.96f)
+        assertEquals(55f, computeCollapsingHeaderOffsetY(0.5f, expandedTopPx = 100f, collapsedTopPx = 10f), 0.001f)
         assertTrue(computeGlassBarScrimAlpha(0.25f) > 0.3f)
-        assertEquals(0f, computePinnedTitleReveal(0.25f), 0.001f)
-        assertTrue(computeLargeHeaderAlpha(0.25f) in 0.5f..0.7f)
+        assertEquals(0f, computeHeaderSubtitleAlpha(0.5f), 0.001f)
 
-        // 过半阶段大小标题顺利交接，大标题提前彻底隐去
-        assertEquals(1f, computeGlassBarScrimAlpha(0.75f), 0.001f)
-        assertTrue(computePinnedTitleReveal(0.75f) > 0.5f)
-        assertEquals(0f, computeLargeHeaderAlpha(0.75f), 0.001f)
-
-        // 完全吸顶
+        // 完全吸顶后锁定在紧凑字号、缩放与目标纵向高度，且不受视差余量影响
         assertEquals(1f, computeGlassBarScrimAlpha(1f), 0.001f)
-        assertEquals(1f, computePinnedTitleReveal(1f), 0.001f)
-        assertEquals(0f, computeLargeHeaderAlpha(1f), 0.001f)
+        assertEquals(19f / 30f, computeCollapsingTitleScale(1f, expandedSp = 30f, collapsedSp = 19f), 0.001f)
+        assertEquals(38f / 42f, computeCollapsingActionScale(1f), 0.001f)
+        assertEquals(
+            10f,
+            computeCollapsingHeaderOffsetY(1f, expandedTopPx = 100f, collapsedTopPx = 10f, headerOverscrollPx = 20f),
+            0.001f
+        )
     }
 }
