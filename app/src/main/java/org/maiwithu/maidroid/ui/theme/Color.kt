@@ -24,6 +24,9 @@ val CardSurface = Color(0xFF1A1B1F)
 val CardBorder = Color(0xFF262830)           // 次级控件槽底、输入框柔边
 val CardSurfaceSelected = Color(0xFF30333C)  // 卡片里选中的一格（接入方式选择器）
 val CardDivider = Color(0x12FFFFFF)          // 7% 纯白行间细丝分隔线
+val DialogInnerSurface = PageBackground.copy(alpha = 0.56f)     // 弹窗内嵌分组与折叠面板底色
+val DialogBackdropScrim = Color(0xFF030405).copy(alpha = 0.52f) // 弹窗外围半透明遮罩（背后页面隐约可见）
+val DialogFooterTray = Color.Black.copy(alpha = 0.14f)          // 弹窗底栏轻微压暗托盘，与内容区拉开层级
 val TextMuted = Color(0xFF8E929B)  // 次要说明文字
 val TextFaint = Color(0xFF6B6F78)  // 更弱一级的提示文字
 

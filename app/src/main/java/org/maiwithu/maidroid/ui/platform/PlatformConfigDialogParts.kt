@@ -38,7 +38,6 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -70,12 +69,11 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
-import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.DialogInnerSurface
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
-import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -85,8 +83,6 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 消息平台各配置弹窗共用的扁平外壳与结构化小部件。
-
-private val SectionInnerSurface = PageBackground.copy(alpha = 0.55f)
 
 /**
  * 协议端配置详情的统一卡片弹窗壳：
@@ -235,7 +231,7 @@ internal fun ConfigCardGroup(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Chip))
-            .background(SectionInnerSurface),
+            .background(DialogInnerSurface),
         content = content
     )
 }
@@ -419,7 +415,7 @@ internal fun ConfigFoldableSection(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Chip))
-            .background(SectionInnerSurface)
+            .background(DialogInnerSurface)
     ) {
         Row(
             modifier = Modifier
@@ -472,35 +468,5 @@ internal fun ConfigFoldableSection(
                 content()
             }
         }
-    }
-}
-
-/** 低饱和柔和红危险动作按钮，与设置页“安全退出”视觉一致。 */
-@Composable
-internal fun ConfigSoftDangerButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(Corners.Chip),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = StatusDanger.copy(alpha = 0.12f),
-            contentColor = StatusDanger,
-            disabledContainerColor = CardBorder,
-            disabledContentColor = TextFaint
-        ),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(46.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = TextSizes.Body,
-            fontWeight = FontWeight.Medium
-        )
     }
 }
