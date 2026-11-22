@@ -12,7 +12,7 @@ class WebUiFileChooserTest {
 
     @Test
     fun splitsCommaSeparatedEntryAndNormalizesCase() {
-        // WebView 有时把整串 accept 放在同一项里
+        // 部分页面或内核会把整串 accept 放在同一项里
         assertEquals(
             listOf("image/png", "video/*"),
             fileChooserMimeTypes(listOf(" Image/PNG , video/*"))

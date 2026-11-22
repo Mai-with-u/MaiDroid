@@ -95,7 +95,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/home/HomePortraitNavigationTest` | 竖屏底栏与 WebUI 侧边悬浮胶囊的几何定位及双向平滑形变轨迹 |
 | `ui/home/PillTiltDamperTest` | 重力传感器屏幕坐标投影与侧边胶囊三级阻尼防抖换边 |
 | `ui/home/WakeBootLogTest` | 唤醒页开机自检：正常三阶段、自动升级 MaiBot 时多出的一行和进度分段、容器出问题时进度条停住、端口被占时的提示 |
-| `webui/WebUiRenderCrashGuardTest` | WebView 渲染进程崩溃后自动重开：2 分钟内最多 3 次，更早的崩溃不算 |
+| `webui/WebUiRenderCrashGuardTest` | WebUI 内容进程崩溃后自动重开：2 分钟内最多 3 次，更早的崩溃不算 |
 | `ui/oobe/OobeFlowScreenTest` | OOBE 布局模式与终端展开规则 |
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
 | `ui/platform/QqClientButtonTest` | QQ 两种协议端的按钮：支持从自定义源安装与协议/来源确认、装好并启用后进设置；点没启用的那个先确认切换；停用的那个照样列出、不算运行中 |
@@ -103,13 +103,12 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
-| `webui/MaiBotWebUiTest` | 访问令牌提取、HTML 注入（含旧版 WebView ES5 `AbortSignal.timeout` 等兼容补丁与下载拦截先于页面脚本）、主题只补默认值、视口修补脚本（不给普通滚动区封顶、不随 DOM 变化重扫全页） |
-| `webui/WebUiTwoFingerScrollTest` | 两指滚动注入脚本的拼接与数字格式（不随系统语言变成逗号） |
-| `webui/WebUiPageBackgroundTest` | 网页底色上报的解析：认出前缀、保留半透明、忽略普通 console 输出和坏数据 |
-| `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限）、改写 viewport meta |
+| `webui/MaiBotWebUiTest` | WebUI 访问令牌与启动密码解析 |
+| `webui/WebUiBridgeProtocolTest` | GeckoView 原生消息协议编解码（`Locale.GERMANY` 下保持标准小数点）与内置扩展 `manifest.json` / `content.js` 契约校验 |
+| `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限） |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
 | `webui/WebUiDownloadNamesTest` | 网页下载的文件名（download 属性、Content-Disposition 含 filename*、地址路径、按类型猜）、去掉非法字符、交给“另存为”的 MIME 类型与扩展名一致 |
-| `webui/WebUiBlobReceiverTest` | JS 桥分块收文件：拼接、核对字节数、超限和坏数据丢弃、新文件顶掉没收完的旧文件、清理遗留临时文件 |
+| `webui/WebUiBlobReceiverTest` | 分块接收 Blob 下载：拼接、核对字节数、超限和坏数据丢弃、新文件顶掉没收完的旧文件、清理遗留临时文件 |
 
 改了这些逻辑要同步更新测试；新写的纯逻辑也照这个方式补测试。界面和容器命令靠真机验证。
 
@@ -120,9 +119,8 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | logcat 标签 | 内容 |
 | --- | --- |
 | `TerminalLog` | 终端输出的每一行：MaiBot、NapCat、sshd、OOBE 命令、在线更新（D 级别） |
-| `MaiDroidWebUi` | WebView 加载、网页 console 输出、视口修补结果 |
+| `MaiDroidWebUi`、`MaiDroidGecko` | 内嵌 GeckoView 运行时初始化、内置扩展装载、页面加载、console 输出与桌面视口调整 |
 | `MaiBotProcessSupervisor`、`MaiBotRuntimeService`、`RuntimeAutoStartReceiver`、`OobeSetupManager` | 进程监管、前台服务、开机与覆盖安装自启广播、首次引导 |
-| `WebUiResponseRewriter` | 拦截 WebUI 页面 HTML 时的改写结果 |
 
 ```bash
 adb logcat -s TerminalLog
@@ -136,7 +134,7 @@ adb shell run-as org.maiwithu.maidroid ls files/diagnostics/logs files/diagnosti
 
 ### 调试 WebUI 页面
 
-debug 包开了 WebView 远程调试：电脑 Chrome 打开 `chrome://inspect` 就能看到页面，可以查 DOM、改 CSS、在活页面里试脚本。也可以 `adb forward tcp:9222 localabstract:webview_devtools_remote_<应用 pid>` 后用 CDP 直接连。
+debug 包在 `WebUiRuntime` 开启了 GeckoView 远程调试与控制台输出：用 USB 连上开启调试的手机后，在电脑桌面端 Firefox 打开 `about:debugging` -> 启用 USB 设备即可检查 DOM、样式表、网络请求并调试内置扩展 `content.js`。
 
 ### 进入容器
 
@@ -194,15 +192,15 @@ adb forward tcp:16099 tcp:6099
 - 颜色只从 `ui/theme/Color.kt` 取，按用途命名；只有某一页专用的配色才在那一页私有定义。文字和图标的主色用 `TextPrimary`，次要文字用 `TextMuted`、`TextFaint`。
 - 字号从 `TextSizes`、圆角从 `Corners` 取（都在 `ui/theme/Dimens.kt`，按角色分档），不在页面里写死 sp、dp。唤醒页、启动页的插画按设计稿等比缩放，是例外。
 - 可点击的东西用默认的按压水波纹；只有遮罩、吞点击的全屏背景才写 `indication = null`，并在旁边注明原因。
-- 页面切换动画用 `horizontalSlideTransition`，毛玻璃用 `BackdropBlurView`，WebView 用 `createWebUiWebView` 创建（要传入 `WebUiDownloads`，否则导出、下载按钮点了没反应），并设上 `WebUiChromeClient`（否则网页的上传按钮点了没反应）；两者的 ActivityResult launcher 都由宿主注册。
-- Compose 里放 WebView 必须显式设 `MATCH_PARENT` 布局参数，否则 vh 恒为 0、页面空白。
+- 页面切换动画用 `horizontalSlideTransition`，毛玻璃用 `BackdropBlurView`，内嵌 WebUI 统一使用 `WebUiSessionHost` 创建（传入宿主注册好的 `WebUiFileChooser` 和 `WebUiDownloads`，且强制 `GeckoView.BACKEND_TEXTURE_VIEW` 确保上层毛玻璃采样正常）。
+- Compose 里放 `GeckoView` 必须显式设 `MATCH_PARENT` 布局参数，否则高度塌陷导致页面空白。
 - 跨 Activity 重建要保留的界面状态用 `rememberSaveable` 或放进 `MainViewModel` 的 `SavedStateHandle`。
 
 ### 注释
 
 - 注释和文档用中文。写清触发条件、执行顺序和原因，例如“克隆 -> 改名 -> 读一次 HEAD 确认可用；原因是 proot 的 --link2symlink……”。
 - 每个文件的主类或主函数上写一句“它是什么、什么时候用”。
-- 来自真机排查的结论（NapCat 的 ErrCode、WebView 的 WRAP_CONTENT）要写在代码旁边，免得后人“优化”掉。
+- 来自真机排查的结论（NapCat 的 ErrCode、GeckoView 的 TextureView 与 `MATCH_PARENT`）要写在代码旁边，免得后人“优化”掉。
 
 ### 提交
 

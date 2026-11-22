@@ -77,7 +77,7 @@ flowchart TB
     UI -->|"安装、更新、配置"| Runner
     Svc -->|"启动、重启、停止"| Runner
     Runner ==>|"proot 进入容器执行"| Box
-    UI -.->|"WebView 直接访问"| MaiBot
+    UI -.->|"GeckoView 直接访问"| MaiBot
 
     MaiBot --- Adapter
     Adapter <-->|"OneBot WebSocket"| NapCat
@@ -164,7 +164,7 @@ sequenceDiagram
 | 前台服务、开机/升级自启、安全退出 | `service/` |
 | 错误码、打码诊断与闪退记录 | `diagnostics/` |
 | 容器缓存清理 | `cleanup/` |
-| 嵌入的 MaiBot WebUI | `webui/`：令牌、WebView、请求改写、注入脚本、横屏桌面版、两指滚动、上传、下载 |
+| 嵌入的 MaiBot WebUI | `webui/`：GeckoView 运行时与会话宿主、原生消息桥接、内置 WebExtension、令牌、横屏桌面版、两指滚动、上传、下载 |
 | 容器 SSH | `ssh/` |
 | 系统“文件”应用里的 MaiBot 目录 | `files/` |
 | MaiDroid 自己的更新 | `appupdate/` |
@@ -241,7 +241,7 @@ MaiDroid 以 [GNU General Public License v3.0](https://github.com/Mai-with-u/Mai
 
 - 运行时在设备上安装的 [MaiBot](https://github.com/Mai-with-u/MaiBot)（GPL-3.0）、[MaiBot-SnowLuma-Adapter](https://github.com/Mai-with-u/MaiBot-SnowLuma-Adapter)（插件清单声明为 GPL-3.0 或更高版本）和 [MaiBot-QQ-Adapter](https://github.com/Mai-with-u/MaiBot-QQ-Adapter)（MIT）不随 APK 分发，各自遵循其仓库中的许可证。
 - NapCatQQ 与 SnowLuma（含其闭源专有组件）均不随 APK 分发，也不在应用内写死第三方下载源；仅在用户自行填写仓库或发行包直链并确认协议与来源提示后下载部署到设备容器，各自遵循其上游许可证与使用条款（限非商业用途的条款请在使用前自行确认）。
-- APK 内置的容器运行资源（Termux bootstrap、[PRoot](https://github.com/proot-me/proot) 及相关依赖包、Debian rootfs）同样保留各自的许可证。
+- APK 内置的容器运行资源（Termux bootstrap、[PRoot](https://github.com/proot-me/proot) 及相关依赖包、Debian rootfs）与内嵌网页引擎 [Mozilla GeckoView](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/)（MPL-2.0）同样保留各自的许可证。
 - 唤醒页使用的等宽字体 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) 随 APK 分发，以 [SIL Open Font License 1.1](https://openfontlicense.org) 发布。
 
 ## 致谢
