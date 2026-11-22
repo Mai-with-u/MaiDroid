@@ -47,12 +47,14 @@ import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaScripts
 import org.maiwithu.maidroid.platform.snowluma.snowLumaLoginHint
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -105,7 +107,24 @@ internal fun SnowLumaAgreementDialog(
         subtitle = "需填写 Fork 仓库或 .tar.gz 直链",
         icon = FlatFeatureIcons.Platforms,
         iconBackground = IconPeachOrange,
+        size = MaiDialogSize.Expanded,
         onDismissRequest = onDismiss,
+        secondaryContent = {
+            // 横屏时将闭源协议链接与风险警示放到右列，左列专心承担仓库填写。
+            MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "SnowLuma 含闭源原生组件，仅限非商业用途；点“同意并安装”即表示你已阅读并同意对应仓库内的协议条款：",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SourceAgreementLink(text = "查看用户协议", onClick = { openSourceDoc("EULA.md") })
+                    SourceAgreementLink(text = "查看隐私政策", onClick = { openSourceDoc("PRIVACY.md") })
+                }
+            }
+            CustomSourceRiskNotice(clientLabel = "SnowLuma")
+        },
         footer = {
             MaiDialogButtonRow {
                 MaiDialogButton(
@@ -159,23 +178,7 @@ internal fun SnowLumaAgreementDialog(
                     lineHeight = 16.sp
                 )
             }
-
-            // 闭源声明与用户/隐私协议链接集中放进源填写卡片底部，点击链接不误触主按钮。
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "SnowLuma 含闭源原生组件，仅限非商业用途；点“同意并安装”即表示你已阅读并同意对应仓库内的协议条款：",
-                    color = TextMuted,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 16.sp
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SourceAgreementLink(text = "查看用户协议", onClick = { openSourceDoc("EULA.md") })
-                    SourceAgreementLink(text = "查看隐私政策", onClick = { openSourceDoc("PRIVACY.md") })
-                }
-            }
         }
-
-        CustomSourceRiskNotice(clientLabel = "SnowLuma")
     }
 }
 
@@ -259,12 +262,13 @@ internal fun QqWindowDialog(
         subtitle = snowLumaLoginHint(state),
         icon = FlatFeatureIcons.DesktopWindow,
         iconBackground = IconPeachOrange,
+        size = MaiDialogSize.Medium,
         onDismissRequest = onDismiss,
         footer = {
             MaiDialogButton(
                 text = "关闭",
                 style = MaiDialogButtonStyle.Primary,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
                 onClick = onDismiss
             )
         }
@@ -373,7 +377,47 @@ internal fun SnowLumaConfigDialog(
         statusText = statusText,
         statusOnline = state.active && state.oneBotReachable,
         onRefresh = onRefresh,
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        secondaryContent = {
+            ConfigFoldableSection(
+                title = "连接与配置详情",
+                summary = "3 项参数"
+            ) {
+                ConfigKeyValueRow("服务类型", "WebSocket Server")
+                ConfigGroupDivider()
+                ConfigKeyValueRow("Token", "和 NapCat 共用一个", valueColor = TextMuted)
+                ConfigGroupDivider()
+                ConfigKeyValueRow(
+                    label = "配置文件",
+                    value = "${SnowLumaScripts.DATA_DIR}/config/onebot.json",
+                    valueColor = TextMuted
+                )
+            }
+
+            CustomSourceEditorSection(
+                client = QqClient.SnowLuma,
+                savedUrl = state.customSourceUrl,
+                installing = state.isInstalling,
+                onSaveUrl = onSaveSourceUrl,
+                onRequestReinstall = onReinstallFromSourceUrl
+            )
+        },
+        footerStart = {
+            // 重启 QQ 移入左下固定底栏，避免在横屏滚动列表底端被裁切。
+            ConfigFooterDangerButton(
+                text = if (state.qqRestarting) "正在重启…" else "重启 QQ",
+                enabled = state.active && !state.qqRestarting,
+                onClick = onRestartQq
+            )
+        },
+        footer = {
+            MaiDialogButton(
+                text = "关闭",
+                style = MaiDialogButtonStyle.Secondary,
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
+                onClick = onDismiss
+            )
+        }
     ) {
         state.failure?.let { failure ->
             FailureNotice(failure = failure, summary = failure.message)
@@ -414,36 +458,6 @@ internal fun SnowLumaConfigDialog(
                 valueColor = TextMuted
             )
         }
-
-        ConfigFoldableSection(
-            title = "连接与配置详情",
-            summary = "3 项参数"
-        ) {
-            ConfigKeyValueRow("服务类型", "WebSocket Server")
-            ConfigGroupDivider()
-            ConfigKeyValueRow("Token", "和 NapCat 共用一个", valueColor = TextMuted)
-            ConfigGroupDivider()
-            ConfigKeyValueRow(
-                label = "配置文件",
-                value = "${SnowLumaScripts.DATA_DIR}/config/onebot.json",
-                valueColor = TextMuted
-            )
-        }
-
-        CustomSourceEditorSection(
-            client = QqClient.SnowLuma,
-            savedUrl = state.customSourceUrl,
-            installing = state.isInstalling,
-            onSaveUrl = onSaveSourceUrl,
-            onRequestReinstall = onReinstallFromSourceUrl
-        )
-
-        // 重启 QQ：先弹二次确认；进行中禁用，避免重复重启
-        ConfigSoftDangerButton(
-            text = if (state.qqRestarting) "正在重启…" else "重启 QQ",
-            enabled = state.active && !state.qqRestarting,
-            onClick = onRestartQq
-        )
     }
 }
 

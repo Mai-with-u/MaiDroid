@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -51,6 +52,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogCallout
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -85,7 +87,11 @@ internal fun NapCatInstallDialog(
         subtitle = "需填写 Fork 仓库或 NapCat.Shell.zip 直链",
         icon = FlatFeatureIcons.Platforms,
         iconBackground = IconSkyBlue,
+        size = MaiDialogSize.Expanded,
         onDismissRequest = onDismiss,
+        secondaryContent = {
+            CustomSourceRiskNotice(clientLabel = "NapCat")
+        },
         footer = {
             MaiDialogButtonRow {
                 MaiDialogButton(
@@ -139,8 +145,6 @@ internal fun NapCatInstallDialog(
                 )
             }
         }
-
-        CustomSourceRiskNotice(clientLabel = "NapCat")
     }
 }
 
@@ -212,6 +216,7 @@ internal fun NapCatQrCodeDialog(
         subtitle = napCatQrLoginHint(state) ?: "等待获取登录状态",
         icon = FlatFeatureIcons.Platforms,
         iconBackground = IconSkyBlue,
+        size = MaiDialogSize.Medium,
         onDismissRequest = onDismiss,
         // 交由内部 BoxWithConstraints 读取弹窗剩余有效高度，横屏时自动切入二维码 + 说明左右并排。
         scrollable = false,
@@ -385,7 +390,63 @@ internal fun NapCatConfigDialog(
         statusText = statusText,
         statusOnline = state.active && state.oneBotReachable,
         onRefresh = onRefresh,
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        secondaryContent = {
+            ConfigFoldableSection(
+                title = "连接与配置详情",
+                summary = "9 项参数"
+            ) {
+                ConfigKeyValueRow(
+                    label = "Token",
+                    value = config?.token?.ifBlank { "未设置" } ?: "-",
+                    maskableSecret = true
+                )
+                ConfigGroupDivider()
+                ConfigKeyValueRow("服务类型", config?.serviceType ?: "-")
+                ConfigGroupDivider()
+                ConfigKeyValueRow("服务名称", config?.name ?: "-")
+                ConfigGroupDivider()
+                ConfigKeyValueRow("消息格式", config?.messagePostFormat?.ifBlank { "-" } ?: "-")
+                ConfigGroupDivider()
+                ConfigKeyValueRow("上报自身消息", config?.reportSelfMessage.toEnabledText())
+                ConfigGroupDivider()
+                ConfigKeyValueRow("强制推送事件", config?.enableForcePushEvent.toEnabledText())
+                ConfigGroupDivider()
+                ConfigKeyValueRow("心跳间隔", config?.heartInterval?.let { "${it}ms" } ?: "-")
+                ConfigGroupDivider()
+                ConfigKeyValueRow("调试模式", config?.debug.toEnabledText())
+                ConfigGroupDivider()
+                ConfigKeyValueRow(
+                    label = "配置文件",
+                    value = config?.configPath ?: "/root/napcat/config/onebot11.json",
+                    valueColor = TextMuted
+                )
+            }
+
+            CustomSourceEditorSection(
+                client = QqClient.NapCat,
+                savedUrl = state.customSourceUrl,
+                installing = state.isInstalling,
+                onSaveUrl = onSaveSourceUrl,
+                onRequestReinstall = onReinstallFromSourceUrl
+            )
+        },
+        footerStart = {
+            // 退出 QQ 放在左下固定底栏，避免塞在右列滚动区末端导致横屏被腰斩。
+            ConfigFooterDangerButton(
+                text = if (state.qqLoggingOut) "正在退出…" else "退出 QQ 登录",
+                enabled = state.installed && !state.qqLoggingOut,
+                onClick = onLogoutQq
+            )
+        },
+        footer = {
+            MaiDialogButton(
+                text = "关闭",
+                style = MaiDialogButtonStyle.Secondary,
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
+                onClick = onDismiss
+            )
+        }
     ) {
         state.failure?.let { failure ->
             FailureNotice(failure = failure, summary = failure.message)
@@ -419,52 +480,6 @@ internal fun NapCatConfigDialog(
                 value = endpoint
             )
         }
-
-        ConfigFoldableSection(
-            title = "连接与配置详情",
-            summary = "9 项参数"
-        ) {
-            ConfigKeyValueRow(
-                label = "Token",
-                value = config?.token?.ifBlank { "未设置" } ?: "-",
-                maskableSecret = true
-            )
-            ConfigGroupDivider()
-            ConfigKeyValueRow("服务类型", config?.serviceType ?: "-")
-            ConfigGroupDivider()
-            ConfigKeyValueRow("服务名称", config?.name ?: "-")
-            ConfigGroupDivider()
-            ConfigKeyValueRow("消息格式", config?.messagePostFormat?.ifBlank { "-" } ?: "-")
-            ConfigGroupDivider()
-            ConfigKeyValueRow("上报自身消息", config?.reportSelfMessage.toEnabledText())
-            ConfigGroupDivider()
-            ConfigKeyValueRow("强制推送事件", config?.enableForcePushEvent.toEnabledText())
-            ConfigGroupDivider()
-            ConfigKeyValueRow("心跳间隔", config?.heartInterval?.let { "${it}ms" } ?: "-")
-            ConfigGroupDivider()
-            ConfigKeyValueRow("调试模式", config?.debug.toEnabledText())
-            ConfigGroupDivider()
-            ConfigKeyValueRow(
-                label = "配置文件",
-                value = config?.configPath ?: "/root/napcat/config/onebot11.json",
-                valueColor = TextMuted
-            )
-        }
-
-        CustomSourceEditorSection(
-            client = QqClient.NapCat,
-            savedUrl = state.customSourceUrl,
-            installing = state.isInstalling,
-            onSaveUrl = onSaveSourceUrl,
-            onRequestReinstall = onReinstallFromSourceUrl
-        )
-
-        // 退出 QQ：先弹二次确认，确认后清自动登录并重启 NapCat；进行中禁用，避免重复重启。
-        ConfigSoftDangerButton(
-            text = if (state.qqLoggingOut) "正在退出…" else "退出 QQ 登录",
-            enabled = state.installed && !state.qqLoggingOut,
-            onClick = onLogoutQq
-        )
     }
 }
 
