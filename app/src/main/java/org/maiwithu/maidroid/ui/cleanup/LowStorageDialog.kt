@@ -1,22 +1,23 @@
 package org.maiwithu.maidroid.ui.cleanup
 
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.appupdate.formatBytes
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.theme.IconWarmCoral
+import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
-import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
@@ -31,44 +32,37 @@ internal fun LowStorageDialog(freeBytes: Long, onDismiss: () -> Unit) {
         StorageCleanupDialog(onDismiss = onDismiss)
         return
     }
-    AlertDialog(
+    MaiDialog(
+        title = "手机存储快满了",
+        subtitle = "避免数据库与聊天记录写入失败",
+        icon = FlatFeatureIcons.Storage,
+        iconBackground = IconWarmCoral,
+        headerBadge = {
+            MaiDialogInfoChip(text = "仅剩 ${formatBytes(freeBytes)}", color = StatusWarning)
+        },
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "手机存储快满了",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            Text(
-                text = "只剩 ${formatBytes(freeBytes)}。存储写满后麦麦的聊天记录、记忆和日志都写不进去，可能会出错。" +
-                    "可以先清掉 MaiDroid 自己的下载缓存，不够的话再去系统设置里清理别的应用。",
-                color = TextMuted,
-                fontSize = TextSizes.Body,
-                lineHeight = 19.sp
-            )
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-            ) {
-                Text(text = "以后再说", fontWeight = FontWeight.Bold)
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "以后再说",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = "清理空间",
+                    style = MaiDialogButtonStyle.Primary,
+                    modifier = Modifier.weight(1f),
+                    onClick = { cleaning = true }
+                )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { cleaning = true },
-                colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = TextPrimary)
-            ) {
-                Text(text = "清理空间", fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    ) {
+        Text(
+            text = "存储写满后麦麦的聊天记录、记忆和日志都写不进去，可能会引发异常。可以先清掉 MaiDroid 自己的下载缓存，不够的话再去系统设置里清理别的应用。",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+    }
 }

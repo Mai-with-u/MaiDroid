@@ -7,15 +7,11 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,9 +38,18 @@ import org.maiwithu.maidroid.appupdate.formatBytes
 import org.maiwithu.maidroid.cleanup.CleanupItem
 import org.maiwithu.maidroid.cleanup.CleanupOutcome
 import org.maiwithu.maidroid.cleanup.CleanupSizes
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogDivider
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.IconTealMint
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
@@ -81,123 +86,190 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
         stage = cleanup.measure()?.let { CleanupStage.Ready(it) } ?: CleanupStage.Unavailable
     }
 
-    AlertDialog(
-        onDismissRequest = { if (stage != CleanupStage.Cleaning) onDismiss() },
-        title = {
-            Text(
-                text = "清理空间",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                when (val current = stage) {
-                    CleanupStage.Measuring -> Progress("正在统计各类文件的大小...")
-                    CleanupStage.Unavailable -> BodyText(
-                        "容器还没有准备好，暂时没有能清理的缓存。可以打开系统的存储设置，清理别的应用或文件。"
+    val freeSpaceText = (stage as? CleanupStage.Ready)?.let { "可用 ${formatBytes(it.sizes.freeBytes)}" }
+    val canDismiss = stage != CleanupStage.Cleaning
+
+    MaiDialog(
+        title = "清理空间",
+        subtitle = freeSpaceText ?: "删除下载缓存，不动配置与聊天记录",
+        icon = FlatFeatureIcons.Cleanup,
+        iconBackground = IconTealMint,
+        showCloseButton = canDismiss,
+        dismissOnBackPress = canDismiss,
+        dismissOnClickOutside = canDismiss,
+        onDismissRequest = { if (canDismiss) onDismiss() },
+        footer = {
+            when (val current = stage) {
+                CleanupStage.Unavailable -> MaiDialogButtonRow {
+                    MaiDialogButton(
+                        text = "关闭",
+                        style = MaiDialogButtonStyle.Secondary,
+                        modifier = Modifier.weight(1f),
+                        onClick = onDismiss
                     )
-                    is CleanupStage.Ready -> {
-                        BodyText("手机剩余空间 ${formatBytes(current.sizes.freeBytes)}。勾选要清理的内容：")
-                        CleanupItem.entries.forEach { item ->
-                            CleanupRow(
-                                item = item,
-                                size = current.sizes.sizes[item],
-                                checked = item in selected,
-                                onCheckedChange = { checked ->
-                                    selectedKeys = if (checked) selectedKeys + item.key else selectedKeys - item.key
-                                }
-                            )
+                    MaiDialogButton(
+                        text = "打开存储设置",
+                        style = MaiDialogButtonStyle.Primary,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            openStorageSettings(context)
+                            onDismiss()
                         }
-                        // 选中合计写在正文里：写进按钮会把按钮撑宽，“取消”被挤到第二行
-                        if (selected.isNotEmpty()) {
-                            BodyText(
-                                "已选约 ${formatBytes(selected.sumOf { current.sizes.sizes[it] ?: 0L })}。",
-                                color = TextPrimary
-                            )
-                        }
-                        BodyText("配置、聊天数据、插件和已经装好的依赖都不会被删。")
+                    )
+                }
+                is CleanupStage.Ready -> {
+                    val selectedBytes = selected.sumOf { current.sizes.sizes[it] ?: 0L }
+                    val cleanLabel = if (selected.isNotEmpty() && selectedBytes > 0L) {
+                        "清理（约 ${formatBytes(selectedBytes)}）"
+                    } else {
+                        "清理"
                     }
-                    CleanupStage.Cleaning -> Progress("正在清理，请不要关闭应用...")
-                    is CleanupStage.Done -> DoneText(current.outcome)
+                    MaiDialogButtonRow {
+                        MaiDialogButton(
+                            text = "取消",
+                            style = MaiDialogButtonStyle.Secondary,
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss
+                        )
+                        MaiDialogButton(
+                            text = cleanLabel,
+                            style = MaiDialogButtonStyle.Primary,
+                            enabled = selected.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                val items = selected
+                                stage = CleanupStage.Cleaning
+                                scope.launch { stage = CleanupStage.Done(cleanup.clean(items)) }
+                            }
+                        )
+                    }
                 }
+                CleanupStage.Measuring,
+                CleanupStage.Cleaning -> MaiDialogButtonRow {
+                    if (stage == CleanupStage.Measuring) {
+                        MaiDialogButton(
+                            text = "取消",
+                            style = MaiDialogButtonStyle.Secondary,
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss
+                        )
+                    }
+                    MaiDialogButton(
+                        text = if (stage == CleanupStage.Cleaning) "正在清理..." else "统计中...",
+                        style = MaiDialogButtonStyle.Primary,
+                        enabled = false,
+                        modifier = Modifier.weight(1f),
+                        onClick = {}
+                    )
+                }
+                is CleanupStage.Done -> MaiDialogButton(
+                    text = "完成",
+                    style = MaiDialogButtonStyle.Primary,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onDismiss
+                )
             }
-        },
-        dismissButton = {
-            when (stage) {
-                CleanupStage.Unavailable -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SecondaryButton("关闭", onClick = onDismiss)
-                }
-                is CleanupStage.Ready, CleanupStage.Measuring -> SecondaryButton("取消", onClick = onDismiss)
-                else -> Unit
+        }
+    ) {
+        when (val current = stage) {
+            CleanupStage.Measuring -> MaiDialogSectionCard {
+                Progress("正在统计各类文件的大小...")
             }
-        },
-        confirmButton = {
-            when (stage) {
-                CleanupStage.Unavailable -> PrimaryButton("打开存储设置") {
-                    openStorageSettings(context)
-                    onDismiss()
+            CleanupStage.Unavailable -> BodyText(
+                "容器还没有准备好，暂时没有能清理的缓存。可以打开系统的存储设置，清理别的应用或文件。"
+            )
+            is CleanupStage.Ready -> {
+                MaiDialogSectionCard(
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    CleanupItem.entries.forEachIndexed { index, item ->
+                        if (index > 0) MaiDialogDivider()
+                        CleanupRow(
+                            item = item,
+                            size = current.sizes.sizes[item],
+                            checked = item in selected,
+                            onCheckedChange = { checked ->
+                                selectedKeys = if (checked) selectedKeys + item.key else selectedKeys - item.key
+                            }
+                        )
+                    }
                 }
-                is CleanupStage.Ready -> PrimaryButton(text = "清理", enabled = selected.isNotEmpty()) {
-                    val items = selected
-                    stage = CleanupStage.Cleaning
-                    scope.launch { stage = CleanupStage.Done(cleanup.clean(items)) }
-                }
-                CleanupStage.Measuring, CleanupStage.Cleaning -> PrimaryButton("清理", enabled = false) {}
-                is CleanupStage.Done -> PrimaryButton("完成", onClick = onDismiss)
+                Text(
+                    text = "配置、聊天数据、插件和已经装好的依赖都不会被删。",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
+                )
             }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+            CleanupStage.Cleaning -> MaiDialogSectionCard {
+                Progress("正在清理，请不要关闭应用...")
+            }
+            is CleanupStage.Done -> DoneContent(current.outcome)
+        }
+    }
 }
 
-// 一类可清理的内容：勾选框、名称和大小、一句说明；整行可点。
+// 一类可清理的内容：勾选框、名称和说明、右侧体积胶囊；整行可点。
 @Composable
 private fun CleanupRow(item: CleanupItem, size: Long?, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Checkbox) { onCheckedChange(!checked) }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Checkbox(
             checked = checked,
             onCheckedChange = null,
             colors = CheckboxDefaults.colors(checkedColor = BrandOrange, uncheckedColor = TextMuted),
-            modifier = Modifier.padding(top = 2.dp, end = 10.dp)
+            modifier = Modifier.padding(end = 10.dp)
         )
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Text(
-                text = "${item.label}  ${size?.let(::formatBytes) ?: "大小未知"}",
+                text = item.label,
                 color = TextPrimary,
                 fontSize = TextSizes.Body,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 lineHeight = 18.sp
             )
-            Text(text = item.detail, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)
+            Text(text = item.detail, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 15.sp)
         }
+        MaiDialogInfoChip(
+            text = size?.let(::formatBytes) ?: "未知",
+            color = if (checked && (size ?: 0L) > 0L) BrandOrange else TextMuted,
+            containerColor = CardBorder
+        )
     }
 }
 
 // 清理结果：多出来的空间；有跳过的说明原因；脚本没跑成功时提示去终端看。
 @Composable
-private fun DoneText(outcome: CleanupOutcome) {
-    BodyText("清理完成，手机多出约 ${formatBytes(outcome.freedBytes)}。", color = StatusOnline)
+private fun DoneContent(outcome: CleanupOutcome) {
+    MaiDialogCallout(
+        title = "清理完成",
+        body = "手机多出约 ${formatBytes(outcome.freedBytes)}。",
+        accentColor = StatusOnline
+    )
     if (outcome.skipped.isNotEmpty()) {
-        BodyText(
-            "${outcome.skipped.joinToString("、") { it.label }}正在使用（装依赖或装软件），这次先跳过了，装完再来清理。",
-            color = StatusWarning
+        MaiDialogCallout(
+            title = "部分内容已跳过",
+            body = "${outcome.skipped.joinToString("、") { it.label }}正在使用（装依赖或装软件），这次先跳过了，装完再来清理。",
+            accentColor = StatusWarning
         )
     }
     if (!outcome.success) {
-        BodyText("有一部分没能清理，详情见终端输出。", color = StatusWarning)
+        MaiDialogCallout(
+            title = "未完全清理",
+            body = "有一部分没能清理，详情可查看终端输出。",
+            accentColor = StatusWarning
+        )
     }
 }
 
@@ -212,27 +284,6 @@ private fun Progress(text: String) {
 @Composable
 private fun BodyText(text: String, color: Color = TextMuted) {
     Text(text = text, color = color, fontSize = TextSizes.Body, lineHeight = 19.sp)
-}
-
-@Composable
-private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = TextPrimary)
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun SecondaryButton(text: String, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-    ) {
-        Text(text = text, fontWeight = FontWeight.Bold)
-    }
 }
 
 /** 打开系统的存储设置；容器没装好、或者应用里清完还不够时用。 */
