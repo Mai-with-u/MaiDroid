@@ -10,6 +10,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +60,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -68,7 +70,11 @@ import org.maiwithu.maidroid.WebUiActivity
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
+import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
+import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.computeLargeHeaderAlpha
+import org.maiwithu.maidroid.ui.component.computeScrollHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
@@ -79,6 +85,7 @@ import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
+import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -294,15 +301,17 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
         val sectionSpacing = 8.dp + 16.dp * verticalExpansion
 
         // 手机两种排版共用的三块：页头（带搜索框）、已连接、发现。
-        val listHeader: @Composable (Boolean) -> Unit = { compact ->
+        val listHeader: @Composable (Boolean, Float) -> Unit = { compact, titleAlpha ->
             Column {
-                MessagePlatformsHeader(
-                    runningCount = runningCount,
-                    searchOpen = searchOpen,
-                    onSearchClick = onSearchClick,
-                    horizontalPadding = 0.dp,
-                    compact = compact
-                )
+                Box(modifier = Modifier.graphicsLayer { alpha = titleAlpha }) {
+                    MessagePlatformsHeader(
+                        runningCount = runningCount,
+                        searchOpen = searchOpen,
+                        onSearchClick = onSearchClick,
+                        horizontalPadding = 0.dp,
+                        compact = compact
+                    )
+                }
                 if (searchOpen) {
                     Spacer(modifier = Modifier.height(12.dp))
                     PlatformSearchField(
@@ -359,54 +368,113 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             }
         }
 
+        val density = LocalDensity.current
         when (messagePlatformsLayout(maxWidth.value, maxHeight.value)) {
             PlatformsLayout.List -> {
-                // 手机竖屏：页头微幅下沉，下方“已连接”与“发现”卡片弹性拉开留白，消除拉伸变形。
+                // 手机竖屏：大标题滚出后吸顶为毛玻璃搜索顶栏，下拉到顶仍保持视差过冲弹性。
+                val listScrollState = rememberScrollState()
                 val listOverscroll = rememberSplitHeaderOverscrollEffect()
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState(), overscrollEffect = listOverscroll)
-                        .padding(horizontal = PlatformGridHorizontalPadding)
-                        .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                val collapseDistancePx = with(density) { 56.dp.toPx() }
+                val collapseProgress = computeScrollHeaderCollapseProgress(
+                    scrollOffsetPx = listScrollState.value,
+                    collapseDistancePx = collapseDistancePx
+                )
+                val largeHeaderAlpha = computeLargeHeaderAlpha(collapseProgress)
+
+                CollapsingGlassHeaderContainer(
+                    title = "消息平台",
+                    collapseProgress = collapseProgress,
+                    statusBarTop = statusBarTop,
+                    horizontalPadding = PlatformGridHorizontalPadding,
+                    trailingAction = {
+                        GlassHeaderCircleButton(
+                            icon = if (searchOpen) Icons.Outlined.Close else Icons.Outlined.Search,
+                            contentDescription = if (searchOpen) "关闭搜索" else "搜索平台",
+                            onClick = {
+                                if (searchOpen) {
+                                    closeSearch()
+                                } else {
+                                    searchOpen = true
+                                    // 从列表下方点吸顶搜索钮时平滑滑回顶部，立刻露出输入框并弹出键盘。
+                                    uiScope.launch { listScrollState.animateScrollTo(0) }
+                                }
+                            }
+                        )
+                    },
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Box(modifier = Modifier.overscrollHeader(listOverscroll)) {
-                        listHeader(false)
-                    }
                     Column(
-                        modifier = Modifier.overscrollBody(listOverscroll),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(listScrollState, overscrollEffect = listOverscroll)
+                            .padding(horizontal = PlatformGridHorizontalPadding)
+                            .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                         verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
-                        installedSection()
-                        discoverSection(false)
+                        Box(modifier = Modifier.overscrollHeader(listOverscroll)) {
+                            listHeader(false, largeHeaderAlpha)
+                        }
+                        Column(
+                            modifier = Modifier.overscrollBody(listOverscroll),
+                            verticalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            installedSection()
+                            discoverSection(false)
+                        }
                     }
                 }
             }
 
             PlatformsLayout.TwoPane -> {
-                // 手机横屏：左栏页头和已连接同样走视差过冲，右栏发现随默认弹性工厂平滑平移；两栏各自滚动。
+                // 手机横屏：左栏大标题滚出时同样收进毛玻璃顶栏，右栏独立滚动。
                 val leftPaneWidth = (pageWidth * 0.4f).coerceIn(220.dp, 320.dp)
+                val leftScrollState = rememberScrollState()
                 val leftOverscroll = rememberSplitHeaderOverscrollEffect()
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = statusBarTop)
-                ) {
-                    Column(
+                val leftCollapseDistancePx = with(density) { 40.dp.toPx() }
+                val leftCollapseProgress = computeScrollHeaderCollapseProgress(
+                    scrollOffsetPx = leftScrollState.value,
+                    collapseDistancePx = leftCollapseDistancePx
+                )
+                val leftLargeHeaderAlpha = computeLargeHeaderAlpha(leftCollapseProgress)
+
+                Row(modifier = Modifier.fillMaxSize()) {
+                    CollapsingGlassHeaderContainer(
+                        title = "消息平台",
+                        collapseProgress = leftCollapseProgress,
+                        statusBarTop = statusBarTop,
+                        horizontalPadding = PlatformGridHorizontalPadding,
+                        trailingAction = {
+                            GlassHeaderCircleButton(
+                                icon = if (searchOpen) Icons.Outlined.Close else Icons.Outlined.Search,
+                                contentDescription = if (searchOpen) "关闭搜索" else "搜索平台",
+                                onClick = {
+                                    if (searchOpen) {
+                                        closeSearch()
+                                    } else {
+                                        searchOpen = true
+                                        uiScope.launch { leftScrollState.animateScrollTo(0) }
+                                    }
+                                }
+                            )
+                        },
                         modifier = Modifier
                             .width(leftPaneWidth)
                             .fillMaxHeight()
-                            .verticalScroll(rememberScrollState(), overscrollEffect = leftOverscroll)
-                            .padding(start = PlatformGridHorizontalPadding, end = 8.dp)
-                            .padding(top = topSpacing, bottom = bottomClearance),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Box(modifier = Modifier.overscrollHeader(leftOverscroll)) {
-                            listHeader(true)
-                        }
-                        Box(modifier = Modifier.overscrollBody(leftOverscroll)) {
-                            installedSection()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(leftScrollState, overscrollEffect = leftOverscroll)
+                                .padding(start = PlatformGridHorizontalPadding, end = 8.dp)
+                                .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(modifier = Modifier.overscrollHeader(leftOverscroll)) {
+                                listHeader(true, leftLargeHeaderAlpha)
+                            }
+                            Box(modifier = Modifier.overscrollBody(leftOverscroll)) {
+                                installedSection()
+                            }
                         }
                     }
 
@@ -416,7 +484,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState())
                             .padding(start = 8.dp, end = PlatformGridHorizontalPadding)
-                            .padding(top = topSpacing, bottom = bottomClearance)
+                            .padding(top = statusBarTop + topSpacing, bottom = bottomClearance)
                     ) {
                         discoverSection(true)
                     }
@@ -816,6 +884,7 @@ private fun SearchButton(searchOpen: Boolean, onClick: () -> Unit) {
             .size(42.dp)
             .clip(CircleShape)
             .background(GlassButtonSurface)
+            .border(0.8.dp, GlassStroke, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

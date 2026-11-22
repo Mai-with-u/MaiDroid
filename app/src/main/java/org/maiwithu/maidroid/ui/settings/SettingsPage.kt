@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -41,8 +42,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
@@ -60,10 +63,13 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
+import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.computeLargeHeaderAlpha
+import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
@@ -404,26 +410,44 @@ private fun SettingsNavigationPane(
     val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
+    val density = LocalDensity.current
+    val listState = rememberLazyListState()
+    val collapseDistancePx = with(density) { (if (compact) 40.dp else 56.dp).toPx() }
+    val collapseProgress = computeLazyHeaderCollapseProgress(
+        firstVisibleItemIndex = listState.firstVisibleItemIndex,
+        firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+        collapseDistancePx = collapseDistancePx
+    )
+    val largeHeaderAlpha = computeLargeHeaderAlpha(collapseProgress)
+    val horizontalPadding = if (compact) 16.dp else 20.dp
 
-    LazyColumn(
-        modifier = modifier
-            .background(PageBackground)
-            .padding(top = statusBarTop),
-        overscrollEffect = overscroll,
-        contentPadding = PaddingValues(
-            top = if (compact) compactTop else 44.dp,
-            start = if (compact) 12.dp else 18.dp,
-            end = if (compact) 12.dp else 18.dp,
-            bottom = LocalBottomNavigationClearance.current
-        ),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
+    // 将大标题滚出后在顶栏保留小号“设置”与渐进毛玻璃模糊，内容卡片可在状态栏背后全出血穿过。
+    CollapsingGlassHeaderContainer(
+        title = "设置",
+        collapseProgress = collapseProgress,
+        statusBarTop = statusBarTop,
+        horizontalPadding = horizontalPadding,
+        modifier = modifier.background(PageBackground)
     ) {
-        item {
-            Column(
-                modifier = Modifier
-                    .overscrollHeader(overscroll)
-                    .padding(horizontal = if (compact) 4.dp else 2.dp)
-            ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            overscrollEffect = overscroll,
+            contentPadding = PaddingValues(
+                top = statusBarTop + if (compact) compactTop else 44.dp,
+                start = if (compact) 12.dp else 18.dp,
+                end = if (compact) 12.dp else 18.dp,
+                bottom = LocalBottomNavigationClearance.current
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
+        ) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .overscrollHeader(overscroll)
+                        .graphicsLayer { alpha = largeHeaderAlpha }
+                        .padding(horizontal = if (compact) 4.dp else 2.dp)
+                ) {
                 Text(
                     text = "设置",
                     color = TextPrimary,
@@ -675,6 +699,7 @@ private fun SettingsNavigationPane(
                     .overscrollBody(overscroll)
                     .padding(top = if (compact) 4.dp else 8.dp)
             )
+        }
         }
     }
 }

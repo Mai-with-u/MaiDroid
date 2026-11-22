@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,17 +32,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.computeLargeHeaderAlpha
+import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
@@ -79,19 +86,43 @@ internal fun PermissionManagementPage(
     val statusBarTop = statusBarTopInset()
     // 顶部下拉到顶时，大标题微幅跟随后停稳、卡片列表继续下沉拉开呼吸空间，营造自然视差弹性
     val overscroll = rememberSplitHeaderOverscrollEffect()
+    val density = LocalDensity.current
+    val listState = rememberLazyListState()
+    val collapseDistancePx = with(density) { 52.dp.toPx() }
+    val collapseProgress = computeLazyHeaderCollapseProgress(
+        firstVisibleItemIndex = listState.firstVisibleItemIndex,
+        firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+        collapseDistancePx = collapseDistancePx
+    )
+    val largeHeaderAlpha = computeLargeHeaderAlpha(collapseProgress)
 
-    Box(
+    // 大标题滑出视口后于顶栏保留返回按钮与小号“权限管理”标题，卡片穿过状态栏时提供渐进毛玻璃模糊。
+    CollapsingGlassHeaderContainer(
+        title = "权限管理",
+        collapseProgress = collapseProgress,
+        statusBarTop = statusBarTop,
+        horizontalPadding = 16.dp,
+        leadingAction = if (showBackButton) {
+            {
+                GlassHeaderCircleButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    onClick = onBack
+                )
+            }
+        } else {
+            null
+        },
         modifier = modifier
             .fillMaxSize()
             .background(PageBackground)
     ) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = statusBarTop),
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
             overscrollEffect = overscroll,
             contentPadding = PaddingValues(
-                top = 40.dp,
+                top = statusBarTop + 40.dp,
                 start = 16.dp,
                 end = 16.dp,
                 bottom = LocalBottomNavigationClearance.current
@@ -103,6 +134,7 @@ internal fun PermissionManagementPage(
                     modifier = Modifier
                         .fillMaxWidth()
                         .overscrollHeader(overscroll)
+                        .graphicsLayer { alpha = largeHeaderAlpha }
                         .padding(bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
