@@ -6,8 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient.FileChooserParams
 import androidx.activity.result.ActivityResultLauncher
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.FilePrompt
@@ -15,20 +13,19 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
 
 /**
  * 网页里 `<input type="file">` 的选文件流程，主页 WebUI 页签和全屏 WebUiActivity 各持有一个。
- * 网页点“发送图片”等按钮 -> PromptDelegate.onFilePrompt / 旧 WebChromeClient 交到 show ->
- * 用宿主注册好的 launcher 打开系统选文件页 -> 选完或取消后宿主把结果交给 onResult -> 把选中的 content:// 地址回传网页。
+ * 网页点“发送图片”等按钮 -> PromptDelegate.onFilePrompt 交到 show -> 用宿主注册好的 launcher 打开系统选文件页 ->
+ * 选完或取消后宿主把结果交给 onResult -> 把选中的 content:// 地址回传 GeckoView。
  * 原因：嵌入内核默认不处理文件选择，不实现时网页的上传按钮点了没有任何反应（issue #3：本地聊天室发不了图片）。
  *
  * launcher 由宿主在注册 ActivityResult 后赋值；还没注册好时按“取消”回复网页。
  */
 internal class WebUiFileChooser(
-    private val logTag: String,
-    context: Context? = null
+    context: Context,
+    private val logTag: String
 ) {
     var launcher: ActivityResultLauncher<Intent>? = null
 
-    private val defaultAppContext = context?.applicationContext
-    private var pendingCallback: ValueCallback<Array<Uri>>? = null
+    private val defaultAppContext = context.applicationContext
     private var pendingPrompt: PendingPrompt? = null
 
     private data class PendingPrompt(
@@ -38,26 +35,25 @@ internal class WebUiFileChooser(
     )
 
     /** 是否仍有尚未收到系统选文件结果的回调（退后台休眠前用于防误销毁）。 */
-    val hasPending: Boolean get() = pendingCallback != null || pendingPrompt != null
+    val hasPending: Boolean get() = pendingPrompt != null
 
     /**
-     * GeckoView 打开系统选文件页。返回一个 PromptResponse 结果；无论成功与否都会且只会完成一次。
+     * 打开系统选文件页。返回一个 PromptResponse 结果；无论成功与否都会且只会完成一次。
      * 上一次还没回复的选择会先按取消结束，防止挂起旧 Promise。
      */
-    fun show(prompt: FilePrompt, context: Context? = defaultAppContext): GeckoResult<PromptResponse> {
+    fun show(prompt: FilePrompt, context: Context = defaultAppContext): GeckoResult<PromptResponse> {
         cancelPending()
 
         val result = GeckoResult<PromptResponse>()
-        val hostContext = context?.applicationContext ?: defaultAppContext
         val currentLauncher = launcher
-        if (currentLauncher == null || hostContext == null) {
+        if (currentLauncher == null) {
             result.complete(prompt.dismiss())
             return result
         }
 
         val allowMultiple = prompt.type == FilePrompt.Type.MULTIPLE
         val intent = fileChooserIntent(prompt.mimeTypes.orEmpty().toList(), allowMultiple)
-        val pending = PendingPrompt(hostContext, prompt, result)
+        val pending = PendingPrompt(context.applicationContext, prompt, result)
         pendingPrompt = pending
         try {
             currentLauncher.launch(intent)
@@ -70,69 +66,34 @@ internal class WebUiFileChooser(
         return result
     }
 
-    /**
-     * 旧 WebView 过渡用：打开系统选文件页。返回 true 表示已经接手（无论成功与否都会且只会回调一次 callback）。
-     */
-    fun show(callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
-        cancelPending()
-
-        val currentLauncher = launcher
-        if (currentLauncher == null) {
-            callback.onReceiveValue(null)
-            return true
-        }
-
-        val allowMultiple = params.mode == FileChooserParams.MODE_OPEN_MULTIPLE
-        val intent = fileChooserIntent(params.acceptTypes.orEmpty().toList(), allowMultiple)
-        pendingCallback = callback
-        try {
-            currentLauncher.launch(intent)
-        } catch (error: ActivityNotFoundException) {
-            Log.w(logTag, "No activity can pick files: ${error.message}")
-            pendingCallback = null
-            callback.onReceiveValue(null)
-        }
-        return true
-    }
-
-    /** 宿主收到选文件页的结果后调用：取消或没选时回取消/null，网页会当作用户取消。 */
+    /** 宿主收到选文件页的结果后调用：取消或没选时回取消，网页会当作用户取消。 */
     fun onResult(resultCode: Int, data: Intent?) {
+        val pending = pendingPrompt ?: return
+        pendingPrompt = null
         val uris = if (resultCode == Activity.RESULT_OK) selectedUris(data) else emptyList()
-
-        pendingCallback?.let { callback ->
-            pendingCallback = null
-            callback.onReceiveValue(uris.takeIf { it.isNotEmpty() }?.toTypedArray())
-        }
-
-        pendingPrompt?.let { pending ->
-            pendingPrompt = null
-            val response = if (uris.isEmpty()) {
-                pending.prompt.dismiss()
-            } else {
-                // 单选框只传单个 Uri，避免在 GeckoView 内部触发类型不匹配；多选框传数组。
-                runCatching {
-                    if (pending.prompt.type == FilePrompt.Type.MULTIPLE) {
-                        pending.prompt.confirm(pending.appContext, uris.toTypedArray())
-                    } else {
-                        pending.prompt.confirm(pending.appContext, uris.first())
-                    }
-                }.getOrElse { error ->
-                    Log.w(logTag, "Failed to confirm selected file uri: ${error.message}")
-                    pending.prompt.dismiss()
+        val response = if (uris.isEmpty()) {
+            pending.prompt.dismiss()
+        } else {
+            // 单选框只传单个 Uri，避免在 GeckoView 内部触发类型不匹配；多选框传数组。
+            runCatching {
+                if (pending.prompt.type == FilePrompt.Type.MULTIPLE) {
+                    pending.prompt.confirm(pending.appContext, uris.toTypedArray())
+                } else {
+                    pending.prompt.confirm(pending.appContext, uris.first())
                 }
+            }.getOrElse { error ->
+                Log.w(logTag, "Failed to confirm selected file uri: ${error.message}")
+                pending.prompt.dismiss()
             }
-            pending.result.complete(response)
         }
+        pending.result.complete(response)
     }
 
     /** 宿主销毁或切换会话前调用，把还没回复的选择按取消结束。 */
     fun cancelPending() {
-        pendingCallback?.onReceiveValue(null)
-        pendingCallback = null
-        pendingPrompt?.let { pending ->
-            pendingPrompt = null
-            pending.result.complete(pending.prompt.dismiss())
-        }
+        val pending = pendingPrompt ?: return
+        pendingPrompt = null
+        pending.result.complete(pending.prompt.dismiss())
     }
 
     // 多选时结果在 ClipData 里，单选时在 data 里；两处都看，去重后按选择顺序返回。

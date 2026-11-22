@@ -10,10 +10,6 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
-import android.webkit.CookieManager
-import android.webkit.DownloadListener
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import kotlinx.coroutines.CompletableDeferred
@@ -22,13 +18,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.maiwithu.maidroid.diagnostics.backgroundScope
-import org.maiwithu.maidroid.runtime.openDirectOrDefault
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.WebResponse
 import java.io.File
 import java.io.IOException
-import java.io.OutputStream
-import java.net.URL
 import java.util.UUID
 
 /**
@@ -42,7 +35,7 @@ import java.util.UUID
  *   分块送来 -> WebUiBlobReceiver 先存成缓存文件 -> 另存为 -> 复制过去后删掉缓存。
  * 用“另存为”而不是直接写进“下载”目录：minSdk 26，Android 8、9 写公共目录要存储权限；另存为不用权限，还能直接存进网盘、QQ 等应用。
  */
-internal class WebUiDownloads(context: Context, private val logTag: String) : DownloadListener {
+internal class WebUiDownloads(context: Context, private val logTag: String) {
     var launcher: ActivityResultLauncher<Intent>? = null
 
     private val appContext = context.applicationContext
@@ -54,7 +47,6 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     private val blobReceiver = WebUiBlobReceiver(tempDirectory)
 
     // 以下状态只在主线程读写。
-    private var webView: WebView? = null
     private var pendingSave: PendingSave? = null
     private var released = false
 
@@ -65,14 +57,6 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     private sealed interface PendingSave {
         val fileName: String
         val mimeType: String
-
-        /** 旧 WebView 过渡用：网页上的 http 地址，选好位置后重新请求。 */
-        class Remote(
-            val url: String,
-            val userAgent: String?,
-            override val fileName: String,
-            override val mimeType: String
-        ) : PendingSave
 
         /** 已经从网页收进缓存目录的文件，选好位置后复制过去。 */
         class Local(
@@ -93,20 +77,6 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
 
     init {
         scope.launch { blobReceiver.deleteStaleFiles() }
-    }
-
-    /** 旧 WebView 过渡用：接到 WebView 上。 */
-    fun attachTo(webView: WebView) {
-        this.webView = webView
-        webView.setDownloadListener(this)
-        webView.addJavascriptInterface(Bridge(), WebUiDownloadScripts.BRIDGE_NAME)
-    }
-
-    /** 旧 WebView 过渡用：仅摘除当前持有的 WebView 引用。 */
-    fun detachFrom(target: WebView) {
-        if (webView === target) {
-            webView = null
-        }
     }
 
     /**
@@ -207,27 +177,6 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         return result
     }
 
-    /** 旧 WebView 过渡用下载回调。 */
-    override fun onDownloadStart(
-        url: String,
-        userAgent: String?,
-        contentDisposition: String?,
-        mimetype: String?,
-        contentLength: Long
-    ) {
-        val fileName = downloadFileName(null, url, contentDisposition, mimetype)
-        when (url.substringBefore(':').lowercase()) {
-            "http", "https" -> requestSave(
-                PendingSave.Remote(url, userAgent, fileName, saveMimeType(fileName, mimetype))
-            )
-            "blob", "data" -> webView?.evaluateJavascript(WebUiDownloadScripts.saveUrlScript(url, fileName), null)
-            else -> {
-                Log.w(logTag, "Unsupported download scheme: ${url.substringBefore(':')}")
-                toast("保存失败：不支持这种下载地址")
-            }
-        }
-    }
-
     /** 宿主收到“另存为”的结果后调用：选好了就在后台写文件，取消了就丢掉这次下载。 */
     fun onResult(resultCode: Int, data: Intent?) {
         val target = data?.data?.takeIf { resultCode == Activity.RESULT_OK }
@@ -243,8 +192,8 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
             return
         }
 
-        // 要等待网络或大文件流落地时先提示一声；内存收完的小文件复制一下就完，只报结果，免得两条提示排队。
-        if (save is PendingSave.Remote || (save is PendingSave.DeferredLocal && !save.fileDeferred.isCompleted)) {
+        // 要等待大文件流落地时先提示一声；内存收完的小文件复制一下就完，只报结果，免得两条提示排队。
+        if (save is PendingSave.DeferredLocal && !save.fileDeferred.isCompleted) {
             toast("正在保存 ${save.fileName}")
         }
         scope.launch {
@@ -268,7 +217,6 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         pendingSave?.let(::discard)
         pendingSave = null
         blobReceiver.abortCurrent()
-        webView = null
     }
 
     // 弹“另存为”。上一个还在等位置的下载先丢掉：系统一次只弹一个选择页。
@@ -304,36 +252,14 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     }
 
     private suspend fun write(save: PendingSave, target: Uri) {
-        val localFile = if (save is PendingSave.DeferredLocal) save.fileDeferred.await() else null
+        val localFile = when (save) {
+            is PendingSave.Local -> save.file
+            is PendingSave.DeferredLocal -> save.fileDeferred.await()
+        }
         val output = appContext.contentResolver.openOutputStream(target, "w")
             ?: throw IOException("打不开选好的文件")
         output.use { stream ->
-            when (save) {
-                is PendingSave.Remote -> downloadTo(save, stream)
-                is PendingSave.Local -> save.file.inputStream().use { it.copyTo(stream, COPY_BUFFER_BYTES) }
-                is PendingSave.DeferredLocal -> localFile!!.inputStream().use { it.copyTo(stream, COPY_BUFFER_BYTES) }
-            }
-        }
-    }
-
-    // 旧 WebView 过渡用：带上 Cookie 重新请求远程文件。
-    private fun downloadTo(save: PendingSave.Remote, output: OutputStream) {
-        val connection = openDirectOrDefault(URL(save.url))
-        try {
-            connection.requestMethod = "GET"
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.instanceFollowRedirects = true
-            save.userAgent?.takeIf { it.isNotBlank() }?.let { connection.setRequestProperty("User-Agent", it) }
-            CookieManager.getInstance().getCookie(save.url)
-                ?.takeIf { it.isNotBlank() }
-                ?.let { connection.setRequestProperty("Cookie", it) }
-
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) throw IOException("服务器返回 HTTP $responseCode")
-            connection.inputStream.use { it.copyTo(output, COPY_BUFFER_BYTES) }
-        } finally {
-            connection.disconnect()
+            localFile.inputStream().use { it.copyTo(stream, COPY_BUFFER_BYTES) }
         }
     }
 
@@ -357,10 +283,9 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
             is PendingSave.Local -> save.file.delete()
             is PendingSave.DeferredLocal -> {
                 save.downloadJob.cancel()
-                // 等后台下载协程彻底停下（含正在关闭的文件流）再删临时文件，避免 Windows/Android 上句柄未释放或遗漏。
+                // 等后台下载协程彻底停下（含正在关闭的文件流）再删临时文件，避免句柄未释放或遗漏。
                 save.downloadJob.invokeOnCompletion { save.tempFile.delete() }
             }
-            is PendingSave.Remote -> Unit
         }
     }
 
@@ -368,46 +293,8 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         mainHandler.post { Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show() }
     }
 
-    /** 旧 WebView 过渡用 JS 桥。 */
-    private inner class Bridge {
-        @JavascriptInterface
-        fun begin(fileName: String?, mimeType: String?, sizeBytes: Long): String {
-            val name = downloadFileName(fileName, "", null, mimeType)
-            val id = blobReceiver.begin(name, saveMimeType(name, mimeType), sizeBytes)
-            if (id == null) {
-                Log.w(logTag, "Refused inline download of $sizeBytes bytes")
-                toast("保存失败：文件太大或手机空间不足")
-            }
-            return id.orEmpty()
-        }
-
-        @JavascriptInterface
-        fun append(id: String, base64: String): Boolean = blobReceiver.append(id, base64)
-
-        @JavascriptInterface
-        fun finish(id: String) {
-            val received = blobReceiver.finish(id)
-            mainHandler.post {
-                if (received == null) {
-                    toast("保存失败：网页里的文件没有收完整")
-                } else {
-                    requestSave(PendingSave.Local(received.file, received.fileName, received.mimeType))
-                }
-            }
-        }
-
-        @JavascriptInterface
-        fun fail(id: String, message: String?) {
-            blobReceiver.abort(id)
-            Log.w(logTag, "Page failed to read download: $message")
-            toast("保存失败：读不到网页里的文件")
-        }
-    }
-
     private companion object {
         const val TEMP_DIRECTORY = "webui-downloads"
-        const val CONNECT_TIMEOUT_MS = 10_000
-        const val READ_TIMEOUT_MS = 60_000
         const val COPY_BUFFER_BYTES = 64 * 1024
     }
 }

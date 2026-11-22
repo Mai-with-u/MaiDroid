@@ -158,7 +158,7 @@ internal class WebUiTabState internal constructor(
 internal fun rememberWebUiTabState(): WebUiTabState {
     val context = LocalContext.current
     val state = remember(context) {
-        val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG, context)
+        val fileChooser = WebUiFileChooser(context, MaiBotWebUi.LOG_TAG)
         val downloads = WebUiDownloads(context, MaiBotWebUi.LOG_TAG)
 
         // 首次构建与内容进程异常退出后重建都共用这套会话工厂；回调里经 tabState 更新页签状态。

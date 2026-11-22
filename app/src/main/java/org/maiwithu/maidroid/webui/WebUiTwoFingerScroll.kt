@@ -3,8 +3,9 @@ package org.maiwithu.maidroid.webui
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
+import android.view.View.OnAttachStateChangeListener
+import android.view.View.OnTouchListener
 import android.view.ViewConfiguration
-import android.webkit.WebView
 import android.widget.OverScroller
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -25,26 +26,7 @@ internal class WebUiTwoFingerScroll(
     private val targetView: View,
     private val onBegin: (x: Float, y: Float, viewWidthPx: Int) -> Unit,
     private val onMove: (dy: Float, generation: Int?) -> Unit
-) : View.OnTouchListener {
-    // 过渡用次构造（Commit 3a 随旧 WebUiWebViews 一起移除）：保留旧 WebView 在拆分提交窗口期的可编译性。
-    private constructor(webView: WebView, holder: Array<WebUiTwoFingerScroll?>) : this(
-        targetView = webView,
-        onBegin = { x, y, widthPx -> webView.evaluateJavascript(beginScript(x, y, widthPx), null) },
-        onMove = { dy, generation ->
-            if (generation == null) {
-                webView.evaluateJavascript(moveScript(dy), null)
-            } else {
-                webView.evaluateJavascript(moveScript(dy)) { canContinue ->
-                    if (canContinue == "false") holder[0]?.onFlingMoveResult(false, generation)
-                }
-            }
-        }
-    ) {
-        holder[0] = this
-    }
-
-    constructor(webView: WebView) : this(webView, arrayOfNulls(1))
-
+) : OnTouchListener {
     private val viewConfiguration = ViewConfiguration.get(targetView.context)
     private val touchSlop = viewConfiguration.scaledTouchSlop
     private val minFlingVelocity = viewConfiguration.scaledMinimumFlingVelocity
@@ -70,7 +52,7 @@ internal class WebUiTwoFingerScroll(
     private var flingLastY = 0
     private var flingGeneration = 0
 
-    private val attachListener = object : View.OnAttachStateChangeListener {
+    private val attachListener = object : OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) = Unit
         override fun onViewDetachedFromWindow(view: View) = stopFling()
     }
@@ -219,77 +201,6 @@ internal class WebUiTwoFingerScroll(
 
         /** 抬起前中点多久没动就算已经停住、不甩惯性。 */
         private const val STOPPED_BEFORE_LIFT_MS = 50L
-
-        // 过渡用脚本常量（Commit 3a 删除）。
-        private val installScript = """
-            (function() {
-              if (window.__maidroidTwoFingerScroll) return;
-              var isScroller = function(el) {
-                if (el.scrollHeight - el.clientHeight < 1) return false;
-                if (el === document.scrollingElement) return true;
-                var overflowY = getComputedStyle(el).overflowY;
-                return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
-              };
-              var state = { ratio: 1, chain: [], positions: new Map() };
-              var positionOf = function(el) {
-                var entry = state.positions.get(el);
-                if (!entry || Math.abs(el.scrollTop - entry.applied) > 1) {
-                  entry = { pos: el.scrollTop, applied: el.scrollTop };
-                  state.positions.set(el, entry);
-                }
-                return entry;
-              };
-              window.__maidroidTwoFingerScroll = {
-                begin: function(x, y, viewWidth) {
-                  var viewport = window.visualViewport;
-                  state.ratio = ((viewport && viewport.width) || window.innerWidth) / viewWidth;
-                  var node = document.elementFromPoint(
-                    x * state.ratio + (viewport ? viewport.offsetLeft : 0),
-                    y * state.ratio + (viewport ? viewport.offsetTop : 0)
-                  );
-                  var chain = [];
-                  while (node) {
-                    if (node.nodeType === 1 && isScroller(node)) chain.unshift(node);
-                    node = node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
-                  }
-                  var root = document.scrollingElement;
-                  if (root && chain.indexOf(root) < 0 && isScroller(root)) chain.unshift(root);
-                  state.chain = chain;
-                  state.positions = new Map();
-                },
-                move: function(dy) {
-                  var delta = -dy * state.ratio;
-                  if (!delta) return true;
-                  var remaining = delta;
-                  var canContinue = false;
-                  for (var i = 0; i < state.chain.length; i++) {
-                    var el = state.chain[i];
-                    if (!el.isConnected) continue;
-                    var max = el.scrollHeight - el.clientHeight;
-                    var entry = positionOf(el);
-                    if (remaining) {
-                      var next = Math.max(0, Math.min(max, entry.pos + remaining));
-                      if (next !== entry.pos) {
-                        remaining -= next - entry.pos;
-                        if (Math.abs(remaining) < 0.01) remaining = 0;
-                        entry.pos = next;
-                        el.scrollTo({ top: next, behavior: 'instant' });
-                        entry.applied = el.scrollTop;
-                      }
-                    }
-                    if (delta > 0 ? entry.pos < max - 0.5 : entry.pos > 0.5) canContinue = true;
-                  }
-                  return canContinue;
-                }
-              };
-            })();
-        """.trimIndent()
-
-        fun beginScript(x: Float, y: Float, viewWidthPx: Int): String =
-            "$installScript\nwindow.__maidroidTwoFingerScroll.begin($x, $y, $viewWidthPx);"
-
-        fun moveScript(dy: Float): String =
-            "window.__maidroidTwoFingerScroll ? window.__maidroidTwoFingerScroll.move($dy) : false"
 
         /** 所有按着的手指的中点；抬起中的那根手指（ACTION_POINTER_UP 的 actionIndex）不算。 */
         private fun focusX(event: MotionEvent): Float = focus(event, MotionEvent::getX)

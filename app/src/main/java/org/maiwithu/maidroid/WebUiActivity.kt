@@ -65,7 +65,7 @@ class WebUiActivity : ComponentActivity() {
             hideNavigationBar = false
         )
 
-        fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG, this).apply { launcher = fileChooserLauncher }
+        fileChooser = WebUiFileChooser(this, MaiBotWebUi.LOG_TAG).apply { launcher = fileChooserLauncher }
         downloads = WebUiDownloads(this, MaiBotWebUi.LOG_TAG).apply { launcher = downloadLauncher }
 
         // 内容进程没了：整页重建一次重新打开；两分钟里已经重建过三次就提示并关掉这一页，回到主页。
