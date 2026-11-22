@@ -34,6 +34,8 @@ internal class AppSettings(
         const val KEY_SNOWLUMA_CUSTOM_SOURCE_URL = "snowluma_custom_source_url"
         const val KEY_WEBUI_PILL_DOCK_RIGHT = "webui_pill_dock_right"
         const val KEY_WEBUI_PILL_VERTICAL_BIAS = "webui_pill_vertical_bias"
+        const val KEY_DESKTOP_PET_BOT_ID = "desktop_pet_bot_id"
+        const val KEY_DESKTOP_PET_CLIENT_ID = "desktop_pet_client_id"
         const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
         const val KEY_TELEMETRY_INSTALL_ID = "telemetry_install_id"
         const val KEY_LAST_HEARTBEAT_SECONDS = "telemetry_last_heartbeat_sec"
@@ -158,6 +160,22 @@ internal class AppSettings(
         set(value) {
             kv.encode(KEY_WEBUI_PILL_VERTICAL_BIAS, value.coerceIn(0f, 1f))
         }
+
+    /** 悬浮桌宠上次选中的本机机器人 ID。 */
+    var desktopPetBotId: String
+        get() = kv.decodeString(KEY_DESKTOP_PET_BOT_ID, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_DESKTOP_PET_BOT_ID, value.trim())
+        }
+
+    /** 悬浮桌宠向本机服务器声明的稳定客户端 ID（32 位十六进制），首次读取时生成并持久化。 */
+    fun desktopPetClientId(): String {
+        val existing = kv.decodeString(KEY_DESKTOP_PET_CLIENT_ID, null)?.takeIf { it.isNotBlank() }
+        if (existing != null) return existing
+        val generated = UUID.randomUUID().toString().replace("-", "")
+        kv.encode(KEY_DESKTOP_PET_CLIENT_ID, generated)
+        return generated
+    }
 
     fun saveContainerSsh(port: Int, rootPassword: String) {
         kv.encode(KEY_CONTAINER_SSH_PORT, port.coerceIn(ContainerSshPortRange))
