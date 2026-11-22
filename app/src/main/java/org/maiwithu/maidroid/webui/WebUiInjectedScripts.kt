@@ -3,13 +3,168 @@ package org.maiwithu.maidroid.webui
 /**
  * 注入 MaiBot WebUI 页面的脚本。
  *
- * - pageBootstrap：拦截 HTML 时插在页面第一个脚本之前，先于页面自己的脚本执行（主题 + vh 兜底 + 下载拦截）。
+ * - pageBootstrap：拦截 HTML 时插在页面第一个脚本之前，先于页面自己的脚本执行
+ *   （旧版 WebView JS 兼容补丁 + 主题 + vh 兜底 + 下载拦截）。
  * - viewportPatch：页面加载完后经 evaluateJavascript 执行（竖屏下按可视视口高度排版）。
  */
 internal object WebUiInjectedScripts {
     private const val THEME_MODE = "dark"
     private const val DASHBOARD_STYLE = "future-retro"
     private const val VIEWPORT_PATCH_STYLE_ID = "maidroid-webview-viewport-fix"
+
+    /**
+     * 为 Android 8~11 上未升级的系统 WebView（Chromium < 103）补齐 1.4.8 前端首屏即用的 API：
+     * AbortSignal.timeout / AbortSignal.any / crypto.randomUUID / replaceAll / Object.hasOwn / Array.prototype.at。
+     * 全程使用 ES5 语法，避免旧内核在解析箭头函数、let/const 时直接报语法错导致整块补丁失效。
+     */
+    private val compatPolyfillScript = """
+        <script>
+        (function() {
+          if (window.__maidroidCompatPolyfillInstalled) return;
+          window.__maidroidCompatPolyfillInstalled = true;
+
+          // AbortSignal.timeout（Chromium 103+）：1.4.8 前端 TM() 启动探测首屏即调用，缺它直接提示 WebUI 无法连接
+          try {
+            if (typeof AbortSignal === 'function' && typeof AbortSignal.timeout !== 'function') {
+              AbortSignal.timeout = function(ms) {
+                var controller = new AbortController();
+                var delayMs = Math.max(0, Number(ms) || 0);
+                var timer = setTimeout(function() {
+                  var reason;
+                  try {
+                    reason = new DOMException('The operation timed out.', 'TimeoutError');
+                  } catch (err) {
+                    reason = new Error('TimeoutError: The operation timed out.');
+                    reason.name = 'TimeoutError';
+                  }
+                  try {
+                    controller.abort(reason);
+                  } catch (err2) {
+                    controller.abort();
+                  }
+                }, delayMs);
+                if (controller.signal && typeof controller.signal.addEventListener === 'function') {
+                  controller.signal.addEventListener('abort', function() {
+                    clearTimeout(timer);
+                  }, { once: true });
+                }
+                return controller.signal;
+              };
+            }
+          } catch (error) {}
+
+          // AbortSignal.any（Chromium 116+）：任意入参信号触发时联动中止合成信号
+          try {
+            if (typeof AbortSignal === 'function' && typeof AbortSignal.any !== 'function') {
+              AbortSignal.any = function(signals) {
+                var controller = new AbortController();
+                var list = signals || [];
+                for (var i = 0; i < list.length; i++) {
+                  var sig = list[i];
+                  if (!sig) continue;
+                  if (sig.aborted) {
+                    try {
+                      controller.abort(sig.reason);
+                    } catch (err) {
+                      controller.abort();
+                    }
+                    return controller.signal;
+                  }
+                  (function(s) {
+                    s.addEventListener('abort', function() {
+                      if (controller.signal.aborted) return;
+                      try {
+                        controller.abort(s.reason);
+                      } catch (err2) {
+                        controller.abort();
+                      }
+                    }, { once: true });
+                  })(sig);
+                }
+                return controller.signal;
+              };
+            }
+          } catch (error) {}
+
+          // crypto.randomUUID（Chromium 92+）：表单或请求 ID 生成需要标准的 v4 UUID
+          try {
+            var cryptoObj = window.crypto || window.msCrypto;
+            if (cryptoObj && typeof cryptoObj.randomUUID !== 'function') {
+              cryptoObj.randomUUID = function() {
+                var bytes = new Uint8Array(16);
+                if (typeof cryptoObj.getRandomValues === 'function') {
+                  cryptoObj.getRandomValues(bytes);
+                } else {
+                  for (var i = 0; i < 16; i++) {
+                    bytes[i] = Math.floor(Math.random() * 256);
+                  }
+                }
+                bytes[6] = (bytes[6] & 0x0f) | 0x40;
+                bytes[8] = (bytes[8] & 0x3f) | 0x80;
+                var hex = '';
+                for (var j = 0; j < 16; j++) {
+                  var part = bytes[j].toString(16);
+                  if (part.length < 2) part = '0' + part;
+                  hex += part;
+                  if (j === 3 || j === 5 || j === 7 || j === 9) hex += '-';
+                }
+                return hex;
+              };
+            }
+          } catch (error) {}
+
+          // String.prototype.replaceAll（Chromium 85+）：用不可枚举属性定义以免污染 for..in
+          try {
+            if (typeof String.prototype.replaceAll !== 'function') {
+              Object.defineProperty(String.prototype, 'replaceAll', {
+                value: function(searchValue, replaceValue) {
+                  if (searchValue instanceof RegExp) {
+                    if (!searchValue.global) {
+                      throw new TypeError('String.prototype.replaceAll called with a non-global RegExp argument');
+                    }
+                    return this.replace(searchValue, replaceValue);
+                  }
+                  var escaped = String(searchValue).replace(/[.*+?^${'$'}()|[\]\\]/g, '\\${'$'}&');
+                  return this.replace(new RegExp(escaped, 'g'), replaceValue);
+                },
+                writable: true,
+                enumerable: false,
+                configurable: true
+              });
+            }
+          } catch (error) {}
+
+          // Object.hasOwn（Chromium 93+）
+          try {
+            if (typeof Object.hasOwn !== 'function') {
+              Object.hasOwn = function(obj, prop) {
+                if (obj === null || obj === undefined) {
+                  throw new TypeError('Cannot convert undefined or null to object');
+                }
+                return Object.prototype.hasOwnProperty.call(Object(obj), prop);
+              };
+            }
+          } catch (error) {}
+
+          // Array.prototype.at（Chromium 92+）：支持负索引且保持不可枚举
+          try {
+            if (typeof Array.prototype.at !== 'function') {
+              Object.defineProperty(Array.prototype, 'at', {
+                value: function(index) {
+                  var len = this.length >>> 0;
+                  var rel = Number(index) || 0;
+                  var k = rel >= 0 ? Math.floor(rel) : len + Math.ceil(rel);
+                  return (k < 0 || k >= len) ? undefined : this[k];
+                },
+                writable: true,
+                enumerable: false,
+                configurable: true
+              });
+            }
+          } catch (error) {}
+        })();
+        </script>
+    """.trimIndent()
 
     /**
      * 第一次打开 WebUI 时默认用深色、“未来复古”仪表盘风格，与 APP 的深色界面一致。
@@ -122,11 +277,11 @@ internal object WebUiInjectedScripts {
     """.trimIndent()
 
     /**
-     * 主题脚本 + vh 兜底脚本 + 下载拦截（见 WebUiDownloadScripts），拼在一起注入 HTML。
-     * 下载拦截也要先于页面脚本：它包住 URL.createObjectURL，页面生成导出文件之前就得装好。
+     * JS 兼容补丁 + 主题脚本 + vh 兜底脚本 + 下载拦截（见 WebUiDownloadScripts），拼在一起注入 HTML。
+     * 兼容补丁和下载拦截都必须先于页面脚本：首屏检测与 URL.createObjectURL 都在页面首次执行时触发。
      */
     fun pageBootstrap(): String =
-        themeBootstrapScript + "\n" + viewportUnitFixScript + "\n" + WebUiDownloadScripts.bootstrapTag
+        compatPolyfillScript + "\n" + themeBootstrapScript + "\n" + viewportUnitFixScript + "\n" + WebUiDownloadScripts.bootstrapTag
 
     /**
      * 页面加载完后执行的视口修补（只用于竖屏手机版）：把可视视口高度写进 CSS 变量，

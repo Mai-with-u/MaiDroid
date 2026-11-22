@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.diagnostics
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -32,6 +33,7 @@ import org.maiwithu.maidroid.runtime.countOwnChildProcesses
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import org.maiwithu.maidroid.webui.currentWebViewInfo
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -94,7 +96,8 @@ internal class DiagnosticsManager(
                 permissionSection(),
                 ReportSection("网络", listOf(
                     "当前网络" to NetworkStatus.read(appContext).describe(),
-                    "系统 DNS" to ContainerDns.systemServers(appContext).joinToString(" ").ifBlank { "读不到" }
+                    "系统 DNS" to ContainerDns.systemServers(appContext).joinToString(" ").ifBlank { "读不到" },
+                    "系统代理" to systemProxySummary()
                 )),
                 containerSection(),
                 processSection(),
@@ -159,9 +162,11 @@ internal class DiagnosticsManager(
         val memory = ActivityManager.MemoryInfo().also {
             appContext.getSystemService(ActivityManager::class.java).getMemoryInfo(it)
         }
+        val webViewSummary = currentWebViewInfo()?.let { "${it.packageName} ${it.versionName}" } ?: "读不到"
         return ReportSection("设备", listOf(
             "型号" to "${Build.MANUFACTURER} ${Build.MODEL}（${Build.DEVICE}）",
             "系统" to "Android ${Build.VERSION.RELEASE}（API ${Build.VERSION.SDK_INT}）· ${Build.DISPLAY}",
+            "WebView" to webViewSummary,
             "处理器架构" to Build.SUPPORTED_ABIS.joinToString(", "),
             "存储" to (storage?.let { "可用 ${formatBytes(it.availableBytes)} / 共 ${formatBytes(it.totalBytes)}" } ?: "读不到"),
             "内存" to "可用 ${formatBytes(memory.availMem)} / 共 ${formatBytes(memory.totalMem)}" +
@@ -330,6 +335,15 @@ internal class DiagnosticsManager(
             ?.sortedByDescending { it.lastModified() }
             ?.take(MAX_CRASH_FILES)
             .orEmpty()
+
+    // 读取系统网络当前默认 HTTP 代理设置，方便排查开代理未绕过 127.0.0.1 导致的本地连接异常。
+    private fun systemProxySummary(): String = runCatching {
+        val proxy = appContext.getSystemService(ConnectivityManager::class.java)?.defaultProxy
+            ?: return@runCatching "无"
+        val host = proxy.host?.takeIf { it.isNotBlank() } ?: return@runCatching "PAC 或无"
+        val exclusions = proxy.exclusionList.takeIf { it.isNotEmpty() }?.joinToString(",")
+        if (exclusions != null) "$host:${proxy.port}（绕过：$exclusions）" else "$host:${proxy.port}"
+    }.getOrDefault("读不到")
 
     private fun readTextOrNull(file: File): String? =
         runCatching { file.takeIf { it.isFile }?.readText() }.getOrNull()

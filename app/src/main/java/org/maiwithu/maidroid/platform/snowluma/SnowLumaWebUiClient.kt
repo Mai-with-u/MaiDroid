@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.maiwithu.maidroid.webui.openDirectOrDefault
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -164,7 +165,8 @@ internal class SnowLumaWebUiClient(private val files: SnowLumaFiles) {
     }
 
     private fun request(method: String, path: String, body: String?, sessionToken: String?): HttpResponse {
-        val connection = URL("http://127.0.0.1:${port()}$path").openConnection() as HttpURLConnection
+        // 本机 SnowLuma WebUI 接口强制走直连免代理，避免系统代理导致状态探测误报离线。
+        val connection = openDirectOrDefault(URL("http://127.0.0.1:${port()}$path"))
         try {
             connection.requestMethod = method
             connection.connectTimeout = CONNECT_TIMEOUT_MS

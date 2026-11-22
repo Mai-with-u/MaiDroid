@@ -59,9 +59,9 @@ internal class LogRedactor(secrets: List<Secret>) {
         // 覆盖 1.4.x WebUI 启动日志里的 #ticket=... 一次性票据，并在括号处收尾免得吞掉后面的中文说明。
         val URL_SECRET_PARAM = Regex("""(?i)([?&#](?:token|access_token|ticket|key|secret|password)=)(?!<)[^&\s#"'()（）]+""")
 
-        // “WebUI access token: abc123”“api_key = "xxx"”“"app_secret": "xxx"” 这类键值，值至少 6 个字符才算
+        // “WebUI access token: abc123”“WebUI 临时登录密码：abc123”“api_key = "xxx"” 这类键值，值至少 6 个字符才算
         val KEY_VALUE_SECRET = Regex(
-            """(?i)((?:api[_-]?key|access[_-]?token|app[_-]?secret|secret|password|token)["']?\s*[:=]\s*["']?)""" +
+            """(?i)((?:api[_-]?key|access[_-]?token|app[_-]?secret|secret|password|token|临时登录密码)["']?\s*[:=：]\s*["']?)""" +
                 """(?!<已隐藏)[^\s"',}&]{6,}"""
         )
 

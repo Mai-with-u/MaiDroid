@@ -153,4 +153,52 @@ class MaiBotWebUiTest {
         assertFalse(script.contains("reserved"))
         assertTrue(script.contains("visualViewport.addEventListener('resize', apply"))
     }
+
+    @Test
+    fun compatPolyfillsInjectBeforeThemeAndUseEs5Syntax() {
+        val html = "<html><head><script src=\"/app.js\"></script></head></html>"
+        val injected = WebUiResponseRewriter.injectPageBootstrap(html)
+
+        val compatIdx = injected.indexOf("__maidroidCompatPolyfillInstalled")
+        val themeIdx = injected.indexOf("maibot-theme-mode")
+        val appIdx = injected.indexOf("<script src=\"/app.js\">")
+        assertTrue(compatIdx in 0 until themeIdx)
+        assertTrue(themeIdx in 0 until appIdx)
+
+        val compatBlock = injected.substring(0, themeIdx)
+        assertTrue(compatBlock.contains("AbortSignal.timeout"))
+        assertTrue(compatBlock.contains("AbortSignal.any"))
+        assertTrue(compatBlock.contains("randomUUID"))
+        assertTrue(compatBlock.contains("replaceAll"))
+        assertTrue(compatBlock.contains("Object.hasOwn"))
+        assertTrue(compatBlock.contains("Array.prototype, 'at'"))
+        // 旧版 WebView 解析器不支持 ES6+ 语法特性，确保注入片段保持纯 ES5
+        assertFalse(compatBlock.contains("=>"))
+        assertFalse(compatBlock.contains("const "))
+        assertFalse(compatBlock.contains("let "))
+        assertFalse(compatBlock.contains("?."))
+        assertFalse(compatBlock.contains("??"))
+    }
+
+    @Test
+    fun webViewVersionAndLoopbackHelpersBehaveAsExpected() {
+        assertEquals(132, parseWebViewMajorVersion("132.0.6.304"))
+        assertEquals(88, parseWebViewMajorVersion(" 88.0.4324.181 "))
+        assertNull(parseWebViewMajorVersion(null))
+        assertNull(parseWebViewMajorVersion("unknown"))
+
+        val oldNotice = outdatedWebViewNotice(WebViewPackageInfo("com.huawei.webview", "88.0.4324.181", 88))
+        assertTrue(oldNotice!!.contains("88.0.4324.181"))
+        assertNull(outdatedWebViewNotice(WebViewPackageInfo("com.huawei.webview", "111.0.5563.116", 111)))
+        assertNull(outdatedWebViewNotice(WebViewPackageInfo("com.huawei.webview", "132.0.6.304", 132)))
+        assertNull(outdatedWebViewNotice(null))
+
+        assertTrue(isLoopbackHost("127.0.0.1"))
+        assertTrue(isLoopbackHost("LOCALHOST"))
+        assertTrue(isLoopbackHost("::1"))
+        assertTrue(isLoopbackHost("[::1]"))
+        assertFalse(isLoopbackHost("192.168.1.1"))
+        assertFalse(isLoopbackHost("ops.8u.nz"))
+        assertFalse(isLoopbackHost(null))
+    }
 }

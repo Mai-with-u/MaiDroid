@@ -22,7 +22,6 @@ import org.maiwithu.maidroid.diagnostics.backgroundScope
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
-import java.net.HttpURLConnection
 import java.net.URL
 
 /**
@@ -207,7 +206,8 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     // 带上 WebView 的 Cookie（MaiBot WebUI 的登录态 maibot_session 在 Cookie 里）重新请求，边下边写，大文件不进内存。
     // WebView 自己发出的那次请求在回调前已经被取消了；MaiBot 的导出包 24 小时内可以反复下载。
     private fun downloadTo(save: PendingSave.Remote, output: OutputStream) {
-        val connection = URL(save.url).openConnection() as HttpURLConnection
+        // 本机导出的回环地址直接绕过系统代理，避免被外部 HTTP 代理截断。
+        val connection = openDirectOrDefault(URL(save.url))
         try {
             connection.requestMethod = "GET"
             connection.connectTimeout = CONNECT_TIMEOUT_MS

@@ -98,4 +98,13 @@ class LogRedactorTest {
         )
         assertEquals(once, redactor.redact(once))
     }
+
+    @Test
+    fun historicalTemporaryWebUiPasswordLinesAreMaskedIdempotently() {
+        val raw = "11-22 19:28:38.464 WebUI 临时登录密码：980d3f6b7050581e30a45cdf3c43561334f0c080e75c30217d047ac5e1ee7959"
+        val once = redactor.redact(raw)
+
+        assertEquals("11-22 19:28:38.464 WebUI 临时登录密码：<已隐藏>", once)
+        assertEquals(once, redactor.redact(once))
+    }
 }

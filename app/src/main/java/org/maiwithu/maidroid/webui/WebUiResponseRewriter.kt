@@ -38,7 +38,8 @@ internal object WebUiResponseRewriter {
         val url = request.url?.toString() ?: return null
         var connection: HttpURLConnection? = null
         return try {
-            connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            // 回环地址绕过系统代理直连，防止开着代理时 WebView 内 HTML 注入请求被拦截失败。
+            connection = openDirectOrDefault(URL(url)).apply {
                 requestMethod = "GET"
                 connectTimeout = FETCH_TIMEOUT_MS
                 readTimeout = FETCH_TIMEOUT_MS

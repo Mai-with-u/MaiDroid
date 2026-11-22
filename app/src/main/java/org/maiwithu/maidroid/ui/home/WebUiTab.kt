@@ -33,6 +33,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,9 +49,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.terminal.AnsiText
+import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -67,7 +72,9 @@ import org.maiwithu.maidroid.webui.WebUiPageBackground
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
 import org.maiwithu.maidroid.webui.WebUiWebViewClient
 import org.maiwithu.maidroid.webui.createWebUiWebView
+import org.maiwithu.maidroid.webui.currentWebViewInfo
 import org.maiwithu.maidroid.webui.discardWebView
+import org.maiwithu.maidroid.webui.outdatedWebViewNotice
 
 /** 主页退后台连续空闲这么久后销毁 WebView，释放沙箱渲染进程与 GPU 显存；回到前台立即按需唤醒。 */
 internal const val WEB_UI_HIBERNATE_DELAY_MS = 3 * 60_000L
@@ -204,8 +211,11 @@ internal fun rememberWebUiTabState(): WebUiTabState {
                     view.evaluateJavascript(WebUiPageBackground.watchScript, null)
                 },
                 onMainFrameError = { _, error ->
-                    tabState.webViewError = "${error.errorCode}: ${error.description}"
+                    val errorText = "${error.errorCode}: ${error.description}"
+                    tabState.webViewError = errorText
                     tabState.pageBackground = null
+                    // 主框架报错同步落进终端日志，方便群友反馈“无法连接”时从诊断包回溯具体原因。
+                    TerminalLog.append("[MaiDroid] WebView 加载失败（$errorText）")
                 },
                 onRenderProcessGoneCallback = tabState::replaceDeadWebView
             )
@@ -324,6 +334,22 @@ internal fun WebUiTabPage(
         // 换了新 WebView（渲染进程没了或休眠唤醒）时 key 变了，旧的 AndroidView 撤掉、按新的重新挂上并加载。
         val activeWebView = state.webView
         val activeClient = state.webViewClient
+        // 登录令牌文件读取与日志扫描放到 IO 线程按需解析，避免 terminalLogs 高频刷新时拖慢主线程导致 ANR。
+        var resolvedLaunch by remember(url) { mutableStateOf<Pair<Int, String>?>(null) }
+        val outdatedNotice = remember { outdatedWebViewNotice(currentWebViewInfo()) }
+        var dismissOutdatedNotice by rememberSaveable { mutableStateOf(false) }
+
+        LaunchedEffect(url, state.reloadToken, activeWebView, state.webViewHasSize, webUiOnline) {
+            if (activeWebView == null || !state.webViewHasSize) return@LaunchedEffect
+            val requestToken = state.reloadToken
+            val paths = activeWebView.context.appDependencies.runtimePaths
+            val computed = withContext(Dispatchers.IO) {
+                val logs = TerminalLog.logs.value.map(AnsiText::plain).ifEmpty { terminalLogs }
+                MaiBotWebUi.launchUrl(paths = paths, terminalLogs = logs, baseUrl = url)
+            }
+            resolvedLaunch = requestToken to computed
+        }
+
         if (activeWebView != null && activeClient != null) {
             key(activeWebView) {
                 AndroidView(
@@ -332,25 +358,28 @@ internal fun WebUiTabPage(
                         activeWebView
                     },
                     update = { webView ->
-                        val launchUrl = MaiBotWebUi.launchUrl(
-                            paths = webView.context.appDependencies.runtimePaths,
-                            terminalLogs = terminalLogs,
-                            baseUrl = url
-                        )
-                        val loadRequest = "$launchUrl#${state.reloadToken}"
-                        if (state.webViewHasSize && !state.autoLoadPaused && webView.tag != loadRequest) {
-                            webView.tag = loadRequest
-                            state.webViewError = null
-                            // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
-                            // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
-                            activeClient.applyDesktopViewport(webView)
-                            Log.d(
-                                MaiBotWebUi.LOG_TAG,
-                                "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                                    "${webView.width}x${webView.height}, " +
-                                    "desktop width=${activeClient.desktopLayoutWidthCss}"
-                            )
-                            webView.loadUrl(launchUrl)
+                        val launch = resolvedLaunch
+                        if (state.webViewHasSize &&
+                            !state.autoLoadPaused &&
+                            launch != null &&
+                            launch.first == state.reloadToken
+                        ) {
+                            val launchUrl = launch.second
+                            val loadRequest = "$launchUrl#${launch.first}"
+                            if (webView.tag != loadRequest) {
+                                webView.tag = loadRequest
+                                state.webViewError = null
+                                // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                                // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
+                                activeClient.applyDesktopViewport(webView)
+                                Log.d(
+                                    MaiBotWebUi.LOG_TAG,
+                                    "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
+                                        "${webView.width}x${webView.height}, " +
+                                        "desktop width=${activeClient.desktopLayoutWidthCss}"
+                                )
+                                webView.loadUrl(launchUrl)
+                            }
                         }
                     },
                     modifier = Modifier
@@ -379,6 +408,16 @@ internal fun WebUiTabPage(
                 message = if (lowBatteryPaused) "电量低，麦麦已暂停" else "WebUI 离线",
                 action = "唤醒",
                 onAction = onWakeMai,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 16.dp)
+            )
+        } else if (outdatedNotice != null && !dismissOutdatedNotice) {
+            // 系统 WebView 过旧时提示用户在应用商店更新（已通过兼容脚本尽量维持接口可用）。
+            WebUiStatusBanner(
+                message = outdatedNotice,
+                action = "知道了",
+                onAction = { dismissOutdatedNotice = true },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = statusBarTop + 8.dp, start = 16.dp, end = 16.dp)
