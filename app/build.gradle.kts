@@ -129,8 +129,7 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
 
-    // Blur / Liquid Glass
-    implementation(libs.blurview)
+    // Liquid Glass
     implementation(libs.liquid.glass.backdrop)
     implementation(libs.liquid.glass.shapes)
 

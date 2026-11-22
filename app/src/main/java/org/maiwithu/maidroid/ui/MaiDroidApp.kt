@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import eightbitlab.com.blurview.BlurTarget
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.MainViewModel
@@ -30,7 +29,6 @@ import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.cleanup.LowStorageDialog
-import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.LiquidModalHostOverlay
 import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -47,6 +45,7 @@ import org.maiwithu.maidroid.ui.settings.AppUpdateDialogHost
 import org.maiwithu.maidroid.ui.settings.MaiBotUpdateDialogHost
 import org.maiwithu.maidroid.ui.settings.SafeExitProgressDialog
 import org.maiwithu.maidroid.ui.splash.StartupSplashPage
+import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.PageBackground
 
 // 启动页停留时长；之后若还没同意过协议，再等一小会儿弹出授权弹窗，让页面切换动画先走完。
@@ -83,7 +82,6 @@ internal fun MaiDroidApp(
     val setupState by viewModel.setupManager.state.collectAsState()
     val terminalLogs by TerminalLog.logs.collectAsState()
     var showAuthorizationDialog by rememberSaveable { mutableStateOf(false) }
-    var oobeBlurTarget by remember { mutableStateOf<BlurTarget?>(null) }
     val appUpdater = remember(context) { context.appDependencies.appUpdater }
     val appUpdatePrompt by appUpdater.launchPrompt.collectAsState()
     val maiBotUpdater = remember(context) { context.appDependencies.maiBotUpdater }
@@ -178,31 +176,32 @@ internal fun MaiDroidApp(
                         )
 
                         else -> Box(modifier = Modifier.fillMaxSize()) {
-                            BlurTargetHost(
-                                onTargetChanged = { oobeBlurTarget = it },
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                OobeFlowScreen(
-                                    currentStep = oobeStep,
-                                    setupState = setupState,
-                                    permissionState = permissions.state,
-                                    permissionActions = permissions.oobeActions,
-                                    onNext = {
-                                        // 权限步骤的“下一步”现查一次存储权限：用户可能刚从系统设置页回来。
-                                        permissions.refresh()
-                                        if (!viewModel.onOobeNext(storageGranted = permissions.isStorageGranted())) {
-                                            Toast.makeText(context, "请先授予必选存储权限", Toast.LENGTH_SHORT).show()
-                                            permissions.oobeActions.requestStorage()
-                                        }
-                                    },
-                                    onRetry = viewModel::retryOobeStep,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                            val oobeBackdrop = rememberLayerBackdrop {
+                                drawRect(OobeBackground)
+                                drawContent()
                             }
+                            OobeFlowScreen(
+                                currentStep = oobeStep,
+                                setupState = setupState,
+                                permissionState = permissions.state,
+                                permissionActions = permissions.oobeActions,
+                                onNext = {
+                                    // 权限步骤的“下一步”现查一次存储权限：用户可能刚从系统设置页回来。
+                                    permissions.refresh()
+                                    if (!viewModel.onOobeNext(storageGranted = permissions.isStorageGranted())) {
+                                        Toast.makeText(context, "请先授予必选存储权限", Toast.LENGTH_SHORT).show()
+                                        permissions.oobeActions.requestStorage()
+                                    }
+                                },
+                                onRetry = viewModel::retryOobeStep,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .layerBackdrop(oobeBackdrop)
+                            )
 
                             OobeAuthorizationDialog(
                                 visible = showAuthorizationDialog,
-                                blurTarget = oobeBlurTarget,
+                                backdrop = oobeBackdrop,
                                 onAgree = {
                                     viewModel.acceptAuthorization()
                                     showAuthorizationDialog = false

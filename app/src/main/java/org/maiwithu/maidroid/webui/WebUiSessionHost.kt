@@ -97,7 +97,7 @@ internal class WebUiSessionHost(
     /** 供宿主嵌入 Compose AndroidView 或 Activity FrameLayout 的 GeckoView 视图实例。 */
     @SuppressLint("ClickableViewAccessibility")
     val view: GeckoView = GeckoView(context).apply {
-        // 竖屏灵动胶囊与横屏侧栏通过 BlurTargetHost 实时采样网页画面做毛玻璃：
+        // 竖屏灵动胶囊与横屏侧栏通过 AndroidLiquidGlass 的 LayerBackdrop 实时采样网页画面做液态玻璃折射：
         // SurfaceView 会独立穿透宿主图层导致模糊变黑/穿洞，必须使用 TextureView 后端。
         setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
         coverUntilFirstPaint(Color.BLACK)
