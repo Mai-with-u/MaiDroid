@@ -201,11 +201,19 @@ internal class DiagnosticsManager(
             client == activeQqClient -> "已安装，正在使用"
             else -> "已安装，已停用"
         }
+        val qqOfficialFiles = QqOfficialAdapterFiles(paths)
+        // 1.4.x 起 QQ 官方机器人随 MaiBot 内置，区分“已启用（内置）/未启用（MaiBot 内置）”与外置“已安装/未安装”便于排查。
+        val qqOfficialStatus = when {
+            qqOfficialFiles.isBuiltIn() && qqOfficialFiles.isInstalled() -> "已启用（内置）"
+            qqOfficialFiles.isBuiltIn() -> "未启用（MaiBot 内置）"
+            qqOfficialFiles.isInstalled() -> "已安装"
+            else -> "未安装"
+        }
         return ReportSection("运行状态", listOf(
             "MaiBot" to maiBot,
             "QQ（NapCat）" to qqClientState(QqClient.NapCat, NapCatFiles(paths).isNapCatReady()),
             "QQ（SnowLuma）" to qqClientState(QqClient.SnowLuma, SnowLumaFiles(paths).isSnowLumaReady()),
-            "QQ 官方机器人适配器" to if (QqOfficialAdapterFiles(paths).isInstalled()) "已安装" else "未安装",
+            "QQ 官方机器人适配器" to qqOfficialStatus,
             "容器 SSH" to if (settings.containerSshEnabled) "已开启" else "未开启",
             "当前本应用子进程数" to "${countOwnChildProcesses()}"
         ))
@@ -243,9 +251,15 @@ internal class DiagnosticsManager(
         add("NapCat管理令牌", readTextOrNull(napCat.webUiConfig)?.let { runCatching { JSONObject(it).optString("token") }.getOrNull() })
         val snowLuma = SnowLumaFiles(paths)
         add("SnowLuma管理密码", snowLuma.readWebUiPassword())
-        val qqOfficial = QqOfficialAdapterConfig.read(readTextOrNull(QqOfficialAdapterFiles(paths).configFile()))
-        add("AppID", qqOfficial.appId)
-        add("AppSecret", qqOfficial.appSecret)
+        val qqOfficialFiles = QqOfficialAdapterFiles(paths)
+        // 多实例场景下每个实例都可能独立保存 QQ 官方凭据，合并全部实例的配置目录做脱敏。
+        val qqOfficialConfigFiles = (MaiBotInstances.discover(paths).map { qqOfficialFiles.configFile(it) } +
+            qqOfficialFiles.configFile()).distinctBy { it.absolutePath }
+        for (qqOfficialConfigFile in qqOfficialConfigFiles) {
+            val qqOfficial = QqOfficialAdapterConfig.read(readTextOrNull(qqOfficialConfigFile))
+            add("AppID", qqOfficial.appId)
+            add("AppSecret", qqOfficial.appSecret)
+        }
         add("SSH密码", settings.containerSshRootPassword)
         // 1.4.x 起模型供应与密钥统管在 host/model_catalog.toml，各实例自己的配置分别在 bots/<id>/config/ 下，
         // 老版本仍在根目录 config/ 下；合并全部配置目录读全密钥和 QQ 号再整体去重打码。

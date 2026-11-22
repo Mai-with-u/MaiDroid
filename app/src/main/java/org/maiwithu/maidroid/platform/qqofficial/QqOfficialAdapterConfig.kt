@@ -19,8 +19,10 @@ internal data class QqOfficialCredentials(
  * 禁言、撤回、统一账号 ID 这些用户可能在 MaiBot WebUI 的插件配置里改过，不能被覆盖。逐行读写交给 PluginConfigToml。
  */
 internal object QqOfficialAdapterConfig {
-    // 与适配器 settings.py 的默认配置版本一致，只在第一次生成配置文件时写入。
-    private const val ConfigVersion = "0.4.1"
+    // 外置插件旧版（settings.py 0.4.1）与 MaiBot 1.4.x 内置插件（0.5.4）各自的默认配置版本；
+    // 仅在 config.toml 尚未生成时按需写入，已有配置一律保留原版本号以免触发误迁移。
+    internal const val LegacyConfigVersion = "0.4.1"
+    internal const val BuiltInConfigVersion = "0.5.4"
     private const val PluginSection = "plugin"
     private const val CredentialSection = "qq_official"
 
@@ -39,15 +41,20 @@ internal object QqOfficialAdapterConfig {
 
     /**
      * 写入凭据并启用插件：还没有配置文件时生成最小配置（其余字段由 MaiBot 按默认值补齐）；
-     * 已有配置时逐行替换这三项，节或键不存在就补上。
+     * 已有配置时逐行替换这三项，节或键不存在就补上，原 config_version 与其他节完整保留。
      */
-    fun write(existing: String?, appId: String, appSecret: String): String {
+    fun write(
+        existing: String?,
+        appId: String,
+        appSecret: String,
+        defaultConfigVersion: String = LegacyConfigVersion
+    ): String {
         if (existing.isNullOrBlank()) {
             return PluginConfigToml.join(
                 listOf(
                     "[$PluginSection]",
                     "enabled = true",
-                    "config_version = ${PluginConfigToml.tomlString(ConfigVersion)}",
+                    "config_version = ${PluginConfigToml.tomlString(defaultConfigVersion)}",
                     "",
                     "[$CredentialSection]",
                     "app_id = ${PluginConfigToml.tomlString(appId)}",

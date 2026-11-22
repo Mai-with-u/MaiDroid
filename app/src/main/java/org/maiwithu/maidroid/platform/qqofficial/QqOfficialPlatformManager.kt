@@ -85,9 +85,8 @@ internal class QqOfficialPlatformManager(
     }
 
     /**
-     * 首次安装：检查容器和 MaiBot 源码 -> 克隆适配器到 plugins/MaiBot-QQ-Adapter ->
-     * 写入 AppID、AppSecret 并启用插件 -> 重启 MaiBot 加载插件。
-     * 已经装过（包括用户从 MaiBot 插件市场装的那份）就跳过克隆，直接把凭据写进那份的配置。
+     * 首次安装/激活：检查容器和 MaiBot 源码 -> 外置版按需克隆到 plugins/MaiBot-QQ-Adapter，
+     * MaiBot 1.4.x 内置版则跳过下载 -> 写入 AppID、AppSecret 并启用插件 -> 重启 MaiBot 加载插件。
      */
     fun installAndConfigure(appId: String, appSecret: String) {
         if (installJob?.isActive == true) return
@@ -113,32 +112,40 @@ internal class QqOfficialPlatformManager(
             fail(Failure(FailureStep.QqOfficialPrecheck, validationError))
             return
         }
-        // 适配器要从 GitHub 下载，没连网时直接说
-        NetworkStatus.read(appContext).offlineFailure(FailureStep.QqOfficialInstall)?.let { failure ->
-            fail(failure)
-            return
-        }
 
         TerminalLog.append("")
-        // 统一固定本次安装的目标实例，避免跨多实例切换时检错或装错目录。
-        val targetInstance = withContext(Dispatchers.IO) { adapterFiles.targetInstance() }
-        val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir(targetInstance) }
-        if (existingDir != null) {
-            TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+        // 统一固定本次安装的目标实例与是否内置，避免跨多实例切换或触发无意义的 GitHub 克隆。
+        val (builtIn, targetInstance) = withContext(Dispatchers.IO) {
+            adapterFiles.isBuiltIn() to adapterFiles.targetInstance()
+        }
+        if (builtIn) {
+            // MaiBot 1.4.x 已将 QQ 官方适配器内置于 src/plugins/built_in/，直接写内置配置即可；
+            // 若再克隆外部目录反而会被 MaiBot 启动迁移逻辑移入 .builtin-backups/ 且丢弃新凭据。
+            TerminalLog.append("[QQ 官方机器人] 检测到 MaiBot 内置 QQ 官方适配器，跳过下载，直接写入内置配置")
         } else {
-            updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
-            TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
-            val result = commandRunner.run(
-                script = QqOfficialAdapterScripts.install(targetInstance.containerPluginsDir),
-                onLine = TerminalLog::append
-            )
-            val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled(targetInstance) }
-            if (!result.success || !installed) {
-                fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
-                return
+            val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir(targetInstance) }
+            if (existingDir != null) {
+                TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+            } else {
+                // 外置版适配器才需要从 GitHub 下载；仅在本地尚未安装且需要克隆时才做断网拦截。
+                NetworkStatus.read(appContext).offlineFailure(FailureStep.QqOfficialInstall)?.let { failure ->
+                    fail(failure)
+                    return
+                }
+                updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
+                TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
+                val result = commandRunner.run(
+                    script = QqOfficialAdapterScripts.install(targetInstance.containerPluginsDir),
+                    onLine = TerminalLog::append
+                )
+                val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled(targetInstance) }
+                if (!result.success || !installed) {
+                    fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
+                    return
+                }
+                // 刚克隆下的适配器落到存储上，这时断电也不会留下“目录在、文件空”的插件
+                withContext(Dispatchers.IO) { flushFileSystems() }
             }
-            // 刚克隆下的适配器落到存储上，这时断电也不会留下“目录在、文件空”的插件
-            withContext(Dispatchers.IO) { flushFileSystems() }
         }
 
         updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
@@ -188,9 +195,18 @@ internal class QqOfficialPlatformManager(
     ): String? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val target = adapterFiles.configFile(targetInstance ?: adapterFiles.targetInstance())
+                val instance = targetInstance ?: adapterFiles.targetInstance()
+                val target = adapterFiles.configFile(instance)
                 val existing = target.takeIf { it.isFile }?.readText()
-                target.writeTextAtomically(QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim()))
+                // 内置与外置版首次补写空配置时沿用各自期望的配置版本号，已有文件则由 write() 自动保留原版本号。
+                val defaultVersion = if (adapterFiles.isBuiltIn()) {
+                    QqOfficialAdapterConfig.BuiltInConfigVersion
+                } else {
+                    QqOfficialAdapterConfig.LegacyConfigVersion
+                }
+                target.writeTextAtomically(
+                    QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim(), defaultVersion)
+                )
             }.exceptionOrNull()?.let { it.message.orEmpty().ifBlank { it.javaClass.simpleName } }
         }
 

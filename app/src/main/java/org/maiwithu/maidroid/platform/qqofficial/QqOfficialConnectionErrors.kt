@@ -18,7 +18,8 @@ private const val QqOfficialErrorMaxLength = 160
 internal fun qqOfficialConnectionError(line: String): String? {
     val message = when {
         "QQ 官方适配器缺少凭据" in line -> "未填写 AppID 或 AppSecret"
-        "QQ 官方网关连接失败" in line -> describeQqOfficialFailure(
+        // 内置 qq_official_adapter 对 HTTP 状态异常单打一行“QQ 官方网关 HTTP 请求失败，将重试: ...”，需同步识别。
+        "QQ 官方网关连接失败" in line || "QQ 官方网关 HTTP 请求失败" in line -> describeQqOfficialFailure(
             line.substringAfter("将重试:", missingDelimiterValue = "").trim()
         )
         else -> return null
