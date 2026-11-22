@@ -100,6 +100,28 @@ internal object AutoErrorExtractor {
 
     private val NAPCAT_LOGIN_ERROR_RE = Regex("""\[Core]\s*\[Login]\s*Login Error""", RegexOption.IGNORE_CASE)
 
+    // 过滤容器内 Electron/QQ 必刷的无害调试与日志指纹行，避免挤占窗口并按随机哈希分裂错误指纹
+    private val PURE_HEX64_LINE = Regex("""^(?:\[[^\]]+]\s*)?[0-9a-f]{64}$""", RegexOption.IGNORE_CASE)
+
+    private val BENIGN_RUNTIME_NOISE_MARKERS = listOf(
+        "error:dbus/",
+        "file_path_watcher_inotify",
+        "[nativecrashhandler.cpp]",
+        "[buglymanager.cpp]",
+        "[qq hotupdate]",
+        "droppedframe("
+    )
+
+    // dpkg 安装正常解包/配置包列表的进度行，避免包名本身带 "error"（如 liberror-perl）抢占错误标题
+    private val DPKG_PROGRESS_PREFIXES = listOf(
+        "unpacking ",
+        "preparing to unpack ",
+        "selecting previously unselected package",
+        "setting up "
+    )
+
+    private val CRASH_HEADER_VERSION_RE = Regex("""^MaiDroid\s+([0-9A-Za-z._-]+)""")
+
     private val EXCEPTION_CLASS_LINE =
         Regex("""^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Exit|Interrupt)|SyntaxError|IndentationError|MemoryError|SystemExit|TOMLDecodeError|ModuleNotFoundError|ImportError)\b.*""")
 
@@ -152,6 +174,16 @@ internal object AutoErrorExtractor {
         val step = FailureStep.entries.firstOrNull { it.code == stepCode } ?: return null
         val cause = causeCode?.let { target -> FailureCause.entries.firstOrNull { it.code == target } }
         return step to cause
+    }
+
+    /** 从本地崩溃文件第一行表头提取崩溃发生时的应用版本号，避免升级后仍按当前新版本重复上报旧版本残留崩溃。 */
+    fun extractCrashHeaderVersion(crashFileText: String?): String? {
+        val firstLine = crashFileText
+            ?.lineSequence()
+            ?.firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?: return null
+        return CRASH_HEADER_VERSION_RE.find(firstLine)?.groupValues?.getOrNull(1)?.takeIf { it.isNotEmpty() }
     }
 
     /** 构造 App 闪退/原生崩溃/ANR 自动上报草稿，彻底剥离闪退前的终端日志。 */
@@ -235,6 +267,7 @@ internal object AutoErrorExtractor {
                 if (trimmed.contains(FAILURE_LOG_PREFIX)) return@filter false
                 if (containsChatPrivacyKeyword(trimmed)) return@filter false
                 if (isQqQrNoiseLine(trimmed)) return@filter false
+                if (isBenignRuntimeNoiseLine(trimmed)) return@filter false
                 if (!shouldKeepMaiBotLineInInstall(trimmed, step, setupComplete)) return@filter false
                 true
             }
@@ -250,9 +283,11 @@ internal object AutoErrorExtractor {
         val allowMaiBotSignal = step in ADAPTER_CONFIG_STEPS
         val highSignalLine = sigSourceLines.lastOrNull { line ->
             val lower = line.lowercase()
+            val strippedLower = if (lower.startsWith("[")) lower.substringAfter("]", lower).trimStart() else lower
             !line.startsWith("[MaiDroid] ") &&
                 (allowMaiBotSignal || !line.startsWith("[MaiBot]")) &&
                 (!allowMaiBotSignal || !NAPCAT_LOGIN_ERROR_RE.containsMatchIn(line)) &&
+                DPKG_PROGRESS_PREFIXES.none { strippedLower.startsWith(it) } &&
                 INSTALL_ERROR_KEYWORDS.any { lower.contains(it) }
         } ?: redactedMessage
 
@@ -427,6 +462,13 @@ internal object AutoErrorExtractor {
         if (QR_ASCII_ART_LINE.matches(trimmed)) return true
         val lower = trimmed.lowercase()
         return NAPCAT_QR_NOISE_KEYWORDS.any { lower.contains(it) }
+    }
+
+    // 过滤容器环境下 Electron/LinuxQQ 常见无害输出与纯 SHA-256 哈希行，提升有效报错密度并稳定聚合指纹。
+    private fun isBenignRuntimeNoiseLine(trimmed: String): Boolean {
+        if (PURE_HEX64_LINE.matches(trimmed)) return true
+        val lower = trimmed.lowercase()
+        return BENIGN_RUNTIME_NOISE_MARKERS.any { lower.contains(it) }
     }
 
     // OOBE 完成后在安装/协议端阶段排障时，屏蔽无关的 MaiBot 后台运行异常（如图片嵌入/模型调用错误），

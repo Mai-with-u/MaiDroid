@@ -13,7 +13,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,10 +67,7 @@ internal fun FailureNotice(
     val remoteActionTarget = remember(remoteHint?.actionTarget) { parseRemoteActionTarget(remoteHint?.actionTarget) }
     val cause = failure.cause
 
-    LaunchedEffect(failure.code) {
-        remoteOps.reportFailure(failure)
-    }
-
+    // 失败遥测与自动报错提取已统一在业务层写出 failure.logLine() 时抓当下现场上报，UI 层只做展示与手动求助码上传，避免重绘时刷旧日志重报。
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "错误码 ${failure.code}",

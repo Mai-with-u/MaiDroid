@@ -325,4 +325,71 @@ class AutoErrorExtractorTest {
         assertTrue(draftLoginOnly.contextText.contains("Login Error"))
         assertFalse(draftLoginOnly.contextText.contains("txz.qq.com"))
     }
+
+    @Test
+    fun extractCrashHeaderVersionParsesVersionFromCrashFileHeader() {
+        assertEquals(
+            "0.2.3",
+            AutoErrorExtractor.extractCrashHeaderVersion(
+                "MaiDroid 0.2.3（8，release）· Xiaomi 22081212C · Android 15（API 35）\n时间：2026-11-17 15:43:06 +08:00"
+            )
+        )
+        assertEquals(
+            "0.3.1",
+            AutoErrorExtractor.extractCrashHeaderVersion(
+                "\nMaiDroid 0.3.1 (11, release) · HONOR\n线程：main"
+            )
+        )
+        assertNull(AutoErrorExtractor.extractCrashHeaderVersion(null))
+        assertNull(AutoErrorExtractor.extractCrashHeaderVersion(""))
+        assertNull(AutoErrorExtractor.extractCrashHeaderVersion("MaiDroid\n时间：2026-11-22"))
+    }
+
+    @Test
+    fun installDraftFiltersElectronDbusHexNoiseAndIgnoresDpkgLiberrorPackage() {
+        val noiseLogsA = listOf(
+            "[SnowLuma] [22918:1122/010411.225459:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.DBus",
+            "[SnowLuma] [22986:1122/010411.265192:ERROR:base/files/file_path_watcher_inotify.cc:923] Failed to read",
+            "[SnowLuma] 01:18:13.161 › [1a1ff1b36b0][QQ hotUpdate] hotUpdateApi checkIsOnErrorVersion result: false",
+            "[SnowLuma] [BuglyManager.cpp][UploadBugly][107]!!!in UploadBugly.",
+            "[SnowLuma] [NativeCrashHandler.cpp][getCrashDetailBeanFromRecord][52]!!!! in NativeCrashHandler getCrashDetailBeanFromRecord, open file error!!!",
+            "[SnowLuma] [31035][93113559165]DroppedFrame(1): host_id=2, time=93112658678, latest_seq=118",
+            "[SnowLuma] a00d221c85c861831e8eca43b139782e82f98c5a264070cfb484e0ee999f920e",
+            "[NapCat] 8318109752347ecb8d115913df8fd865254e93b7516936bb0b43f13c52f4061a"
+        )
+        val noiseDraft = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.SnowLumaAdapterConfig,
+            cause = null,
+            message = "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试",
+            terminalPlainLines = noiseLogsA,
+            setupComplete = true,
+            redactor = testRedactor()
+        )
+        assertFalse(noiseDraft.contextText.contains("ERROR:dbus/"))
+        assertFalse(noiseDraft.contextText.contains("file_path_watcher_inotify"))
+        assertFalse(noiseDraft.contextText.contains("QQ hotUpdate"))
+        assertFalse(noiseDraft.contextText.contains("NativeCrashHandler.cpp"))
+        assertFalse(noiseDraft.contextText.contains("BuglyManager.cpp"))
+        assertFalse(noiseDraft.contextText.contains("DroppedFrame"))
+        assertFalse(noiseDraft.contextText.contains("a00d221c85c861831e8eca43b139782e82f98c5a264070cfb484e0ee999f920e"))
+        assertFalse(noiseDraft.contextText.contains("8318109752347ecb8d115913df8fd865254e93b7516936bb0b43f13c52f4061a"))
+        assertTrue(noiseDraft.title.contains("等了 5 分钟"))
+
+        val dpkgLogs = listOf(
+            "Preparing to unpack .../09-liberror-perl_0.17029-2_all.deb ...",
+            "Unpacking liberror-perl (0.17029-2) ...",
+            "Setting up liberror-perl (0.17029-2) ...",
+            "[MaiBot 更新] 失败：Debian rootfs 未就绪：OOBE 需要先解包 runtime/debian-rootfs.tar.xz"
+        )
+        val dpkgDraft = AutoErrorExtractor.buildInstallDraft(
+            step = FailureStep.UpdatePrecheck,
+            cause = null,
+            message = "Debian rootfs 未就绪：OOBE 需要先解包 runtime/debian-rootfs.tar.xz",
+            terminalPlainLines = dpkgLogs,
+            setupComplete = false,
+            redactor = testRedactor()
+        )
+        assertFalse(dpkgDraft.title.contains("liberror-perl"))
+        assertTrue(dpkgDraft.title.contains("Debian rootfs 未就绪"))
+    }
 }

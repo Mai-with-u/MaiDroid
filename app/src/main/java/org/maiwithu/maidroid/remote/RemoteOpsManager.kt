@@ -320,6 +320,12 @@ internal class RemoteOpsManager(
                 val record = crashRecorder.latestCrash() ?: return@withLock
                 if (record.timeMillis <= settings.lastAutoReportedCrashMillis) return@withLock
                 val crashText = crashRecorder.readCrashFile(record)
+                // 旧版本残留的本地崩溃文件不再按当前版本上报，记录为已处理以免升级后误导看板。
+                val crashVersion = AutoErrorExtractor.extractCrashHeaderVersion(crashText)
+                if (crashVersion != null && !crashVersion.equals(BuildConfig.VERSION_NAME, ignoreCase = true)) {
+                    settings.lastAutoReportedCrashMillis = record.timeMillis
+                    return@withLock
+                }
                 val redactor = diagnosticsProvider().createRedactor()
                 val draft = AutoErrorExtractor.buildCrashDraft(record.summary, crashText, redactor)
                 if (sendAutoErrorLocked(draft)) {

@@ -273,7 +273,14 @@ internal fun dispatchRemoteAction(
             }
             onOpenInternalModal("app_update")
         }
-        RemoteActionTarget.MaiBotUpdate -> onOpenInternalModal("maibot_update")
+        RemoteActionTarget.MaiBotUpdate -> {
+            // OOBE 尚未解包完成容器和 MaiBot 前禁止经公告跳进在线更新，防止直接撞 UP-PRECHECK 报错。
+            if (!context.appDependencies.settings.setupComplete) {
+                Toast.makeText(context, "请先完成首次引导安装，再更新 MaiBot", Toast.LENGTH_SHORT).show()
+                return
+            }
+            onOpenInternalModal("maibot_update")
+        }
         RemoteActionTarget.Cleanup -> onOpenInternalModal("cleanup")
         RemoteActionTarget.QqGroup -> onOpenInternalModal("qq_group")
         RemoteActionTarget.AppPermissions -> {

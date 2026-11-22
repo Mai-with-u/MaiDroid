@@ -226,6 +226,7 @@ internal class NapCatPlatformManager(
         }
 
         if (!forceReinstall && files.isInstalled() && !adapterInstaller.needsInstall()) {
+            _state.update { it.copy(failure = null) }
             scope.launch {
                 switcher.activate(QqClient.NapCat)
                 refreshStatus()
@@ -445,7 +446,11 @@ internal class NapCatPlatformManager(
             }
         }
         val account = loginAccount
+        val adapterConfigured = withContext(Dispatchers.IO) { !adapterInstaller.needsConfigMigration() }
         _state.update { current ->
+            // OneBot 已恢复连接或后台已完成适配器配置迁移时撤销过期的失败提示。
+            val clearFailure = current.failure != null &&
+                (snapshot.oneBotReachable || (current.failure.step == FailureStep.NapCatAdapterConfig && adapterConfigured))
             current.copy(
                 phase = when {
                     current.isInstalling -> NapCatInstallPhase.Installing
@@ -467,7 +472,8 @@ internal class NapCatPlatformManager(
                 accountId = account?.uin ?: snapshot.accountId,
                 accountName = account?.nick,
                 active = active,
-                customSourceUrl = settings.napCatCustomSourceUrl
+                customSourceUrl = settings.napCatCustomSourceUrl,
+                failure = if (clearFailure) null else current.failure
             )
         }
     }
