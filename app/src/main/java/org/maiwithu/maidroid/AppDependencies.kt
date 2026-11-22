@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
@@ -16,6 +17,10 @@ import org.maiwithu.maidroid.maibot.MaiBotConsoleLogRotator
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
+import org.maiwithu.maidroid.pet.DesktopPetManager
+import org.maiwithu.maidroid.pet.PetOverlayService
+import org.maiwithu.maidroid.pet.PetRecordsActivity
+import org.maiwithu.maidroid.pet.PetWindowLauncher
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.qq.QqAdapterFiles
@@ -128,13 +133,45 @@ internal class AppDependencies(context: Context) {
             appContext, settings, runtimePaths, runtimeReadiness, diagnosticsFiles, terminalLogRecorder, maiBotProcess
         )
     }
+    // 本机悬浮桌宠管理：挂载在扩展组件页，不随容器默认开机自启。
+    val desktopPet: DesktopPetManager by lazy {
+        DesktopPetManager(
+            context = appContext,
+            settings = settings,
+            runtimePaths = runtimePaths,
+            launcher = object : PetWindowLauncher {
+                override fun startOverlay(context: Context) {
+                    PetOverlayService.start(context)
+                }
+
+                override fun openRecords(context: Context) {
+                    context.startActivity(
+                        Intent(context, PetRecordsActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+
+                override fun closeRecords() {
+                    PetRecordsActivity.closeIfOpen()
+                }
+            }
+        )
+    }
+
     // 设置页和“空间不足”提示里的“清理空间”：量各类缓存的大小，删掉勾选的。
     val storageCleanup: StorageCleanupManager by lazy {
         StorageCleanupManager(runtimePaths, runtimeReadiness, commandRunner)
     }
-    // 设置页的“安全退出”：让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
+    // 设置页的“安全退出”：先在主线程关掉悬浮桌宠，再让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
-        SafeExitManager(settings, maiBotProcess, napCatProcess, snowLumaProcess, containerSsh)
+        SafeExitManager(
+            settings = settings,
+            maiBotProcess = maiBotProcess,
+            napCatProcess = napCatProcess,
+            snowLumaProcess = snowLumaProcess,
+            containerSsh = containerSsh,
+            stopDesktopPet = { desktopPet.stop() }
+        )
     }
 
     // 手机有没有网：断网失败后等网络恢复自动重试用

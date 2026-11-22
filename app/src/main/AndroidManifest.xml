@@ -64,6 +64,13 @@
             android:theme="@style/Theme.MaiDroid"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- 悬浮桌宠探索记录全屏页 -->
+        <activity
+            android:name=".pet.PetRecordsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MaiDroid"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- 托管 MaiBot、NapCat、SnowLuma、容器 sshd 的前台服务：用 specialUse 承载本地常驻运行时，不设 6 小时运行上限 -->
         <service
             android:name=".service.MaiBotRuntimeService"
@@ -72,6 +79,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="local_bot_container_runtime" />
+        </service>
+
+        <!-- 本机悬浮桌宠前台服务：由用户在「扩展组件」手动开启，关闭时不随容器常驻 -->
+        <service
+            android:name=".pet.PetOverlayService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="local_floating_desktop_pet" />
         </service>
 
         <!-- 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等；MANAGE_DOCUMENTS 保证只有系统文件框架能直接调用 -->
