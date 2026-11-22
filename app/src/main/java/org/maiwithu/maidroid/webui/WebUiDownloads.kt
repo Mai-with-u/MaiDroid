@@ -16,28 +16,31 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.runtime.openDirectOrDefault
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.WebResponse
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.net.URL
+import java.util.UUID
 
 /**
- * 网页里的下载（WebUI 的“导出”“下载”按钮），主页 WebUI 页签和全屏 WebUiActivity 各持有一个，由 createWebUiWebView 接到 WebView 上。
- * WebView 自己不保存下载：没设 DownloadListener 时，下载请求发出后马上被取消，网页点了导出什么也不发生
- * （真机实测：MaiBot 数据迁移的压缩包已经在容器里生成好，下载接口也被请求过，文件就是到不了用户手里）。
+ * 网页里的下载（WebUI 的“导出”“下载”按钮），主页 WebUI 页签和全屏 WebUiActivity 各持有一个。
  *
  * 两条路，最后都弹系统“另存为”（ACTION_CREATE_DOCUMENT）让用户选位置：
- * - http 地址（数据迁移导出的 zip）：onDownloadStart -> 另存为 -> 带上 WebView 的登录 Cookie 重新请求，边下边写进选好的文件；
- * - blob:、data: 地址（主题、设置、日志、图片等网页现场生成的文件）：注入脚本（WebUiDownloadScripts）在点击时读出内容，
- *   经 JS 桥分块送来，WebUiBlobReceiver 先存成缓存文件 -> 另存为 -> 复制过去后删掉缓存。
+ * - GeckoView 外部响应（数据迁移导出的 zip 等 http 下载）：ContentDelegate.onExternalResponse(WebResponse) ->
+ *   一边立即在后台线程把 response.body 写进临时文件，一边在主线程立刻弹“另存为”，选完位置后等临时文件写完再复制到用户选的 Uri，
+ *   最后删除临时文件；
+ * - blob:、data: 地址（主题、设置、日志、图片等网页现场生成的文件）：内置 WebExtension 在页面拦截点击并经 Native Messaging
+ *   分块送来 -> WebUiBlobReceiver 先存成缓存文件 -> 另存为 -> 复制过去后删掉缓存。
  * 用“另存为”而不是直接写进“下载”目录：minSdk 26，Android 8、9 写公共目录要存储权限；另存为不用权限，还能直接存进网盘、QQ 等应用。
- *
- * launcher 由宿主在注册 ActivityResult 后赋值；宿主销毁 WebView 前调用 release。
- * JS 桥对 WebView 里打开的任何页面都可见，但它能做的只是弹一个要用户确认的“另存为”，和普通浏览器允许网站下载文件一样。
  */
 internal class WebUiDownloads(context: Context, private val logTag: String) : DownloadListener {
     var launcher: ActivityResultLauncher<Intent>? = null
@@ -47,7 +50,8 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
 
     // 写文件不跟页面一起取消：用户点完保存马上关掉全屏 WebUI 时，大文件还要接着写完。
     private val scope = backgroundScope("WebUI 下载", Dispatchers.IO)
-    private val blobReceiver = WebUiBlobReceiver(File(appContext.cacheDir, TEMP_DIRECTORY))
+    private val tempDirectory = File(appContext.cacheDir, TEMP_DIRECTORY)
+    private val blobReceiver = WebUiBlobReceiver(tempDirectory)
 
     // 以下状态只在主线程读写。
     private var webView: WebView? = null
@@ -62,7 +66,7 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         val fileName: String
         val mimeType: String
 
-        /** 网页上的 http 地址，选好位置后重新请求。 */
+        /** 旧 WebView 过渡用：网页上的 http 地址，选好位置后重新请求。 */
         class Remote(
             val url: String,
             val userAgent: String?,
@@ -76,20 +80,29 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
             override val fileName: String,
             override val mimeType: String
         ) : PendingSave
+
+        /** GeckoView 的 HTTP 下载响应流：后台先把 WebResponse.body 缓存到临时文件，与此同时前台已经弹出“另存为”。 */
+        class DeferredLocal(
+            val tempFile: File,
+            val fileDeferred: CompletableDeferred<File>,
+            val downloadJob: Job,
+            override val fileName: String,
+            override val mimeType: String
+        ) : PendingSave
     }
 
     init {
         scope.launch { blobReceiver.deleteStaleFiles() }
     }
 
-    /** 接到 WebView 上：注册下载回调和 JS 桥。要在 loadUrl 之前调用，JS 桥只对之后加载的页面生效。 */
+    /** 旧 WebView 过渡用：接到 WebView 上。 */
     fun attachTo(webView: WebView) {
         this.webView = webView
         webView.setDownloadListener(this)
         webView.addJavascriptInterface(Bridge(), WebUiDownloadScripts.BRIDGE_NAME)
     }
 
-    /** 仅摘除当前持有的 WebView 引用（退后台休眠或换新实例前调用），保留 launcher 与已有保存状态供唤醒复用。 */
+    /** 旧 WebView 过渡用：仅摘除当前持有的 WebView 引用。 */
     fun detachFrom(target: WebView) {
         if (webView === target) {
             webView = null
@@ -97,9 +110,104 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     }
 
     /**
-     * WebView 遇到下载时在主线程回调：http 地址直接等用户选位置；
-     * blob:、data: 地址说明没经过注入脚本的点击拦截，补跑一次脚本让网页把内容送过来。
+     * GeckoView 收到外部响应下载回调（HTTP 文件导出等）：
+     * 不能等用户选完“另存为”才读 WebResponse.body，否则响应流可能超时或随页面跳转失效；
+     * 因此立刻在后台 IO 协程把响应流写入临时缓存文件，并同步在主线程弹出系统“另存为”。
      */
+    fun onExternalResponse(response: WebResponse) {
+        val bodyStream = response.body
+        if (bodyStream == null) {
+            Log.w(logTag, "External response has null body: ${response.uri}")
+            toast("保存失败：下载内容为空")
+            return
+        }
+
+        val contentDisposition = headerIgnoreCase(response.headers, "Content-Disposition")
+        val contentType = headerIgnoreCase(response.headers, "Content-Type")
+        val fileName = downloadFileName(null, response.uri, contentDisposition, contentType)
+        val targetMime = saveMimeType(fileName, contentType)
+
+        val fileDeferred = CompletableDeferred<File>()
+        val tempFile = File(tempDirectory, "${UUID.randomUUID()}.dl")
+        val job = scope.launch {
+            try {
+                tempDirectory.mkdirs()
+                bodyStream.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output, COPY_BUFFER_BYTES)
+                    }
+                }
+                fileDeferred.complete(tempFile)
+            } catch (error: Throwable) {
+                runCatching { bodyStream.close() }
+                tempFile.delete()
+                fileDeferred.completeExceptionally(error)
+            }
+        }
+        // 请求保存可能来自 GeckoView 工作线程或主线程，这里统一交回主线程持有 pendingSave 并弹出选择器。
+        val save = PendingSave.DeferredLocal(tempFile, fileDeferred, job, fileName, targetMime)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            requestSave(save)
+        } else {
+            mainHandler.post { requestSave(save) }
+        }
+    }
+
+    /** 处理来自内置 WebExtension 的 blob/data 分块下载开始消息。 */
+    fun handleBlobBegin(fileName: String, mimeType: String, sizeBytes: Long): GeckoResult<Any> {
+        val result = GeckoResult<Any>()
+        scope.launch {
+            val name = downloadFileName(fileName, "", null, mimeType)
+            val id = blobReceiver.begin(name, saveMimeType(name, mimeType), sizeBytes)
+            if (id == null) {
+                Log.w(logTag, "Refused inline download of $sizeBytes bytes")
+                toast("保存失败：文件太大或手机空间不足")
+            }
+            result.complete(JSONObject(WebUiBridgeProtocol.blobBeginReplyJsonText(id)))
+        }
+        return result
+    }
+
+    /** 处理来自内置 WebExtension 的 blob/data 分块追加消息。 */
+    fun handleBlobAppend(id: String, base64: String): GeckoResult<Any> {
+        val result = GeckoResult<Any>()
+        scope.launch {
+            val ok = blobReceiver.append(id, base64)
+            result.complete(JSONObject(WebUiBridgeProtocol.blobStatusReplyJsonText(ok)))
+        }
+        return result
+    }
+
+    /** 处理来自内置 WebExtension 的 blob/data 传输完成消息：校验后切主线程弹“另存为”。 */
+    fun handleBlobFinish(id: String): GeckoResult<Any> {
+        val result = GeckoResult<Any>()
+        scope.launch {
+            val received = blobReceiver.finish(id)
+            mainHandler.post {
+                if (received == null) {
+                    toast("保存失败：网页里的文件没有收完整")
+                } else {
+                    requestSave(PendingSave.Local(received.file, received.fileName, received.mimeType))
+                }
+            }
+            result.complete(JSONObject(WebUiBridgeProtocol.blobStatusReplyJsonText(received != null)))
+        }
+        return result
+    }
+
+    /** 处理来自内置 WebExtension 的 blob/data 读取失败通知。 */
+    fun handleBlobFail(id: String, message: String?): GeckoResult<Any> {
+        val result = GeckoResult<Any>()
+        scope.launch {
+            blobReceiver.abort(id)
+            Log.w(logTag, "Page failed to read download: $message")
+            toast("保存失败：读不到网页里的文件")
+            result.complete(JSONObject(WebUiBridgeProtocol.blobStatusReplyJsonText(true)))
+        }
+        return result
+    }
+
+    /** 旧 WebView 过渡用下载回调。 */
     override fun onDownloadStart(
         url: String,
         userAgent: String?,
@@ -135,8 +243,10 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
             return
         }
 
-        // 要重新下载的大文件先提示一声；网页里收来的小文件复制一下就完，只报结果，免得两条提示排队。
-        if (save is PendingSave.Remote) toast("正在保存 ${save.fileName}")
+        // 要等待网络或大文件流落地时先提示一声；内存收完的小文件复制一下就完，只报结果，免得两条提示排队。
+        if (save is PendingSave.Remote || (save is PendingSave.DeferredLocal && !save.fileDeferred.isCompleted)) {
+            toast("正在保存 ${save.fileName}")
+        }
         scope.launch {
             try {
                 write(save, target)
@@ -151,7 +261,7 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         }
     }
 
-    /** 宿主销毁 WebView 前调用：丢掉还在等位置的下载和正在接收的文件；已经开始写的保存会继续写完。 */
+    /** 宿主销毁窗口前调用：丢掉还在等位置的下载和正在接收的文件；已经开始写的保存会继续写完。 */
     fun release() {
         released = true
         launcher = null
@@ -193,21 +303,21 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         }
     }
 
-    private fun write(save: PendingSave, target: Uri) {
+    private suspend fun write(save: PendingSave, target: Uri) {
+        val localFile = if (save is PendingSave.DeferredLocal) save.fileDeferred.await() else null
         val output = appContext.contentResolver.openOutputStream(target, "w")
             ?: throw IOException("打不开选好的文件")
         output.use { stream ->
             when (save) {
                 is PendingSave.Remote -> downloadTo(save, stream)
                 is PendingSave.Local -> save.file.inputStream().use { it.copyTo(stream, COPY_BUFFER_BYTES) }
+                is PendingSave.DeferredLocal -> localFile!!.inputStream().use { it.copyTo(stream, COPY_BUFFER_BYTES) }
             }
         }
     }
 
-    // 带上 WebView 的 Cookie（MaiBot WebUI 的登录态 maibot_session 在 Cookie 里）重新请求，边下边写，大文件不进内存。
-    // WebView 自己发出的那次请求在回调前已经被取消了；MaiBot 的导出包 24 小时内可以反复下载。
+    // 旧 WebView 过渡用：带上 Cookie 重新请求远程文件。
     private fun downloadTo(save: PendingSave.Remote, output: OutputStream) {
-        // 本机导出的回环地址直接绕过系统代理，避免被外部 HTTP 代理截断。
         val connection = openDirectOrDefault(URL(save.url))
         try {
             connection.requestMethod = "GET"
@@ -227,6 +337,9 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
         }
     }
 
+    private fun headerIgnoreCase(headers: Map<String, String>, key: String): String? =
+        headers.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+
     // 用户可能在“另存为”里改了名字，提示里用实际存下的名字。
     private fun displayName(uri: Uri): String? =
         runCatching {
@@ -240,17 +353,22 @@ internal class WebUiDownloads(context: Context, private val logTag: String) : Do
     }
 
     private fun discard(save: PendingSave) {
-        if (save is PendingSave.Local) save.file.delete()
+        when (save) {
+            is PendingSave.Local -> save.file.delete()
+            is PendingSave.DeferredLocal -> {
+                save.downloadJob.cancel()
+                // 等后台下载协程彻底停下（含正在关闭的文件流）再删临时文件，避免 Windows/Android 上句柄未释放或遗漏。
+                save.downloadJob.invokeOnCompletion { save.tempFile.delete() }
+            }
+            is PendingSave.Remote -> Unit
+        }
     }
 
     private fun toast(message: String) {
         mainHandler.post { Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show() }
     }
 
-    /**
-     * 给注入脚本用的 JS 桥（window.MaiDroidDownloads）。方法在 WebView 的 JavaBridge 线程上调用，
-     * 收文件交给 WebUiBlobReceiver，收完转回主线程弹“另存为”。
-     */
+    /** 旧 WebView 过渡用 JS 桥。 */
     private inner class Bridge {
         @JavascriptInterface
         fun begin(fileName: String?, mimeType: String?, sizeBytes: Long): String {
