@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -16,18 +15,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.WebUiChromeClient
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
-import org.maiwithu.maidroid.webui.WebUiWebViewClient
-import org.maiwithu.maidroid.webui.createWebUiWebView
+import org.maiwithu.maidroid.webui.WebUiSessionHost
 
 /**
- * 全屏打开一个 WebUI 页面：主页唤醒按钮打开 MaiBot WebUI，NapCat 设置按钮打开 NapCat 管理页。
+ * 全屏打开一个 WebUI 页面：主页唤醒按钮打开 MaiBot WebUI，NapCat / SnowLuma 设置按钮打开对应管理页。
  * MaiBot WebUI 会换成带访问令牌的自动登录地址；返回键先在网页内后退，退到底再关闭页面；
  * 网页里的上传按钮经 WebUiFileChooser 打开系统选文件页，导出、下载按钮经 WebUiDownloads 弹“另存为”。
- * 网页的渲染进程没了（系统回收内存、网页崩溃）时整页重建一次重新打开，反复崩溃就关掉这一页回到主页。
+ * 网页内容进程没了（系统回收内存、网页崩溃）时整页重建一次重新打开，反复崩溃就关掉这一页回到主页。
  */
 class WebUiActivity : ComponentActivity() {
     companion object {
@@ -38,9 +35,8 @@ class WebUiActivity : ComponentActivity() {
         private val renderCrashGuard = WebUiRenderCrashGuard()
     }
 
-    private lateinit var webView: WebView
-
-    private val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
+    private lateinit var sessionHost: WebUiSessionHost
+    private lateinit var fileChooser: WebUiFileChooser
 
     // ActivityResult 要在 Activity 启动前注册，所以放在属性里；选完文件把结果交回网页。
     private val fileChooserLauncher = registerForActivityResult(
@@ -69,15 +65,18 @@ class WebUiActivity : ComponentActivity() {
             hideNavigationBar = false
         )
 
-        fileChooser.launcher = fileChooserLauncher
+        fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG, this).apply { launcher = fileChooserLauncher }
         downloads = WebUiDownloads(this, MaiBotWebUi.LOG_TAG).apply { launcher = downloadLauncher }
-        // 渲染进程没了：这个 WebView 不能再用。整页重建一次就是换一个新 WebView 重新打开同一个地址；
-        // 两分钟里已经重建过三次就不再试，提示一句并关掉这一页，回到主页（主页的 WebUI 页签有自己的“重试”）。
-        val webViewClient = WebUiWebViewClient(
+
+        // 内容进程没了：整页重建一次重新打开；两分钟里已经重建过三次就提示并关掉这一页，回到主页。
+        sessionHost = WebUiSessionHost(
+            context = this,
             logTag = MaiBotWebUi.LOG_TAG,
-            onRenderProcessGoneCallback = { dead ->
-                // 先从界面上拿下来，之后不再画它；销毁留给 onDestroy
-                (dead.parent as? ViewGroup)?.removeView(dead)
+            fileChooser = fileChooser,
+            downloads = downloads,
+            onContentProcessGone = { dead ->
+                (dead.view.parent as? ViewGroup)?.removeView(dead.view)
+                dead.release()
                 if (renderCrashGuard.shouldAutoReopen()) {
                     recreate()
                 } else {
@@ -86,16 +85,11 @@ class WebUiActivity : ComponentActivity() {
                 }
             }
         )
-        webView = createWebUiWebView(this, downloads).apply {
-            this.webViewClient = webViewClient
-            webChromeClient = WebUiChromeClient(MaiBotWebUi.LOG_TAG, fileChooser)
-        }
-        // 网页放进一层容器，容器按系统栏、挖孔和键盘留内边距：Android 15 起强制沉浸式，
-        // 不留的话网页会画到状态栏和横屏侧边的摄像头挖孔下面，弹出的键盘也会直接盖住网页（adjustResize 不再缩小窗口）；
-        // 旧系统由窗口自己避让，这里拿到的是 0。悬浮键盘不占底部，报上来的键盘高度是 0，网页不用让。
+
+        // 网页放进一层容器，容器按系统栏、挖孔和键盘留内边距，避免 Android 15 全面屏下被状态栏、挖孔或键盘遮挡。
         val container = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
-            addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            addView(sessionHost.view, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         }
         ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
             val safe = insets.getInsets(
@@ -112,8 +106,8 @@ class WebUiActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (webView.canGoBack()) {
-                        webView.goBack()
+                    if (sessionHost.canGoBack) {
+                        sessionHost.goBack()
                     } else {
                         finish()
                     }
@@ -128,18 +122,18 @@ class WebUiActivity : ComponentActivity() {
         } else {
             url
         }
-        // 等 WebView 排好版、量出尺寸再加载：横屏时 MaiBot WebUI 要按尺寸算桌面版布局宽度；
-        // NapCat 管理页不在这次的桌面版范围内，始终按手机版。
-        webView.doOnLayout {
-            webViewClient.applyDesktopViewport(webView, enabled = isMaiBotWebUi)
-            webView.loadUrl(launchUrl)
+        // 等 GeckoView 排好版、量出尺寸再加载：横屏时 MaiBot WebUI 按尺寸算桌面版布局宽度，
+        // NapCat / SnowLuma 管理页保持手机版布局。
+        sessionHost.view.doOnLayout {
+            sessionHost.applyDesktopViewport(enabled = isMaiBotWebUi)
+            sessionHost.loadUrl(launchUrl)
         }
     }
 
     override fun onDestroy() {
         fileChooser.cancelPending()
         downloads.release()
-        webView.destroy()
+        sessionHost.release()
         super.onDestroy()
     }
 }

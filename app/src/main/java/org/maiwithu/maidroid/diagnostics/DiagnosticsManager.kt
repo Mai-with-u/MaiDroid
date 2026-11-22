@@ -33,7 +33,7 @@ import org.maiwithu.maidroid.runtime.countOwnChildProcesses
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.currentWebViewInfo
+import org.maiwithu.maidroid.webui.WebUiRuntime
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -162,11 +162,10 @@ internal class DiagnosticsManager(
         val memory = ActivityManager.MemoryInfo().also {
             appContext.getSystemService(ActivityManager::class.java).getMemoryInfo(it)
         }
-        val webViewSummary = currentWebViewInfo()?.let { "${it.packageName} ${it.versionName}" } ?: "读不到"
         return ReportSection("设备", listOf(
             "型号" to "${Build.MANUFACTURER} ${Build.MODEL}（${Build.DEVICE}）",
             "系统" to "Android ${Build.VERSION.RELEASE}（API ${Build.VERSION.SDK_INT}）· ${Build.DISPLAY}",
-            "WebView" to webViewSummary,
+            "WebUI 内核" to "GeckoView ${WebUiRuntime.engineVersion()}",
             "处理器架构" to Build.SUPPORTED_ABIS.joinToString(", "),
             "存储" to (storage?.let { "可用 ${formatBytes(it.availableBytes)} / 共 ${formatBytes(it.totalBytes)}" } ?: "读不到"),
             "内存" to "可用 ${formatBytes(memory.availMem)} / 共 ${formatBytes(memory.totalMem)}" +
