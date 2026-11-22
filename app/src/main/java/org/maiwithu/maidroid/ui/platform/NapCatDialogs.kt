@@ -213,6 +213,8 @@ internal fun NapCatQrCodeDialog(
         icon = FlatFeatureIcons.Platforms,
         iconBackground = IconSkyBlue,
         onDismissRequest = onDismiss,
+        // 交由内部 BoxWithConstraints 读取弹窗剩余有效高度，横屏时自动切入二维码 + 说明左右并排。
+        scrollable = false,
         footer = {
             MaiDialogButtonRow {
                 // 刷新请求进行中禁用按钮，避免连点把 QQ 登录服务打成频繁出码。
@@ -258,7 +260,9 @@ internal fun NapCatQrCodeDialog(
                 }
             } else {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {

@@ -26,15 +26,18 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,10 +70,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,6 +83,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
+import org.maiwithu.maidroid.ui.component.MaiDialogLayoutMode
+import org.maiwithu.maidroid.ui.component.resolveMaiDialogLayout
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
@@ -96,10 +103,11 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private val SectionInnerSurface = PageBackground.copy(alpha = 0.55f)
 private val ShellSurfaceStroke = Color(0x1EFFFFFF)
+private val ShellSplitLeftBackdrop = PageBackground.copy(alpha = 0.24f)
 
 /**
  * 协议端配置详情的统一扁平卡片弹窗壳：
- * 固定顶栏显示标题、状态圆点摘要与右上角刷新/关闭圆形按钮，与下方独立弹性滚动内容区用细线隔开。
+ * 在竖屏与平板展示固定顶栏与独立滚动配置体；在手机横屏自动切换为左侧状态操作栏 + 右侧配置列表双栏布局。
  */
 @Composable
 internal fun PlatformConfigDialogShell(
@@ -112,18 +120,20 @@ internal fun PlatformConfigDialogShell(
 ) {
     val scope = rememberCoroutineScope()
     val refreshSpin = remember { Animatable(0f) }
+    val triggerRefresh: () -> Unit = {
+        scope.launch {
+            refreshSpin.snapTo(0f)
+            refreshSpin.animateTo(360f, animationSpec = tween(420))
+        }
+        onRefresh()
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         // 固定满屏容器尺寸并在内部居中弹窗卡片，避免折叠项展开/收起时每帧触发 WindowManager.relayoutWindow 跨进程重排拖慢动画
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -134,95 +144,234 @@ internal fun PlatformConfigDialogShell(
                         onClick = onDismiss
                     )
             )
-            val maxDialogHeight = (maxHeight * 0.86f).coerceAtLeast(320.dp)
-            Surface(
+            BoxWithConstraints(
                 modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .widthIn(max = 420.dp)
-                    .heightIn(max = maxDialogHeight)
-                    // 吞掉卡片空白处的点击事件防止穿透到外层关闭遮罩，同时避免无障碍树暴露无效可点节点
-                    .pointerInput(Unit) { detectTapGestures { } },
-                shape = RoundedCornerShape(Corners.Card),
-                color = CardSurface,
-                contentColor = TextPrimary,
-                border = BorderStroke(1.dp, ShellSurfaceStroke)
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .imePadding()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    // 固定顶栏：标题 + 在线状态圆点副标题，右侧轻量刷新与关闭圆钮
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = title,
-                                color = TextPrimary,
-                                fontSize = TextSizes.TitleLarge,
-                                fontWeight = FontWeight.Bold,
-                                lineHeight = 24.sp
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(if (statusOnline) StatusOnline else StatusWarning)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = statusText,
-                                    color = if (statusOnline) StatusOnline else TextMuted,
-                                    fontSize = TextSizes.Caption,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DialogHeaderIconButton(
-                                icon = Icons.Outlined.Refresh,
-                                contentDescription = "刷新",
-                                iconModifier = Modifier.graphicsLayer { rotationZ = refreshSpin.value },
-                                onClick = {
-                                    scope.launch {
-                                        refreshSpin.snapTo(0f)
-                                        refreshSpin.animateTo(360f, animationSpec = tween(420))
-                                    }
-                                    onRefresh()
-                                }
-                            )
-                            DialogHeaderIconButton(
-                                icon = Icons.Outlined.Close,
-                                contentDescription = "关闭",
-                                onClick = onDismiss
-                            )
-                        }
+                val layoutSpec = resolveMaiDialogLayout(maxWidth.value, maxHeight.value)
+                val surfaceSizeModifier = if (layoutSpec.mode == MaiDialogLayoutMode.LandscapeSplit) {
+                    Modifier
+                        .width(layoutSpec.maxWidthDp.dp)
+                        .heightIn(max = layoutSpec.maxHeightDp.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = layoutSpec.maxWidthDp.dp)
+                        .heightIn(max = layoutSpec.maxHeightDp.dp)
+                }
+                Surface(
+                    modifier = Modifier
+                        .then(surfaceSizeModifier)
+                        // 吞掉卡片空白处的点击事件防止穿透到外层关闭遮罩，同时避免无障碍树暴露无效可点节点
+                        .pointerInput(Unit) { detectTapGestures { } },
+                    shape = RoundedCornerShape(Corners.Card),
+                    color = CardSurface,
+                    contentColor = TextPrimary,
+                    border = BorderStroke(1.dp, ShellSurfaceStroke)
+                ) {
+                    if (layoutSpec.mode == MaiDialogLayoutMode.LandscapeSplit) {
+                        SplitPlatformConfigShellBody(
+                            leftPaneWidth = layoutSpec.leftPaneWidthDp.dp,
+                            title = title,
+                            statusText = statusText,
+                            statusOnline = statusOnline,
+                            refreshSpinRotation = refreshSpin.value,
+                            onRefresh = triggerRefresh,
+                            onDismiss = onDismiss,
+                            content = content
+                        )
+                    } else {
+                        PortraitPlatformConfigShellBody(
+                            title = title,
+                            statusText = statusText,
+                            statusOnline = statusOnline,
+                            refreshSpinRotation = refreshSpin.value,
+                            onRefresh = triggerRefresh,
+                            onDismiss = onDismiss,
+                            content = content
+                        )
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(0.5.dp)
-                            .background(CardDivider)
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        content = content
-                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PortraitPlatformConfigShellBody(
+    title: String,
+    statusText: String,
+    statusOnline: Boolean,
+    refreshSpinRotation: Float,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 固定顶栏：标题 + 在线状态圆点副标题，右侧轻量刷新与关闭圆钮
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = TextPrimary,
+                    fontSize = TextSizes.TitleLarge,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 24.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                ShellStatusLine(statusText = statusText, statusOnline = statusOnline, maxLines = 1)
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DialogHeaderIconButton(
+                    icon = Icons.Outlined.Refresh,
+                    contentDescription = "刷新",
+                    iconModifier = Modifier.graphicsLayer { rotationZ = refreshSpinRotation },
+                    onClick = onRefresh
+                )
+                DialogHeaderIconButton(
+                    icon = Icons.Outlined.Close,
+                    contentDescription = "关闭",
+                    onClick = onDismiss
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(CardDivider)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun SplitPlatformConfigShellBody(
+    leftPaneWidth: Dp,
+    title: String,
+    statusText: String,
+    statusOnline: Boolean,
+    refreshSpinRotation: Float,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Layout(
+        content = {
+            Box(modifier = Modifier.background(ShellSplitLeftBackdrop))
+
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    DialogHeaderIconButton(
+                        icon = Icons.Outlined.Refresh,
+                        contentDescription = "刷新",
+                        iconModifier = Modifier.graphicsLayer { rotationZ = refreshSpinRotation },
+                        onClick = onRefresh
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    DialogHeaderIconButton(
+                        icon = Icons.Outlined.Close,
+                        contentDescription = "关闭",
+                        onClick = onDismiss
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = title,
+                    color = TextPrimary,
+                    fontSize = TextSizes.TitleLarge,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 24.sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                ShellStatusLine(statusText = statusText, statusOnline = statusOnline, maxLines = 2)
+            }
+
+            Box(modifier = Modifier.background(CardDivider))
+
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content
+            )
+        }
+    ) { measurables, constraints ->
+        val maxW = constraints.maxWidth.coerceAtLeast(3)
+        val maxH = constraints.maxHeight.coerceAtLeast(1)
+        val leftW = leftPaneWidth.roundToPx().coerceIn(1, maxW / 2)
+        val divW = 0.5.dp.roundToPx().coerceAtLeast(1)
+        val rightW = (maxW - leftW - divW).coerceAtLeast(1)
+
+        val leftPlaceable = measurables[1].measure(
+            Constraints(minWidth = leftW, maxWidth = leftW, minHeight = 0, maxHeight = maxH)
+        )
+        val rightPlaceable = measurables[3].measure(
+            Constraints(minWidth = rightW, maxWidth = rightW, minHeight = 0, maxHeight = maxH)
+        )
+        val finalH = maxOf(leftPlaceable.height, rightPlaceable.height).coerceIn(1, maxH)
+        val backdropPlaceable = measurables[0].measure(Constraints.fixed(leftW, finalH))
+        val dividerPlaceable = measurables[2].measure(Constraints.fixed(divW, finalH))
+
+        layout(leftW + divW + rightW, finalH) {
+            backdropPlaceable.placeRelative(0, 0)
+            leftPlaceable.placeRelative(0, 0)
+            dividerPlaceable.placeRelative(leftW, 0)
+            rightPlaceable.placeRelative(leftW + divW, 0)
+        }
+    }
+}
+
+@Composable
+private fun ShellStatusLine(statusText: String, statusOnline: Boolean, maxLines: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(if (statusOnline) StatusOnline else StatusWarning)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = statusText,
+            color = if (statusOnline) StatusOnline else TextMuted,
+            fontSize = TextSizes.Caption,
+            fontWeight = FontWeight.Medium,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
