@@ -2,31 +2,26 @@ package org.maiwithu.maidroid.ui.settings
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.service.MaiBotRuntimeService
 import org.maiwithu.maidroid.ssh.ContainerSshPhase
 import org.maiwithu.maidroid.ssh.ContainerSshState
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogTextField
+import org.maiwithu.maidroid.ui.theme.IconMintGreen
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
-import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // 设置页“容器 SSH”一行用到的弹窗、状态文案和同步动作。
@@ -43,89 +38,81 @@ internal fun ContainerSshConfigDialog(
     onConfirm: (port: Int, password: String?) -> Unit
 ) {
     val parsedPort = portText.toIntOrNull()
-    val errorText = when {
+    val portError = when {
         parsedPort == null -> "端口需要是数字"
         parsedPort !in 1024..65535 -> "端口范围为 1024-65535"
-        !configured && passwordText.isBlank() -> "root 密码不能为空"
         else -> null
     }
+    val passwordError = if (!configured && passwordText.isBlank()) "root 密码不能为空" else null
+    val canConfirm = portError == null && passwordError == null
 
-    AlertDialog(
+    MaiDialog(
+        title = "容器 SSH 设置",
+        subtitle = "通过电脑终端连接 Debian 容器管理文件或调试",
+        icon = FlatFeatureIcons.ContainerSsh,
+        iconBackground = IconMintGreen,
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "容器 SSH 设置",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = "确定",
+                    style = MaiDialogButtonStyle.Primary,
+                    enabled = canConfirm,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val port = parsedPort ?: return@MaiDialogButton
+                        onConfirm(port, passwordText.takeIf { it.isNotBlank() })
+                    }
+                )
+            }
+        }
+    ) {
+        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MaiDialogTextField(
+                value = portText,
+                onValueChange = onPortTextChange,
+                label = "端口",
+                placeholder = "1024 ~ 65535",
+                errorText = portError,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
-        },
-        text = {
-            // 手机横屏时弹窗很矮，两个输入框加说明可能放不下，内容区可以滚动。
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = onPortTextChange,
-                    singleLine = true,
-                    label = { Text("端口") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
 
-                OutlinedTextField(
-                    value = passwordText,
-                    onValueChange = onPasswordTextChange,
-                    singleLine = true,
-                    label = { Text("root 密码") },
-                    placeholder = {
-                        Text(if (configured) "留空则保持当前密码" else "输入 root 密码")
-                    },
-                    visualTransformation = PasswordVisualTransformation()
-                )
+            MaiDialogTextField(
+                value = passwordText,
+                onValueChange = onPasswordTextChange,
+                label = "root 密码",
+                placeholder = if (configured) "留空则保持当前密码" else "输入 root 密码",
+                isPassword = true,
+                errorText = passwordError,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+        }
 
-                if (errorText != null) {
-                    Text(
-                        text = errorText,
-                        color = StatusWarning,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 14.sp
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val port = parsedPort ?: return@Button
-                    onConfirm(port, passwordText.takeIf { it.isNotBlank() })
-                },
-                enabled = errorText == null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "确定", fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        Text(
+            text = if (configured) {
+                "如果只是改端口或忘记是否改密码，密码框留空即可保持现有 root 密码。"
+            } else {
+                "首次启用前请先设置 1024-65535 之间的端口和 root 登录密码。"
+            },
+            color = TextMuted,
+            fontSize = TextSizes.Caption,
+            lineHeight = 16.sp
+        )
+        if (!canConfirm && (portError == null || passwordError == null)) {
+            Text(
+                text = "请先修正上方提示的问题后保存。",
+                color = StatusWarning,
+                fontSize = TextSizes.Caption,
+                lineHeight = 15.sp
+            )
+        }
+    }
 }
 
 private fun containerSshStatusText(state: ContainerSshState): String =

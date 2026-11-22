@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -256,7 +257,7 @@ internal fun MaiDialog(
 
 /** 弹窗内部细分隔线。 */
 @Composable
-internal fun MaiDialogDivider(horizontalPadding: androidx.compose.ui.unit.Dp = 14.dp) {
+internal fun MaiDialogDivider(horizontalPadding: Dp = 14.dp) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
