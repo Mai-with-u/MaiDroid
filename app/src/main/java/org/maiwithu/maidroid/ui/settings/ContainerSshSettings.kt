@@ -18,6 +18,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.component.MaiDialogTextField
 import org.maiwithu.maidroid.ui.theme.IconMintGreen
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -51,6 +52,29 @@ internal fun ContainerSshConfigDialog(
         subtitle = "通过电脑终端连接 Debian 容器管理文件或调试",
         icon = FlatFeatureIcons.ContainerSsh,
         iconBackground = IconMintGreen,
+        size = MaiDialogSize.Expanded,
+        secondaryContent = {
+            MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (configured) {
+                        "如果只是改端口或忘记是否改密码，密码框留空即可保持现有 root 密码。"
+                    } else {
+                        "首次启用前请先设置 1024-65535 之间的端口和 root 登录密码。"
+                    },
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
+                )
+                if (!canConfirm && (portError == null || passwordError == null)) {
+                    Text(
+                        text = "请先修正左侧提示的问题后保存。",
+                        color = StatusWarning,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+        },
         onDismissRequest = onDismiss,
         footer = {
             MaiDialogButtonRow {
@@ -91,25 +115,6 @@ internal fun ContainerSshConfigDialog(
                 isPassword = true,
                 errorText = passwordError,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-            )
-        }
-
-        Text(
-            text = if (configured) {
-                "如果只是改端口或忘记是否改密码，密码框留空即可保持现有 root 密码。"
-            } else {
-                "首次启用前请先设置 1024-65535 之间的端口和 root 登录密码。"
-            },
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
-            lineHeight = 16.sp
-        )
-        if (!canConfirm && (portError == null || passwordError == null)) {
-            Text(
-                text = "请先修正上方提示的问题后保存。",
-                color = StatusWarning,
-                fontSize = TextSizes.Caption,
-                lineHeight = 15.sp
             )
         }
     }

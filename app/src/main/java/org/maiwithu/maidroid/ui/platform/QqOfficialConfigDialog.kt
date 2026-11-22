@@ -29,6 +29,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogCallout
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.component.MaiDialogTextField
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -66,6 +67,7 @@ internal fun QqOfficialConfigDialog(
         subtitle = if (state.installed) "配置开放平台凭据并接入 MaiBot" else "填写凭据以启用内置官方适配器",
         icon = FlatFeatureIcons.Platforms,
         iconBackground = IconSkyBlue,
+        size = MaiDialogSize.Expanded,
         headerBadge = if (state.installed) {
             {
                 MaiDialogInfoChip(
@@ -75,6 +77,20 @@ internal fun QqOfficialConfigDialog(
             }
         } else {
             null
+        },
+        secondaryContent = {
+            // 横屏时将三条接入指南并列排在右列，左列专注表单填写。
+            MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "配置说明",
+                    color = TextPrimary,
+                    fontSize = TextSizes.Caption,
+                    fontWeight = FontWeight.Bold
+                )
+                QqOfficialGuideBullet("在 QQ 开放平台（q.qq.com）创建机器人并开通群聊、单聊能力。")
+                QqOfficialGuideBullet("IP 白名单请留空：手机网络的出口 IP 会变化，填了容易被拦截。")
+                QqOfficialGuideBullet("群里需要 @机器人 才会收到消息；确认后会重启 MaiBot，期间暂不收发。")
+            }
         },
         onDismissRequest = onDismiss,
         footer = {
@@ -124,19 +140,6 @@ internal fun QqOfficialConfigDialog(
                 isPassword = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
-        }
-
-        // 将接入前提与注意要点分条归入提示卡，避免长段密集纯文本难扫读。
-        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "配置说明",
-                color = TextPrimary,
-                fontSize = TextSizes.Caption,
-                fontWeight = FontWeight.Bold
-            )
-            QqOfficialGuideBullet("在 QQ 开放平台（q.qq.com）创建机器人并开通群聊、单聊能力。")
-            QqOfficialGuideBullet("IP 白名单请留空：手机网络的出口 IP 会变化，填了容易被拦截。")
-            QqOfficialGuideBullet("群里需要 @机器人 才会收到消息；确认后会重启 MaiBot，期间暂不收发。")
         }
     }
 }

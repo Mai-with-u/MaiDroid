@@ -5,6 +5,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,6 +52,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogCallout
 import org.maiwithu.maidroid.ui.component.MaiDialogDivider
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -270,14 +272,32 @@ internal fun AppUpdateDialog(
         state.phase == AppUpdatePhase.Available || state.phase == AppUpdatePhase.ReadyToInstall
         )
 
+    val secondaryBlock: (@Composable ColumnScope.() -> Unit)? =
+        if (showNewRelease || maiBotAutoUpdateSwitch != null) {
+            {
+                if (showNewRelease) {
+                    ReleaseNotesCard(release.notes)
+                }
+                maiBotAutoUpdateSwitch?.let {
+                    MaiDialogSectionCard(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
+                        MaiBotAutoUpdateRow(it)
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
     MaiDialog(
         title = "MaiDroid 更新",
         subtitle = "当前版本 v${state.currentVersion}",
         icon = FlatFeatureIcons.AppVersion,
         iconBackground = IconCyanBlue,
+        size = MaiDialogSize.Expanded,
         headerBadge = release?.takeIf { showNewRelease }?.let {
             { MaiDialogInfoChip(text = it.tag, color = BrandOrange) }
         },
+        secondaryContent = secondaryBlock,
         onDismissRequest = onDismiss,
         footer = {
             MaiDialogButtonRow {
@@ -328,10 +348,6 @@ internal fun AppUpdateDialog(
             UpdateStatus(state, installPermissionGranted)
         }
 
-        if (showNewRelease) {
-            ReleaseNotesCard(release.notes)
-        }
-
         // 失败时：错误码、认出的原因和建议、“反馈问题”
         val failure = state.failure
         if (state.phase == AppUpdatePhase.Failed && failure != null) {
@@ -344,12 +360,6 @@ internal fun AppUpdateDialog(
                 body = INSTALL_NOTE,
                 accentColor = BrandOrange
             )
-        }
-
-        maiBotAutoUpdateSwitch?.let {
-            MaiDialogSectionCard(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
-                MaiBotAutoUpdateRow(it)
-            }
         }
     }
 }

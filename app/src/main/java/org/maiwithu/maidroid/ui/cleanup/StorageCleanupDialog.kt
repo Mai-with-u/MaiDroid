@@ -27,9 +27,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -39,6 +41,7 @@ import org.maiwithu.maidroid.cleanup.CleanupItem
 import org.maiwithu.maidroid.cleanup.CleanupOutcome
 import org.maiwithu.maidroid.cleanup.CleanupSizes
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -47,6 +50,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogCallout
 import org.maiwithu.maidroid.ui.component.MaiDialogDivider
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.IconTealMint
@@ -87,19 +91,45 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
     }
 
     val freeSpaceText = (stage as? CleanupStage.Ready)?.let { "可用 ${formatBytes(it.sizes.freeBytes)}" }
+    val readyStage = stage as? CleanupStage.Ready
+    val selectedBytes = readyStage?.let { ready -> selected.sumOf { ready.sizes.sizes[it] ?: 0L } } ?: 0L
     val canDismiss = stage != CleanupStage.Cleaning
+    val config = LocalConfiguration.current
+    val useFooterReassurance = readyStage != null &&
+        config.screenWidthDp > config.screenHeightDp &&
+        config.screenHeightDp < 480 &&
+        config.screenWidthDp >= 500
 
     MaiDialog(
         title = "清理空间",
         subtitle = freeSpaceText ?: "删除下载缓存，不动配置与聊天记录",
         icon = FlatFeatureIcons.Cleanup,
         iconBackground = IconTealMint,
+        size = MaiDialogSize.Medium,
+        headerBadge = if (readyStage != null && selected.isNotEmpty() && selectedBytes > 0L) {
+            { MaiDialogInfoChip(text = "可释放 ${formatBytes(selectedBytes)}", color = BrandOrange) }
+        } else {
+            null
+        },
         showCloseButton = canDismiss,
         dismissOnBackPress = canDismiss,
         dismissOnClickOutside = canDismiss,
         onDismissRequest = { if (canDismiss) onDismiss() },
+        footerStart = if (useFooterReassurance) {
+            {
+                Text(
+                    text = "不删配置、聊天数据与插件",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        } else {
+            null
+        },
         footer = {
-            when (val current = stage) {
+            when (stage) {
                 CleanupStage.Unavailable -> MaiDialogButtonRow {
                     MaiDialogButton(
                         text = "关闭",
@@ -118,7 +148,6 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                     )
                 }
                 is CleanupStage.Ready -> {
-                    val selectedBytes = selected.sumOf { current.sizes.sizes[it] ?: 0L }
                     // 精简前缀并适当加宽主按钮占比，防止“清理（约 x.xx GB）”在半宽按钮里截断成省略号。
                     val cleanLabel = if (selected.isNotEmpty() && selectedBytes > 0L) {
                         "清理约 ${formatBytes(selectedBytes)}"
@@ -166,7 +195,7 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                 is CleanupStage.Done -> MaiDialogButton(
                     text = "完成",
                     style = MaiDialogButtonStyle.Primary,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
                     onClick = onDismiss
                 )
             }
@@ -180,6 +209,7 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                 "容器还没有准备好，暂时没有能清理的缓存。可以打开系统的存储设置，清理别的应用或文件。"
             )
             is CleanupStage.Ready -> {
+                val compactRows = LocalMaiDialogPhoneLandscape.current
                 MaiDialogSectionCard(
                     contentPadding = PaddingValues(vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(0.dp)
@@ -190,18 +220,21 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
                             item = item,
                             size = current.sizes.sizes[item],
                             checked = item in selected,
+                            compact = compactRows,
                             onCheckedChange = { checked ->
                                 selectedKeys = if (checked) selectedKeys + item.key else selectedKeys - item.key
                             }
                         )
                     }
                 }
-                Text(
-                    text = "配置、聊天数据、插件和已经装好的依赖都不会被删。",
-                    color = TextMuted,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 16.sp
-                )
+                if (!useFooterReassurance) {
+                    Text(
+                        text = "配置、聊天数据、插件和已经装好的依赖都不会被删。",
+                        color = TextMuted,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 16.sp
+                    )
+                }
             }
             CleanupStage.Cleaning -> MaiDialogSectionCard {
                 Progress("正在清理，请不要关闭应用...")
@@ -213,13 +246,19 @@ internal fun StorageCleanupDialog(onDismiss: () -> Unit) {
 
 // 一类可清理的内容：勾选框、名称和说明、右侧体积胶囊；整行可点。
 @Composable
-private fun CleanupRow(item: CleanupItem, size: Long?, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun CleanupRow(
+    item: CleanupItem,
+    size: Long?,
+    checked: Boolean,
+    compact: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Checkbox) { onCheckedChange(!checked) }
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 12.dp, vertical = if (compact) 8.dp else 10.dp)
     ) {
         Checkbox(
             checked = checked,

@@ -33,12 +33,14 @@ import org.maiwithu.maidroid.service.SafeExitStage
 import org.maiwithu.maidroid.service.SafeExitState
 import org.maiwithu.maidroid.service.describe
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogDivider
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconRoseAlert
@@ -152,6 +154,7 @@ internal fun SafeExitProgressDialog(
         subtitle = "正在保存记忆并按顺序停止服务",
         icon = FlatFeatureIcons.BackgroundKeepAlive,
         iconBackground = IconWarmCoral,
+        size = MaiDialogSize.Medium,
         showCloseButton = false,
         dismissOnBackPress = false,
         dismissOnClickOutside = false,
@@ -160,7 +163,7 @@ internal fun SafeExitProgressDialog(
             MaiDialogButton(
                 text = "切到后台",
                 style = MaiDialogButtonStyle.Secondary,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
                 onClick = onMoveToBackground
             )
         }

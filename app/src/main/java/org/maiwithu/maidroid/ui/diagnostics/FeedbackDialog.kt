@@ -49,6 +49,7 @@ import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FeedbackPackage
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -57,6 +58,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogCallout
 import org.maiwithu.maidroid.ui.component.MaiDialogCollapsible
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -122,7 +124,40 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
         subtitle = "密钥、账号与公网 IP 已自动打码",
         icon = FlatFeatureIcons.Feedback,
         iconBackground = IconCoralPink,
+        size = MaiDialogSize.Expanded,
+        secondaryContent = pkg?.let { readyPkg ->
+            {
+                // 手机横屏直接展开诊断报告供右列浏览，竖屏仍保持默认折叠避免首屏过长。
+                val expandByDefault = LocalMaiDialogPhoneLandscape.current
+                MaiDialogCollapsible(
+                    title = "预览诊断报告",
+                    summary = "点击展开",
+                    initiallyExpanded = expandByDefault
+                ) {
+                    ReportPreview(readyPkg.reportText)
+                }
+            }
+        },
         onDismissRequest = onDismiss,
+        landscapeFooter = {
+            MaiDialogButton(
+                text = if (saving) "保存中..." else "保存诊断包",
+                style = MaiDialogButtonStyle.Secondary,
+                enabled = pkg != null && !saving,
+                onClick = { pkg?.let { saveLauncher.launch(it.fileName) } }
+            )
+            MaiDialogButton(
+                text = "QQ 群反馈",
+                style = MaiDialogButtonStyle.SoftAccent,
+                onClick = { showQqGroup = true }
+            )
+            MaiDialogButton(
+                text = "复制并去 GitHub 反馈",
+                style = MaiDialogButtonStyle.Primary,
+                enabled = pkg != null,
+                onClick = { pkg?.let { openGitHubFeedback(context, it) } }
+            )
+        },
         footer = {
             MaiDialogButton(
                 text = "复制并去 GitHub 反馈",
@@ -217,7 +252,7 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
                     }
                 }
 
-                // 胶囊概括诊断包已包含内容，把 220dp 长报告默认收进折叠面板保持首屏清爽。
+                // 胶囊概括诊断包已包含内容，把长报告拆到次列或默认收进折叠面板保持首屏清爽。
                 MaiDialogSectionCard {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -247,13 +282,6 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
                         fontSize = TextSizes.Caption,
                         lineHeight = 16.sp
                     )
-                }
-
-                MaiDialogCollapsible(
-                    title = "预览诊断报告",
-                    summary = "点击展开"
-                ) {
-                    ReportPreview(state.pkg.reportText)
                 }
             }
         }

@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogCallout
 import org.maiwithu.maidroid.ui.component.MaiDialogDivider
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -51,6 +53,7 @@ import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.IconWarmCoral
+import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -217,6 +220,42 @@ internal fun MaiBotUpdateDialog(
         state.phase == MaiBotUpdatePhase.Available ||
             state.failedAction == MaiBotUpdateAction.Apply
         )
+    // 顶栏直接用彩色状态胶囊传达比对结论，避免与版本卡内的 commit hash 重复拼接。
+    val statusBadge: Pair<String, Color>? = when (state.phase) {
+        MaiBotUpdatePhase.UpToDate -> "已是最新" to StatusOnline
+        MaiBotUpdatePhase.Updated -> "更新完成" to StatusOnline
+        MaiBotUpdatePhase.Available -> "发现新版本" to BrandOrange
+        MaiBotUpdatePhase.Failed -> "更新失败" to StatusDanger
+        MaiBotUpdatePhase.Checking -> "检查中" to BrandOrange
+        MaiBotUpdatePhase.Updating -> (if (state.switchTarget != null) "切换中" else "更新中") to BrandOrange
+        MaiBotUpdatePhase.Idle -> null
+    }
+    val secondaryBlock: (@Composable ColumnScope.() -> Unit)? =
+        if (showLocalChangeNote || showChannelSelector) {
+            {
+                if (showLocalChangeNote) {
+                    MaiDialogCallout(
+                        title = "本地源码改动提醒",
+                        body = "检测到 ${state.localChangeCount} 个 MaiBot 源码文件被改动过，更新时会直接还原为上游版本；" +
+                            "配置、数据和插件不受影响。",
+                        accentColor = BrandOrange
+                    )
+                }
+
+                // 还没读到当前分支时不让选：不知道现在在哪个通道，也就说不清要切到哪
+                if (showChannelSelector) {
+                    MaiDialogSectionCard {
+                        MaiBotChannelSelector(
+                            selected = state.channel,
+                            enabled = !state.isBusy && state.branch != null,
+                            onSelect = { channel -> pendingChannel = channel }
+                        )
+                    }
+                }
+            }
+        } else {
+            null
+        }
 
     MaiDialog(
         title = "MaiBot 更新",
@@ -224,9 +263,11 @@ internal fun MaiBotUpdateDialog(
         subtitle = state.branch?.let(::maiBotBranchLabel) ?: "从上游仓库检查最新提交",
         icon = FlatFeatureIcons.MaiBotUpdate,
         iconBackground = IconSkyBlue,
-        headerBadge = state.installed?.let {
-            { MaiDialogInfoChip(text = it.shortCommit, color = TextPrimary, containerColor = CardBorder, monospace = true) }
+        size = MaiDialogSize.Expanded,
+        headerBadge = statusBadge?.let { (badgeText, badgeColor) ->
+            { MaiDialogInfoChip(text = badgeText, color = badgeColor) }
         },
+        secondaryContent = secondaryBlock,
         onDismissRequest = onDismiss,
         footer = {
             MaiDialogButtonRow {
@@ -277,26 +318,6 @@ internal fun MaiBotUpdateDialog(
         val failure = state.failure
         if (state.phase == MaiBotUpdatePhase.Failed && failure != null) {
             FailureNotice(failure = failure, summary = failure.message)
-        }
-
-        if (showLocalChangeNote) {
-            MaiDialogCallout(
-                title = "本地源码改动提醒",
-                body = "检测到 ${state.localChangeCount} 个 MaiBot 源码文件被改动过，更新时会直接还原为上游版本；" +
-                    "配置、数据和插件不受影响。",
-                accentColor = BrandOrange
-            )
-        }
-
-        // 还没读到当前分支时不让选：不知道现在在哪个通道，也就说不清要切到哪
-        if (showChannelSelector) {
-            MaiDialogSectionCard {
-                MaiBotChannelSelector(
-                    selected = state.channel,
-                    enabled = !state.isBusy && state.branch != null,
-                    onSelect = { channel -> pendingChannel = channel }
-                )
-            }
         }
     }
 

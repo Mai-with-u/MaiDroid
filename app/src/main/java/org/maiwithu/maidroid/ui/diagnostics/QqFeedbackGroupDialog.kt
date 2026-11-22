@@ -43,6 +43,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogDivider
 import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -92,6 +93,23 @@ internal fun QqFeedbackGroupDialog(onDismiss: () -> Unit) {
         subtitle = "$QQ_FEEDBACK_GROUP_NAME · $QQ_FEEDBACK_GROUP_NUMBER",
         icon = FlatFeatureIcons.QqGroup,
         iconBackground = IconSkyBlue,
+        size = MaiDialogSize.Expanded,
+        secondaryContent = {
+            MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "日常使用遇到小问题欢迎进群交流互助；涉及闪退、安装失败等复杂问题，建议在“反馈问题”中生成诊断包并提交到 GitHub Issue。",
+                    color = TextMuted,
+                    fontSize = TextSizes.Body,
+                    lineHeight = 19.sp
+                )
+                Text(
+                    text = "如需填写验证问题，答案即左侧 MaiDroid 最新版本号；点“跳转 QQ 加群”会自动复制答案并打开加群页面。",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
+                )
+            }
+        },
         onDismissRequest = onDismiss,
         footer = {
             MaiDialogButtonRow {
@@ -110,13 +128,6 @@ internal fun QqFeedbackGroupDialog(onDismiss: () -> Unit) {
             }
         }
     ) {
-        Text(
-            text = "日常使用遇到小问题欢迎进群交流互助；涉及闪退、安装失败等复杂问题，建议在“反馈问题”中生成诊断包并提交到 GitHub Issue。",
-            color = TextMuted,
-            fontSize = TextSizes.Body,
-            lineHeight = 19.sp
-        )
-
         // 群号与入群验证答案集中在一张内嵌面板里，点任意一行即可单独复制对应内容
         MaiDialogSectionCard(
             contentPadding = PaddingValues(0.dp),
@@ -144,13 +155,6 @@ internal fun QqFeedbackGroupDialog(onDismiss: () -> Unit) {
                 }
             )
         }
-
-        Text(
-            text = "如需填写验证问题，答案即上方 MaiDroid 最新版本号；点“跳转 QQ 加群”会自动复制答案并打开加群页面。",
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
-            lineHeight = 16.sp
-        )
     }
 }
 
