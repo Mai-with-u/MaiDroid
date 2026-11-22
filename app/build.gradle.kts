@@ -129,8 +129,9 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
 
-    // Blur
+    // Blur / Liquid Glass
     implementation(libs.blurview)
+    implementation(libs.liquid.glass.backdrop)
 
     // Embedded Web Engine (GeckoView arm64)
     implementation(libs.geckoview)

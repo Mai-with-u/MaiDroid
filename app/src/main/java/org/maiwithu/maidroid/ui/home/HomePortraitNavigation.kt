@@ -10,7 +10,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -47,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -58,19 +56,16 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import eightbitlab.com.blurview.BlurTarget
+import com.kyant.backdrop.Backdrop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appDependencies
-import org.maiwithu.maidroid.ui.component.BackdropBlurView
+import org.maiwithu.maidroid.ui.component.liquidGlassIndicator
+import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.Corners
-import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
-import org.maiwithu.maidroid.ui.theme.GlassShadow
-import org.maiwithu.maidroid.ui.theme.GlassStroke
-import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
@@ -87,12 +82,17 @@ internal const val CollapsedPillWidthDp = 64f
 internal const val CollapsedPillHeightDp =
     CollapsedRefreshTopDp + CollapsedRefreshButtonHeightDp + PillInnerInsetDp
 
-private const val ExpandedActionsTopDp = PillInnerInsetDp + HomeTabButtonHeightDp * 3f
+/** 侧边展开态每个页签槽位的紧凑高度（4 个标签总高控制适中，单手易点且竖屏安全不裁切）。 */
+internal const val ExpandedTabSlotHeightDp = 52f
+private val ExpandedTabSlotHeight = ExpandedTabSlotHeightDp.dp
+
+private val ExpandedActionsTopDp =
+    PillInnerInsetDp + ExpandedTabSlotHeightDp * HomeTab.entries.size
 private const val ExpandedDividerSlotHeightDp = 9f
-private const val ExpandedActionButtonHeightDp = 54f
+private const val ExpandedActionButtonHeightDp = 52f
 
 internal const val ExpandedPillWidthDp = 74f
-internal const val ExpandedPillHeightDp =
+internal val ExpandedPillHeightDp =
     ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedActionButtonHeightDp * 2f + PillInnerInsetDp
 
 private val CollapsedPillWidth = CollapsedPillWidthDp.dp
@@ -109,7 +109,7 @@ private val PillBottomClearance = 84.dp
 
 /**
  * 竖屏统一导航在任意过渡帧的二维几何描述（单位 dp）：
- * 既描述侧边/底部共用的主毛玻璃胶囊外框及内部 3 颗标签位置，也描述独立圆形终端按钮的分离/融入轨迹。
+ * 既描述侧边/底部共用的主液态玻璃胶囊外框及内部 4 颗标签位置，也描述独立圆形终端按钮的分离/融入轨迹。
  */
 internal data class PortraitNavFrame(
     val capsuleLeftDp: Float,
@@ -117,6 +117,7 @@ internal data class PortraitNavFrame(
     val capsuleWidthDp: Float,
     val capsuleHeightDp: Float,
     val tabWidthDp: Float,
+    val tabHeightDp: Float,
     val tabPositionsDp: List<Pair<Float, Float>>,
     val terminalLeftDp: Float,
     val terminalTopDp: Float,
@@ -153,7 +154,7 @@ internal fun computeDockedPillTopDp(
 
 /**
  * 计算侧边胶囊（左或右侧停靠）与底部导航栏之间的连续二维形变插值几何：
- * - [bottomProgress] 为 0 时处于侧边胶囊态，为 1 时精确对齐底部三标签 + 右下终端按钮布局；
+ * - [bottomProgress] 为 0 时处于侧边胶囊态，为 1 时精确对齐底部四标签 + 右下终端按钮布局；
  * - 位移使用未夹紧的 [bottomProgress] 保留阻尼弹簧缓冲，外框尺寸与透明度按 [0, 1] 夹紧严防越界。
  */
 internal fun computePortraitNavFrame(
@@ -183,8 +184,9 @@ internal fun computePortraitNavFrame(
     val capsuleHeight = lerpFloat(sideHeightDp, bottomBarHeight, clampedBottom)
 
     val tabWidth = lerpFloat(sideWidthDp - PillInnerInsetDp * 2f, bottomSingleTabWidth, clampedBottom)
+    val tabHeight = lerpFloat(ExpandedTabSlotHeightDp, HomeTabButtonHeightDp, clampedBottom)
     val tabPositions = HomeTab.entries.indices.map { index ->
-        val sideSlotY = PillInnerInsetDp + (HomeTabButtonHeight.value * index) * clampedExpanded
+        val sideSlotY = PillInnerInsetDp + (ExpandedTabSlotHeightDp * index) * clampedExpanded
         val tabX = lerpFloat(PillInnerInsetDp, PillInnerInsetDp + bottomSingleTabWidth * index, clampedBottom)
         val tabY = lerpFloat(sideSlotY, PillInnerInsetDp, clampedBottom)
         tabX to tabY
@@ -203,6 +205,7 @@ internal fun computePortraitNavFrame(
         capsuleWidthDp = capsuleWidth,
         capsuleHeightDp = capsuleHeight,
         tabWidthDp = tabWidth,
+        tabHeightDp = tabHeight,
         tabPositionsDp = tabPositions,
         terminalLeftDp = terminalLeft,
         terminalTopDp = terminalTop,
@@ -212,15 +215,15 @@ internal fun computePortraitNavFrame(
 }
 
 /**
- * 竖屏一体化毛玻璃导航：
- * - 在 WebUI 页签展现为可左右停靠（默认左缘）+ 重力传感器三级阻尼换边 + 收起态全向拖拽的灵动胶囊；
- * - 切往消息平台/设置时，同一块毛玻璃胶囊从所在左/右侧边缘平滑滑移并扇形展开成底部三栏导航，右下圆形终端钮同步分离就位；
+ * 竖屏一体化液态玻璃导航：
+ * - 在 WebUI 页签展现为可左右停靠（默认左缘）+ 重力传感器阻尼换边 + 收起态全向拖拽的灵动胶囊；
+ * - 切往其他页签时，同一块液态玻璃胶囊从所在左/右侧边缘平滑滑移并扇形展开成底部四栏导航，右下圆形终端钮同步分离就位；
  * - 切回 WebUI 时沿对称轨迹从底栏收拢飞回离开前的同一侧边缘，实现无缝空间连续过渡。
  */
 @Composable
 internal fun HomePortraitNavigation(
     selectedTab: HomeTab,
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     onRefreshWebUi: () -> Unit,
     onTabSelected: (HomeTab) -> Unit,
     onTerminalClick: () -> Unit,
@@ -292,7 +295,7 @@ internal fun HomePortraitNavigation(
         )
     }
 
-    // 仅 WebUI 收起态静置 3 秒后柔和收敛前景透明度减少视觉打扰；毛玻璃背景层始终保持 100% 合成，绝不透出未模糊原图
+    // 仅 WebUI 收起态静置 3 秒后柔和收敛前景透明度减少视觉打扰；液态玻璃背景层始终保持完整折射与高光
     var idleDimmed by remember { mutableStateOf(false) }
     LaunchedEffect(isWebUi, expanded, isDragging, interactionTick) {
         idleDimmed = false
@@ -317,7 +320,7 @@ internal fun HomePortraitNavigation(
     }
 
     val statusBarTop = statusBarTopInset()
-    // 仅把软键盘最终高度用于抬升侧边胶囊安全区；外层容器维持全屏坐标，确保消息平台/设置页弹出输入法时底栏纹丝不动
+    // 仅把软键盘最终高度用于抬升侧边胶囊安全区；外层容器维持全屏坐标，确保输入法弹出时底栏纹丝不动
     @OptIn(ExperimentalLayoutApi::class)
     val imeBottomDp = with(density) { WindowInsets.imeAnimationTarget.getBottom(this).toDp().value }
 
@@ -446,13 +449,13 @@ internal fun HomePortraitNavigation(
             clampedBottomProgress
         )
         val indicatorY = lerpFloat(
-            PillInnerInsetDp + HomeTabButtonHeight.value * clampedSelectedOrdinal * clampedExpandedProgress,
+            PillInnerInsetDp + ExpandedTabSlotHeightDp * clampedSelectedOrdinal * clampedExpandedProgress,
             PillInnerInsetDp,
             clampedBottomProgress
         )
         val indicatorHeight = lerpFloat(
-            lerpFloat(CollapsedNavButtonHeightDp, HomeTabButtonHeight.value, clampedExpandedProgress),
-            HomeTabButtonHeight.value,
+            lerpFloat(CollapsedNavButtonHeightDp, ExpandedTabSlotHeightDp, clampedExpandedProgress),
+            HomeTabButtonHeightDp,
             clampedBottomProgress
         )
 
@@ -466,15 +469,10 @@ internal fun HomePortraitNavigation(
             modifier = Modifier
                 .offset { IntOffset(frame.capsuleLeftDp.dp.roundToPx(), frame.capsuleTopDp.dp.roundToPx()) }
                 .size(width = frame.capsuleWidthDp.dp, height = frame.capsuleHeightDp.dp)
-                .shadow(
-                    elevation = 14.dp,
-                    shape = pillShape,
-                    clip = false,
-                    ambientColor = GlassShadow,
-                    spotColor = GlassShadow
+                .liquidGlassSurface(
+                    backdrop = backdrop,
+                    shape = { pillShape }
                 )
-                .clip(pillShape)
-                .border(1.dp, GlassStroke, pillShape)
                 .pointerInput(isWebUi, expanded, maxWidthPx, minTopPx, maxTopCollapsedPx, sideWidthPx) {
                     // 仅处于 WebUI 收起态侧边胶囊时开放拖拽，展开态和底栏模式锁定位置，避免越界或误拖
                     if (!isWebUi || expanded) return@pointerInput
@@ -509,21 +507,16 @@ internal fun HomePortraitNavigation(
                     )
                 }
         ) {
-            BackdropBlurView(
-                blurTarget = blurTarget,
-                blurRadius = NavigationBlurRadius,
-                overlayColor = GlassSurface,
-                modifier = Modifier.matchParentSize()
-            )
-
-            // 当前选中页签或收起态主导航的高光滑块，随形变过程连续滑向目标槽位
+            // 当前选中页签或收起态主导航的液态玻璃滑块，随形变过程连续滑向目标槽位
             Box(
                 modifier = Modifier
                     .offset { IntOffset(indicatorX.dp.roundToPx(), indicatorY.dp.roundToPx()) }
                     .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
                     .graphicsLayer { alpha = foregroundIdleAlpha }
-                    .clip(pillShape)
-                    .background(GlassSelectedIndicator)
+                    .liquidGlassIndicator(
+                        backdrop = backdrop,
+                        shape = { pillShape }
+                    )
             )
 
             // 展开态下半区附加操作（细分隔线 + 刷新 + 终端）：切至底栏期间随退场平滑收束隐藏
@@ -575,35 +568,37 @@ internal fun HomePortraitNavigation(
                 }
             }
 
-            // 消息平台与设置标签：随胶囊形变在纵向侧栏与横向底栏位置间扇形平滑移动
+            // 其余页签标签：随胶囊形变在纵向侧栏与横向底栏位置间扇形平滑移动
             if (secondaryTabsAlpha > 0.01f) {
-                listOf(HomeTab.Platforms, HomeTab.Settings).forEach { tab ->
-                    val pos = frame.tabPositionsDp[tab.ordinal]
-                    Box(
-                        modifier = Modifier
-                            .zIndex(if (!isWebUi || expanded) 2f else 0f)
-                            .offset { IntOffset(pos.first.dp.roundToPx(), pos.second.dp.roundToPx()) }
-                            .size(width = frame.tabWidthDp.dp, height = HomeTabButtonHeight)
-                            .graphicsLayer { alpha = secondaryTabsAlpha * foregroundIdleAlpha },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        HomeTabButton(
-                            tab = tab,
-                            selected = selectedTab == tab,
-                            enabled = !isWebUi || expanded,
-                            onClick = {
-                                if (isWebUi) {
-                                    leavingFromExpanded = true
-                                    expanded = false
-                                }
-                                onTabSelected(tab)
-                            },
+                HomeTab.entries
+                    .filter { it != HomeTab.WebUi }
+                    .forEach { tab ->
+                        val pos = frame.tabPositionsDp[tab.ordinal]
+                        Box(
                             modifier = Modifier
-                                .wrapContentSize(align = Alignment.Center, unbounded = true)
-                                .size(width = maxOf(frame.tabWidthDp, 66f).dp, height = HomeTabButtonHeight)
-                        )
+                                .zIndex(if (!isWebUi || expanded) 2f else 0f)
+                                .offset { IntOffset(pos.first.dp.roundToPx(), pos.second.dp.roundToPx()) }
+                                .size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
+                                .graphicsLayer { alpha = secondaryTabsAlpha * foregroundIdleAlpha },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            HomeTabButton(
+                                tab = tab,
+                                selected = selectedTab == tab,
+                                enabled = !isWebUi || expanded,
+                                onClick = {
+                                    if (isWebUi) {
+                                        leavingFromExpanded = true
+                                        expanded = false
+                                    }
+                                    onTabSelected(tab)
+                                },
+                                modifier = Modifier
+                                    .wrapContentSize(align = Alignment.Center, unbounded = true)
+                                    .size(width = maxOf(frame.tabWidthDp, 62f).dp, height = frame.tabHeightDp.dp)
+                            )
+                        }
                     }
-                }
             }
 
             // 首格常驻按钮：麦麦头像全程零跳动固定居中，文字在「导航」与「WebUI」间交叉渐显
@@ -671,7 +666,7 @@ internal fun HomePortraitNavigation(
         // 右下角独立圆形终端按钮：切离 WebUI 时从侧边胶囊底部平滑分离就位，切回 WebUI 时顺畅融入胶囊
         if (frame.terminalAlpha > 0.02f) {
             HomeTerminalButton(
-                blurTarget = blurTarget,
+                backdrop = backdrop,
                 onClick = onTerminalClick,
                 enabled = !isWebUi,
                 modifier = Modifier
@@ -789,4 +784,3 @@ private fun PillLabeledButton(
 
 private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float =
     start + (stop - start) * fraction
-

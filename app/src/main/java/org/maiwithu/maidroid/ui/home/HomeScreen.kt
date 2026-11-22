@@ -14,7 +14,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -22,15 +21,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
-import eightbitlab.com.blurview.BlurTarget
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
-import org.maiwithu.maidroid.ui.component.BlurTargetHost
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.extension.ExtensionsPage
 import org.maiwithu.maidroid.ui.platform.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
@@ -41,8 +41,8 @@ internal const val WakeRetryIntervalMillis = 30_000L
 
 /**
  * OOBE 完成后的主页。WebUI 第一次上线前盖着唤醒页（开机自检画面，每 30 秒自动唤醒一次 MaiBot），
- * 自检走完或点 SKIP 后切到三栏外壳（WebUI、消息平台、设置）：竖屏在 WebUI 页签展现为侧边可拖拽与重力换边的灵动胶囊，
- * 切到其余页签时平滑形变为底栏 + 右下角终端按钮；横屏导航固定在左侧。
+ * 自检走完或点 SKIP 后切到四栏外壳（WebUI、消息平台、扩展组件、设置）：竖屏在 WebUI 页签展现为侧边可拖拽与重力换边的灵动胶囊，
+ * 切到其余页签时平滑形变为底栏 + 右下角终端按钮；横屏导航固定在左侧，悬浮导航采用液态玻璃实时采样页面。
  */
 @Composable
 internal fun HomeScreen(
@@ -57,7 +57,7 @@ internal fun HomeScreen(
     permissionState: PermissionState = PermissionState(),
     permissionActions: PermissionActions = PermissionActions()
 ) {
-    // 唤醒页盖在三栏外壳上面。tabsVisible：自检走完或点了 SKIP，唤醒页开始收尾、自动唤醒停止；
+    // 唤醒页盖在四栏外壳上面。tabsVisible：自检走完或点了 SKIP，唤醒页开始收尾、自动唤醒停止；
     // 等唤醒页的快门完全拉开，wakePageVisible 变 false，把这一层移除。
     var tabsVisible by rememberSaveable { mutableStateOf(false) }
     var wakePageVisible by rememberSaveable { mutableStateOf(true) }
@@ -126,9 +126,10 @@ internal fun HomeScreen(
 }
 
 /**
- * 三栏外壳：页面内容包在 BlurTargetHost 里，悬浮在上面的导航据此做毛玻璃；WebView 跨标签保留，切回来不重新加载。
+ * 四栏外壳：页面内容通过 AndroidLiquidGlass 的 layerBackdrop 录制进实时背景层，
+ * 悬浮在上面的导航据此做折射液态玻璃/高斯模糊；WebView 跨标签保留，切回来不重新加载。
  * 窗口宽大于高时导航改为左侧悬浮竖栏（见 homeUsesNavigationRail）：页面仍铺满整宽，内容让出侧栏宽度，
- * 静止时不被侧栏盖住，切换标签时整页滑过侧栏的毛玻璃底下。
+ * 静止时不被侧栏盖住，切换标签时整页滑过侧栏的玻璃底下。
  * 横屏摄像头挖孔转到屏幕左右两侧，整个外壳左右让开安全区：导航栏和页面都不会画进挖孔。
  */
 @Composable
@@ -147,7 +148,10 @@ private fun HomeTabsShell(
     modifier: Modifier = Modifier,
     lowBatteryPaused: Boolean = false
 ) {
-    var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
+    val homeBackdrop = rememberLayerBackdrop {
+        drawRect(PageBackground)
+        drawContent()
+    }
     val webUiTabState = rememberWebUiTabState()
 
     BoxWithConstraints(
@@ -179,13 +183,13 @@ private fun HomeTabsShell(
                 .fillMaxSize()
                 .absolutePadding(left = safeLeft, right = safeRight)
         ) {
-            // 三个页面铺满整块，横竖屏共用同一处组合（转向不重建 WebView）；导航悬浮在它上面，毛玻璃实时模糊它。
+            // 四个页面铺满整块，横竖屏共用同一处组合（转向不重建 WebView）；导航悬浮在它上面，实时采样底层像素。
             CompositionLocalProvider(LocalBottomNavigationClearance provides bottomClearance) {
-                BlurTargetHost(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(PageBackground),
-                    onTargetChanged = { blurTarget = it }
+                        .background(PageBackground)
+                        .layerBackdrop(homeBackdrop)
                 ) {
                     AnimatedContent(
                         targetState = selectedTab,
@@ -212,6 +216,15 @@ private fun HomeTabsShell(
                                     .padding(start = pageStartClearance)
                             )
 
+                            HomeTab.Extensions -> ExtensionsPage(
+                                webUiOnline = webUiOnline,
+                                permissionState = permissionState,
+                                permissionActions = permissionActions,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = pageStartClearance)
+                            )
+
                             HomeTab.Settings -> SettingsPage(
                                 webUiOnline = webUiOnline,
                                 versionName = versionName,
@@ -227,20 +240,20 @@ private fun HomeTabsShell(
             }
 
             if (useRail) {
-                // 横屏：侧栏悬浮在页面左侧 -> 切换标签时页面整页滑动，从侧栏的毛玻璃底下滑过。
+                // 横屏：侧栏悬浮在页面左侧 -> 切换标签时页面整页滑动，从侧栏的液态玻璃底下滑过。
                 HomeNavigationRail(
                     selectedTab = selectedTab,
-                    blurTarget = blurTarget,
+                    backdrop = homeBackdrop,
                     onTabSelected = selectTab,
                     onTerminalClick = openTerminal,
                     onRefreshWebUi = if (selectedTab == HomeTab.WebUi) webUiTabState::reload else null,
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
             } else {
-                // 竖屏一体化导航：在 WebUI 页签展示侧边可拖拽/传感器换边的灵动胶囊，切向消息平台或设置时直接形变飞入底部栏（终端按钮同步分离就位），切回时原路飞回离开前所在侧。
+                // 竖屏一体化导航：在 WebUI 页签展示侧边可拖拽/传感器换边的灵动胶囊，切向其他页签时直接形变飞入底部四栏（终端按钮同步分离就位），切回时原路飞回离开前所在侧。
                 HomePortraitNavigation(
                     selectedTab = selectedTab,
-                    blurTarget = blurTarget,
+                    backdrop = homeBackdrop,
                     onRefreshWebUi = webUiTabState::reload,
                     onTabSelected = selectTab,
                     onTerminalClick = openTerminal,

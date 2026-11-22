@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -336,6 +337,8 @@ internal fun WebUiTabPage(
                         .padding(top = statusBarTop)
                         .windowInsetsPadding(imeClearance)
                         .fillMaxSize()
+                        // 配合 AndroidLiquidGlass：让内嵌 TextureView(GeckoView) 走稳定的离屏图层合成，防止毛玻璃采样闪烁或黑块
+                        .graphicsLayer { alpha = 0.999f }
                         .onSizeChanged { size ->
                             state.viewHasSize = size.width > 0 && size.height > 0
                         }

@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.ui.home
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,7 +70,7 @@ class HomePortraitNavigationTest {
     }
 
     @Test
-    fun `portrait nav endpoints match side pill and bottom navigation bar`() {
+    fun `portrait nav endpoints match side pill and 4-tab bottom navigation bar`() {
         val maxWidth = 360f
         val maxHeight = 800f
         val sideFrame = computePortraitNavFrame(
@@ -99,22 +100,23 @@ class HomePortraitNavigationTest {
             bottomProgress = 1f
         )
         val expectedBottomWidth = computeBottomTabBarWidthDp(maxWidth)
-        assertEquals(28f, bottomFrame.capsuleLeftDp, 0.001f)
+        assertEquals(16f, bottomFrame.capsuleLeftDp, 0.001f)
         assertEquals(maxHeight - 80f, bottomFrame.capsuleTopDp, 0.001f)
         assertEquals(expectedBottomWidth, bottomFrame.capsuleWidthDp, 0.001f)
         assertEquals(64f, bottomFrame.capsuleHeightDp, 0.001f)
-        assertEquals(maxWidth - 28f - 64f, bottomFrame.terminalLeftDp, 0.001f)
+        assertEquals(maxWidth - 16f - 64f, bottomFrame.terminalLeftDp, 0.001f)
         assertEquals(maxHeight - 80f, bottomFrame.terminalTopDp, 0.001f)
         assertEquals(1f, bottomFrame.terminalAlpha, 0.001f)
+        assertTrue(bottomFrame.tabWidthDp >= 60f)
     }
 
     @Test
-    fun `portrait nav morphs smoothly from both left and right edges without clipping tabs`() {
+    fun `portrait nav morphs smoothly from both left and right edges without clipping 4 tabs`() {
         val maxWidth = 360f
         val maxHeight = 800f
         val steps = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
 
-        // 左侧与右侧两条路径分别从 10dp -> 28dp 单调右移、从右缘 -> 28dp 单调左移，并且全过程所有标签严格不越界
+        // 左侧与右侧两条路径分别从 10dp -> 16dp 单调右移、从右缘 -> 16dp 单调左移，并且全过程四格标签严格不越界
         PillDockSide.entries.forEach { side ->
             val sideLeft = if (side == PillDockSide.Right) maxWidth - ExpandedPillWidthDp - 10f else 10f
             val frames = steps.map { progress ->
@@ -142,14 +144,30 @@ class HomePortraitNavigationTest {
             }
 
             frames.forEach { frame ->
-                assertEquals(3, frame.tabPositionsDp.size)
+                assertEquals(4, frame.tabPositionsDp.size)
                 frame.tabPositionsDp.forEach { (tabX, tabY) ->
                     assertTrue(tabX >= -0.001f)
                     assertTrue(tabX + frame.tabWidthDp <= frame.capsuleWidthDp + 0.001f)
                     assertTrue(tabY >= -0.001f)
-                    assertTrue(tabY + HomeTabButtonHeight.value <= frame.capsuleHeightDp + 0.001f)
+                    assertTrue(tabY + frame.tabHeightDp <= frame.capsuleHeightDp + 0.001f)
                 }
             }
         }
+    }
+
+    @Test
+    fun `landscape rail fits 4 tabs inside compact phone height and expands on tall screens`() {
+        val phone360 = computeHomeRailMetrics(360f)
+        assertTrue(phone360.compact)
+        assertTrue(phone360.minimumTotalHeightDp < 360f)
+
+        val phone320 = computeHomeRailMetrics(320f)
+        assertTrue(phone320.compact)
+        assertTrue(phone320.minimumTotalHeightDp < 320f)
+
+        val tablet600 = computeHomeRailMetrics(600f)
+        assertFalse(tablet600.compact)
+        assertTrue(tablet600.minimumTotalHeightDp < 600f)
+        assertEquals(HomeTabButtonHeightDp, tablet600.tabHeightDp, 0.001f)
     }
 }
