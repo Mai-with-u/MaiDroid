@@ -167,7 +167,8 @@ internal fun resolveMaiDialogLayout(
     }
 
     val maxHeightDp = when {
-        isPhoneLandscape -> minOf(safeH - 20f, 344f).coerceAtLeast(0f)
+        // 外层 BoxWithConstraints 已留出上下 10.dp 边距，横屏不再二次扣减，尽量保留双列内容可读高度。
+        isPhoneLandscape -> minOf(safeH, 348f)
         isTablet -> minOf(safeH * 0.84f, 680f)
         // 竖屏跟随剩余高度按比例收缩，避免弹出软键盘时把弹窗顶出屏幕范围。
         else -> safeH * 0.86f
@@ -325,15 +326,15 @@ internal fun MaiDialog(
                                 ) {
                                     MaiDialogScrollColumn(
                                         scrollable = scrollable,
-                                        contentPadding = PaddingValues(vertical = 12.dp),
-                                        verticalSpacing = 10.dp,
+                                        contentPadding = PaddingValues(vertical = 10.dp),
+                                        verticalSpacing = 8.dp,
                                         modifier = Modifier.weight(1.12f),
                                         content = content
                                     )
                                     MaiDialogScrollColumn(
                                         scrollable = scrollable,
-                                        contentPadding = PaddingValues(vertical = 12.dp),
-                                        verticalSpacing = 10.dp,
+                                        contentPadding = PaddingValues(vertical = 10.dp),
+                                        verticalSpacing = 8.dp,
                                         modifier = Modifier.weight(1f),
                                         content = secondaryContent
                                     )

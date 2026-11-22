@@ -37,6 +37,7 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -481,12 +482,14 @@ private fun RevisionBlock(
         )
 
         if (revision.subject.isNotBlank()) {
+            // 横屏左列高度有限，提交摘要收拢到单行，让底部的更新状态提示首屏直出。
+            val subjectMaxLines = if (LocalMaiDialogPhoneLandscape.current) 1 else 2
             Text(
                 text = revision.subject,
                 color = TextMuted,
                 fontSize = TextSizes.Caption,
                 lineHeight = 15.sp,
-                maxLines = 2,
+                maxLines = subjectMaxLines,
                 overflow = TextOverflow.Ellipsis
             )
         }

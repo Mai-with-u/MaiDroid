@@ -30,7 +30,7 @@ class MaiDialogLayoutTest {
         assertTrue(landscape.isPhoneLandscape)
         assertFalse(landscape.useTwoColumns)
         assertEquals(380f, landscape.maxWidthDp, 0.1f)
-        assertEquals(320f, landscape.maxHeightDp, 0.1f)
+        assertEquals(340f, landscape.maxHeightDp, 0.1f)
 
         // 竖屏弹出软键盘后剩余高度缩至 320dp：按比例压缩，绝不硬撑 300dp 顶出边界
         val keyboard = resolveMaiDialogLayout(
@@ -54,21 +54,21 @@ class MaiDialogLayoutTest {
         assertTrue(mediumLandscape.isPhoneLandscape)
         assertFalse(mediumLandscape.useTwoColumns)
         assertEquals(520f, mediumLandscape.maxWidthDp, 0.1f)
-        assertEquals(320f, mediumLandscape.maxHeightDp, 0.1f)
+        assertEquals(340f, mediumLandscape.maxHeightDp, 0.1f)
 
-        // A 类带第二列内容：横屏放宽至 680dp 并开启左右两列
+        // A 类带第二列内容：横屏放宽至 680dp 并开启左右两列，高上限封顶 348dp
         val expandedLandscape = resolveMaiDialogLayout(
             availableWidthDp = 720f,
-            availableHeightDp = 340f,
+            availableHeightDp = 360f,
             size = MaiDialogSize.Expanded,
             hasSecondaryContent = true
         )
         assertTrue(expandedLandscape.isPhoneLandscape)
         assertTrue(expandedLandscape.useTwoColumns)
         assertEquals(680f, expandedLandscape.maxWidthDp, 0.1f)
-        assertEquals(320f, expandedLandscape.maxHeightDp, 0.1f)
+        assertEquals(348f, expandedLandscape.maxHeightDp, 0.1f)
 
-        // 横屏软键盘弹起后剩余高 190dp：仍保持两列各自滚动且严守 170dp 高度上限
+        // 横屏软键盘弹起后剩余高 190dp：仍保持两列各自滚动且严守 190dp 高度上限
         val landscapeKeyboard = resolveMaiDialogLayout(
             availableWidthDp = 720f,
             availableHeightDp = 190f,
@@ -77,7 +77,7 @@ class MaiDialogLayoutTest {
         )
         assertTrue(landscapeKeyboard.isPhoneLandscape)
         assertTrue(landscapeKeyboard.useTwoColumns)
-        assertEquals(170f, landscapeKeyboard.maxHeightDp, 0.1f)
+        assertEquals(190f, landscapeKeyboard.maxHeightDp, 0.1f)
 
         // 竖屏即使有 secondaryContent 也维持单列竖排
         val expandedPortrait = resolveMaiDialogLayout(
