@@ -4,6 +4,7 @@ import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import org.maiwithu.maidroid.runtime.openDirectOrDefault
 import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL

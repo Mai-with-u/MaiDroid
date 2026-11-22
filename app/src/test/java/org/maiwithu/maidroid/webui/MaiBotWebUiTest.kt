@@ -181,7 +181,7 @@ class MaiBotWebUiTest {
     }
 
     @Test
-    fun webViewVersionAndLoopbackHelpersBehaveAsExpected() {
+    fun webViewVersionHelpersBehaveAsExpected() {
         assertEquals(132, parseWebViewMajorVersion("132.0.6.304"))
         assertEquals(88, parseWebViewMajorVersion(" 88.0.4324.181 "))
         assertNull(parseWebViewMajorVersion(null))
@@ -192,13 +192,5 @@ class MaiBotWebUiTest {
         assertNull(outdatedWebViewNotice(WebViewPackageInfo("com.huawei.webview", "111.0.5563.116", 111)))
         assertNull(outdatedWebViewNotice(WebViewPackageInfo("com.huawei.webview", "132.0.6.304", 132)))
         assertNull(outdatedWebViewNotice(null))
-
-        assertTrue(isLoopbackHost("127.0.0.1"))
-        assertTrue(isLoopbackHost("LOCALHOST"))
-        assertTrue(isLoopbackHost("::1"))
-        assertTrue(isLoopbackHost("[::1]"))
-        assertFalse(isLoopbackHost("192.168.1.1"))
-        assertFalse(isLoopbackHost("ops.8u.nz"))
-        assertFalse(isLoopbackHost(null))
     }
 }

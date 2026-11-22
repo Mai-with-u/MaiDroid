@@ -13,7 +13,7 @@ internal object WebUiInjectedScripts {
     private const val VIEWPORT_PATCH_STYLE_ID = "maidroid-webview-viewport-fix"
 
     /**
-     * 为 Android 8~11 上未升级的系统 WebView（Chromium < 103）补齐 1.4.8 前端首屏即用的 API：
+     * 为 Android 8~11 上未升级的系统 WebView（Chromium < 103）补齐新版 WebUI 前端首屏即用的 API：
      * AbortSignal.timeout / AbortSignal.any / crypto.randomUUID / replaceAll / Object.hasOwn / Array.prototype.at。
      * 全程使用 ES5 语法，避免旧内核在解析箭头函数、let/const 时直接报语法错导致整块补丁失效。
      */
@@ -23,7 +23,7 @@ internal object WebUiInjectedScripts {
           if (window.__maidroidCompatPolyfillInstalled) return;
           window.__maidroidCompatPolyfillInstalled = true;
 
-          // AbortSignal.timeout（Chromium 103+）：1.4.8 前端 TM() 启动探测首屏即调用，缺它直接提示 WebUI 无法连接
+          // AbortSignal.timeout（Chromium 103+）：新版 WebUI 启动探测首屏即调用，缺它直接提示 WebUI 无法连接
           try {
             if (typeof AbortSignal === 'function' && typeof AbortSignal.timeout !== 'function') {
               AbortSignal.timeout = function(ms) {

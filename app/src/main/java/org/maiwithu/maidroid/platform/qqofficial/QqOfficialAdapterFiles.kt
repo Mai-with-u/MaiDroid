@@ -4,19 +4,30 @@ import org.maiwithu.maidroid.maibot.MaiBotInstance
 import org.maiwithu.maidroid.maibot.MaiBotInstances
 import org.maiwithu.maidroid.maibot.findPluginDirById
 import org.maiwithu.maidroid.maibot.resolvePluginTargetInstance
+import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import java.io.File
 
-private const val BUILT_IN_MANIFEST_RELATIVE_PATH = "src/plugins/built_in/qq_official_adapter/_manifest.json"
-private const val BUILT_IN_CONFIG_RELATIVE_PATH = "builtin_plugins/qq_official_adapter/config.toml"
+private const val BUILT_IN_ADAPTER_DIR_RELATIVE_PATH = "src/plugins/built_in/qq_official_adapter"
+private const val BUILT_IN_MANIFEST_RELATIVE_PATH = "$BUILT_IN_ADAPTER_DIR_RELATIVE_PATH/_manifest.json"
+private const val SETTINGS_FILE_NAME = "settings.py"
 
-/** 检测当前 MaiBot 源码是否已内置 qq_official_adapter（1.4.x 起官方适配器随源码内置，不再走外部 plugins/ 克隆）。 */
+/** 检测当前 MaiBot 源码是否已内置 qq_official_adapter（不再走外部 plugins/ 克隆）。 */
 internal fun isQqOfficialBuiltIn(maiBotDir: File): Boolean =
     File(maiBotDir, BUILT_IN_MANIFEST_RELATIVE_PATH).isFile
 
 /** 返回内置 QQ 官方机器人适配器在目标实例下的 config.toml 路径（config/builtin_plugins/qq_official_adapter/config.toml）。 */
 internal fun builtInQqOfficialConfigFile(instance: MaiBotInstance): File =
-    File(instance.configDir, BUILT_IN_CONFIG_RELATIVE_PATH)
+    File(instance.configDir, "builtin_plugins/qq_official_adapter/config.toml")
+
+/** 从指定适配器目录下的 `settings.py` 动态读取 `config_version` 默认值；文件缺失或未匹配时回退 [fallback]。 */
+internal fun readQqOfficialDefaultConfigVersion(adapterDir: File?, fallback: String): String {
+    val settingsFile = adapterDir?.let { File(it, SETTINGS_FILE_NAME) }
+    val settingsText = settingsFile?.takeIf { it.isFile }?.let { file ->
+        runCatching { file.readText() }.getOrNull()
+    }
+    return QqOfficialAdapterConfig.parseDefaultConfigVersion(settingsText) ?: fallback
+}
 
 /**
  * 判断内置 QQ 官方机器人适配器是否已在目标实例下被启用或配置：
@@ -60,11 +71,25 @@ internal class QqOfficialAdapterFiles(private val paths: RuntimePaths) {
         if (isBuiltIn()) {
             return resolveBuiltInQqOfficialTarget(
                 MaiBotInstances.discover(paths),
-                MaiBotInstance(paths.maiBotDir, "/opt/MaiBot")
+                MaiBotInstance(paths.maiBotDir, InContainerPaths.MAIBOT_DIR)
             )
         }
         return MaiBotInstances.resolvePluginTarget(paths, QqOfficialAdapterScripts.PLUGIN_ID, QqOfficialAdapterScripts.DIR_NAME)
     }
+
+    /** 读取当前适配器的默认 config_version：优先从插件 settings.py 动态提取，读不到时回退兜底值。 */
+    fun defaultConfigVersion(instance: MaiBotInstance = targetInstance()): String =
+        if (isBuiltIn()) {
+            readQqOfficialDefaultConfigVersion(
+                File(paths.maiBotDir, BUILT_IN_ADAPTER_DIR_RELATIVE_PATH),
+                QqOfficialAdapterConfig.FallbackBuiltInConfigVersion
+            )
+        } else {
+            readQqOfficialDefaultConfigVersion(
+                findInstalledDir(instance),
+                QqOfficialAdapterConfig.FallbackLegacyConfigVersion
+            )
+        }
 
     /**
      * 和 MaiBot 一样按清单里的插件 ID 找外置 QQ 官方机器人适配器：用户也可能在 MaiBot WebUI 的插件市场装过

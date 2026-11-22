@@ -272,7 +272,7 @@ class QqOfficialPlatformTest {
             existing = null,
             appId = "102000001",
             appSecret = "secret",
-            defaultConfigVersion = QqOfficialAdapterConfig.BuiltInConfigVersion
+            defaultConfigVersion = QqOfficialAdapterConfig.FallbackBuiltInConfigVersion
         )
         assertTrue(freshBuiltIn.contains("""config_version = "0.5.4""""))
         assertEquals(QqOfficialCredentials(true, "102000001", "secret"), QqOfficialAdapterConfig.read(freshBuiltIn))
@@ -298,7 +298,7 @@ class QqOfficialPlatformTest {
             existing = existing,
             appId = "102000001",
             appSecret = "testsecret1234",
-            defaultConfigVersion = QqOfficialAdapterConfig.BuiltInConfigVersion
+            defaultConfigVersion = QqOfficialAdapterConfig.FallbackBuiltInConfigVersion
         )
         assertTrue(updated.contains("enabled = true"))
         assertTrue(updated.contains("""config_version = "0.5.4""""))
@@ -306,6 +306,38 @@ class QqOfficialPlatformTest {
         assertTrue(updated.contains("""app_secret = "testsecret1234""""))
         assertTrue(updated.contains("[advanced]\nreconnect_delay_sec = 5.0"))
         assertTrue(updated.contains("[mute]\nenabled = true"))
+    }
+
+    @Test
+    fun `settings parser extracts dynamic default config_version and ignores comments`() {
+        val samplePy = """
+            # config_version = "9.9.9"
+            class PluginConfig(ConfigBase):
+                config_version: str = Field(default="0.6.2", description="配置版本")
+        """.trimIndent()
+        assertEquals("0.6.2", QqOfficialAdapterConfig.parseDefaultConfigVersion(samplePy))
+
+        val plainAssign = """
+            config_version = '0.7.0'
+        """.trimIndent()
+        assertEquals("0.7.0", QqOfficialAdapterConfig.parseDefaultConfigVersion(plainAssign))
+
+        assertNull(QqOfficialAdapterConfig.parseDefaultConfigVersion("# config_version = \"1.0.0\"\n"))
+        assertNull(QqOfficialAdapterConfig.parseDefaultConfigVersion(null))
+
+        val adapterDir = folder.newFolder("qq_official_adapter")
+        File(adapterDir, "settings.py").writeText(samplePy)
+        assertEquals(
+            "0.6.2",
+            readQqOfficialDefaultConfigVersion(adapterDir, QqOfficialAdapterConfig.FallbackBuiltInConfigVersion)
+        )
+        assertEquals(
+            QqOfficialAdapterConfig.FallbackBuiltInConfigVersion,
+            readQqOfficialDefaultConfigVersion(
+                File(adapterDir, "missing"),
+                QqOfficialAdapterConfig.FallbackBuiltInConfigVersion
+            )
+        )
     }
 
     @Test

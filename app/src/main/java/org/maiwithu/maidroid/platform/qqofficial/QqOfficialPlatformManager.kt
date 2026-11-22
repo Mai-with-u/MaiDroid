@@ -198,12 +198,9 @@ internal class QqOfficialPlatformManager(
                 val instance = targetInstance ?: adapterFiles.targetInstance()
                 val target = adapterFiles.configFile(instance)
                 val existing = target.takeIf { it.isFile }?.readText()
-                // 内置与外置版首次补写空配置时沿用各自期望的配置版本号，已有文件则由 write() 自动保留原版本号。
-                val defaultVersion = if (adapterFiles.isBuiltIn()) {
-                    QqOfficialAdapterConfig.BuiltInConfigVersion
-                } else {
-                    QqOfficialAdapterConfig.LegacyConfigVersion
-                }
+                // 首次补写空配置时优先从容器内插件的 settings.py 动态读取默认 config_version，读不到再回退兜底值；
+                // 已有文件由 write() 自动保留原版本号，不覆盖用户或 MaiBot 迁移后的配置版本。
+                val defaultVersion = adapterFiles.defaultConfigVersion(instance)
                 target.writeTextAtomically(
                     QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim(), defaultVersion)
                 )

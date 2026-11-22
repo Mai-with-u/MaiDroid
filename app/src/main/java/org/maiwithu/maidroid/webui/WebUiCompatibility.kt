@@ -1,13 +1,10 @@
 package org.maiwithu.maidroid.webui
 
 import android.webkit.WebView
-import java.net.HttpURLConnection
-import java.net.Proxy
-import java.net.URL
 
 /**
  * WebUI 对新版前端特性的最低推荐 Chromium 主版本：
- * 1.4.8 内置前端使用 Tailwind v4（@layer 需 99+、oklch() 需 111+）以及 AbortSignal.timeout（103+）。
+ * 新版 WebUI 前端使用的 Tailwind v4（`@layer` 需 99+、`oklch()` 需 111+）以及 `AbortSignal.timeout`（103+）。
  */
 internal const val MIN_RECOMMENDED_WEBVIEW_MAJOR = 111
 
@@ -45,26 +42,4 @@ internal fun outdatedWebViewNotice(info: WebViewPackageInfo?): String? {
     val major = info?.majorVersion ?: return null
     if (major >= MIN_RECOMMENDED_WEBVIEW_MAJOR) return null
     return "当前系统 WebView 版本较旧（${info.versionName}），页面样式可能显示异常；建议在应用商店更新 WebView"
-}
-
-/** 判断目标主机是否指向本机回环地址，供本机服务直连绕过系统代理使用。 */
-internal fun isLoopbackHost(host: String?): Boolean {
-    val normalized = host?.trim()?.lowercase() ?: return false
-    return normalized == "127.0.0.1" ||
-        normalized == "localhost" ||
-        normalized == "::1" ||
-        normalized == "[::1]"
-}
-
-/**
- * 打开 HTTP 连接：回环地址强制直连（`Proxy.NO_PROXY`），防止用户开启系统 Wi-Fi / VPN HTTP 代理
- * 后本机 WebUI、HTML 注入或协议端接口被代理软件拦截导致连不上；其余外网地址沿用系统默认策略。
- */
-internal fun openDirectOrDefault(url: URL): HttpURLConnection {
-    val connection = if (isLoopbackHost(url.host)) {
-        url.openConnection(Proxy.NO_PROXY)
-    } else {
-        url.openConnection()
-    }
-    return connection as HttpURLConnection
 }

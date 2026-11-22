@@ -9,6 +9,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.openDirectOrDefault
 import org.maiwithu.maidroid.terminal.AnsiText
 import java.io.File
 import java.net.InetSocketAddress

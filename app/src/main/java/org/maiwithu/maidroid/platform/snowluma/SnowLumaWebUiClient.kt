@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import org.maiwithu.maidroid.webui.openDirectOrDefault
+import org.maiwithu.maidroid.runtime.openDirectOrDefault
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder

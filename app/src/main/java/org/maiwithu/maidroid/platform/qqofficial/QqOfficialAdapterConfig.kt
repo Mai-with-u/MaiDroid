@@ -19,12 +19,28 @@ internal data class QqOfficialCredentials(
  * 禁言、撤回、统一账号 ID 这些用户可能在 MaiBot WebUI 的插件配置里改过，不能被覆盖。逐行读写交给 PluginConfigToml。
  */
 internal object QqOfficialAdapterConfig {
-    // 外置插件旧版（settings.py 0.4.1）与 MaiBot 1.4.x 内置插件（0.5.4）各自的默认配置版本；
-    // 仅在 config.toml 尚未生成时按需写入，已有配置一律保留原版本号以免触发误迁移。
-    internal const val LegacyConfigVersion = "0.4.1"
-    internal const val BuiltInConfigVersion = "0.5.4"
+    // 外置插件与 MaiBot 内置插件在读不到 settings.py 默认值时的兜底配置版本；
+    // 优先从容器内插件的 settings.py 动态提取默认 config_version，已有配置一律保留原版本号以免触发误迁移。
+    internal const val FallbackLegacyConfigVersion = "0.4.1"
+    internal const val FallbackBuiltInConfigVersion = "0.5.4"
     private const val PluginSection = "plugin"
     private const val CredentialSection = "qq_official"
+
+    // 匹配插件 settings.py 中的 config_version 默认值，兼容直接赋值与 Pydantic Field(default=...)；
+    // 行首按空白锚定，自动跳过 `#` 注释行。
+    private val settingsDefaultConfigVersionRegex = Regex(
+        """(?m)^\s*config_version\s*(?::[^=]+)?=\s*(?:Field\s*\([^)]*?default\s*=\s*)?["']([^"'\r\n]+)["']"""
+    )
+
+    /** 从插件 `settings.py` 提取 `config_version` 默认值；找不到或文本为空时返回 null。 */
+    fun parseDefaultConfigVersion(settingsPyText: String?): String? {
+        if (settingsPyText.isNullOrBlank()) return null
+        return settingsDefaultConfigVersionRegex.find(settingsPyText)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
 
     fun read(text: String?): QqOfficialCredentials {
         if (text.isNullOrBlank()) return QqOfficialCredentials()
@@ -47,7 +63,7 @@ internal object QqOfficialAdapterConfig {
         existing: String?,
         appId: String,
         appSecret: String,
-        defaultConfigVersion: String = LegacyConfigVersion
+        defaultConfigVersion: String = FallbackLegacyConfigVersion
     ): String {
         if (existing.isNullOrBlank()) {
             return PluginConfigToml.join(
