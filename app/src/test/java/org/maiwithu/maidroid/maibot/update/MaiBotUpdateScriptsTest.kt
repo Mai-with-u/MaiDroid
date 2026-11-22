@@ -40,4 +40,12 @@ class MaiBotUpdateScriptsTest {
         assertFalse(body.contains("maidroid_github_fetch"))
         assertTrue(body.indexOf("find .git -name '*.lock'") < body.indexOf("git checkout --force"))
     }
+
+    @Test
+    fun `schema version check scans both root database and multi-instance bot databases for max version`() {
+        listOf(MaiBotUpdateScripts.fetchLatest().body, MaiBotUpdateScripts.fetchAndReset().body).forEach { body ->
+            assertTrue(body.contains("for db_file in data/MaiBot.db bots/*/data/MaiBot.db; do"))
+            assertTrue(body.contains("if [ -z \"${'$'}database_schema\" ] || [ \"${'$'}ver\" -gt \"${'$'}database_schema\" ]; then"))
+        }
+    }
 }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.maibot.MaiBotInstances
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
@@ -246,12 +247,20 @@ internal class DiagnosticsManager(
         add("AppID", qqOfficial.appId)
         add("AppSecret", qqOfficial.appSecret)
         add("SSH密码", settings.containerSshRootPassword)
-        val maiBotConfigDir = File(paths.maiBotDir, "config")
-        readTextOrNull(File(maiBotConfigDir, "model_config.toml"))?.let { text ->
+        // 1.4.x 起模型供应与密钥统管在 host/model_catalog.toml，各实例自己的配置分别在 bots/<id>/config/ 下，
+        // 老版本仍在根目录 config/ 下；合并全部配置目录读全密钥和 QQ 号再整体去重打码。
+        readTextOrNull(MaiBotInstances.sharedModelCatalogFile(paths))?.let { text ->
             API_KEY_LINE.findAll(text).forEach { add("API Key", it.groupValues[1]) }
         }
-        readTextOrNull(File(maiBotConfigDir, "bot_config.toml"))?.let { text ->
-            QQ_ACCOUNT_LINE.findAll(text).forEach { add("QQ号", it.groupValues[1]) }
+        val configDirs = (MaiBotInstances.discover(paths).map { it.configDir } + File(paths.maiBotDir, "config"))
+            .distinctBy { it.absolutePath }
+        for (maiBotConfigDir in configDirs) {
+            readTextOrNull(File(maiBotConfigDir, "model_config.toml"))?.let { text ->
+                API_KEY_LINE.findAll(text).forEach { add("API Key", it.groupValues[1]) }
+            }
+            readTextOrNull(File(maiBotConfigDir, "bot_config.toml"))?.let { text ->
+                QQ_ACCOUNT_LINE.findAll(text).forEach { add("QQ号", it.groupValues[1]) }
+            }
         }
         // NapCat、SnowLuma 登录后按 QQ 号另存的配置文件名，以及 QQ 本地登录数据的目录名（两边共用一份 QQ），都是登录过的 QQ 号
         listOf(napCat.configDir, snowLuma.configDir).forEach { dir ->
@@ -292,9 +301,15 @@ internal class DiagnosticsManager(
 
     // ── 文件 ────────────────────────────────────────────────────────
 
-    private fun newestMaiBotLog(): File? =
-        File(paths.maiBotDir, "logs").listFiles { file -> file.isFile && file.name.startsWith("app_") }
-            ?.maxByOrNull { it.lastModified() }
+    private fun newestMaiBotLog(): File? {
+        val logDirs = (MaiBotInstances.discover(paths).map { it.logsDir } + File(paths.maiBotDir, "logs"))
+            .distinctBy { it.absolutePath }
+        return logDirs
+            .flatMap { dir ->
+                dir.listFiles { file -> file.isFile && file.name.startsWith("app_") }?.toList().orEmpty()
+            }
+            .maxByOrNull { it.lastModified() }
+    }
 
     private fun crashFiles(): List<File> =
         files.crashesDir.listFiles { file -> file.isFile && file.name.endsWith(".txt") }

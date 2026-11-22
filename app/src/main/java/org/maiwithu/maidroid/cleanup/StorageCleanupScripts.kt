@@ -138,8 +138,12 @@ internal object StorageCleanupScripts {
         maidroid_sum_kb() {
             while IFS= read -r sized_file; do du -sk "${'$'}sized_file" 2>/dev/null; done | awk '{ s += ${'$'}1 } END { print s + 0 }'
         }
+        # 同时清理旧单实例 /opt/MaiBot/logs 与 1.4.x 各实例 /opt/MaiBot/bots/*/logs 下的过期日志；不存在的目录跳过。
         maidroid_old_logs() {
-            find ${shellQuote("$MAIBOT_DIR/logs")} -type f -mtime +$LOG_KEEP_DAYS 2>/dev/null
+            for log_dir in ${shellQuote("$MAIBOT_DIR/logs")} ${shellQuote(MAIBOT_DIR)}/bots/*/logs; do
+                [ -d "${'$'}log_dir" ] || continue
+                find "${'$'}log_dir" -type f -mtime +$LOG_KEEP_DAYS 2>/dev/null
+            done
         }
 
         # MaiBot 的 .venv 用的是哪个 Python（pyvenv.cfg 的 home 指向 uv 的版本链接，解析到真实目录），

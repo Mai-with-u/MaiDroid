@@ -151,25 +151,33 @@ internal object MaiBotUpdateScripts {
         """.trimIndent()
 
     // MaiBot 的数据库迁移只能升级：库的版本（SQLite user_version）比代码支持的最新版本新时，启动直接报错退出
-    // （上游 src/common/database/migrations/bootstrap.py）。这里读出两边，换代码之前先比一比：
+    // （上游 src/common/database/migrations/bootstrap.py）。1.4.x 全新用户的数据库放在 bots/*/data/MaiBot.db，
+    // 这里同时遍历根目录 data/MaiBot.db 与所有 bots/*/data/MaiBot.db，取其中最高的 schema 版本号做比较：
     // - 目标代码支持到的版本：拉下来的提交里 migrations/builtin.py 的 LATEST_SCHEMA_VERSION 字面值；
-    // - 库的版本：用 MaiBot 自己 .venv 里的 Python 读 data/MaiBot.db。库是 WAL 模式，新写的版本号可能还在 -wal 里，
+    // - 库的版本：用 MaiBot 自己 .venv 里的 Python 读各库文件。库是 WAL 模式，新写的版本号可能还在 -wal 里，
     //   直接读文件头不可靠。先只读打开（MaiBot 运行中也不干扰它），打不开（例如缺 -shm）再普通打开读一次。
     // 任一边读不到（上游改了写法、还没装依赖、还没有数据库）就留空，不拦，照旧更新。
     private fun schemaVersionScript(): String {
-        val readUserVersion = { uri: String ->
-            "import sqlite3; print(sqlite3.connect(\"$uri\", uri=True).execute(\"PRAGMA user_version\").fetchone()[0])"
-        }
+        val readUserVersionRo =
+            "import sqlite3, sys; p = sys.argv[1]; print(sqlite3.connect(f'file:{p}?mode=ro', uri=True).execute('PRAGMA user_version').fetchone()[0])"
+        val readUserVersionRw =
+            "import sqlite3, sys; p = sys.argv[1]; print(sqlite3.connect(f'file:{p}', uri=True).execute('PRAGMA user_version').fetchone()[0])"
         return """
         target_schema="${'$'}(git show "${'$'}remote_ref:$SCHEMA_SOURCE_PATH" 2>/dev/null | sed -n 's/^LATEST_SCHEMA_VERSION *= *\([0-9][0-9]*\) *${'$'}/\1/p' | head -n 1)"
         database_schema=""
-        if [ -f $DATABASE_PATH ] && [ -x .venv/bin/python ]; then
-            database_schema="${'$'}(.venv/bin/python -c ${shellQuote(readUserVersion("file:$DATABASE_PATH?mode=ro"))} 2>/dev/null ||
-                .venv/bin/python -c ${shellQuote(readUserVersion("file:$DATABASE_PATH"))} 2>/dev/null || true)"
+        if [ -x .venv/bin/python ]; then
+            for db_file in $DATABASE_PATH bots/*/$DATABASE_PATH; do
+                [ -f "${'$'}db_file" ] || continue
+                ver="${'$'}(.venv/bin/python -c ${shellQuote(readUserVersionRo)} "${'$'}db_file" 2>/dev/null ||
+                    .venv/bin/python -c ${shellQuote(readUserVersionRw)} "${'$'}db_file" 2>/dev/null || true)"
+                case "${'$'}ver" in
+                    ""|*[!0-9]*) continue ;;
+                esac
+                if [ -z "${'$'}database_schema" ] || [ "${'$'}ver" -gt "${'$'}database_schema" ]; then
+                    database_schema="${'$'}ver"
+                fi
+            done
         fi
-        case "${'$'}database_schema" in
-            *[!0-9]*) database_schema="" ;;
-        esac
         printf "%s=%s\n" ${MaiBotUpdateReportKeys.TARGET_SCHEMA} "${'$'}target_schema"
         printf "%s=%s\n" ${MaiBotUpdateReportKeys.DATABASE_SCHEMA} "${'$'}database_schema"
         """.trimIndent()

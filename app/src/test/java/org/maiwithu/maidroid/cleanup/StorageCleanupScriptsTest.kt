@@ -65,4 +65,16 @@ class StorageCleanupScriptsTest {
         assertFalse(CleanupItem.OldMaiBotLogs.selectedByDefault)
         assertTrue(CleanupItem.DependencyCache.selectedByDefault)
     }
+
+    @Test
+    fun `old MaiBot logs cleanup covers both root logs and multi-instance bot logs`() {
+        val measureBody = StorageCleanupScripts.measure().body
+        val cleanBody = StorageCleanupScripts.clean(setOf(CleanupItem.OldMaiBotLogs)).body
+
+        listOf(measureBody, cleanBody).forEach { body ->
+            assertTrue(body.contains("'/opt/MaiBot/logs'"))
+            assertTrue(body.contains("'/opt/MaiBot'/bots/*/logs"))
+            assertTrue(body.contains("[ -d \"${'$'}log_dir\" ] || continue"))
+        }
+    }
 }

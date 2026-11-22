@@ -289,6 +289,12 @@ internal class MaiBotProcessSupervisor(
             // 每轮拉起前都先清残留：proot 被外力 SIGKILL 后，容器内的 bootstrap/worker/插件进程不会自动死，
             // 留着既白占幻影进程名额，也会自己占住 8001 端口导致误报 PORT-BUSY。
             cleanupStaleProcesses()
+            // 确认进程未跑后再清理超限的 1.4.x temp/worker-console.log，避免运行中截断导致宿主按偏移读日志卡住。
+            withContext(Dispatchers.IO) {
+                runCatching { rotateWorkerConsoleLogsWhenStopped(paths) }.onFailure { e ->
+                    Log.w(TAG, "Failed to rotate worker-console.log before start", e)
+                }
+            }
             // 每次拉起前（含意外退出后重启前）都看一眼 WebUI 端口，等的时候被停止就不再拉起
             if (!awaitFreeWebUiPort(ownGeneration)) break
             val decision = runProcessOnce(ownGeneration, restartDelayMs) ?: break
