@@ -20,6 +20,7 @@ import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
+import org.maiwithu.maidroid.maibot.MaiBotInstance
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.NetworkStatus
@@ -119,17 +120,19 @@ internal class QqOfficialPlatformManager(
         }
 
         TerminalLog.append("")
-        val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir() }
+        // 统一固定本次安装的目标实例，避免跨多实例切换时检错或装错目录。
+        val targetInstance = withContext(Dispatchers.IO) { adapterFiles.targetInstance() }
+        val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir(targetInstance) }
         if (existingDir != null) {
             TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
         } else {
             updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
             TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
             val result = commandRunner.run(
-                script = QqOfficialAdapterScripts.install(),
+                script = QqOfficialAdapterScripts.install(targetInstance.containerPluginsDir),
                 onLine = TerminalLog::append
             )
-            val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
+            val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled(targetInstance) }
             if (!result.success || !installed) {
                 fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
                 return
@@ -139,7 +142,7 @@ internal class QqOfficialPlatformManager(
         }
 
         updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
-        val writeError = writeCredentials(appId, appSecret)
+        val writeError = writeCredentials(appId, appSecret, targetInstance)
         if (writeError != null) {
             fail(Failure(FailureStep.QqOfficialConfig, "写入配置失败：$writeError"))
             return
@@ -178,10 +181,14 @@ internal class QqOfficialPlatformManager(
 
     // 凭据由宿主侧直接写进容器里的 config.toml：整个原子替换，MaiBot 不会读到写了一半的配置，
     // 断电、存储满时也不会留下空配置（写不成时旧配置原样留着，界面报失败）。
-    private suspend fun writeCredentials(appId: String, appSecret: String): String? =
+    private suspend fun writeCredentials(
+        appId: String,
+        appSecret: String,
+        targetInstance: MaiBotInstance? = null
+    ): String? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val target = adapterFiles.configFile()
+                val target = adapterFiles.configFile(targetInstance ?: adapterFiles.targetInstance())
                 val existing = target.takeIf { it.isFile }?.readText()
                 target.writeTextAtomically(QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim()))
             }.exceptionOrNull()?.let { it.message.orEmpty().ifBlank { it.javaClass.simpleName } }

@@ -154,6 +154,11 @@ class SnowLumaAdapterConfigTest {
         assertFalse(script.contains("mv "))
         assertTrue(SnowLumaAdapterScripts.cloneToStaging(logPrefix = "[SnowLuma]").body.contains("'[SnowLuma]'"))
         assertFalse(SnowLumaAdapterScripts.cloneToStaging(logPrefix = "[SnowLuma]").body.contains("[NapCat]"))
+
+        val instancePlugins = "/opt/MaiBot/bots/0123456789abcdef0123456789abcdef/plugins"
+        val instanceScript = SnowLumaAdapterScripts.cloneToStaging("[SnowLuma]", pluginsDir = instancePlugins).body
+        assertTrue(instanceScript.contains("mkdir -p '$instancePlugins'"))
+        assertTrue(instanceScript.contains("'$instancePlugins/.MaiBot-SnowLuma-Adapter.tmp'"))
     }
 
     @Test
@@ -171,6 +176,16 @@ class SnowLumaAdapterConfigTest {
             )
         )
         assertTrue(depBlocked.contains("silk-python"))
+
+        val hostDepPrepareFailed = diagnoseAdapterConfigWaitFailure(
+            listOf("插件依赖准备失败: 安装依赖超时")
+        )
+        assertTrue(hostDepPrepareFailed.contains("silk-python"))
+
+        val hostDepResolveFailed = diagnoseAdapterConfigWaitFailure(
+            listOf("依赖联合解析失败，Bot 未停止、环境未修改：No solution found")
+        )
+        assertTrue(hostDepResolveFailed.contains("silk-python"))
 
         val generic = diagnoseAdapterConfigWaitFailure(
             listOf("[MaiBot] ValueError: 图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body")

@@ -167,4 +167,13 @@ class QqOfficialPlatformTest {
             qqOfficialStatusText(QqOfficialPlatformState(phase = QqOfficialInstallPhase.Installing))
         )
     }
+
+    @Test
+    fun `install script supports multi-instance plugins directory`() {
+        val instancePlugins = "/opt/MaiBot/bots/0123456789abcdef0123456789abcdef/plugins"
+        val body = QqOfficialAdapterScripts.install(pluginsDir = instancePlugins).body
+        assertTrue(body.contains("mkdir -p '$instancePlugins'"))
+        assertTrue(body.contains("'$instancePlugins/.MaiBot-QQ-Adapter.tmp'"))
+        assertTrue(body.contains("'$instancePlugins/MaiBot-QQ-Adapter'"))
+    }
 }

@@ -21,10 +21,10 @@ internal object QqOfficialAdapterScripts {
      * core.createObject=rename 避免 proot 把 packfile 硬链接变成绝对路径符号链接，改名后仓库仍可读。
      * 凭据由宿主侧直接写 config.toml，不经过命令行，避免 AppSecret 出现在进程参数和日志里。
      */
-    fun install(): ContainerScript {
-        val pluginsDir = InContainerPaths.MAIBOT_PLUGINS_DIR
-        val adapterDir = "$pluginsDir/$DIR_NAME"
-        val stagingDir = "$pluginsDir/.$DIR_NAME.tmp"
+    fun install(pluginsDir: String = InContainerPaths.MAIBOT_PLUGINS_DIR): ContainerScript {
+        val basePluginsDir = pluginsDir.trimEnd('/')
+        val adapterDir = "$basePluginsDir/$DIR_NAME"
+        val stagingDir = "$basePluginsDir/.$DIR_NAME.tmp"
         return ContainerScript(
             listOf(
                 GitHubMirrors.shellFunctions(),
@@ -34,7 +34,7 @@ internal object QqOfficialAdapterScripts {
                     printf "[QQ 官方机器人] 适配器已存在，跳过下载: %s\n" ${shellQuote(adapterDir)}
                     exit 0
                 fi
-                mkdir -p ${shellQuote(pluginsDir)}
+                mkdir -p ${shellQuote(basePluginsDir)}
                 rm -rf ${shellQuote(stagingDir)}
                 maidroid_github_clone ${shellQuote(REPOSITORY_URL)} ${shellQuote(stagingDir)} -c core.createObject=rename --depth=1 --single-branch
                 rm -rf ${shellQuote(adapterDir)}

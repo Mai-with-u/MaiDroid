@@ -36,9 +36,11 @@ internal object SnowLumaAdapterScripts {
      * 兼容才扶正并清理旧适配器；不兼容时删掉暂存目录，旧适配器与当前配置原封不动。
      * core.createObject=rename 避免 proot 把 packfile 硬链接变成绝对路径符号链接，改名后仓库仍可读。
      */
-    fun cloneToStaging(logPrefix: String = QqClient.NapCat.logPrefix): ContainerScript {
-        val pluginsDir = InContainerPaths.MAIBOT_PLUGINS_DIR
-        val stagingDir = "$pluginsDir/$STAGING_DIR_NAME"
+    fun cloneToStaging(
+        logPrefix: String = QqClient.NapCat.logPrefix,
+        pluginsDir: String = InContainerPaths.MAIBOT_PLUGINS_DIR
+    ): ContainerScript {
+        val stagingDir = "${pluginsDir.trimEnd('/')}/$STAGING_DIR_NAME"
         return ContainerScript(
             listOf(
                 GitHubMirrors.shellFunctions(),
