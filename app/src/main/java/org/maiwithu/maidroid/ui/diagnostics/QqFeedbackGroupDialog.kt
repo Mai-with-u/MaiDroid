@@ -14,14 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,14 +36,18 @@ import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.VersionNumber
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppRelease
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogDivider
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardDivider
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.JetBrainsMono
-import org.maiwithu.maidroid.ui.theme.OnBrandOrange
-import org.maiwithu.maidroid.ui.theme.TerminalBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -89,95 +87,71 @@ internal fun QqFeedbackGroupDialog(onDismiss: () -> Unit) {
         appUpdater.ensureReleaseLoaded()
     }
 
-    AlertDialog(
+    MaiDialog(
+        title = "QQ 用户反馈群",
+        subtitle = "$QQ_FEEDBACK_GROUP_NAME · $QQ_FEEDBACK_GROUP_NUMBER",
+        icon = FlatFeatureIcons.QqGroup,
+        iconBackground = IconSkyBlue,
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "QQ 用户反馈群",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "日常使用遇到小问题欢迎进群交流互助；涉及闪退、安装失败等复杂问题，建议在“反馈问题”中生成诊断包并提交到 GitHub Issue。",
-                    color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    lineHeight = 19.sp
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "关闭",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
                 )
+                MaiDialogButton(
+                    text = "跳转 QQ 加群",
+                    style = MaiDialogButtonStyle.Primary,
+                    modifier = Modifier.weight(1f),
+                    onClick = { openQqFeedbackGroup(context, latestVersion) }
+                )
+            }
+        }
+    ) {
+        Text(
+            text = "日常使用遇到小问题欢迎进群交流互助；涉及闪退、安装失败等复杂问题，建议在“反馈问题”中生成诊断包并提交到 GitHub Issue。",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
 
-                // 群号与入群验证答案集中在一张内嵌面板里，点任意一行即可单独复制对应内容
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(Corners.Control))
-                        .background(TerminalBackground)
-                ) {
-                    CopyableGroupInfoRow(
-                        label = "群聊【$QQ_FEEDBACK_GROUP_NAME】",
-                        value = QQ_FEEDBACK_GROUP_NUMBER,
-                        valueColor = TextPrimary,
-                        actionLabel = "复制群号",
-                        onClick = {
-                            copyPlainText(context, "MaiDroid 反馈群号", QQ_FEEDBACK_GROUP_NUMBER, "群号已复制")
-                        }
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .height(0.5.dp)
-                            .background(CardDivider)
-                    )
-
-                    CopyableGroupInfoRow(
-                        label = "入群验证答案（最新版本号）",
-                        value = latestVersion,
-                        valueColor = BrandOrange,
-                        actionLabel = "复制答案",
-                        onClick = {
-                            copyPlainText(context, "MaiDroid 最新版本号", latestVersion, "验证答案 $latestVersion 已复制")
-                        }
-                    )
+        // 群号与入群验证答案集中在一张内嵌面板里，点任意一行即可单独复制对应内容
+        MaiDialogSectionCard(
+            contentPadding = PaddingValues(0.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            CopyableGroupInfoRow(
+                label = "群聊【$QQ_FEEDBACK_GROUP_NAME】",
+                value = QQ_FEEDBACK_GROUP_NUMBER,
+                valueColor = TextPrimary,
+                actionLabel = "复制群号",
+                onClick = {
+                    copyPlainText(context, "MaiDroid 反馈群号", QQ_FEEDBACK_GROUP_NUMBER, "群号已复制")
                 }
+            )
 
-                Text(
-                    text = "如需填写验证问题，答案即上方 MaiDroid 最新版本号；点“跳转 QQ 加群”会自动复制答案并打开加群页面。",
-                    color = TextMuted,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 16.sp
-                )
-            }
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-            ) {
-                Text(text = "关闭", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { openQqFeedbackGroup(context, latestVersion) },
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = OnBrandOrange)
-            ) {
-                Text(text = "跳转 QQ 加群", fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+            MaiDialogDivider(horizontalPadding = 12.dp)
+
+            CopyableGroupInfoRow(
+                label = "入群验证答案（最新版本号）",
+                value = latestVersion,
+                valueColor = BrandOrange,
+                actionLabel = "复制答案",
+                onClick = {
+                    copyPlainText(context, "MaiDroid 最新版本号", latestVersion, "验证答案 $latestVersion 已复制")
+                }
+            )
+        }
+
+        Text(
+            text = "如需填写验证问题，答案即上方 MaiDroid 最新版本号；点“跳转 QQ 加群”会自动复制答案并打开加群页面。",
+            color = TextMuted,
+            fontSize = TextSizes.Caption,
+            lineHeight = 16.sp
+        )
+    }
 }
 
 @Composable

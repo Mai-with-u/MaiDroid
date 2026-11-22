@@ -1,27 +1,32 @@
 package org.maiwithu.maidroid.ui.diagnostics
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.diagnostics.CrashRecord
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureStep
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
-import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
+import org.maiwithu.maidroid.ui.theme.JetBrainsMono
+import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TerminalBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -31,9 +36,8 @@ internal fun crashFailure(crash: CrashRecord): Failure =
     Failure(FailureStep.AppCrash, "MaiDroid 上次闪退：${crash.summary}")
 
 /**
- * 打开 MaiDroid 时发现上次闪退过、用户还没看过：说明已经记下了报错，问要不要反馈。
- * “反馈问题”接着打开反馈弹窗（带上闪退记录）；“QQ 群反馈”打开 QQ 用户反馈群弹窗；“知道了”只是不再提示。
- * 三个按钮都会把这次闪退记为已看过。
+ * 打开 MaiDroid 时发现上次闪退过、用户还没看过：用统一弹窗展示错误码与异常摘要，
+ * 提供主操作“反馈问题”以及次要“知道了”“QQ 群反馈”，点击均将本次闪退记为已看过。
  */
 @Composable
 internal fun CrashPromptDialog(
@@ -43,67 +47,67 @@ internal fun CrashPromptDialog(
     onDismiss: () -> Unit
 ) {
     val failure = crashFailure(crash)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "MaiDroid 上次意外退出了",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
+    MaiDialog(
+        title = "上次意外退出",
+        subtitle = "已保存异常摘要与现场记录",
+        icon = FlatFeatureIcons.Telemetry,
+        iconBackground = IconRoseAlert,
+        headerBadge = {
+            MaiDialogInfoChip(
+                text = failure.code,
+                color = StatusWarning,
+                monospace = true
             )
         },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                FailureCodeLine(failure)
-                // 自己记下的闪退有调用栈和闪退前的终端输出；系统记的（原生代码闪退、无响应）只有系统的退出记录
-                Text(
-                    text = if (crash.fromSystem) {
-                        "系统记下了这次退出。反馈给我们能帮忙更快修好，诊断包会带上系统的退出记录和之前的终端输出。"
-                    } else {
-                        "当时的报错已经记下来了。反馈给我们能帮忙更快修好，诊断包会带上这份闪退记录。"
-                    },
-                    color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    lineHeight = 19.sp
+        onDismissRequest = onDismiss,
+        footer = {
+            MaiDialogButton(
+                text = "反馈问题",
+                style = MaiDialogButtonStyle.Primary,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onFeedback
+            )
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "知道了",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = "QQ 群反馈",
+                    style = MaiDialogButtonStyle.SoftAccent,
+                    modifier = Modifier.weight(1f),
+                    onClick = onQqFeedback
                 )
             }
-        },
-        confirmButton = {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onDismiss,
-                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-                ) {
-                    Text(text = "知道了", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-                Button(
-                    onClick = onQqFeedback,
-                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BrandOrange.copy(alpha = 0.22f),
-                        contentColor = TextPrimary
-                    )
-                ) {
-                    Text(text = "QQ 群反馈", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-                Button(
-                    onClick = onFeedback,
-                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = OnBrandOrange)
-                ) {
-                    Text(text = "反馈问题", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    ) {
+        Text(
+            text = crash.summary.ifBlank { failure.message },
+            color = TextPrimary,
+            fontFamily = JetBrainsMono,
+            fontSize = TextSizes.Caption,
+            lineHeight = 16.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 140.dp)
+                .clip(RoundedCornerShape(Corners.Control))
+                .background(TerminalBackground)
+                .verticalScroll(rememberScrollState())
+                .padding(12.dp)
+        )
+
+        // 自己记下的闪退有调用栈和闪退前的终端输出；系统记的（原生代码闪退、无响应）只有系统的退出记录
+        Text(
+            text = if (crash.fromSystem) {
+                "系统记下了这次退出。反馈给我们能帮忙更快修好，诊断包会带上系统退出记录和之前的终端输出。"
+            } else {
+                "当时的报错已经记下来了。反馈给我们能帮忙更快修好，诊断包会带上这份闪退记录。"
+            },
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+    }
 }
