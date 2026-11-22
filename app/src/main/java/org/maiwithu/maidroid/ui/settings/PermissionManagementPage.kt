@@ -52,6 +52,7 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.IconFreshGreen
 import org.maiwithu.maidroid.ui.theme.IconIrisBlue
 import org.maiwithu.maidroid.ui.theme.IconRoseAlert
@@ -204,6 +205,18 @@ internal fun PermissionManagementPage(
                             actions.restoreBatteryOptimization()
                         }
                     },
+                    modifier = Modifier.overscrollBody(overscroll)
+                )
+            }
+
+            item {
+                PermissionSwitchCard(
+                    icon = FlatFeatureIcons.DesktopWindow,
+                    iconColor = IconCyanBlue,
+                    title = "悬浮窗权限",
+                    description = "允许「扩展组件」里的悬浮桌宠显示在其他应用上层。",
+                    checked = state.overlayGranted,
+                    onCheckedChange = { actions.requestOverlay() },
                     modifier = Modifier.overscrollBody(overscroll)
                 )
             }

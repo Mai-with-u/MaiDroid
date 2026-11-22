@@ -1,0 +1,23 @@
+/* 桌宠悬浮窗维持 260 CSS px 宽；探索记录独立页在手机端采用上下分栏排版。 */
+/* 独立声明 .pet-records-page 与 :has(#titlebar)，避免旧 WebView 因不认识 :has() 而整条丢弃 CSS 规则。 */
+.screen-controls, #screen-error, #screen-indicator { display: none !important; }
+#titlebar .resize-edge, #window-minimize, #window-maximize, .resize-edge { display: none; }
+
+body:has(#titlebar) { border: 0; }
+body.pet-records-page { border: 0; }
+
+@media (max-width: 600px) {
+  body:has(#titlebar) main { display: flex; flex-direction: column; }
+  body:has(#titlebar) nav { max-height: 25vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
+  body:has(#titlebar) #detail { flex: 1; min-height: 0; padding: 16px; }
+  body:has(#titlebar) header { padding: 10px 12px; }
+  body:has(#titlebar) .toolbar { flex-wrap: wrap; }
+  body:has(#titlebar) .toolbar input { width: 100%; }
+
+  body.pet-records-page main { display: flex; flex-direction: column; }
+  body.pet-records-page nav { max-height: 25vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
+  body.pet-records-page #detail { flex: 1; min-height: 0; padding: 16px; }
+  body.pet-records-page header { padding: 10px 12px; }
+  body.pet-records-page .toolbar { flex-wrap: wrap; }
+  body.pet-records-page .toolbar input { width: 100%; }
+}

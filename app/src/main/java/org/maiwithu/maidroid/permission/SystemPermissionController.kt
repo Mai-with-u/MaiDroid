@@ -26,7 +26,9 @@ data class PermissionState(
     /** 允许发通知：前台服务的常驻通知靠它，可选但推荐。 */
     val notificationGranted: Boolean = false,
     /** 已加入电池优化白名单：减少系统在后台挂起 MaiBot，可选但推荐。 */
-    val batteryOptimizationIgnored: Boolean = false
+    val batteryOptimizationIgnored: Boolean = false,
+    /** 允许在其他应用上层显示：用于「扩展组件」里的本机悬浮桌宠。 */
+    val overlayGranted: Boolean = false
 )
 
 /**
@@ -40,6 +42,7 @@ data class PermissionActions(
     val disableNotification: () -> Unit = {},
     val ignoreBatteryOptimization: () -> Unit = {},
     val restoreBatteryOptimization: () -> Unit = {},
+    val requestOverlay: () -> Unit = {},
     val openAutoStartSettings: () -> Unit = {},
     val showTaskLockHint: () -> Unit = {},
     val openAccessibilitySettings: () -> Unit = {},
@@ -80,6 +83,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         requestStorage = ::requestStorage,
         enableNotification = ::requestNotification,
         ignoreBatteryOptimization = ::requestIgnoreBatteryOptimizations,
+        requestOverlay = ::openOverlaySettings,
         openAutoStartSettings = { openBackgroundActivitySettings(forEnable = true) },
         showTaskLockHint = { toast("请在系统多任务界面将 MaiDroid 加锁", long = true) },
         openAccessibilitySettings = ::openAccessibilitySettings,
@@ -93,20 +97,25 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         disableNotification = ::openNotificationSettings,
         ignoreBatteryOptimization = ::requestIgnoreBatteryOptimizations,
         restoreBatteryOptimization = ::openBatteryOptimizationSettings,
+        requestOverlay = ::openOverlaySettings,
         openAutoStartSettings = { openBackgroundActivitySettings(forEnable = false) },
         showTaskLockHint = { toast("请在系统多任务界面为 MaiDroid 开启或关闭加锁", long = true) },
         openAccessibilitySettings = ::openAccessibilitySettings,
         openDeviceAdminSettings = ::openDeviceAdminSettings
     )
 
-    /** 重新读一遍三项可检测的权限。onCreate 和每次 onResume（可能刚从系统设置页回来）调用。 */
+    /** 重新读一遍可检测的权限。onCreate 和每次 onResume（可能刚从系统设置页回来）调用。 */
     fun refresh() {
         state = PermissionState(
             storageGranted = isStorageGranted(),
             notificationGranted = isNotificationGranted(),
-            batteryOptimizationIgnored = isBatteryOptimizationIgnored()
+            batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
+            overlayGranted = isOverlayGranted()
         )
     }
+
+    /** 当前是否已授予悬浮窗（显示在其他应用上层）权限。 */
+    fun isOverlayGranted(): Boolean = Settings.canDrawOverlays(activity)
 
     /** 当下的存储权限（OOBE 点“下一步”时现查，不依赖可能过时的状态）。 */
     fun isStorageGranted(): Boolean =
@@ -186,6 +195,14 @@ internal class SystemPermissionController(private val activity: ComponentActivit
     private fun openNotificationSettings() {
         startSettingsActivity(
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri())
+        )
+    }
+
+    /** 打开系统的“显示在其他应用上层”设置页；个别精简 ROM 不存在时退回应用详情页。 */
+    private fun openOverlaySettings() {
+        startSettingsActivity(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri()),
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri())
         )
     }
