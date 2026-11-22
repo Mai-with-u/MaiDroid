@@ -6,13 +6,18 @@ import android.content.Context
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -43,11 +48,13 @@ internal fun HelpCodeCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val cardShape = RoundedCornerShape(Corners.Control)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Corners.Control))
+            .clip(cardShape)
             .background(TerminalBackground)
+            .border(0.8.dp, BrandOrange.copy(alpha = 0.28f), cardShape)
             .clickable(role = Role.Button, onClickLabel = "复制求助码") {
                 copyHelpCodeToClipboard(context, code, errorCode)
             }
@@ -74,17 +81,28 @@ internal fun HelpCodeCard(
                 lineHeight = 22.sp
             )
         }
-        Text(
-            text = "复制求助码",
-            color = TextPrimary,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 15.sp,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
                 .clip(RoundedCornerShape(Corners.Tag))
                 .background(CardBorder)
-                .padding(horizontal = 8.dp, vertical = 5.dp)
-        )
+                .padding(horizontal = 9.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ContentCopy,
+                contentDescription = null,
+                tint = TextPrimary,
+                modifier = Modifier.size(13.dp)
+            )
+            Text(
+                text = "复制",
+                color = TextPrimary,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 15.sp
+            )
+        }
     }
 }
 
