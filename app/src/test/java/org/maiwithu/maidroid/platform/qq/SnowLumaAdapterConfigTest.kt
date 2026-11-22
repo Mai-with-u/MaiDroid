@@ -1,11 +1,20 @@
 package org.maiwithu.maidroid.platform.qq
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.maibot.PluginHostVersionRange
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class SnowLumaAdapterConfigTest {
     // MaiBot 按新适配器默认值生成的配置（节选）：默认关着、连 3001、没有 token
@@ -201,5 +210,54 @@ class SnowLumaAdapterConfigTest {
         assertTrue(script.contains("if [ -s /root/.maidroid/napcat_token ]; then"))
         assertTrue(script.contains("napcat_token=\"${'$'}(cat /root/.maidroid/napcat_token)\""))
         assertTrue(script.contains("napcat_token=\"fresh\""))
+    }
+
+    @Test
+    fun `concurrent adapter installs are serialized and second caller skips cloning`() = runBlocking {
+        val mutex = Mutex()
+        val installed = AtomicBoolean(false)
+        val activeClones = AtomicInteger(0)
+        val maxConcurrentClones = AtomicInteger(0)
+        val totalCloneCalls = AtomicInteger(0)
+        val logs = mutableListOf<String>()
+
+        suspend fun runOnce(client: QqClient): String? = executeSerializedInstall(
+            mutex = mutex,
+            client = client,
+            resolveTarget = { "/opt/MaiBot/bots/abc/plugins" },
+            containerPluginsDir = { it },
+            readLegacyConfig = {},
+            isInstalled = { installed.get() },
+            runClone = {
+                val active = activeClones.incrementAndGet()
+                maxConcurrentClones.updateAndGet { prev -> maxOf(prev, active) }
+                totalCloneCalls.incrementAndGet()
+                delay(60)
+                activeClones.decrementAndGet()
+                ContainerCommandResult(exitCode = 0, output = "ok")
+            },
+            cleanupStaging = {},
+            stageAndPromote = {
+                installed.set(true)
+                null
+            },
+            checkInstalledProblem = { null },
+            removeLegacyAdapters = { emptyList() },
+            removeOrphanRoot = { null },
+            onLine = { line -> synchronized(logs) { logs.add(line) } },
+            ioDispatcher = Dispatchers.Default
+        )
+
+        val (first, second) = coroutineScope {
+            val a = async(Dispatchers.Default) { runOnce(QqClient.NapCat) }
+            val b = async(Dispatchers.Default) { runOnce(QqClient.SnowLuma) }
+            a.await() to b.await()
+        }
+
+        assertNull(first)
+        assertNull(second)
+        assertEquals(1, maxConcurrentClones.get())
+        assertEquals(1, totalCloneCalls.get())
+        assertTrue(logs.any { it.contains("QQ 适配器已存在，跳过下载") })
     }
 }

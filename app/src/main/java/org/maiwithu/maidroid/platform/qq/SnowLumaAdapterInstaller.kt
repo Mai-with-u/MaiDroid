@@ -2,14 +2,18 @@ package org.maiwithu.maidroid.platform.qq
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.diagnostics.readTail
 import org.maiwithu.maidroid.maibot.PluginHostVersionRange
 import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
 import org.maiwithu.maidroid.maibot.pluginHostVersionProblem
 import org.maiwithu.maidroid.maibot.readPluginHostVersionRange
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.terminal.AnsiText
@@ -46,6 +50,7 @@ internal class SnowLumaAdapterInstaller(
     }
 
     private val migrationStateLock = Any()
+    private val installMutex = Mutex()
     private var activeMigration: CompletableDeferred<String?>? = null
 
     // 换装时从旧适配器读出的配置，迁移成功后清掉；应用中途被杀就丢了，只是少搬几项旧设置。
@@ -76,80 +81,59 @@ internal class SnowLumaAdapterInstaller(
     }
 
     /**
-     * 确定目标实例 -> 备份旧适配器配置 -> 按需克隆新适配器到目标实例的暂存目录 ->
-     * 校验清单兼容后扶正并删掉旧适配器，同时清理此前错装在根目录的未配置孤儿目录。
-     * 若新适配器与当前 MaiBot 版本不兼容，直接丢弃暂存目录、不动原有旧适配器，避免打断现有可用环境。
+     * 加互斥锁后串行执行适配器安装：避免消息平台安装流与协议端守护启动前的 QqAdapterUpkeep
+     * 并发克隆同一 `.MaiBot-SnowLuma-Adapter.tmp` 目录导致 git `shallow.lock` 冲突；
+     * 后进入者在锁内复检目标目录是否已由前序流程装好，已就绪则直接跳过下载。
      */
-    suspend fun install(client: QqClient, onLine: (String) -> Unit): String? {
-        val target = withContext(Dispatchers.IO) { files.targetInstance() }
-        val needsClone = withContext(Dispatchers.IO) {
-            files.legacyAdapterDir(target)
-                ?.let { File(it, "config.toml") }
-                ?.takeIf { it.isFile }
-                ?.let { legacy -> runCatching { legacy.readText() }.getOrNull() }
-                ?.let { pendingLegacyConfig = it }
-            files.adapterDir(target) == null
-        }
-
-        if (needsClone) {
-            val result = commandRunner.run(
-                SnowLumaAdapterScripts.cloneToStaging(client.logPrefix, target.containerPluginsDir),
-                onLine = onLine
-            )
-            if (!result.success) {
-                withContext(Dispatchers.IO) { deleteTreeSafely(files.stagingAdapterDir(target)) }
-                return "下载 QQ 适配器失败：${result.summary()}"
-            }
-            val stageOutcome = withContext(Dispatchers.IO) {
+    suspend fun install(client: QqClient, onLine: (String) -> Unit): String? =
+        executeSerializedInstall(
+            mutex = installMutex,
+            client = client,
+            resolveTarget = { files.targetInstance() },
+            containerPluginsDir = { target -> target.containerPluginsDir },
+            readLegacyConfig = { target ->
+                files.legacyAdapterDir(target)
+                    ?.let { File(it, "config.toml") }
+                    ?.takeIf { it.isFile }
+                    ?.let { legacy -> runCatching { legacy.readText() }.getOrNull() }
+                    ?.let { pendingLegacyConfig = it }
+            },
+            isInstalled = { target -> files.adapterDir(target) != null },
+            runClone = { target ->
+                commandRunner.run(
+                    SnowLumaAdapterScripts.cloneToStaging(client.logPrefix, target.containerPluginsDir),
+                    onLine = onLine
+                )
+            },
+            cleanupStaging = { target -> deleteTreeSafely(files.stagingAdapterDir(target)) },
+            stageAndPromote = { target ->
                 val staging = files.stagingAdapterDir(target)
                 val complete = staging.isDirectory &&
                     File(staging, "_manifest.json").isFile &&
                     File(staging, "plugin.py").isFile
                 if (!complete) {
                     deleteTreeSafely(staging)
-                    return@withContext "QQ 适配器目录不完整"
+                    return@executeSerializedInstall "QQ 适配器目录不完整"
                 }
                 maiBotVersionProblem(staging)?.let { problem ->
                     deleteTreeSafely(staging)
-                    return@withContext problem
+                    return@executeSerializedInstall problem
                 }
                 moveStagingToTarget(staging, files.targetAdapterDir(target))
-            }
-            if (stageOutcome != null) {
-                onLine("${client.logPrefix} $stageOutcome")
-                return stageOutcome
-            }
-            onLine("${client.logPrefix} QQ 适配器已下载到 ${target.containerPluginsDir}/${SnowLumaAdapterScripts.DIR_NAME}")
-        } else {
-            val existingProblem = withContext(Dispatchers.IO) { maiBotVersionProblem(files.adapterDir(target)) }
-            if (existingProblem != null) {
-                onLine("${client.logPrefix} $existingProblem")
-                return existingProblem
-            }
-            onLine("${client.logPrefix} QQ 适配器已存在，跳过下载")
-        }
-
-        val removedLegacyNames = withContext(Dispatchers.IO) {
-            if (files.adapterDir(target) == null) return@withContext null
-            files.legacyAdapterDirs(target).map { legacyDir ->
-                deleteTreeSafely(legacyDir)
-                legacyDir.name
-            }
-        } ?: return "QQ 适配器目录不完整"
-
-        for (legacyName in removedLegacyNames) {
-            onLine("${client.logPrefix} 删除已停更的旧 NapCat 适配器: ${target.containerPluginsDir}/$legacyName")
-        }
-
-        // 旧版本曾把适配器装进 /opt/MaiBot/plugins 根目录下：既然当前真正跑的实例已装好，就安全清掉根目录的未配置空壳。
-        val orphanRootDir = withContext(Dispatchers.IO) {
-            files.orphanRootAdapterDir(target)?.also(::deleteTreeSafely)
-        }
-        if (orphanRootDir != null) {
-            onLine("${client.logPrefix} 清理误装在根目录的未配置 QQ 适配器副本: ${InContainerPaths.MAIBOT_PLUGINS_DIR}/${orphanRootDir.name}")
-        }
-        return null
-    }
+            },
+            checkInstalledProblem = { target -> maiBotVersionProblem(files.adapterDir(target)) },
+            removeLegacyAdapters = { target ->
+                if (files.adapterDir(target) == null) return@executeSerializedInstall null
+                files.legacyAdapterDirs(target).map { legacyDir ->
+                    deleteTreeSafely(legacyDir)
+                    legacyDir.name
+                }
+            },
+            removeOrphanRoot = { target ->
+                files.orphanRootAdapterDir(target)?.also(::deleteTreeSafely)?.name
+            },
+            onLine = onLine
+        )
 
     /**
      * 等 MaiBot 生成适配器的 config.toml（带 plugin.config_version）后迁移：每 2 秒看一次，最多等 5 分钟；
@@ -297,4 +281,67 @@ internal fun diagnoseAdapterConfigWaitFailure(recentMaiBotLines: List<String>): 
         return "MaiBot 安装 QQ 适配器依赖失败（silk-python），请检查网络并查看终端输出后重试"
     }
     return "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试"
+}
+
+/**
+ * 串行执行 QQ 适配器克隆、清单校验与扶正清理流程：
+ * 用 [Mutex] 防止安装向导与协议端启动前 upkeep 同时写 `.MaiBot-SnowLuma-Adapter.tmp` 触发 git shallow.lock 冲突；
+ * 拿到锁后重新执行 [isInstalled] 检查，若前一轮已安装完成则直接复用并跳过重复下载。
+ */
+internal suspend fun <T> executeSerializedInstall(
+    mutex: Mutex,
+    client: QqClient,
+    resolveTarget: () -> T,
+    containerPluginsDir: (T) -> String,
+    readLegacyConfig: (T) -> Unit,
+    isInstalled: (T) -> Boolean,
+    runClone: suspend (T) -> ContainerCommandResult,
+    cleanupStaging: (T) -> Unit,
+    stageAndPromote: (T) -> String?,
+    checkInstalledProblem: (T) -> String?,
+    removeLegacyAdapters: (T) -> List<String>?,
+    removeOrphanRoot: (T) -> String?,
+    onLine: (String) -> Unit,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+): String? = mutex.withLock {
+    val target = withContext(ioDispatcher) { resolveTarget() }
+    val needsClone = withContext(ioDispatcher) {
+        readLegacyConfig(target)
+        !isInstalled(target)
+    }
+
+    if (needsClone) {
+        val result = runClone(target)
+        if (!result.success) {
+            withContext(ioDispatcher) { cleanupStaging(target) }
+            return@withLock "下载 QQ 适配器失败：${result.summary()}"
+        }
+        val stageOutcome = withContext(ioDispatcher) { stageAndPromote(target) }
+        if (stageOutcome != null) {
+            onLine("${client.logPrefix} $stageOutcome")
+            return@withLock stageOutcome
+        }
+        onLine("${client.logPrefix} QQ 适配器已下载到 ${containerPluginsDir(target)}/${SnowLumaAdapterScripts.DIR_NAME}")
+    } else {
+        val existingProblem = withContext(ioDispatcher) { checkInstalledProblem(target) }
+        if (existingProblem != null) {
+            onLine("${client.logPrefix} $existingProblem")
+            return@withLock existingProblem
+        }
+        onLine("${client.logPrefix} QQ 适配器已存在，跳过下载")
+    }
+
+    val removedLegacyNames = withContext(ioDispatcher) {
+        removeLegacyAdapters(target)
+    } ?: return@withLock "QQ 适配器目录不完整"
+
+    for (legacyName in removedLegacyNames) {
+        onLine("${client.logPrefix} 删除已停更的旧 NapCat 适配器: ${containerPluginsDir(target)}/$legacyName")
+    }
+
+    val orphanRootName = withContext(ioDispatcher) { removeOrphanRoot(target) }
+    if (orphanRootName != null) {
+        onLine("${client.logPrefix} 清理误装在根目录的未配置 QQ 适配器副本: ${InContainerPaths.MAIBOT_PLUGINS_DIR}/$orphanRootName")
+    }
+    null
 }

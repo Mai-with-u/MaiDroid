@@ -191,7 +191,7 @@ internal object SnowLumaScripts {
             printf "[SnowLuma] %s\n" "${'$'}2"
         }
 
-        # 依次试每个地址下载到 $1，下到的 sha256 必须是 $2（用于严格校验固定版本的 LinuxQQ deb）。
+        # 依次试每个地址下载到 $1，同一来源支持最多 3 次 curl -C - 断点续传重试，下到的 sha256 必须是 $2（用于严格校验固定版本的 LinuxQQ deb）。
         maidroid_snowluma_fetch() {
             fetch_out="${'$'}1"
             fetch_sha="${'$'}2"
@@ -199,14 +199,34 @@ internal object SnowLumaScripts {
             for fetch_url in "${'$'}@"; do
                 rm -f "${'$'}fetch_out.part"
                 printf "[SnowLuma] downloading %s\n" "${'$'}fetch_url"
-                if curl -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 -o "${'$'}fetch_out.part" "${'$'}fetch_url"; then
-                    fetch_got="${'$'}(sha256sum "${'$'}fetch_out.part" | awk '{print ${'$'}1}')"
-                    if [ "${'$'}fetch_got" = "${'$'}fetch_sha" ]; then
-                        mv "${'$'}fetch_out.part" "${'$'}fetch_out"
-                        return 0
+                fetch_attempt=1
+                while [ "${'$'}fetch_attempt" -le 3 ]; do
+                    curl_rc=0
+                    curl -fsSL -C - --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+                        -o "${'$'}fetch_out.part" "${'$'}fetch_url" || curl_rc=${'$'}?
+                    if [ "${'$'}curl_rc" -eq 0 ]; then
+                        fetch_got="${'$'}(sha256sum "${'$'}fetch_out.part" | awk '{print ${'$'}1}')"
+                        if [ "${'$'}fetch_got" = "${'$'}fetch_sha" ]; then
+                            mv "${'$'}fetch_out.part" "${'$'}fetch_out"
+                            return 0
+                        fi
+                        printf "[SnowLuma] checksum mismatch (got %s), trying next source\n" "${'$'}fetch_got"
+                        rm -f "${'$'}fetch_out.part"
+                        break
                     fi
-                    printf "[SnowLuma] checksum mismatch (got %s), trying next source\n" "${'$'}fetch_got"
-                fi
+                    if [ "${'$'}curl_rc" -eq 22 ] && [ ! -s "${'$'}fetch_out.part" ]; then
+                        printf "[SnowLuma] source unavailable (http error), trying next source\n"
+                        rm -f "${'$'}fetch_out.part"
+                        break
+                    fi
+                    if [ "${'$'}curl_rc" -eq 22 ] || [ "${'$'}curl_rc" -eq 33 ]; then
+                        rm -f "${'$'}fetch_out.part"
+                    fi
+                    printf "[SnowLuma] download attempt %s/3 failed (rc=%s), retrying\n" "${'$'}fetch_attempt" "${'$'}curl_rc"
+                    fetch_attempt=${'$'}((fetch_attempt + 1))
+                    sleep 2
+                done
+                rm -f "${'$'}fetch_out.part"
             done
             rm -f "${'$'}fetch_out.part"
             return 1

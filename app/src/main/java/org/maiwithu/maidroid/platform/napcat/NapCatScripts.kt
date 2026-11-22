@@ -27,11 +27,14 @@ internal object NapCatScripts {
     // 停止时等 QQ 自己退出的上限；实测 1~2 秒，留足余量，超时就照常强制清理。
     private const val QQ_EXIT_TIMEOUT_SECONDS = 20
 
-    /** NapCat 运行要求的 LinuxQQ 最低构建号与内置官方安装包。 */
+    /** NapCat 运行要求的 LinuxQQ 最低构建号与内置官方安装包（主用 3.2.34 及备选更新构建 3.2.35）。 */
     const val QQ_MIN_BUILD_VERSION = 53644
     const val QQ_VERSION = "3.2.34-53644"
+    const val QQ_FALLBACK_VERSION = "3.2.35-54395"
     private const val QQ_PACKAGE = "linuxqq_${QQ_VERSION}_arm64.deb"
     private const val QQ_OFFICIAL_URL = "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/$QQ_PACKAGE"
+    private const val QQ_FALLBACK_URL =
+        "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.37/beta/816b3c79/linuxqq_${QQ_FALLBACK_VERSION}_arm64.deb"
     private const val DOWNLOAD_DIR = "/root/.cache/maidroid-napcat"
 
     /** NapCat 启动入口脚本：由绑定覆盖后的 QQ package.json main 字段引导加载。 */
@@ -170,6 +173,40 @@ internal object NapCatScripts {
             return 1
         }
 
+        # 按候选列表依次下载 LinuxQQ 安装包：同一来源支持最多 3 次 curl -C - 断点续传重试（应对中途断连 56），
+        # 初次请求即遇到 404 等 HTTP 错误（curl 22 且未落盘任何字节）则立刻切换下一个候选源，最后用 dpkg-deb -I 验包。
+        maidroid_napcat_fetch_linuxqq() {
+            qq_dest="${'$'}1"
+            shift
+            for qq_url in "${'$'}@"; do
+                rm -f "${'$'}qq_dest.part"
+                printf "[NapCat] downloading LinuxQQ %s\n" "${'$'}qq_url"
+                qq_attempt=1
+                while [ "${'$'}qq_attempt" -le 3 ]; do
+                    curl_rc=0
+                    curl -fL -C - --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+                        -o "${'$'}qq_dest.part" "${'$'}qq_url" || curl_rc=${'$'}?
+                    if [ "${'$'}curl_rc" -eq 0 ] && dpkg-deb -I "${'$'}qq_dest.part" >/dev/null 2>&1; then
+                        mv "${'$'}qq_dest.part" "${'$'}qq_dest"
+                        return 0
+                    fi
+                    if [ "${'$'}curl_rc" -eq 22 ] && [ ! -s "${'$'}qq_dest.part" ]; then
+                        printf "[NapCat] LinuxQQ candidate unavailable (http error), trying next source\n"
+                        rm -f "${'$'}qq_dest.part"
+                        break
+                    fi
+                    if [ "${'$'}curl_rc" -eq 0 ] || [ "${'$'}curl_rc" -eq 22 ] || [ "${'$'}curl_rc" -eq 33 ]; then
+                        rm -f "${'$'}qq_dest.part"
+                    fi
+                    printf "[NapCat] LinuxQQ download attempt %s/3 failed (rc=%s), retrying\n" "${'$'}qq_attempt" "${'$'}curl_rc"
+                    qq_attempt=${'$'}((qq_attempt + 1))
+                    sleep 2
+                done
+                rm -f "${'$'}qq_dest.part"
+            done
+            return 1
+        }
+
         maidroid_progress 0.05 "Prepare NapCat install"
 
         # 只有上一次初装打断、连默认配置都没写过的半成品目录才挪到备份里；重装时保留已有 config 里的账号设置。
@@ -221,15 +258,11 @@ internal object NapCatScripts {
         else
             maidroid_progress 0.25 "Download LinuxQQ"
             rm -f $DOWNLOAD_DIR/$QQ_PACKAGE $DOWNLOAD_DIR/$QQ_PACKAGE.part
-            printf "[NapCat] downloading LinuxQQ %s\n" ${shellQuote(QQ_OFFICIAL_URL)}
-            if ! curl -fL --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
-                -o $DOWNLOAD_DIR/$QQ_PACKAGE.part ${shellQuote(QQ_OFFICIAL_URL)} || \
-                ! dpkg-deb -I $DOWNLOAD_DIR/$QQ_PACKAGE.part >/dev/null 2>&1; then
-                rm -f $DOWNLOAD_DIR/$QQ_PACKAGE.part
+            if ! maidroid_napcat_fetch_linuxqq $DOWNLOAD_DIR/$QQ_PACKAGE \
+                ${shellQuote(QQ_OFFICIAL_URL)} ${shellQuote(QQ_FALLBACK_URL)}; then
                 printf "下载不到有效的 LinuxQQ 安装包，请检查网络后重试\n"
                 exit 1
             fi
-            mv $DOWNLOAD_DIR/$QQ_PACKAGE.part $DOWNLOAD_DIR/$QQ_PACKAGE
 
             maidroid_progress 0.38 "Install LinuxQQ"
             if ! maidroid_apt_install --allow-downgrades $DOWNLOAD_DIR/$QQ_PACKAGE; then
