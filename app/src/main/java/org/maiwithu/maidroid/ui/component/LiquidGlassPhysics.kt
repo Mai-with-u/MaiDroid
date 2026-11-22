@@ -264,6 +264,9 @@ internal class DampedDragAnimation(
             launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
             launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
+            if (velocity != 0f) {
+                launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
+            }
         }
     }
 
@@ -275,16 +278,13 @@ internal class DampedDragAnimation(
         }
     }
 
-    /** 程序驱动跳转（如点击页签或外部状态变更）：先短暂膨胀滑行再自动收拢。 */
+    /** 程序驱动跳转（如点击页签或外部状态变更）：先短暂膨胀滑行并实时反馈速度拉伸，随后自动收拢。 */
     fun animateToValue(value: Float) {
         animationScope.launch {
             mutatorMutex.mutate {
                 press()
                 val clamped = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(clamped, valueAnimationSpec) }
-                if (velocity != 0f) {
-                    launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
-                }
+                launch { valueAnimation.animateTo(clamped, valueAnimationSpec) { updateVelocity() } }
                 release()
             }
         }

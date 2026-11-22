@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,10 +22,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -138,20 +139,14 @@ internal fun CustomSourceEditorSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
+                LiquidButton(
                     onClick = { onSaveUrl(normalizedDraft) },
                     enabled = isValid && normalizedDraft != savedUrl,
-                    shape = RoundedCornerShape(Corners.Control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CardBorder,
-                        contentColor = TextPrimary,
-                        disabledContainerColor = CardBorder.copy(alpha = 0.55f),
-                        disabledContentColor = TextFaint
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
+                    style = LiquidButtonStyle.Secondary,
+                    shape = { RoundedRectangle(Corners.Control) },
+                    minHeight = 38.dp,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "保存地址",
@@ -160,20 +155,14 @@ internal fun CustomSourceEditorSection(
                         maxLines = 1
                     )
                 }
-                Button(
+                LiquidButton(
                     onClick = { onRequestReinstall(normalizedDraft) },
                     enabled = isValid && !installing,
-                    shape = RoundedCornerShape(Corners.Control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BrandOrange.copy(alpha = 0.16f),
-                        contentColor = BrandOrange,
-                        disabledContainerColor = CardBorder.copy(alpha = 0.55f),
-                        disabledContentColor = TextFaint
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
+                    style = LiquidButtonStyle.SoftAccent,
+                    shape = { RoundedRectangle(Corners.Control) },
+                    minHeight = 38.dp,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "覆盖重装",

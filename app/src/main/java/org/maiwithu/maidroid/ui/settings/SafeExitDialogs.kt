@@ -16,8 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -28,11 +26,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.service.SafeExitService
 import org.maiwithu.maidroid.service.SafeExitStage
 import org.maiwithu.maidroid.service.SafeExitState
 import org.maiwithu.maidroid.service.describe
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
@@ -61,17 +62,13 @@ internal fun SafeExitButton(onClick: () -> Unit, modifier: Modifier = Modifier) 
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 去掉外圈微红硬描边，改为柔和低饱和纯平胶囊按钮
-        Button(
+        // 采用柔和危险态 LiquidButton 替换普通扁平胶囊按钮，保留果冻微胀与高光折射
+        LiquidButton(
             onClick = onClick,
-            shape = RoundedCornerShape(Corners.Chip),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = StatusDanger.copy(alpha = 0.12f),
-                contentColor = StatusDanger
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
+            style = LiquidButtonStyle.SoftDanger,
+            shape = { RoundedRectangle(Corners.Chip) },
+            minHeight = 52.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
                 imageVector = Icons.Outlined.PowerSettingsNew,

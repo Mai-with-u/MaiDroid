@@ -29,8 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,18 +47,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
@@ -255,19 +258,14 @@ private fun NextButton(
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Button(
+    LiquidButton(
         onClick = onNext,
         enabled = enabled,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        shape = RoundedCornerShape(Corners.Chip),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = BrandOrangeMuted,
-            contentColor = OnBrandOrange,
-            disabledContainerColor = Color.White.copy(alpha = 0.12f),
-            disabledContentColor = OobeTextSecondary
-        )
+        backdrop = rememberSurfaceBackdrop(OobeBackground),
+        style = LiquidButtonStyle.Primary,
+        shape = { RoundedRectangle(Corners.Chip) },
+        minHeight = 64.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
         Text(
             text = text,
@@ -332,19 +330,14 @@ private fun SetupFooter(
             FailureNotice(failure = failure, textColor = OobeTextSecondary, modifier = Modifier.padding(start = 38.dp))
         }
 
-        Button(
+        LiquidButton(
             onClick = if (canProceed) onProceed else onRetry,
             enabled = canProceed || waitingEnabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp),
-            shape = RoundedCornerShape(Corners.Control),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BrandOrangeMuted,
-                contentColor = OnBrandOrange,
-                disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                disabledContentColor = OobeTextSecondary
-            )
+            backdrop = rememberSurfaceBackdrop(OobeSurface),
+            style = LiquidButtonStyle.Primary,
+            shape = { RoundedRectangle(Corners.Control) },
+            minHeight = 44.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = if (canProceed) proceedText else waitingText,

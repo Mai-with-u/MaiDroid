@@ -5,9 +5,9 @@ import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,16 +47,22 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -300,54 +305,68 @@ internal fun WebUiTabPage(
             resolvedLaunch = requestToken to computed
         }
 
+        val showBanner = state.webUiError != null || !webUiOnline
+        val bannerContentBackdrop = rememberLayerBackdrop {
+            drawRect(PageBackground)
+            drawContent()
+        }
+
         if (activeHost != null) {
-            key(activeHost) {
-                AndroidView(
-                    factory = {
-                        val hostView = activeHost.view
-                        (hostView.parent as? ViewGroup)?.removeView(hostView)
-                        hostView
-                    },
-                    update = { geckoView ->
-                        val launch = resolvedLaunch
-                        if (state.viewHasSize &&
-                            !state.autoLoadPaused &&
-                            launch != null &&
-                            launch.first == state.reloadToken
-                        ) {
-                            val launchUrl = launch.second
-                            val loadRequest = "$launchUrl#${launch.first}"
-                            if (geckoView.tag != loadRequest) {
-                                geckoView.tag = loadRequest
-                                state.webUiError = null
-                                // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
-                                // 转屏会重建 Activity 与会话，新页面自然按新方向加载。
-                                activeHost.applyDesktopViewport(enabled = true)
-                                Log.d(
-                                    MaiBotWebUi.LOG_TAG,
-                                    "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                                        "${geckoView.width}x${geckoView.height}, " +
-                                        "desktop width=${activeHost.desktopLayoutWidthCss}"
-                                )
-                                activeHost.loadUrl(launchUrl)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 仅当顶部需要展示离线或失败液态玻璃条时按需录制网页视图，正常浏览零开销
+                    .then(if (showBanner) Modifier.layerBackdrop(bannerContentBackdrop) else Modifier)
+            ) {
+                key(activeHost) {
+                    AndroidView(
+                        factory = {
+                            val hostView = activeHost.view
+                            (hostView.parent as? ViewGroup)?.removeView(hostView)
+                            hostView
+                        },
+                        update = { geckoView ->
+                            val launch = resolvedLaunch
+                            if (state.viewHasSize &&
+                                !state.autoLoadPaused &&
+                                launch != null &&
+                                launch.first == state.reloadToken
+                            ) {
+                                val launchUrl = launch.second
+                                val loadRequest = "$launchUrl#${launch.first}"
+                                if (geckoView.tag != loadRequest) {
+                                    geckoView.tag = loadRequest
+                                    state.webUiError = null
+                                    // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                                    // 转屏会重建 Activity 与会话，新页面自然按新方向加载。
+                                    activeHost.applyDesktopViewport(enabled = true)
+                                    Log.d(
+                                        MaiBotWebUi.LOG_TAG,
+                                        "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
+                                            "${geckoView.width}x${geckoView.height}, " +
+                                            "desktop width=${activeHost.desktopLayoutWidthCss}"
+                                    )
+                                    activeHost.loadUrl(launchUrl)
+                                }
                             }
-                        }
-                    },
-                    modifier = Modifier
-                        .padding(top = statusBarTop)
-                        .windowInsetsPadding(imeClearance)
-                        .fillMaxSize()
-                        // 配合 AndroidLiquidGlass：让内嵌 TextureView(GeckoView) 走稳定的离屏图层合成，防止毛玻璃采样闪烁或黑块
-                        .graphicsLayer { alpha = 0.999f }
-                        .onSizeChanged { size ->
-                            state.viewHasSize = size.width > 0 && size.height > 0
-                        }
-                )
+                        },
+                        modifier = Modifier
+                            .padding(top = statusBarTop)
+                            .windowInsetsPadding(imeClearance)
+                            .fillMaxSize()
+                            // 配合 AndroidLiquidGlass：让内嵌 TextureView(GeckoView) 走稳定的离屏图层合成，防止毛玻璃采样闪烁或黑块
+                            .graphicsLayer { alpha = 0.999f }
+                            .onSizeChanged { size ->
+                                state.viewHasSize = size.width > 0 && size.height > 0
+                            }
+                    )
+                }
             }
         }
 
         if (state.webUiError != null) {
             WebUiStatusBanner(
+                backdrop = bannerContentBackdrop,
                 message = "WebUI 加载失败：${state.webUiError}",
                 action = "重试",
                 onAction = state::reload,
@@ -358,6 +377,7 @@ internal fun WebUiTabPage(
         } else if (!webUiOnline) {
             // 电量低暂停着时麦麦是主动保存数据停下的，横幅直接说明原因
             WebUiStatusBanner(
+                backdrop = bannerContentBackdrop,
                 message = if (lowBatteryPaused) "电量低，麦麦已暂停" else "WebUI 离线",
                 action = "唤醒",
                 onAction = onWakeMai,
@@ -371,17 +391,26 @@ internal fun WebUiTabPage(
 
 @Composable
 private fun WebUiStatusBanner(
+    backdrop: Backdrop,
     message: String,
     action: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val bannerSurfaceBackdrop = rememberLayerBackdrop()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Corners.Chip))
-            .background(CardSurface.copy(alpha = 0.94f))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .liquidGlassSurface(
+                backdrop = backdrop,
+                shape = { RoundedRectangle(Corners.Chip) },
+                blurRadius = 12.dp,
+                refractionHeight = 14.dp,
+                refractionAmount = 22.dp,
+                surfaceColor = LiquidBarSurface,
+                exportedBackdrop = bannerSurfaceBackdrop
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -402,16 +431,21 @@ private fun WebUiStatusBanner(
             modifier = Modifier.weight(1f)
         )
 
-        Text(
-            text = action,
-            color = BrandOrange,
-            fontSize = TextSizes.Body,
-            fontWeight = FontWeight.Bold,
-            // 文字按钮：裁成圆角再加内边距，按下的水波纹有个按钮的样子，也更好点中
-            modifier = Modifier
-                .clip(RoundedCornerShape(Corners.Control))
-                .clickable(onClick = onAction)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        )
+        Spacer(modifier = Modifier.width(10.dp))
+
+        LiquidButton(
+            onClick = onAction,
+            backdrop = bannerSurfaceBackdrop,
+            style = LiquidButtonStyle.SoftAccent,
+            minHeight = 34.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = action,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
     }
 }

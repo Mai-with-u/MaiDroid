@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,12 +37,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.pet.DesktopPetBot
 import org.maiwithu.maidroid.pet.DesktopPetPhase
 import org.maiwithu.maidroid.pet.DesktopPetUiState
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -543,17 +547,17 @@ private fun PhaseCalloutBox(
             lineHeight = 17.sp
         )
         if (!actionLabel.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Corners.Tag))
-                    .background(if (actionEnabled) accentColor else CardBorder)
-                    .clickable(enabled = actionEnabled, role = Role.Button, onClick = onAction)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center
+            LiquidButton(
+                onClick = onAction,
+                enabled = actionEnabled,
+                tint = accentColor,
+                contentColor = OnBrandOrange,
+                shape = { RoundedRectangle(Corners.Tag) },
+                minHeight = 36.dp,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp)
             ) {
                 Text(
                     text = actionLabel,
-                    color = if (actionEnabled) OnBrandOrange else TextFaint,
                     fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Bold
                 )
@@ -569,21 +573,17 @@ private fun CompactActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    LiquidButton(
+        onClick = onClick,
+        enabled = enabled,
+        style = LiquidButtonStyle.Secondary,
+        shape = { RoundedRectangle(Corners.Tag) },
+        minHeight = 36.dp,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         modifier = modifier
-            .clip(RoundedCornerShape(Corners.Tag))
-            .background(if (enabled) PageBackground.copy(alpha = 0.85f) else PageBackground.copy(alpha = 0.4f))
-            .border(
-                BorderStroke(1.dp, if (enabled) CardBorder else CardBorder.copy(alpha = 0.4f)),
-                RoundedCornerShape(Corners.Tag)
-            )
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 9.dp),
-        contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            color = if (enabled) TextPrimary else TextFaint,
             fontSize = TextSizes.Caption,
             fontWeight = FontWeight.Medium,
             maxLines = 1,

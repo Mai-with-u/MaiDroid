@@ -21,8 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
@@ -43,6 +42,8 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
@@ -294,18 +295,13 @@ private fun PermissionActionCard(
         statusColor = if (granted) StatusOnline else StatusWarning,
         modifier = modifier
     ) {
-        Button(
+        LiquidButton(
             onClick = onAction,
             enabled = !granted,
-            modifier = Modifier.height(34.dp),
-            shape = RoundedCornerShape(Corners.Control),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BrandOrange,
-                contentColor = TextPrimary,
-                disabledContainerColor = CardBorder,
-                disabledContentColor = TextMuted
-            ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+            style = LiquidButtonStyle.Primary,
+            shape = { RoundedRectangle(Corners.Control) },
+            minHeight = 34.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Text(
                 text = actionText,

@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,11 +43,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureAction
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.remote.RemoteActionDialogHost
 import org.maiwithu.maidroid.ui.remote.defaultRemoteActionLabel
@@ -251,16 +252,13 @@ private fun NoticeButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    Button(
+    LiquidButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.heightIn(min = 34.dp),
-        shape = RoundedCornerShape(10.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (highlighted) BrandOrange else CardBorder,
-            contentColor = TextPrimary
-        )
+        style = if (highlighted) LiquidButtonStyle.Primary else LiquidButtonStyle.Secondary,
+        shape = { RoundedRectangle(10.dp) },
+        minHeight = 34.dp,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Text(text = text, fontSize = TextSizes.Caption, fontWeight = FontWeight.Bold, maxLines = 1)
     }

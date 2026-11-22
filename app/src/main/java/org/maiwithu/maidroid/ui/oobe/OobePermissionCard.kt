@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,8 +26,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
@@ -121,23 +123,20 @@ internal fun OobePermissionCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Button(
+            LiquidButton(
                 onClick = onAuthorize,
                 enabled = !granted,
-                modifier = Modifier.size(width = 64.dp, height = 28.dp),
-                shape = RoundedCornerShape(Corners.Control),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrangeMuted,
-                    contentColor = OnBrandOrange,
-                    disabledContainerColor = OobeTextPrimary.copy(alpha = 0.12f),
-                    disabledContentColor = OobeTextSecondary
-                ),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                backdrop = rememberSurfaceBackdrop(OobeSurface),
+                style = LiquidButtonStyle.Primary,
+                shape = { RoundedRectangle(Corners.Control) },
+                minHeight = 28.dp,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = if (granted) "已授权" else "去授权",
                     fontSize = TextSizes.Caption,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
                 )
             }
         }
