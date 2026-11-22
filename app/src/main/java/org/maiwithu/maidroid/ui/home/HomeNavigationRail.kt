@@ -1,14 +1,14 @@
 package org.maiwithu.maidroid.ui.home
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -17,26 +17,59 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import org.maiwithu.maidroid.ui.component.liquidGlassIndicator
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
+import com.kyant.shapes.Capsule
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.ui.component.DampedDragAnimation
+import org.maiwithu.maidroid.ui.component.InteractiveHighlight
+import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
+import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
-import org.maiwithu.maidroid.ui.theme.Corners
-import org.maiwithu.maidroid.ui.theme.TextPrimary
+import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
+import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
+import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** 侧栏里标签竖条的宽度（容得下“消息平台”“扩展组件”四个字）。 */
 private val HomeNavigationRailBarWidth = 72.dp
@@ -99,8 +132,8 @@ internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
 internal fun homeUsesNavigationRail(widthDp: Float, heightDp: Float): Boolean = widthDp > heightDp
 
 /**
- * 横屏时主页左侧的竖向液态玻璃导航：上面是四个标签的液态玻璃竖条（选中块上下弹性滑动），
- * 下面是刷新 WebUI（只在 WebUI 页签显示）和终端按钮。
+ * 横屏时主页左侧的竖向液态玻璃导航：上面是四栏纵向可拖拽液态玻璃条，
+ * 下面是圆形液态玻璃刷新（只在 WebUI 页签显示）与终端按钮。
  */
 @Composable
 internal fun HomeNavigationRail(
@@ -133,7 +166,6 @@ internal fun HomeNavigationRail(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 刷新按钮仅在 WebUI 页签显示：横屏网页为桌面版，左侧栏留这一枚圆形快捷刷新钮不挡网页右上角控件。
             AnimatedVisibility(
                 visible = onRefreshWebUi != null,
                 enter = fadeIn() + scaleIn(),
@@ -150,13 +182,14 @@ internal fun HomeNavigationRail(
             HomeTerminalButton(
                 backdrop = backdrop,
                 onClick = onTerminalClick,
-                iconSizeDp = if (metrics.compact) 26f else 32f,
-                modifier = Modifier.size(metrics.terminalButtonSizeDp.dp)
+                size = metrics.terminalButtonSizeDp.dp,
+                iconSizeDp = if (metrics.compact) 24f else 30f
             )
         }
     }
 }
 
+/** 纵向三层兄弟结构液态玻璃导航条：支持直接按住水滴上下拖动切换，按压膨胀并折射底部橙色放大图标。 */
 @Composable
 private fun AnimatedHomeTabRail(
     selectedTab: HomeTab,
@@ -165,39 +198,124 @@ private fun AnimatedHomeTabRail(
     onTabSelected: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(Corners.Pill)
+    val density = LocalDensity.current
+    val animationScope = rememberCoroutineScope()
+    val tabsCount = HomeTab.entries.size
+    val latestSelectedTab by rememberUpdatedState(selectedTab)
+    val latestOnTabSelected by rememberUpdatedState(onTabSelected)
+    val shape = { Capsule() }
+    val tabsBackdrop = rememberLayerBackdrop()
+    val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    BoxWithConstraints(
-        modifier = modifier.liquidGlassSurface(
-            backdrop = backdrop,
-            shape = { shape }
-        )
-    ) {
-        val tabHeight = (maxHeight - 8.dp) / HomeTab.entries.size
-        val indicatorOffset by animateDpAsState(
-            targetValue = 4.dp + tabHeight * selectedTab.ordinal.toFloat(),
-            animationSpec = spring(
-                dampingRatio = 0.78f,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "HomeRailIndicatorOffset"
-        )
+    BoxWithConstraints(modifier = modifier) {
+        val innerPadding = 4.dp
+        val tabHeight = (maxHeight - innerPadding * 2) / tabsCount
+        val railHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+        val tabHeightPx by rememberUpdatedState(with(density) { tabHeight.toPx() })
+        val innerPaddingPx = with(density) { innerPadding.toPx() }
+        val maxPanelOffsetPx = with(density) { 4f.dp.toPx() }
 
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(4.dp.roundToPx(), indicatorOffset.roundToPx()) }
-                .width(maxWidth - 8.dp)
-                .height(tabHeight)
-                .liquidGlassIndicator(
-                    backdrop = backdrop,
-                    shape = { shape }
+        val panelOffsetAnim = remember { Animatable(0f) }
+        val panelOffsetPx by remember(railHeightPx, maxPanelOffsetPx) {
+            derivedStateOf {
+                computeLiquidPanelOffsetPx(
+                    accumulatedOffsetPx = panelOffsetAnim.value,
+                    containerSpanPx = railHeightPx,
+                    maxPanelOffsetPx = maxPanelOffsetPx
                 )
+            }
+        }
+
+        var currentIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
+        val railDragAnimation = remember(animationScope) {
+            DampedDragAnimation(
+                animationScope = animationScope,
+                initialValue = selectedTab.ordinal.toFloat(),
+                valueRange = 0f..(tabsCount - 1).toFloat(),
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 70f / 56f,
+                onDragStarted = {},
+                onDragStopped = {
+                    val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
+                    currentIndex = targetIndex
+                    animateToValue(targetIndex.toFloat())
+                    animationScope.launch {
+                        panelOffsetAnim.animateTo(0f, spring(1f, 300f, 0.5f))
+                    }
+                },
+                onDragCancelled = {
+                    val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
+                    currentIndex = targetIndex
+                    animateToValue(targetIndex.toFloat())
+                    animationScope.launch {
+                        panelOffsetAnim.animateTo(0f, spring(1f, 300f, 0.5f))
+                    }
+                },
+                onDrag = { _, dragAmount ->
+                    val step = dragAmount.y / tabHeightPx.coerceAtLeast(1f)
+                    updateValue((targetValue + step).fastCoerceIn(0f, (tabsCount - 1).toFloat()))
+                    animationScope.launch {
+                        panelOffsetAnim.snapTo(panelOffsetAnim.value + dragAmount.y)
+                    }
+                }
+            )
+        }
+
+        LaunchedEffect(selectedTab) {
+            if (currentIndex != selectedTab.ordinal) {
+                currentIndex = selectedTab.ordinal
+            }
+            if (abs(railDragAnimation.targetValue - selectedTab.ordinal.toFloat()) > 0.01f) {
+                railDragAnimation.animateToValue(selectedTab.ordinal.toFloat())
+            }
+        }
+        LaunchedEffect(railDragAnimation) {
+            snapshotFlow { currentIndex }
+                .drop(1)
+                .collectLatest { index ->
+                    val target = HomeTab.entries.getOrNull(index) ?: return@collectLatest
+                    if (target != latestSelectedTab) {
+                        latestOnTabSelected(target)
+                    }
+                }
+        }
+
+        val railHighlight = remember(animationScope) {
+            InteractiveHighlight(
+                animationScope = animationScope,
+                position = { size, _ ->
+                    val slotH = (size.height / tabsCount).coerceAtLeast(1f)
+                    Offset(size.width * 0.5f, (railDragAnimation.value + 0.5f) * slotH + panelOffsetPx)
+                }
+            )
+        }
+
+        val railPressScale = lerp(
+            1f,
+            1f + with(density) { 12f.dp.toPx() } / railHeightPx,
+            railDragAnimation.pressProgress
         )
 
+        // 兄弟层 1：基础液态玻璃竖栏与可点击页签
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(4.dp)
+                .graphicsLayer { translationY = panelOffsetPx }
+                .liquidGlassSurface(
+                    backdrop = backdrop,
+                    shape = shape,
+                    blurRadius = 10.dp,
+                    refractionHeight = 20.dp,
+                    refractionAmount = 24.dp,
+                    surfaceColor = LiquidBarSurface,
+                    layerBlock = {
+                        scaleX = railPressScale
+                        scaleY = railPressScale
+                    }
+                )
+                .then(railHighlight.modifier)
+                .padding(innerPadding)
         ) {
             HomeTab.entries.forEach { tab ->
                 HomeTabButton(
@@ -211,6 +329,108 @@ private fun AnimatedHomeTabRail(
                 )
             }
         }
+
+        // 兄弟层 2：隐身品牌橙 1.18x 放大高亮层，供上方纵移水滴折射采样
+        CompositionLocalProvider(
+            LocalLiquidBottomTabScale provides {
+                lerp(1f, 1.18f, railDragAnimation.pressProgress)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clearAndSetSemantics {}
+                    .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
+                    .graphicsLayer { translationY = panelOffsetPx }
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = shape,
+                        effects = {
+                            val progress = railDragAnimation.pressProgress
+                            vibrancy()
+                            blur(10f.dp.toPx())
+                            lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
+                        },
+                        highlight = {
+                            Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
+                        },
+                        shadow = null,
+                        layerBlock = {
+                            scaleX = railPressScale
+                            scaleY = railPressScale
+                        },
+                        onDrawSurface = {
+                            drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
+                        }
+                    )
+                    .then(railHighlight.modifier)
+                    .padding(innerPadding)
+            ) {
+                HomeTab.entries.forEach { tab ->
+                    HomeTabButton(
+                        tab = tab,
+                        selected = true,
+                        compact = compact,
+                        accentHighlighted = true,
+                        clickableEnabled = false,
+                        onClick = {},
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                }
+            }
+        }
+
+        // 兄弟层 3：独立游走纵向水滴滑块（不进竖栏裁剪区，按下自由膨胀并做纵向速度挤压）
+        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, Capsule())
+        Box(
+            modifier = Modifier
+                .padding(horizontal = innerPadding)
+                .graphicsLayer {
+                    translationY = innerPaddingPx + railDragAnimation.value * tabHeightPx + panelOffsetPx
+                }
+                .then(railHighlight.gestureModifier)
+                .then(railDragAnimation.modifier)
+                .drawBackdrop(
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                    shape = shape,
+                    effects = {
+                        val progress = railDragAnimation.pressProgress
+                        lens(
+                            refractionHeight = 10f.dp.toPx() * progress,
+                            refractionAmount = 14f.dp.toPx() * progress,
+                            chromaticAberration = true
+                        )
+                    },
+                    highlight = {
+                        Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
+                    },
+                    shadow = {
+                        Shadow(alpha = railDragAnimation.pressProgress)
+                    },
+                    innerShadow = {
+                        val progress = railDragAnimation.pressProgress
+                        InnerShadow(radius = 8f.dp * progress, alpha = progress)
+                    },
+                    layerBlock = {
+                        scaleX = railDragAnimation.scaleX
+                        scaleY = railDragAnimation.scaleY
+                        val velocity = railDragAnimation.velocity / 10f
+                        scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    },
+                    onDrawSurface = {
+                        val progress = railDragAnimation.pressProgress
+                        drawRect(GlassSelectedIndicator, alpha = 1f - progress)
+                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                    }
+                )
+                .then(fallbackBorder)
+                .fillMaxWidth()
+                .height(tabHeight)
+        )
     }
 }
 
@@ -221,21 +441,13 @@ private fun RailRefreshButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    LiquidGlassIconButton(
+        icon = Icons.Outlined.Refresh,
+        contentDescription = "刷新 WebUI",
+        onClick = onClick,
+        backdrop = backdrop,
+        size = sizeDp.dp,
+        iconSize = if (sizeDp < 42f) 20.dp else 22.dp,
         modifier = modifier
-            .size(sizeDp.dp)
-            .liquidGlassSurface(
-                backdrop = backdrop,
-                shape = { CircleShape }
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Refresh,
-            contentDescription = "刷新 WebUI",
-            tint = TextPrimary,
-            modifier = Modifier.size(if (sizeDp < 42f) 20.dp else 22.dp)
-        )
-    }
+    )
 }
