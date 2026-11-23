@@ -410,4 +410,84 @@ class AutoErrorExtractorTest {
         assertFalse(zeroExitDraft.title.contains("退出码: 0"))
         assertTrue(zeroExitDraft.title.contains("Debian rootfs 未就绪"))
     }
+
+    @Test
+    fun maiBotBootDraftCapturesHostBootstrapFailureOnExitCodeTwo() {
+        val logLinesA = listOf(
+            "[MaiBot] Process started (PID: 2106)",
+            "宿主启动失败：WebUI 凭据文件无法解析：/opt/MaiBot/host/webui.json",
+            "[MaiBot] Process exited with code: 2",
+            "[MaiBot] 2026-11-22 16:14:22 普通聊天消息绝不可泄漏",
+            "[MaiBot] Process started (PID: 2341)"
+        )
+        val logLinesB = listOf(
+            "[MaiBot] Process started (PID: 8801)",
+            "宿主启动失败：WebUI 凭据文件无法解析：/opt/MaiBot/host/webui.json",
+            "[MaiBot] Process exited with code: 2"
+        )
+
+        val draftA = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 2），请查看终端输出里的报错",
+            recentRunLines = logLinesA,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+        val draftB = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 2），请查看终端输出里的报错",
+            recentRunLines = logLinesB,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+
+        assertTrue(draftA.contextText.contains("宿主启动失败：WebUI 凭据文件无法解析"))
+        assertFalse(draftA.contextText.contains("普通聊天消息绝不可泄漏"))
+        assertTrue(draftA.title.startsWith("宿主启动失败：WebUI 凭据文件无法解析"))
+        assertEquals(draftA.fingerprint, draftB.fingerprint)
+    }
+
+    @Test
+    fun classifyFiltersUserGuardrailPrechecksWhileKeepingRealPrecheckFailures() {
+        assertNull(
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.SnowLumaPrecheck,
+                null,
+                "NapCat 正在安装，等它装完再装 SnowLuma"
+            )
+        )
+        assertNull(
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.NapCatPrecheck,
+                null,
+                "请填写 NapCat 的自定义仓库地址或安装包直链"
+            )
+        )
+        assertNull(
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.SnowLumaPrecheck,
+                null,
+                "直链需指向 linux-arm64 的 .tar.gz 安装包，或改填仓库主页地址"
+            )
+        )
+
+        assertEquals(
+            AutoErrorCategory.Install,
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.SnowLumaPrecheck,
+                null,
+                "MaiBot 源码尚未安装，无法配置 QQ 适配器"
+            )
+        )
+        assertEquals(
+            AutoErrorCategory.Install,
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.NapCatPrecheck,
+                FailureCause.MaiBotTooOld,
+                "当前 MaiBot 版本 1.4.3 低于适配器要求"
+            )
+        )
+    }
 }

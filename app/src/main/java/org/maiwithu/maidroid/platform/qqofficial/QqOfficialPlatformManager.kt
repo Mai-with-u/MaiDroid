@@ -20,8 +20,10 @@ import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
+import org.maiwithu.maidroid.maibot.MaiBotInstance
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
@@ -42,7 +44,8 @@ internal class QqOfficialPlatformManager(
     paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val maiBotProcess: MaiBotProcessSupervisor
+    private val maiBotProcess: MaiBotProcessSupervisor,
+    private val mirrors: MirrorManager
 ) {
     private val adapterFiles = QqOfficialAdapterFiles(paths)
     private val scope = backgroundScope("QQ 官方机器人", Dispatchers.Main.immediate)
@@ -84,9 +87,8 @@ internal class QqOfficialPlatformManager(
     }
 
     /**
-     * 首次安装：检查容器和 MaiBot 源码 -> 克隆适配器到 plugins/MaiBot-QQ-Adapter ->
-     * 写入 AppID、AppSecret 并启用插件 -> 重启 MaiBot 加载插件。
-     * 已经装过（包括用户从 MaiBot 插件市场装的那份）就跳过克隆，直接把凭据写进那份的配置。
+     * 首次安装/激活：检查容器和 MaiBot 源码 -> 外置版按需克隆到 plugins/MaiBot-QQ-Adapter，
+     * MaiBot 1.4.x 内置版则跳过下载 -> 写入 AppID、AppSecret 并启用插件 -> 重启 MaiBot 加载插件。
      */
     fun installAndConfigure(appId: String, appSecret: String) {
         if (installJob?.isActive == true) return
@@ -112,34 +114,48 @@ internal class QqOfficialPlatformManager(
             fail(Failure(FailureStep.QqOfficialPrecheck, validationError))
             return
         }
-        // 适配器要从 GitHub 下载，没连网时直接说
-        NetworkStatus.read(appContext).offlineFailure(FailureStep.QqOfficialInstall)?.let { failure ->
-            fail(failure)
-            return
-        }
 
         TerminalLog.append("")
-        val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir() }
-        if (existingDir != null) {
-            TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+        // 统一固定本次安装的目标实例与是否内置，避免跨多实例切换或触发无意义的 GitHub 克隆。
+        val (builtIn, targetInstance) = withContext(Dispatchers.IO) {
+            adapterFiles.isBuiltIn() to adapterFiles.targetInstance()
+        }
+        if (builtIn) {
+            // MaiBot 1.4.x 已将 QQ 官方适配器内置于 src/plugins/built_in/，直接写内置配置即可；
+            // 若再克隆外部目录反而会被 MaiBot 启动迁移逻辑移入 .builtin-backups/ 且丢弃新凭据。
+            TerminalLog.append("[QQ 官方机器人] 检测到 MaiBot 内置 QQ 官方适配器，跳过下载，直接写入内置配置")
         } else {
-            updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
-            TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
-            val result = commandRunner.run(
-                script = QqOfficialAdapterScripts.install(),
-                onLine = TerminalLog::append
-            )
-            val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
-            if (!result.success || !installed) {
-                fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
-                return
+            val existingDir = withContext(Dispatchers.IO) { adapterFiles.findInstalledDir(targetInstance) }
+            if (existingDir != null) {
+                TerminalLog.append("[QQ 官方机器人] 适配器已在 ${existingDir.name} 目录，跳过下载，只写入凭据")
+            } else {
+                // 外置版适配器才需要从 GitHub 下载；仅在本地尚未安装且需要克隆时才做断网拦截。
+                NetworkStatus.read(appContext).offlineFailure(FailureStep.QqOfficialInstall)?.let { failure ->
+                    fail(failure)
+                    return
+                }
+                updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
+                TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
+                val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+                val result = commandRunner.run(
+                    script = QqOfficialAdapterScripts.install(
+                        pluginsDir = targetInstance.containerPluginsDir,
+                        gitHubMirrors = gitHubMirrors
+                    ),
+                    onLine = TerminalLog::append
+                )
+                val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled(targetInstance) }
+                if (!result.success || !installed) {
+                    fail(failureOf(FailureStep.QqOfficialInstall, result.summary(), result.output))
+                    return
+                }
+                // 刚克隆下的适配器落到存储上，这时断电也不会留下“目录在、文件空”的插件
+                withContext(Dispatchers.IO) { flushFileSystems() }
             }
-            // 刚克隆下的适配器落到存储上，这时断电也不会留下“目录在、文件空”的插件
-            withContext(Dispatchers.IO) { flushFileSystems() }
         }
 
         updateInstallProgress(0.9f, "写入 AppID 和 AppSecret")
-        val writeError = writeCredentials(appId, appSecret)
+        val writeError = writeCredentials(appId, appSecret, targetInstance)
         if (writeError != null) {
             fail(Failure(FailureStep.QqOfficialConfig, "写入配置失败：$writeError"))
             return
@@ -178,12 +194,22 @@ internal class QqOfficialPlatformManager(
 
     // 凭据由宿主侧直接写进容器里的 config.toml：整个原子替换，MaiBot 不会读到写了一半的配置，
     // 断电、存储满时也不会留下空配置（写不成时旧配置原样留着，界面报失败）。
-    private suspend fun writeCredentials(appId: String, appSecret: String): String? =
+    private suspend fun writeCredentials(
+        appId: String,
+        appSecret: String,
+        targetInstance: MaiBotInstance? = null
+    ): String? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val target = adapterFiles.configFile()
+                val instance = targetInstance ?: adapterFiles.targetInstance()
+                val target = adapterFiles.configFile(instance)
                 val existing = target.takeIf { it.isFile }?.readText()
-                target.writeTextAtomically(QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim()))
+                // 首次补写空配置时优先从容器内插件的 settings.py 动态读取默认 config_version，读不到再回退兜底值；
+                // 已有文件由 write() 自动保留原版本号，不覆盖用户或 MaiBot 迁移后的配置版本。
+                val defaultVersion = adapterFiles.defaultConfigVersion(instance)
+                target.writeTextAtomically(
+                    QqOfficialAdapterConfig.write(existing, appId.trim(), appSecret.trim(), defaultVersion)
+                )
             }.exceptionOrNull()?.let { it.message.orEmpty().ifBlank { it.javaClass.simpleName } }
         }
 

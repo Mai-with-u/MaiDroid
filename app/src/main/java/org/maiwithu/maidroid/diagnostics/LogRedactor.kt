@@ -55,12 +55,13 @@ internal class LogRedactor(secrets: List<Secret>) {
         val QQ_QR_LOGIN_URL = Regex("""(?i)https?://(?:txz|ssl\.ptlogin2|xui\.ptlogin2)\.qq\.com/[^\s"'<>]+""")
         // 识别 NapCat 控制台输出的字符画二维码（至少含 ▄/▀ 上下半块方块且宽度 >= 8），防止与进度条混淆，多行折叠为单行占位符。
         val QR_ASCII_ART_BLOCK = Regex("""(?m)(?:^(?:\[[^\]]+]\s*)?[█▄▀ ]*[▄▀][█▄▀ ]{7,}\r?\n?)+""")
-        // 值以 < 开头的是已经换好的占位符（或 MaiDroid 自己打的 <redacted>），不再动
-        val URL_SECRET_PARAM = Regex("""(?i)([?&](?:token|access_token|key|secret|password)=)(?!<)[^&\s#"']+""")
+        // 值以 < 开头的是已经换好的占位符（或 MaiDroid 自己打的 <redacted>），不再动；
+        // 覆盖 1.4.x WebUI 启动日志里的 #ticket=... 一次性票据，并在括号处收尾免得吞掉后面的中文说明。
+        val URL_SECRET_PARAM = Regex("""(?i)([?&#](?:token|access_token|ticket|key|secret|password)=)(?!<)[^&\s#"'()（）]+""")
 
-        // “WebUI access token: abc123”“api_key = "xxx"”“"app_secret": "xxx"” 这类键值，值至少 6 个字符才算
+        // “WebUI access token: abc123”“WebUI 临时登录密码：abc123”“api_key = "xxx"” 这类键值，值至少 6 个字符才算
         val KEY_VALUE_SECRET = Regex(
-            """(?i)((?:api[_-]?key|access[_-]?token|app[_-]?secret|secret|password|token)["']?\s*[:=]\s*["']?)""" +
+            """(?i)((?:api[_-]?key|access[_-]?token|app[_-]?secret|secret|password|token|临时登录密码)["']?\s*[:=：]\s*["']?)""" +
                 """(?!<已隐藏)[^\s"',}&]{6,}"""
         )
 

@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.diagnostics
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.maibot.MaiBotInstances
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
@@ -31,6 +33,7 @@ import org.maiwithu.maidroid.runtime.countOwnChildProcesses
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import org.maiwithu.maidroid.webui.WebUiRuntime
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -93,7 +96,8 @@ internal class DiagnosticsManager(
                 permissionSection(),
                 ReportSection("网络", listOf(
                     "当前网络" to NetworkStatus.read(appContext).describe(),
-                    "系统 DNS" to ContainerDns.systemServers(appContext).joinToString(" ").ifBlank { "读不到" }
+                    "系统 DNS" to ContainerDns.systemServers(appContext).joinToString(" ").ifBlank { "读不到" },
+                    "系统代理" to systemProxySummary()
                 )),
                 containerSection(),
                 processSection(),
@@ -161,6 +165,7 @@ internal class DiagnosticsManager(
         return ReportSection("设备", listOf(
             "型号" to "${Build.MANUFACTURER} ${Build.MODEL}（${Build.DEVICE}）",
             "系统" to "Android ${Build.VERSION.RELEASE}（API ${Build.VERSION.SDK_INT}）· ${Build.DISPLAY}",
+            "WebUI 内核" to "GeckoView ${WebUiRuntime.engineVersion()}",
             "处理器架构" to Build.SUPPORTED_ABIS.joinToString(", "),
             "存储" to (storage?.let { "可用 ${formatBytes(it.availableBytes)} / 共 ${formatBytes(it.totalBytes)}" } ?: "读不到"),
             "内存" to "可用 ${formatBytes(memory.availMem)} / 共 ${formatBytes(memory.totalMem)}" +
@@ -200,11 +205,19 @@ internal class DiagnosticsManager(
             client == activeQqClient -> "已安装，正在使用"
             else -> "已安装，已停用"
         }
+        val qqOfficialFiles = QqOfficialAdapterFiles(paths)
+        // 1.4.x 起 QQ 官方机器人随 MaiBot 内置，区分“已启用（内置）/未启用（MaiBot 内置）”与外置“已安装/未安装”便于排查。
+        val qqOfficialStatus = when {
+            qqOfficialFiles.isBuiltIn() && qqOfficialFiles.isInstalled() -> "已启用（内置）"
+            qqOfficialFiles.isBuiltIn() -> "未启用（MaiBot 内置）"
+            qqOfficialFiles.isInstalled() -> "已安装"
+            else -> "未安装"
+        }
         return ReportSection("运行状态", listOf(
             "MaiBot" to maiBot,
             "QQ（NapCat）" to qqClientState(QqClient.NapCat, NapCatFiles(paths).isNapCatReady()),
             "QQ（SnowLuma）" to qqClientState(QqClient.SnowLuma, SnowLumaFiles(paths).isSnowLumaReady()),
-            "QQ 官方机器人适配器" to if (QqOfficialAdapterFiles(paths).isInstalled()) "已安装" else "未安装",
+            "QQ 官方机器人适配器" to qqOfficialStatus,
             "容器 SSH" to if (settings.containerSshEnabled) "已开启" else "未开启",
             "当前本应用子进程数" to "${countOwnChildProcesses()}"
         ))
@@ -242,16 +255,30 @@ internal class DiagnosticsManager(
         add("NapCat管理令牌", readTextOrNull(napCat.webUiConfig)?.let { runCatching { JSONObject(it).optString("token") }.getOrNull() })
         val snowLuma = SnowLumaFiles(paths)
         add("SnowLuma管理密码", snowLuma.readWebUiPassword())
-        val qqOfficial = QqOfficialAdapterConfig.read(readTextOrNull(QqOfficialAdapterFiles(paths).configFile()))
-        add("AppID", qqOfficial.appId)
-        add("AppSecret", qqOfficial.appSecret)
+        val qqOfficialFiles = QqOfficialAdapterFiles(paths)
+        // 多实例场景下每个实例都可能独立保存 QQ 官方凭据，合并全部实例的配置目录做脱敏。
+        val qqOfficialConfigFiles = (MaiBotInstances.discover(paths).map { qqOfficialFiles.configFile(it) } +
+            qqOfficialFiles.configFile()).distinctBy { it.absolutePath }
+        for (qqOfficialConfigFile in qqOfficialConfigFiles) {
+            val qqOfficial = QqOfficialAdapterConfig.read(readTextOrNull(qqOfficialConfigFile))
+            add("AppID", qqOfficial.appId)
+            add("AppSecret", qqOfficial.appSecret)
+        }
         add("SSH密码", settings.containerSshRootPassword)
-        val maiBotConfigDir = File(paths.maiBotDir, "config")
-        readTextOrNull(File(maiBotConfigDir, "model_config.toml"))?.let { text ->
+        // 1.4.x 起模型供应与密钥统管在 host/model_catalog.toml，各实例自己的配置分别在 bots/<id>/config/ 下，
+        // 老版本仍在根目录 config/ 下；合并全部配置目录读全密钥和 QQ 号再整体去重打码。
+        readTextOrNull(MaiBotInstances.sharedModelCatalogFile(paths))?.let { text ->
             API_KEY_LINE.findAll(text).forEach { add("API Key", it.groupValues[1]) }
         }
-        readTextOrNull(File(maiBotConfigDir, "bot_config.toml"))?.let { text ->
-            QQ_ACCOUNT_LINE.findAll(text).forEach { add("QQ号", it.groupValues[1]) }
+        val configDirs = (MaiBotInstances.discover(paths).map { it.configDir } + File(paths.maiBotDir, "config"))
+            .distinctBy { it.absolutePath }
+        for (maiBotConfigDir in configDirs) {
+            readTextOrNull(File(maiBotConfigDir, "model_config.toml"))?.let { text ->
+                API_KEY_LINE.findAll(text).forEach { add("API Key", it.groupValues[1]) }
+            }
+            readTextOrNull(File(maiBotConfigDir, "bot_config.toml"))?.let { text ->
+                QQ_ACCOUNT_LINE.findAll(text).forEach { add("QQ号", it.groupValues[1]) }
+            }
         }
         // NapCat、SnowLuma 登录后按 QQ 号另存的配置文件名，以及 QQ 本地登录数据的目录名（两边共用一份 QQ），都是登录过的 QQ 号
         listOf(napCat.configDir, snowLuma.configDir).forEach { dir ->
@@ -292,15 +319,30 @@ internal class DiagnosticsManager(
 
     // ── 文件 ────────────────────────────────────────────────────────
 
-    private fun newestMaiBotLog(): File? =
-        File(paths.maiBotDir, "logs").listFiles { file -> file.isFile && file.name.startsWith("app_") }
-            ?.maxByOrNull { it.lastModified() }
+    private fun newestMaiBotLog(): File? {
+        val logDirs = (MaiBotInstances.discover(paths).map { it.logsDir } + File(paths.maiBotDir, "logs"))
+            .distinctBy { it.absolutePath }
+        return logDirs
+            .flatMap { dir ->
+                dir.listFiles { file -> file.isFile && file.name.startsWith("app_") }?.toList().orEmpty()
+            }
+            .maxByOrNull { it.lastModified() }
+    }
 
     private fun crashFiles(): List<File> =
         files.crashesDir.listFiles { file -> file.isFile && file.name.endsWith(".txt") }
             ?.sortedByDescending { it.lastModified() }
             ?.take(MAX_CRASH_FILES)
             .orEmpty()
+
+    // 读取系统网络当前默认 HTTP 代理设置，方便排查开代理未绕过 127.0.0.1 导致的本地连接异常。
+    private fun systemProxySummary(): String = runCatching {
+        val proxy = appContext.getSystemService(ConnectivityManager::class.java)?.defaultProxy
+            ?: return@runCatching "无"
+        val host = proxy.host?.takeIf { it.isNotBlank() } ?: return@runCatching "PAC 或无"
+        val exclusions = proxy.exclusionList.takeIf { it.isNotEmpty() }?.joinToString(",")
+        if (exclusions != null) "$host:${proxy.port}（绕过：$exclusions）" else "$host:${proxy.port}"
+    }.getOrDefault("读不到")
 
     private fun readTextOrNull(file: File): String? =
         runCatching { file.takeIf { it.isFile }?.readText() }.getOrNull()

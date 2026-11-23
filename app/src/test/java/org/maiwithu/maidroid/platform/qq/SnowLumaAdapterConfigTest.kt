@@ -1,11 +1,20 @@
 package org.maiwithu.maidroid.platform.qq
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.maibot.PluginHostVersionRange
+import org.maiwithu.maidroid.runtime.ContainerCommandResult
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class SnowLumaAdapterConfigTest {
     // MaiBot 按新适配器默认值生成的配置（节选）：默认关着、连 3001、没有 token
@@ -154,6 +163,11 @@ class SnowLumaAdapterConfigTest {
         assertFalse(script.contains("mv "))
         assertTrue(SnowLumaAdapterScripts.cloneToStaging(logPrefix = "[SnowLuma]").body.contains("'[SnowLuma]'"))
         assertFalse(SnowLumaAdapterScripts.cloneToStaging(logPrefix = "[SnowLuma]").body.contains("[NapCat]"))
+
+        val instancePlugins = "/opt/MaiBot/bots/0123456789abcdef0123456789abcdef/plugins"
+        val instanceScript = SnowLumaAdapterScripts.cloneToStaging("[SnowLuma]", pluginsDir = instancePlugins).body
+        assertTrue(instanceScript.contains("mkdir -p '$instancePlugins'"))
+        assertTrue(instanceScript.contains("'$instancePlugins/.MaiBot-SnowLuma-Adapter.tmp'"))
     }
 
     @Test
@@ -172,6 +186,16 @@ class SnowLumaAdapterConfigTest {
         )
         assertTrue(depBlocked.contains("silk-python"))
 
+        val hostDepPrepareFailed = diagnoseAdapterConfigWaitFailure(
+            listOf("插件依赖准备失败: 安装依赖超时")
+        )
+        assertTrue(hostDepPrepareFailed.contains("silk-python"))
+
+        val hostDepResolveFailed = diagnoseAdapterConfigWaitFailure(
+            listOf("依赖联合解析失败，Bot 未停止、环境未修改：No solution found")
+        )
+        assertTrue(hostDepResolveFailed.contains("silk-python"))
+
         val generic = diagnoseAdapterConfigWaitFailure(
             listOf("[MaiBot] ValueError: 图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body")
         )
@@ -186,5 +210,54 @@ class SnowLumaAdapterConfigTest {
         assertTrue(script.contains("if [ -s /root/.maidroid/napcat_token ]; then"))
         assertTrue(script.contains("napcat_token=\"${'$'}(cat /root/.maidroid/napcat_token)\""))
         assertTrue(script.contains("napcat_token=\"fresh\""))
+    }
+
+    @Test
+    fun `concurrent adapter installs are serialized and second caller skips cloning`() = runBlocking {
+        val mutex = Mutex()
+        val installed = AtomicBoolean(false)
+        val activeClones = AtomicInteger(0)
+        val maxConcurrentClones = AtomicInteger(0)
+        val totalCloneCalls = AtomicInteger(0)
+        val logs = mutableListOf<String>()
+
+        suspend fun runOnce(client: QqClient): String? = executeSerializedInstall(
+            mutex = mutex,
+            client = client,
+            resolveTarget = { "/opt/MaiBot/bots/abc/plugins" },
+            containerPluginsDir = { it },
+            readLegacyConfig = {},
+            isInstalled = { installed.get() },
+            runClone = {
+                val active = activeClones.incrementAndGet()
+                maxConcurrentClones.updateAndGet { prev -> maxOf(prev, active) }
+                totalCloneCalls.incrementAndGet()
+                delay(60)
+                activeClones.decrementAndGet()
+                ContainerCommandResult(exitCode = 0, output = "ok")
+            },
+            cleanupStaging = {},
+            stageAndPromote = {
+                installed.set(true)
+                null
+            },
+            checkInstalledProblem = { null },
+            removeLegacyAdapters = { emptyList() },
+            removeOrphanRoot = { null },
+            onLine = { line -> synchronized(logs) { logs.add(line) } },
+            ioDispatcher = Dispatchers.Default
+        )
+
+        val (first, second) = coroutineScope {
+            val a = async(Dispatchers.Default) { runOnce(QqClient.NapCat) }
+            val b = async(Dispatchers.Default) { runOnce(QqClient.SnowLuma) }
+            a.await() to b.await()
+        }
+
+        assertNull(first)
+        assertNull(second)
+        assertEquals(1, maxConcurrentClones.get())
+        assertEquals(1, totalCloneCalls.get())
+        assertTrue(logs.any { it.contains("QQ 适配器已存在，跳过下载") })
     }
 }

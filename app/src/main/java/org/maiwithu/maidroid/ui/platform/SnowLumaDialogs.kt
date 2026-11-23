@@ -4,23 +4,20 @@ import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,11 +47,20 @@ import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaScripts
 import org.maiwithu.maidroid.platform.snowluma.snowLumaLoginHint
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.QrCanvasBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
@@ -95,67 +102,98 @@ internal fun SnowLumaAgreementDialog(
         }
     }
 
-    AlertDialog(
+    MaiDialog(
+        title = "安装 SnowLuma",
+        subtitle = "需填写 Fork 仓库或 .tar.gz 直链",
+        icon = FlatFeatureIcons.Platforms,
+        iconBackground = IconPeachOrange,
+        size = MaiDialogSize.Expanded,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("安装 SnowLuma") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                state.failure?.let { failure ->
-                    Text(
-                        text = "上次安装失败：${failure.message}",
-                        color = StatusDanger,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 15.sp
-                    )
-                    FailureNotice(failure = failure)
-                }
-
-                PlatformDialogBody(
-                    "SnowLuma 是另一种登录个人 QQ 的方式：原上游仓库已不可用，" +
-                        "请填写 SnowLuma 的 fork 仓库地址（优先尝试 v${SnowLumaScripts.VERSION}，找不到则回退最新 Release 的 linux-arm64 发行包）" +
-                        "或 .tar.gz 直链。MaiDroid 会在容器里安装 LinuxQQ ${SnowLumaScripts.QQ_VERSION} 和 SnowLuma" +
-                        "（要下载约 200 MB，装好后约占 1 GB）。"
+        secondaryContent = {
+            // 横屏时将闭源协议链接与风险警示放到右列，左列专心承担仓库填写。
+            MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "SnowLuma 含闭源原生组件，仅限非商业用途；点“同意并安装”即表示你已阅读并同意对应仓库内的协议条款：",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
                 )
-                if (napCatInstalled) {
-                    PlatformDialogBody("装好后改用 SnowLuma 登录 QQ，NapCat 会停用（不卸载，随时可以切回）。")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SourceAgreementLink(text = "查看用户协议", onClick = { openSourceDoc("EULA.md") })
+                    SourceAgreementLink(text = "查看隐私政策", onClick = { openSourceDoc("PRIVACY.md") })
                 }
-
-                CustomSourceTextField(
-                    client = QqClient.SnowLuma,
-                    value = sourceUrlText,
-                    onValueChange = { sourceUrlText = it }
-                )
-
-                PlatformDialogBody(
-                    "SnowLuma 含有闭源的原生组件，只能用于非商业用途。" +
-                        "点“了解风险，同意并安装”即表示你已阅读并同意对应仓库内的用户协议和隐私政策。"
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { openSourceDoc("EULA.md") }) {
-                        Text(text = "用户协议", color = BrandOrange, fontWeight = FontWeight.Bold)
-                    }
-                    TextButton(onClick = { openSourceDoc("PRIVACY.md") }) {
-                        Text(text = "隐私政策", color = BrandOrange, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                CustomSourceRiskNotice(clientLabel = "SnowLuma")
             }
+            CustomSourceRiskNotice(clientLabel = "SnowLuma")
         },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = {
-            PlatformPrimaryButton(
-                text = "了解风险，同意并安装",
-                enabled = validSource != null && !state.isInstalling,
-                onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = "同意并安装",
+                    style = MaiDialogButtonStyle.Primary,
+                    enabled = validSource != null && !state.isInstalling,
+                    modifier = Modifier.weight(1f),
+                    onClick = { validSource?.let { onConfirm(it.source.rawUrl) } }
+                )
+            }
+        }
+    ) {
+        state.failure?.let { failure ->
+            FailureNotice(failure = failure, summary = failure.message)
+        }
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            MaiDialogInfoChip(text = "LinuxQQ ${SnowLumaScripts.QQ_VERSION}", color = TextPrimary, containerColor = CardBorder)
+            MaiDialogInfoChip(text = "下载约 200 MB", color = TextMuted, containerColor = CardBorder)
+            MaiDialogInfoChip(text = "约占 1 GB", color = TextMuted, containerColor = CardBorder)
+        }
+
+        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "原上游仓库已不可用，请填写 SnowLuma 的 Fork 仓库地址（优先尝试 v${SnowLumaScripts.VERSION}，回退最新 linux-arm64 Release）或 .tar.gz 直链。",
+                color = TextMuted,
+                fontSize = TextSizes.Caption,
+                lineHeight = 16.sp
             )
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
+
+            CustomSourceTextField(
+                client = QqClient.SnowLuma,
+                value = sourceUrlText,
+                onValueChange = { sourceUrlText = it }
+            )
+
+            if (napCatInstalled) {
+                Text(
+                    text = "提示：装好后改用 SnowLuma 登录 QQ，NapCat 会停用（不卸载，可随时切回）。",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceAgreementLink(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = BrandOrange,
+        fontSize = TextSizes.Caption,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(Corners.Tag))
+            .background(BrandOrange.copy(alpha = 0.14f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
     )
 }
 
@@ -176,27 +214,41 @@ internal fun QqClientSwitchDialog(
         QqClient.SnowLuma -> "之后在 QQ 窗口里登录，通常点一下“登录”就能用上次的账号。"
     }
     val install = if (targetInstalled) "" else "${target.label} 还没装，确认后开始下载安装。"
-    AlertDialog(
+    MaiDialog(
+        title = "改用 ${target.label} 登录 QQ？",
+        subtitle = "同一时间仅运行一种 QQ 协议端",
+        icon = FlatFeatureIcons.Platforms,
+        iconBackground = IconSkyBlue,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("改用 ${target.label} 登录 QQ？") },
-        text = {
-            PlatformDialogBody(
-                "${other.label} 会停下（不卸载，随时可以切回），QQ 先下线，再由 ${target.label} 重新启动，" +
-                    "期间麦麦收发不了 QQ 消息。$login$install"
-            )
-        },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = { PlatformPrimaryButton(text = if (targetInstalled) "切换" else "安装并切换", onClick = onConfirm) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = if (targetInstalled) "切换" else "安装并切换",
+                    style = MaiDialogButtonStyle.Primary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm
+                )
+            }
+        }
+    ) {
+        Text(
+            text = "${other.label} 会先停下（不卸载，随时可切回），QQ 下线后由 ${target.label} 重新启动，期间麦麦暂无法收发 QQ 消息。$login$install",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+    }
 }
 
 /**
  * QQ 窗口：显示容器里 QQ 的窗口画面（每秒刷新），点画面上的哪里就替用户在 QQ 窗口的那里点一下。
  * SnowLuma 不出二维码，扫码登录、二维码过期后刷新、快速登录都在这里做。
- * 下面是 SnowLuma 汇报的登录进度和安装失败的原因。
  */
 @Composable
 internal fun QqWindowDialog(
@@ -205,55 +257,68 @@ internal fun QqWindowDialog(
     onTap: (QqScreenFrame, Float, Float) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MaiDialog(
+        title = "QQ 窗口",
+        subtitle = snowLumaLoginHint(state),
+        icon = FlatFeatureIcons.DesktopWindow,
+        iconBackground = IconPeachOrange,
+        size = MaiDialogSize.Medium,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("QQ 窗口") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                QqWindowImage(frame = frame, onTap = onTap)
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "点画面就是点 QQ 窗口。可以截图发给其他设备，再用手机 QQ 扫码",
-                    color = TextFaint,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 14.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+        // 说明与报错放进次列：横屏宽度够时画面在左、说明在右并排，画面不必为文字让出高度；竖屏仍顺接在画面下方。
+        secondaryContent = {
+            Text(
+                text = "点击画面位置即可操作 QQ 窗口；也可截图发给另一台设备，用手机 QQ 扫码登录。",
+                color = TextFaint,
+                fontSize = TextSizes.Caption,
+                lineHeight = 15.sp
+            )
+            if (state.hookPhase == SnowLumaHookPhase.Failed && state.failure == null) {
                 Text(
                     text = snowLumaLoginHint(state),
-                    color = if (state.hookPhase == SnowLumaHookPhase.Failed) StatusDanger else TextMuted,
+                    color = StatusDanger,
                     fontSize = TextSizes.Caption,
                     lineHeight = 15.sp
                 )
-                state.failure?.let { failure ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FailureNotice(failure = failure)
-                }
+            }
+            state.failure?.let { failure ->
+                FailureNotice(failure = failure, summary = failure.message)
             }
         },
-        confirmButton = { PlatformPrimaryButton(text = "关闭", onClick = onDismiss) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        footer = {
+            MaiDialogButton(
+                text = "关闭",
+                style = MaiDialogButtonStyle.Primary,
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
+                onClick = onDismiss
+            )
+        }
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            QqWindowImage(frame = frame, onTap = onTap)
+        }
+    }
 }
 
-/** QQ 窗口的画面，按窗口的宽高比铺满弹窗宽度；横屏时限高，免得把说明挤出去。还没有画面时换成一句原因。 */
+/** QQ 窗口的画面，按窗口的宽高比铺满弹窗宽度；横屏时限高到弹窗内容区一屏以内，免得要先滚动才能点到画面。还没有画面时换成一句原因。 */
 @Composable
 private fun QqWindowImage(
     frame: QqScreenFrame?,
     onTap: (QqScreenFrame, Float, Float) -> Unit
 ) {
+    // 横屏弹窗内容区约 180dp 高，画面限高 176dp 以内整屏可见；竖屏保持最高 400dp 的大画面。
+    val maxImageHeight = if (LocalMaiDialogPhoneLandscape.current) 176.dp else 400.dp
     if (frame == null) {
-        Text(
-            text = "QQ 窗口还没画出来，请稍等；一直这样的话看终端里 [SnowLuma] 开头的输出。",
-            color = TextMuted,
-            fontSize = TextSizes.Body,
-            lineHeight = 17.sp
-        )
+        MaiDialogSectionCard {
+            Text(
+                text = "QQ 窗口还没画出来，请稍等；一直这样的话看终端里 [SnowLuma] 开头的输出。",
+                color = TextMuted,
+                fontSize = TextSizes.Body,
+                lineHeight = 18.sp
+            )
+        }
         return
     }
     // 画面变了（signature 变了）才重新生成位图
@@ -262,7 +327,7 @@ private fun QqWindowImage(
     }
     Box(
         modifier = Modifier
-            .heightIn(max = 420.dp)
+            .heightIn(max = maxImageHeight)
             .aspectRatio(frame.width.toFloat() / frame.height.toFloat())
             .clip(RoundedCornerShape(Corners.Control))
             .background(QrCanvasBackground)
@@ -317,18 +382,50 @@ internal fun SnowLumaConfigDialog(
         statusText = statusText,
         statusOnline = state.active && state.oneBotReachable,
         onRefresh = onRefresh,
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
+        secondaryContent = {
+            ConfigFoldableSection(
+                title = "连接与配置详情",
+                summary = "3 项参数"
+            ) {
+                ConfigKeyValueRow("服务类型", "WebSocket Server")
+                ConfigGroupDivider()
+                ConfigKeyValueRow("Token", "和 NapCat 共用一个", valueColor = TextMuted)
+                ConfigGroupDivider()
+                ConfigKeyValueRow(
+                    label = "配置文件",
+                    value = "${SnowLumaScripts.DATA_DIR}/config/onebot.json",
+                    valueColor = TextMuted
+                )
+            }
+
+            CustomSourceEditorSection(
+                client = QqClient.SnowLuma,
+                savedUrl = state.customSourceUrl,
+                installing = state.isInstalling,
+                onSaveUrl = onSaveSourceUrl,
+                onRequestReinstall = onReinstallFromSourceUrl
+            )
+        },
+        footerStart = {
+            // 重启 QQ 移入左下固定底栏，避免在横屏滚动列表底端被裁切。
+            ConfigFooterDangerButton(
+                text = if (state.qqRestarting) "正在重启…" else "重启 QQ",
+                enabled = state.active && !state.qqRestarting,
+                onClick = onRestartQq
+            )
+        },
+        footer = {
+            MaiDialogButton(
+                text = "关闭",
+                style = MaiDialogButtonStyle.Secondary,
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
+                onClick = onDismiss
+            )
+        }
     ) {
         state.failure?.let { failure ->
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "上次操作失败：${failure.message}",
-                    color = StatusDanger,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 15.sp
-                )
-                FailureNotice(failure = failure)
-            }
+            FailureNotice(failure = failure, summary = failure.message)
         }
 
         ConfigCardGroup {
@@ -366,36 +463,6 @@ internal fun SnowLumaConfigDialog(
                 valueColor = TextMuted
             )
         }
-
-        ConfigFoldableSection(
-            title = "连接与配置详情",
-            summary = "3 项参数"
-        ) {
-            ConfigKeyValueRow("服务类型", "WebSocket Server")
-            ConfigGroupDivider()
-            ConfigKeyValueRow("Token", "和 NapCat 共用一个", valueColor = TextMuted)
-            ConfigGroupDivider()
-            ConfigKeyValueRow(
-                label = "配置文件",
-                value = "${SnowLumaScripts.DATA_DIR}/config/onebot.json",
-                valueColor = TextMuted
-            )
-        }
-
-        CustomSourceEditorSection(
-            client = QqClient.SnowLuma,
-            savedUrl = state.customSourceUrl,
-            installing = state.isInstalling,
-            onSaveUrl = onSaveSourceUrl,
-            onRequestReinstall = onReinstallFromSourceUrl
-        )
-
-        // 重启 QQ：先弹二次确认；进行中禁用，避免重复重启
-        ConfigSoftDangerButton(
-            text = if (state.qqRestarting) "正在重启…" else "重启 QQ",
-            enabled = state.active && !state.qqRestarting,
-            onClick = onRestartQq
-        )
     }
 }
 
@@ -405,18 +472,34 @@ internal fun SnowLumaRestartQqDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MaiDialog(
+        title = "重启 QQ？",
+        subtitle = "如需切换账号，重启后在 QQ 窗口内操作",
+        icon = FlatFeatureIcons.DesktopWindow,
+        iconBackground = IconRoseAlert,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("重启 QQ？") },
-        text = {
-            PlatformDialogBody(
-                "QQ 会先下线再重新启动，MaiBot 暂时收发不了 QQ 消息。之后在 QQ 窗口里重新登录，也可以换别的账号。"
-            )
-        },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = { PlatformDangerButton(text = "重启 QQ", onClick = onConfirm) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = "重启 QQ",
+                    style = MaiDialogButtonStyle.Danger,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm
+                )
+            }
+        }
+    ) {
+        Text(
+            text = "QQ 会先下线再重新启动，期间 MaiBot 暂时无法收发 QQ 消息；启动后请在 QQ 窗口里重新登录或换号。",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+    }
 }

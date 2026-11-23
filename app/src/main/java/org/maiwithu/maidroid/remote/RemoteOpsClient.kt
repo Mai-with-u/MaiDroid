@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -33,7 +34,11 @@ internal sealed interface ManifestFetchResult {
  * - 上传 Gzip 脱敏快照换取 6 位求助码；
  * - 发送轻量 JSON 匿名运行统计。
  */
-internal class RemoteOpsClient(userAgent: String) {
+internal class RemoteOpsClient(
+    userAgent: String,
+    private val gitHubMirrorsProvider: () -> List<GitHubMirror> = { GitHubMirrors.ALL },
+    private val preferFirstMirror: () -> Boolean = { false }
+) {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -87,12 +92,26 @@ internal class RemoteOpsClient(userAgent: String) {
         }
     }.getOrDefault(ManifestFetchResult.Failed)
 
-    // 主源不可达时同时向 GitHub 直连与各镜像请求兜底清单，取第一个返回且通过 ECDSA 验签的结果
+    // 主源不可达时经 GitHub 镜像请求兜底清单：手动选源先单独尝试首选，自动模式或首选失败时并发赛跑其余候选
     private suspend fun fetchFromFallbackMirrors(
         fallbackUrl: String,
         extraKeysSpec: String
+    ): ManifestFetchResult.Updated? {
+        val mirrors = GitHubMirrors.candidatesFor(fallbackUrl, gitHubMirrorsProvider())
+        if (mirrors.isEmpty()) return null
+        if (preferFirstMirror() && mirrors.size > 1) {
+            val preferred = raceManifestMirrors(listOf(mirrors.first()), fallbackUrl, extraKeysSpec)
+            if (preferred != null) return preferred
+            return raceManifestMirrors(mirrors.drop(1), fallbackUrl, extraKeysSpec)
+        }
+        return raceManifestMirrors(mirrors, fallbackUrl, extraKeysSpec)
+    }
+
+    private suspend fun raceManifestMirrors(
+        mirrors: List<GitHubMirror>,
+        fallbackUrl: String,
+        extraKeysSpec: String
     ): ManifestFetchResult.Updated? = coroutineScope {
-        val mirrors = GitHubMirrors.candidatesFor(fallbackUrl)
         if (mirrors.isEmpty()) return@coroutineScope null
         val pending = mirrors.map { mirror ->
             async(Dispatchers.IO) {

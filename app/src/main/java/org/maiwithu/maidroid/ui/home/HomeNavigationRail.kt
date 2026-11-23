@@ -1,16 +1,14 @@
 package org.maiwithu.maidroid.ui.home
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -19,40 +17,129 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
-import eightbitlab.com.blurview.BlurTarget
-import org.maiwithu.maidroid.ui.component.BackdropBlurView
-import org.maiwithu.maidroid.ui.theme.Corners
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.lerp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.ui.component.DampedDragAnimation
+import org.maiwithu.maidroid.ui.component.DefaultLiquidGlassHighlight
+import org.maiwithu.maidroid.ui.component.InteractiveHighlight
+import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
+import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
+import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
+import org.maiwithu.maidroid.ui.component.resolveLiquidHapticSlot
+import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
-import org.maiwithu.maidroid.ui.theme.GlassShadow
 import org.maiwithu.maidroid.ui.theme.GlassStroke
-import org.maiwithu.maidroid.ui.theme.GlassSurface
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
-/** 侧栏里标签竖条的宽度（容得下“消息平台”四个字）。 */
-private val HomeNavigationRailBarWidth = 72.dp
+/** 侧栏竖条统一宽度：锁定 64dp 基准短边，使横竖屏全圆 Capsule() 外圆角半径一致维持 32dp，下方按钮同宽呈正圆。 */
+internal val HomeNavigationRailBarWidth = HomeNavUnitSizeDp.dp
 
-/** 侧栏左右、上下的留白。 */
+/** 正常高度下的侧栏留白，用于计算页面正文左偏移与窄矮屏统一基准。 */
 private val HomeNavigationRailPadding = 12.dp
 
 /** 侧栏连同两侧留白的总宽度：页面内容左边让出这么多，静止时不被侧栏盖住。 */
 internal val HomeNavigationRailWidth = HomeNavigationRailBarWidth + HomeNavigationRailPadding * 2
+
+/** 矮屏（例如手机横屏约 360dp 高）下切换紧凑页签高度的分界线。 */
+private const val CompactRailMaxHeightDp = 420f
+
+/** 下方刷新与终端按钮均保持 64×64 正圆所需的最小高度；极矮分屏再压低刷新钮保零裁剪。 */
+private const val CompactFullCircleMinHeightDp = 356f
+
+/**
+ * 横屏侧栏在不同可用高度下的几何尺寸（dp）：
+ * - 页签竖栏与下方正圆终端按钮统一锁定 64dp 列宽并全程采用全圆 Capsule()；
+ * - 刷新按钮保持克制的小正圆尺寸（38~44dp）降低误触风险，并在主流 360dp 手机横屏上方留出充足间距。
+ */
+internal data class HomeRailMetrics(
+    val compact: Boolean,
+    val railPaddingDp: Float,
+    val tabHeightDp: Float,
+    val refreshButtonSizeDp: Float,
+    val refreshBottomGapDp: Float,
+    val terminalButtonSizeDp: Float
+) {
+    val tabRailHeightDp: Float
+        get() = tabHeightDp * HomeTab.entries.size + 8f
+
+    val minimumTotalHeightDp: Float
+        get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonSizeDp + refreshBottomGapDp + terminalButtonSizeDp
+}
+
+/** 按当前容器高度计算横屏侧栏三档尺寸：终端保持 64dp 全圆正圆，刷新钮缩小为克制小正圆防误触。 */
+internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
+    when {
+        maxHeightDp < CompactFullCircleMinHeightDp -> HomeRailMetrics(
+            compact = true,
+            railPaddingDp = 6f,
+            tabHeightDp = 44f,
+            refreshButtonSizeDp = 38f,
+            refreshBottomGapDp = 8f,
+            terminalButtonSizeDp = HomeNavUnitSizeDp
+        )
+
+        maxHeightDp < CompactRailMaxHeightDp -> HomeRailMetrics(
+            compact = true,
+            railPaddingDp = 6f,
+            tabHeightDp = 50f,
+            refreshButtonSizeDp = 40f,
+            refreshBottomGapDp = 10f,
+            terminalButtonSizeDp = HomeNavUnitSizeDp
+        )
+
+        else -> HomeRailMetrics(
+            compact = false,
+            railPaddingDp = HomeNavigationRailPadding.value,
+            tabHeightDp = HomeTabButtonHeightDp,
+            refreshButtonSizeDp = 44f,
+            refreshBottomGapDp = 12f,
+            terminalButtonSizeDp = HomeNavUnitSizeDp
+        )
+    }
 
 /**
  * 主页导航放在哪：窗口宽大于高（手机横屏、平板横屏、横向分屏）时竖着放在左侧，否则悬浮在底部。
@@ -61,116 +148,224 @@ internal val HomeNavigationRailWidth = HomeNavigationRailBarWidth + HomeNavigati
 internal fun homeUsesNavigationRail(widthDp: Float, heightDp: Float): Boolean = widthDp > heightDp
 
 /**
- * 横屏时主页左侧的竖向导航：上面是三个标签的毛玻璃竖条（选中块上下弹性滑动），
- * 下面是刷新 WebUI（只在 WebUI 页签显示）和终端按钮。
- * 侧栏和竖屏底栏一样悬浮在页面上，实时模糊 blurTarget 里的页面：页面铺满整宽、内容让出侧栏宽度，
- * 静止时玻璃底下是页面的底色，切换标签时页面整页滑动，从玻璃底下滑过。
+ * 横屏时主页左侧的竖向液态玻璃导航：上面是四栏纵向可拖拽液态玻璃条，
+ * 下面是圆形液态玻璃刷新（只在 WebUI 页签显示）与终端按钮。
  */
 @Composable
 internal fun HomeNavigationRail(
     selectedTab: HomeTab,
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     onTabSelected: (HomeTab) -> Unit,
     onTerminalClick: () -> Unit,
     onRefreshWebUi: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .padding(HomeNavigationRailPadding)
-            .width(HomeNavigationRailBarWidth),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        AnimatedHomeTabRail(
-            selectedTab = selectedTab,
-            blurTarget = blurTarget,
-            onTabSelected = onTabSelected,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(HomeTabButtonHeight * HomeTab.entries.size + 8.dp)
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // 刷新按钮仅在 WebUI 页签显示：横屏网页为桌面版，左侧栏留这一枚圆形快捷刷新钮不挡网页右上角控件。
-        AnimatedVisibility(
-            visible = onRefreshWebUi != null,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut()
-        ) {
-            RailRefreshButton(
-                blurTarget = blurTarget,
-                onClick = { onRefreshWebUi?.invoke() },
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-        }
-
-        HomeTerminalButton(
-            blurTarget = blurTarget,
-            onClick = onTerminalClick,
-            modifier = Modifier.size(HomeTabButtonHeight)
-        )
-    }
-}
-
-@Composable
-private fun AnimatedHomeTabRail(
-    selectedTab: HomeTab,
-    blurTarget: BlurTarget?,
-    onTabSelected: (HomeTab) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(Corners.Pill)
-
-    BoxWithConstraints(
-        modifier = modifier
-            .shadow(
-                elevation = 14.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = GlassShadow,
-                spotColor = GlassShadow
-            )
-            .clip(shape)
-            .border(1.dp, GlassStroke, shape)
-    ) {
-        val tabHeight = (maxHeight - 8.dp) / HomeTab.entries.size
-        val indicatorOffset by animateDpAsState(
-            targetValue = 4.dp + tabHeight * selectedTab.ordinal.toFloat(),
-            animationSpec = spring(
-                dampingRatio = 0.78f,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "HomeRailIndicatorOffset"
-        )
-
-        // 最底层是毛玻璃，上面依次叠选中滑块和三个标签按钮。
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = NavigationBlurRadius,
-            overlayColor = GlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
-
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(4.dp.roundToPx(), indicatorOffset.roundToPx()) }
-                .width(maxWidth - 8.dp)
-                .height(tabHeight)
-                .clip(RoundedCornerShape(Corners.Pill))
-                .background(GlassSelectedIndicator)
-        )
+    BoxWithConstraints(modifier = modifier.fillMaxHeight()) {
+        val metrics = computeHomeRailMetrics(maxHeight.value)
 
         Column(
             modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = HomeNavigationRailPadding, vertical = metrics.railPaddingDp.dp)
+                .width(HomeNavigationRailBarWidth),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            AnimatedHomeTabRail(
+                selectedTab = selectedTab,
+                backdrop = backdrop,
+                compact = metrics.compact,
+                onTabSelected = onTabSelected,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(metrics.tabRailHeightDp.dp)
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            AnimatedVisibility(
+                visible = onRefreshWebUi != null,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                RailRefreshButton(
+                    backdrop = backdrop,
+                    sizeDp = metrics.refreshButtonSizeDp,
+                    onClick = { onRefreshWebUi?.invoke() },
+                    modifier = Modifier.padding(bottom = metrics.refreshBottomGapDp.dp)
+                )
+            }
+
+            HomeTerminalButton(
+                backdrop = backdrop,
+                onClick = onTerminalClick,
+                size = metrics.terminalButtonSizeDp.dp,
+                shape = { HomeNavBarShape }
+            )
+        }
+    }
+}
+
+/** 纵向三层兄弟结构液态玻璃导航条：支持直接按住水滴上下拖动切换，按压膨胀并折射底部橙色放大图标。 */
+@Composable
+private fun AnimatedHomeTabRail(
+    selectedTab: HomeTab,
+    backdrop: Backdrop,
+    compact: Boolean,
+    onTabSelected: (HomeTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+    val animationScope = rememberCoroutineScope()
+    val liquidHaptics = rememberLiquidHaptics()
+    val tabsCount = HomeTab.entries.size
+    val latestSelectedTab by rememberUpdatedState(selectedTab)
+    val latestOnTabSelected by rememberUpdatedState(onTabSelected)
+    // 外框与内滑块全部采用全圆 Capsule()（64dp 宽下外圆角 32dp，4dp 内边距后内滑块 28dp 严格同心）。
+    val barShape = { HomeNavBarShape }
+    val indicatorShape = { HomeNavIndicatorShape }
+    val tabsBackdrop = rememberLayerBackdrop()
+    val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    BoxWithConstraints(modifier = modifier) {
+        val innerPadding = 4.dp
+        val tabHeight = (maxHeight - innerPadding * 2) / tabsCount
+        val railHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+        val tabHeightPx by rememberUpdatedState(with(density) { tabHeight.toPx() })
+        val innerPaddingPx = with(density) { innerPadding.toPx() }
+        val maxPanelOffsetPx = with(density) { 4f.dp.toPx() }
+
+        val panelOffsetAnim = remember { Animatable(0f) }
+        val panelOffsetPx by remember(railHeightPx, maxPanelOffsetPx) {
+            derivedStateOf {
+                computeLiquidPanelOffsetPx(
+                    accumulatedOffsetPx = panelOffsetAnim.value,
+                    containerSpanPx = railHeightPx,
+                    maxPanelOffsetPx = maxPanelOffsetPx
+                )
+            }
+        }
+
+        var currentIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
+        var isRailDragging by remember { mutableStateOf(false) }
+        var lastHapticIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
+        val railDragAnimation = remember(animationScope) {
+            DampedDragAnimation(
+                animationScope = animationScope,
+                initialValue = selectedTab.ordinal.toFloat(),
+                valueRange = 0f..(tabsCount - 1).toFloat(),
+                visibilityThreshold = 0.001f,
+                initialScale = 1f,
+                pressedScale = 70f / 56f,
+                onDragStarted = { isRailDragging = true },
+                onDragStopped = {
+                    isRailDragging = false
+                    val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
+                    currentIndex = targetIndex
+                    animateToValue(targetIndex.toFloat())
+                    animationScope.launch {
+                        panelOffsetAnim.animateTo(0f, spring(1f, 300f, 0.5f))
+                    }
+                },
+                onDragCancelled = {
+                    isRailDragging = false
+                    val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
+                    currentIndex = targetIndex
+                    animateToValue(targetIndex.toFloat())
+                    animationScope.launch {
+                        panelOffsetAnim.animateTo(0f, spring(1f, 300f, 0.5f))
+                    }
+                },
+                onDrag = { _, dragAmount ->
+                    val step = dragAmount.y / tabHeightPx.coerceAtLeast(1f)
+                    updateValue((targetValue + step).fastCoerceIn(0f, (tabsCount - 1).toFloat()))
+                    animationScope.launch {
+                        panelOffsetAnim.snapTo(panelOffsetAnim.value + dragAmount.y)
+                    }
+                }
+            )
+        }
+
+        LaunchedEffect(selectedTab) {
+            // 点按或拖拽落入新页签时若跨格尚未触发，补充一次侧栏落格触觉反馈
+            if (lastHapticIndex != selectedTab.ordinal) {
+                lastHapticIndex = selectedTab.ordinal
+                liquidHaptics.performTabStep()
+            }
+            if (currentIndex != selectedTab.ordinal) {
+                currentIndex = selectedTab.ordinal
+            }
+            if (abs(railDragAnimation.targetValue - selectedTab.ordinal.toFloat()) > 0.01f) {
+                railDragAnimation.animateToValue(selectedTab.ordinal.toFloat())
+            }
+        }
+        LaunchedEffect(railDragAnimation, liquidHaptics) {
+            // 横屏侧栏上下拖动水滴跨过标签中线死区时触发一次刻度震动
+            snapshotFlow { isRailDragging to railDragAnimation.value }
+                .collect { (dragging, continuousValue) ->
+                    if (!dragging) return@collect
+                    val nextSlot = resolveLiquidHapticSlot(
+                        currentSlot = lastHapticIndex,
+                        continuousValue = continuousValue,
+                        itemCount = tabsCount
+                    )
+                    if (nextSlot != lastHapticIndex) {
+                        lastHapticIndex = nextSlot
+                        liquidHaptics.performTabStep()
+                    }
+                }
+        }
+        LaunchedEffect(railDragAnimation) {
+            snapshotFlow { currentIndex }
+                .drop(1)
+                .collectLatest { index ->
+                    val target = HomeTab.entries.getOrNull(index) ?: return@collectLatest
+                    if (target != latestSelectedTab) {
+                        latestOnTabSelected(target)
+                    }
+                }
+        }
+
+        val railHighlight = remember(animationScope) {
+            InteractiveHighlight(
+                animationScope = animationScope,
+                position = { size, _ ->
+                    val slotH = (size.height / tabsCount).coerceAtLeast(1f)
+                    Offset(size.width * 0.5f, (railDragAnimation.value + 0.5f) * slotH + panelOffsetPx)
+                }
+            )
+        }
+
+        val railPressScale = lerp(
+            1f,
+            1f + with(density) { 12f.dp.toPx() } / railHeightPx,
+            railDragAnimation.pressProgress
+        )
+
+        // 兄弟层 1：基础液态玻璃竖栏与可点击页签
+        Column(
+            modifier = Modifier
                 .fillMaxSize()
-                .padding(4.dp)
+                .graphicsLayer { translationY = panelOffsetPx }
+                .liquidGlassSurface(
+                    backdrop = backdrop,
+                    shape = barShape,
+                    blurRadius = 10.dp,
+                    refractionHeight = 20.dp,
+                    refractionAmount = 24.dp,
+                    surfaceColor = LiquidBarSurface,
+                    layerBlock = {
+                        scaleX = railPressScale
+                        scaleY = railPressScale
+                    }
+                )
+                .then(railHighlight.modifier)
+                .padding(innerPadding)
         ) {
             HomeTab.entries.forEach { tab ->
                 HomeTabButton(
                     tab = tab,
                     selected = selectedTab == tab,
+                    compact = compact,
                     onClick = { onTabSelected(tab) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -178,42 +373,129 @@ private fun AnimatedHomeTabRail(
                 )
             }
         }
+
+        // 兄弟层 2：隐身品牌橙 1.18x 放大高亮层，供上方纵移水滴折射采样
+        CompositionLocalProvider(
+            LocalLiquidBottomTabScale provides {
+                lerp(1f, 1.18f, railDragAnimation.pressProgress)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clearAndSetSemantics {}
+                    .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
+                    .graphicsLayer { translationY = panelOffsetPx }
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = barShape,
+                        effects = {
+                            val progress = railDragAnimation.pressProgress
+                            vibrancy()
+                            blur(10f.dp.toPx())
+                            lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
+                        },
+                        highlight = {
+                            Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
+                        },
+                        shadow = null,
+                        layerBlock = {
+                            scaleX = railPressScale
+                            scaleY = railPressScale
+                        },
+                        onDrawSurface = {
+                            drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
+                        }
+                    )
+                    .then(railHighlight.modifier)
+                    .padding(innerPadding)
+            ) {
+                HomeTab.entries.forEach { tab ->
+                    HomeTabButton(
+                        tab = tab,
+                        selected = true,
+                        compact = compact,
+                        accentHighlighted = true,
+                        clickableEnabled = false,
+                        onClick = {},
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                }
+            }
+        }
+
+        // 兄弟层 3：独立游走纵向水滴滑块（不进竖栏裁剪区，按下自由膨胀并做纵向速度挤压）
+        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
+        Box(
+            modifier = Modifier
+                .padding(horizontal = innerPadding)
+                .graphicsLayer {
+                    translationY = innerPaddingPx + railDragAnimation.value * tabHeightPx + panelOffsetPx
+                }
+                .then(railHighlight.gestureModifier)
+                .then(railDragAnimation.modifier)
+                .drawBackdrop(
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                    shape = indicatorShape,
+                    effects = {
+                        val progress = railDragAnimation.pressProgress
+                        lens(
+                            refractionHeight = 10f.dp.toPx() * progress,
+                            refractionAmount = 14f.dp.toPx() * progress,
+                            chromaticAberration = true
+                        )
+                    },
+                    highlight = {
+                        Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
+                    },
+                    shadow = {
+                        Shadow(alpha = railDragAnimation.pressProgress)
+                    },
+                    innerShadow = {
+                        val progress = railDragAnimation.pressProgress
+                        InnerShadow(radius = 8f.dp * progress, alpha = progress)
+                    },
+                    layerBlock = {
+                        scaleX = railDragAnimation.scaleX
+                        scaleY = railDragAnimation.scaleY
+                        val velocity = railDragAnimation.velocity / 10f
+                        scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    },
+                    onDrawSurface = {
+                        val progress = railDragAnimation.pressProgress
+                        drawRect(GlassSelectedIndicator, alpha = 1f - progress)
+                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                    }
+                )
+                .then(fallbackBorder)
+                .fillMaxWidth()
+                .height(tabHeight)
+        )
     }
 }
 
 @Composable
 private fun RailRefreshButton(
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
+    sizeDp: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    LiquidGlassIconButton(
+        icon = Icons.Outlined.Refresh,
+        contentDescription = "刷新 WebUI",
+        onClick = onClick,
+        backdrop = backdrop,
+        size = sizeDp.dp,
+        shape = { HomeNavBarShape },
+        iconSize = if (sizeDp < 42f) 20.dp else 22.dp,
+        tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
+        surfaceColor = LiquidBarSurface,
+        highlight = { DefaultLiquidGlassHighlight },
         modifier = modifier
-            .size(44.dp)
-            .shadow(
-                elevation = 14.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = GlassShadow,
-                spotColor = GlassShadow
-            )
-            .clip(CircleShape)
-            .border(1.dp, GlassStroke, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = NavigationBlurRadius,
-            overlayColor = GlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
-
-        Icon(
-            imageVector = Icons.Outlined.Refresh,
-            contentDescription = "刷新 WebUI",
-            tint = TextPrimary,
-            modifier = Modifier.size(22.dp)
-        )
-    }
+    )
 }

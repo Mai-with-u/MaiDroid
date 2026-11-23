@@ -2,13 +2,12 @@ package org.maiwithu.maidroid.ui.home
 
 import android.util.Log
 import android.view.ViewGroup
-import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -48,169 +47,143 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.shapes.RoundedRectangle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import org.maiwithu.maidroid.BuildConfig
+import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.terminal.AnsiText
+import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
-import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
-import org.maiwithu.maidroid.webui.WebUiChromeClient
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
-import org.maiwithu.maidroid.webui.WebUiPageBackground
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
-import org.maiwithu.maidroid.webui.WebUiWebViewClient
-import org.maiwithu.maidroid.webui.createWebUiWebView
-import org.maiwithu.maidroid.webui.discardWebView
+import org.maiwithu.maidroid.webui.WebUiSessionHost
 
-/** 主页退后台连续空闲这么久后销毁 WebView，释放沙箱渲染进程与 GPU 显存；回到前台立即按需唤醒。 */
+/** 主页退后台连续空闲这么久后销毁 WebUI 会话，释放内容进程与显存；回到前台立即按需唤醒。 */
 internal const val WEB_UI_HIBERNATE_DELAY_MS = 3 * 60_000L
 private const val WEB_UI_HIBERNATE_RETRY_MS = 60_000L
 
 /**
- * WebUI 页签的 WebView 及其加载状态；放在主页外壳里记住，切换标签时 WebView 不销毁。
- * 网页的渲染进程没了时（见 WebUiWebViewClient.onRenderProcessGone）用 createWebView 换一个新的 WebView：
- * 旧的拿下来销毁 -> 建新的 -> 页签按新 WebView 重新挂上并加载；短时间内反复崩溃就停下，等用户点“重试”。
- * 应用退到后台空闲超过 [WEB_UI_HIBERNATE_DELAY_MS] 且无挂起的选文件/另存为回调时销毁 WebView 休眠省内存，
+ * WebUI 页签的 GeckoView 会话宿主及其加载状态；放在主页外壳里记住，切换标签时不销毁。
+ * 网页内容进程没了时用 createSessionHost 换一个新的宿主：旧的拿下来释放 -> 建新的 -> 页签重新挂载并加载；
+ * 短时间内反复崩溃就停下，等用户点“重试”。
+ * 应用退到后台空闲超过 [WEB_UI_HIBERNATE_DELAY_MS] 且无挂起的选文件/另存为回调时释放会话休眠省内存，
  * 回到前台自动重建重新连接本机 WebUI。
  */
 internal class WebUiTabState internal constructor(
     val fileChooser: WebUiFileChooser,
     val downloads: WebUiDownloads,
-    private val createWebView: (WebUiTabState) -> Pair<WebView, WebUiWebViewClient>
+    private val createSessionHost: (WebUiTabState) -> WebUiSessionHost
 ) {
     private val renderCrashGuard = WebUiRenderCrashGuard()
-    private val created = createWebView(this)
 
-    /** 现在挂在页签上的 WebView；退后台休眠期间为 null，回到前台或刷新时按需重建。 */
-    var webView by mutableStateOf<WebView?>(created.first)
-        private set
-    var webViewClient: WebUiWebViewClient? = created.second
+    /** 现在挂在页签上的 GeckoView 宿主；退后台休眠期间为 null，回到前台或刷新时按需重建。 */
+    var sessionHost by mutableStateOf<WebUiSessionHost?>(createSessionHost(this))
         private set
 
-    var webViewError by mutableStateOf<String?>(null)
+    var webUiError by mutableStateOf<String?>(null)
     var reloadToken by mutableIntStateOf(0)
-    var webViewHasSize by mutableStateOf(false)
+    var viewHasSize by mutableStateOf(false)
 
-    /** 渲染进程反复崩溃、暂停了自动加载；点“重试”后恢复。 */
+    /** 内容进程反复崩溃、暂停了自动加载；点“重试”后恢复。 */
     var autoLoadPaused by mutableStateOf(false)
         private set
 
-    /** 网页自己的底色（见 WebUiPageBackground）；还没报上来或加载失败时为 null。横屏时涂在侧栏底下让出的那一条。 */
+    /** 网页自己的底色（由内置扩展通过原生消息上报）；还没报上来或加载失败时为 null。横屏时涂在侧栏底下让出的那一条。 */
     var pageBackground by mutableStateOf<Color?>(null)
 
     /** 清掉错误提示并重新加载：若处于休眠态则先唤醒建新实例，再换加载令牌触发重新加载。 */
     fun reload() {
         ensureAwake()
-        webViewError = null
+        webUiError = null
         autoLoadPaused = false
         reloadToken += 1
     }
 
     /**
-     * 退后台空闲超时后销毁 WebView 让沙箱渲染进程退出释放内存；
+     * 退后台空闲超时后销毁会话让渲染子进程退出释放内存；
      * 若此时用户正在系统选文件或“另存为”界面中（hasPending），暂不休眠，交由调用方稍后重试。
      */
     internal fun hibernateIfIdle(): Boolean {
-        val current = webView ?: return false
+        val current = sessionHost ?: return false
         if (fileChooser.hasPending || downloads.hasPending) return false
-        downloads.detachFrom(current)
-        discardWebView(current)
-        webView = null
-        webViewClient = null
-        webViewHasSize = false
+        current.release()
+        sessionHost = null
+        viewHasSize = false
         pageBackground = null
-        Log.d(MaiBotWebUi.LOG_TAG, "WebView 退后台空闲超时，已休眠释放渲染进程")
+        Log.d(MaiBotWebUi.LOG_TAG, "WebUI 退后台空闲超时，已休眠释放内容进程")
         return true
     }
 
-    /** 回到前台或需要重新加载时唤醒已休眠的 WebView：重置尺寸与背景标记，让页签排好版后自动重连。 */
+    /** 回到前台或需要重新加载时唤醒已休眠的会话宿主：重置尺寸与背景标记，让页签排好版后自动重连。 */
     internal fun ensureAwake() {
-        if (webView != null) return
-        attachFreshWebView()
-        webViewError = null
-        Log.d(MaiBotWebUi.LOG_TAG, "WebView 已从休眠恢复")
+        if (sessionHost != null) return
+        attachFreshSessionHost()
+        webUiError = null
+        Log.d(MaiBotWebUi.LOG_TAG, "WebUI 已从休眠恢复")
     }
 
-    // 渲染进程没了：这个 WebView 已经不能用，换一个新的。两分钟里崩了三次以上就不自动加载，显示“重试”。
-    internal fun replaceDeadWebView(dead: WebView) {
-        if (dead !== webView) return
-        downloads.detachFrom(dead)
-        discardWebView(dead)
-        attachFreshWebView()
+    // 内容进程没了：这个宿主已经不能用，换一个新的。两分钟里崩了三次以上就不自动加载，显示“重试”。
+    internal fun replaceDeadSessionHost(dead: WebUiSessionHost) {
+        if (dead !== sessionHost) return
+        dead.release()
+        attachFreshSessionHost()
         if (renderCrashGuard.shouldAutoReopen()) {
-            webViewError = null
+            webUiError = null
         } else {
             autoLoadPaused = true
-            webViewError = "网页进程反复崩溃，已暂停自动加载"
+            webUiError = "网页进程反复崩溃，已暂停自动加载"
         }
     }
 
-    // 重建并挂载一个新的 WebView：尺寸和背景标记同步清零，让页签量出真实视口尺寸后再加载。
-    private fun attachFreshWebView() {
-        val (newWebView, newClient) = createWebView(this)
-        webViewClient = newClient
-        webViewHasSize = false
+    // 重建并挂载一个新的会话宿主：尺寸和背景标记同步清零，让页签量出真实视口尺寸后再加载。
+    private fun attachFreshSessionHost() {
+        val nextHost = createSessionHost(this)
+        viewHasSize = false
         pageBackground = null
-        webView = newWebView
+        sessionHost = nextHost
     }
 }
 
-/** 创建 WebUI 页签的 WebView（debug 包允许 Chrome 远程调试），离开主页时销毁。 */
+/** 创建 WebUI 页签的 GeckoView 会话宿主，离开主页时销毁。 */
 @Composable
 internal fun rememberWebUiTabState(): WebUiTabState {
     val context = LocalContext.current
     val state = remember(context) {
-        if (BuildConfig.DEBUG) {
-            WebView.setWebContentsDebuggingEnabled(true)
-        }
-
-        val fileChooser = WebUiFileChooser(MaiBotWebUi.LOG_TAG)
+        val fileChooser = WebUiFileChooser(context, MaiBotWebUi.LOG_TAG)
         val downloads = WebUiDownloads(context, MaiBotWebUi.LOG_TAG)
 
-        // 第一次和渲染进程没了之后换新的都用这一段建 WebView 和它的 client；回调里经 tabState 改页签状态。
+        // 首次构建与内容进程异常退出后重建都共用这套会话工厂；回调里经 tabState 更新页签状态。
         WebUiTabState(fileChooser, downloads) { tabState ->
-            val webView = createWebUiWebView(context, downloads).apply {
-                // Compose 的 AndroidView 把没有布局参数的子视图加进来时，默认补 WRAP_CONTENT。
-                // WebView 看到 WRAP_CONTENT 高度会进入"高度跟随内容"模式，把页面布局高度强制为 0，
-                // 导致 vh/dvh 恒为 0、h-[100dvh] 之类的容器塌成空白。先显式声明铺满父视图，
-                // 让 WebView 按固定高度排版，vh 才等于真实视口高度。
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                overScrollMode = WebView.OVER_SCROLL_NEVER
-                isFocusable = true
-                isFocusableInTouchMode = true
-                webChromeClient = WebUiChromeClient(
-                    logTag = MaiBotWebUi.LOG_TAG,
-                    fileChooser = fileChooser,
-                    onPageBackgroundColor = { argb -> tabState.pageBackground = Color(argb) }
-                )
-            }
-
-            val webViewClient = WebUiWebViewClient(
+            WebUiSessionHost(
+                context = context,
                 logTag = MaiBotWebUi.LOG_TAG,
-                // 竖屏下导航收敛在边缘可拖拽的灵动胶囊中，横屏为左侧悬浮侧栏（网页已让出侧栏宽度），网页底部均无需额外留白。
-                // 加载成功 -> 清掉错误提示，注入底色脚本，网页随即报上底色（之后换主题再报）；加载失败 -> 底色作废。
-                onPageFinishedCallback = { view, _ ->
-                    tabState.webViewError = null
-                    view.evaluateJavascript(WebUiPageBackground.watchScript, null)
-                },
-                onMainFrameError = { _, error ->
-                    tabState.webViewError = "${error.errorCode}: ${error.description}"
+                fileChooser = fileChooser,
+                downloads = downloads,
+                onPageFinished = { tabState.webUiError = null },
+                onMainFrameError = { errorText ->
+                    tabState.webUiError = errorText
                     tabState.pageBackground = null
+                    // 主框架报错同步落进终端日志，方便群友反馈“无法连接”时从诊断包回溯具体原因。
+                    TerminalLog.append("[MaiDroid] WebUI 加载失败（$errorText）")
                 },
-                onRenderProcessGoneCallback = tabState::replaceDeadWebView
+                onPageBackgroundColor = { argb -> tabState.pageBackground = Color(argb) },
+                onContentProcessGone = tabState::replaceDeadSessionHost
             )
-            webView.webViewClient = webViewClient
-            webView to webViewClient
         }
     }
 
@@ -250,13 +223,13 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // 退到后台持续满 3 分钟再休眠，避免用户短暂切去聊天软件或选文件时反复销毁重建 WebView。
+    // 退到后台持续满 3 分钟再休眠，避免用户短暂切去聊天软件或选文件时反复销毁重建会话。
     LaunchedEffect(isStarted, state) {
         if (isStarted) {
             state.ensureAwake()
         } else {
             delay(WEB_UI_HIBERNATE_DELAY_MS)
-            while (state.webView != null && !state.hibernateIfIdle()) {
+            while (state.sessionHost != null && !state.hibernateIfIdle()) {
                 delay(WEB_UI_HIBERNATE_RETRY_MS)
             }
         }
@@ -264,11 +237,11 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 
     DisposableEffect(state) {
         onDispose {
-            // 先把没回复的选文件请求按取消结束、丢掉还没选位置的下载，再销毁仍在存活的 WebView。
+            // 先把没回复的选文件请求按取消结束、丢掉还没选位置的下载，再释放仍在存活的 GeckoView 会话。
             state.fileChooser.launcher = null
             state.fileChooser.cancelPending()
             state.downloads.release()
-            state.webView?.destroy()
+            state.sessionHost?.release()
         }
     }
 
@@ -276,8 +249,8 @@ internal fun rememberWebUiTabState(): WebUiTabState {
 }
 
 /**
- * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），WebView 拿到非零尺寸后才开始加载。
- * 每次加载前按 WebView 尺寸决定排版：横屏按桌面版（布局宽度至少 1040），竖屏按手机版。
+ * WebUI 页签：嵌入式加载 MaiBot WebUI（带访问令牌自动登录），视图拿到非零尺寸后才开始加载。
+ * 每次加载前按尺寸决定排版：横屏按桌面版（布局宽度至少 1040），竖屏按手机版。
  * 顶部按情况显示“加载失败，重试”或“WebUI 离线，唤醒”（电量低暂停着时说明是电量低）；刷新操作统一在竖屏侧边灵动胶囊与横屏侧栏里提供，不再单独遮挡右上角。
  * startClearance：横屏时左侧悬浮侧栏的宽度，网页和横幅都让开它，让出的那一条涂网页自己的底色。
  */
@@ -292,22 +265,17 @@ internal fun WebUiTabPage(
     url: String = MaiBotWebUi.URL,
     startClearance: Dp = 0.dp
 ) {
+    val context = LocalContext.current
     val statusBarTop = statusBarTopInset()
 
-    // 弹出键盘时 WebView 底部让出键盘的高度。主界面是全面屏（edge-to-edge），清单里的 adjustResize 不再缩小窗口，
-    // 不让的话 WebView 一直是全高，键盘直接盖住网页下半截（聊天页的输入栏首当其冲）。
-    // 点输入框 -> 键盘开始弹出 -> WebView 一次缩到键盘上沿 -> 网页可视高度变矮，内核把正在输入的框滚到可见处，
-    // 贴底的输入栏落在键盘正上方。按键盘的最终高度（imeAnimationTarget）只缩一次，不跟着键盘动画逐帧缩放：
-    // WebUI 页面重，每帧重新排版会卡；收起键盘时 WebView 先恢复全高，露出的部分还被正在收起的键盘盖着，看不出跳动。
-    // 横屏时有些输入法会切成悬浮键盘，悬浮键盘不占底部、报上来的高度是 0，这时 WebView 保持原样不缩。
+    // 弹出键盘时容器底部让出键盘的高度。主界面是全面屏（edge-to-edge），清单里的 adjustResize 不再缩小窗口，
+    // 按键盘的最终高度（imeAnimationTarget）只缩一次，避免输入重排卡顿。
     @OptIn(ExperimentalLayoutApi::class)
     val imeClearance = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
 
-    // 麦麦重启（改时区、换装 SnowLuma 适配器等）的那十几秒里页签刚好重新加载（比如切回应用时界面被重建），
-    // 会停在“网页无法打开”：WebUI 重新上线时，上次加载失败就自动重载一次，不用再手动点刷新或“唤醒”。
-    // 在别的标签时上线，切回 WebUI 页签的第一帧也会检查一次。只在上线的那一刻重载，WebUI 自身出错不会反复刷新。
+    // 麦麦重启的那十几秒里页签刚好加载失败时，WebUI 重新上线就自动重载一次。
     LaunchedEffect(webUiOnline) {
-        if (webUiOnline && state.webViewError != null) {
+        if (webUiOnline && state.webUiError != null) {
             state.reload()
         }
     }
@@ -321,52 +289,85 @@ internal fun WebUiTabPage(
             .padding(start = startClearance)
             .background(PageBackground)
     ) {
-        // 换了新 WebView（渲染进程没了或休眠唤醒）时 key 变了，旧的 AndroidView 撤掉、按新的重新挂上并加载。
-        val activeWebView = state.webView
-        val activeClient = state.webViewClient
-        if (activeWebView != null && activeClient != null) {
-            key(activeWebView) {
-                AndroidView(
-                    factory = {
-                        (activeWebView.parent as? ViewGroup)?.removeView(activeWebView)
-                        activeWebView
-                    },
-                    update = { webView ->
-                        val launchUrl = MaiBotWebUi.launchUrl(
-                            paths = webView.context.appDependencies.runtimePaths,
-                            terminalLogs = terminalLogs,
-                            baseUrl = url
-                        )
-                        val loadRequest = "$launchUrl#${state.reloadToken}"
-                        if (state.webViewHasSize && !state.autoLoadPaused && webView.tag != loadRequest) {
-                            webView.tag = loadRequest
-                            state.webViewError = null
-                            // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
-                            // 转屏会重建 Activity 和 WebView，新页面自然按新方向加载。
-                            activeClient.applyDesktopViewport(webView)
-                            Log.d(
-                                MaiBotWebUi.LOG_TAG,
-                                "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
-                                    "${webView.width}x${webView.height}, " +
-                                    "desktop width=${activeClient.desktopLayoutWidthCss}"
-                            )
-                            webView.loadUrl(launchUrl)
-                        }
-                    },
-                    modifier = Modifier
-                        .padding(top = statusBarTop)
-                        .windowInsetsPadding(imeClearance)
-                        .fillMaxSize()
-                        .onSizeChanged { size ->
-                            state.webViewHasSize = size.width > 0 && size.height > 0
-                        }
-                )
+        // 换了新会话宿主（内容进程没了或休眠唤醒）时 key 变了，旧的 AndroidView 撤掉、按新的重新挂上并加载。
+        val activeHost = state.sessionHost
+        // 登录令牌文件读取与日志扫描放到 IO 线程按需解析，避免 terminalLogs 高频刷新时拖慢主线程导致 ANR。
+        var resolvedLaunch by remember(url) { mutableStateOf<Pair<Int, String>?>(null) }
+
+        LaunchedEffect(url, state.reloadToken, activeHost, state.viewHasSize, webUiOnline) {
+            if (activeHost == null || !state.viewHasSize) return@LaunchedEffect
+            val requestToken = state.reloadToken
+            val paths = context.appDependencies.runtimePaths
+            val computed = withContext(Dispatchers.IO) {
+                val logs = TerminalLog.logs.value.map(AnsiText::plain).ifEmpty { terminalLogs }
+                MaiBotWebUi.launchUrl(paths = paths, terminalLogs = logs, baseUrl = url)
+            }
+            resolvedLaunch = requestToken to computed
+        }
+
+        val showBanner = state.webUiError != null || !webUiOnline
+        val bannerContentBackdrop = rememberLayerBackdrop {
+            drawRect(PageBackground)
+            drawContent()
+        }
+
+        if (activeHost != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 仅当顶部需要展示离线或失败液态玻璃条时按需录制网页视图，正常浏览零开销
+                    .then(if (showBanner) Modifier.layerBackdrop(bannerContentBackdrop) else Modifier)
+            ) {
+                key(activeHost) {
+                    AndroidView(
+                        factory = {
+                            val hostView = activeHost.view
+                            (hostView.parent as? ViewGroup)?.removeView(hostView)
+                            hostView
+                        },
+                        update = { geckoView ->
+                            val launch = resolvedLaunch
+                            if (state.viewHasSize &&
+                                !state.autoLoadPaused &&
+                                launch != null &&
+                                launch.first == state.reloadToken
+                            ) {
+                                val launchUrl = launch.second
+                                val loadRequest = "$launchUrl#${launch.first}"
+                                if (geckoView.tag != loadRequest) {
+                                    geckoView.tag = loadRequest
+                                    state.webUiError = null
+                                    // 首次加载、点刷新或重试时都按此刻的尺寸重新决定桌面版还是手机版；
+                                    // 转屏会重建 Activity 与会话，新页面自然按新方向加载。
+                                    activeHost.applyDesktopViewport(enabled = true)
+                                    Log.d(
+                                        MaiBotWebUi.LOG_TAG,
+                                        "load ${MaiBotWebUi.redactUrlForLogs(launchUrl)} at " +
+                                            "${geckoView.width}x${geckoView.height}, " +
+                                            "desktop width=${activeHost.desktopLayoutWidthCss}"
+                                    )
+                                    activeHost.loadUrl(launchUrl)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .padding(top = statusBarTop)
+                            .windowInsetsPadding(imeClearance)
+                            .fillMaxSize()
+                            // 配合 AndroidLiquidGlass：让内嵌 TextureView(GeckoView) 走稳定的离屏图层合成，防止毛玻璃采样闪烁或黑块
+                            .graphicsLayer { alpha = 0.999f }
+                            .onSizeChanged { size ->
+                                state.viewHasSize = size.width > 0 && size.height > 0
+                            }
+                    )
+                }
             }
         }
 
-        if (state.webViewError != null) {
+        if (state.webUiError != null) {
             WebUiStatusBanner(
-                message = "WebView 加载失败：${state.webViewError}",
+                backdrop = bannerContentBackdrop,
+                message = "WebUI 加载失败：${state.webUiError}",
                 action = "重试",
                 onAction = state::reload,
                 modifier = Modifier
@@ -376,6 +377,7 @@ internal fun WebUiTabPage(
         } else if (!webUiOnline) {
             // 电量低暂停着时麦麦是主动保存数据停下的，横幅直接说明原因
             WebUiStatusBanner(
+                backdrop = bannerContentBackdrop,
                 message = if (lowBatteryPaused) "电量低，麦麦已暂停" else "WebUI 离线",
                 action = "唤醒",
                 onAction = onWakeMai,
@@ -389,17 +391,26 @@ internal fun WebUiTabPage(
 
 @Composable
 private fun WebUiStatusBanner(
+    backdrop: Backdrop,
     message: String,
     action: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val bannerSurfaceBackdrop = rememberLayerBackdrop()
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Corners.Chip))
-            .background(CardSurface.copy(alpha = 0.94f))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .liquidGlassSurface(
+                backdrop = backdrop,
+                shape = { RoundedRectangle(Corners.Chip) },
+                blurRadius = 12.dp,
+                refractionHeight = 14.dp,
+                refractionAmount = 22.dp,
+                surfaceColor = LiquidBarSurface,
+                exportedBackdrop = bannerSurfaceBackdrop
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -420,16 +431,21 @@ private fun WebUiStatusBanner(
             modifier = Modifier.weight(1f)
         )
 
-        Text(
-            text = action,
-            color = BrandOrange,
-            fontSize = TextSizes.Body,
-            fontWeight = FontWeight.Bold,
-            // 文字按钮：裁成圆角再加内边距，按下的水波纹有个按钮的样子，也更好点中
-            modifier = Modifier
-                .clip(RoundedCornerShape(Corners.Control))
-                .clickable(onClick = onAction)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        )
+        Spacer(modifier = Modifier.width(10.dp))
+
+        LiquidButton(
+            onClick = onAction,
+            backdrop = bannerSurfaceBackdrop,
+            style = LiquidButtonStyle.SoftAccent,
+            minHeight = 34.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = action,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
     }
 }

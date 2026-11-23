@@ -44,8 +44,6 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SelectAll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,6 +81,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.kyant.shapes.RoundedRectangle
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
@@ -452,14 +454,14 @@ private fun RowScope.SelectionBarContent(
             .padding(start = 4.dp)
     )
     BarIconButton(Icons.Outlined.SelectAll, "全选", onSelectAll)
-    Button(
+    LiquidButton(
         onClick = onCopy,
-        shape = RoundedCornerShape(Corners.Control),
-        colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = OnBrandOrange),
-        contentPadding = PaddingValues(horizontal = 14.dp),
-        modifier = Modifier
-            .padding(start = 4.dp, end = 8.dp)
-            .height(36.dp)
+        backdrop = rememberSurfaceBackdrop(TerminalBackground),
+        style = LiquidButtonStyle.Primary,
+        shape = { RoundedRectangle(Corners.Control) },
+        minHeight = 36.dp,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+        modifier = Modifier.padding(start = 4.dp, end = 8.dp)
     ) {
         Icon(imageVector = Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(modifier = Modifier.width(6.dp))

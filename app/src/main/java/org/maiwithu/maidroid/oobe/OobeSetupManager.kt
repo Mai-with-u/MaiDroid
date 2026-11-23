@@ -35,6 +35,7 @@ import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.runtime.ContainerRequirement
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ContainerSetupScripts
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimeAssetInstaller
@@ -70,7 +71,8 @@ internal class OobeSetupManager(
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
     private val maiBotProcess: MaiBotProcessSupervisor,
-    private val network: NetworkMonitor
+    private val network: NetworkMonitor,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         const val TAG = "OobeSetupManager"
@@ -251,12 +253,6 @@ internal class OobeSetupManager(
                     "正在配置容器 DNS...",
                     FailureStep.ContainerDns,
                     ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext))
-                ),
-                Triple("正在配置清华 Debian 镜像源...", FailureStep.AptMirror, ContainerSetupScripts.configureAptMirror()),
-                Triple(
-                    "正在容器内安装 Git、curl 和证书...",
-                    FailureStep.AptInstall,
-                    ContainerSetupScripts.installSystemDependencies()
                 )
             )
             // 最后一步要从软件源下载 Git、curl：手机根本没连网、空间明摆着不够时先说，不用等四个源都超时、装到一半
@@ -269,6 +265,26 @@ internal class OobeSetupManager(
                 return
             }
             for ((statusText, step, script) in setupSteps) {
+                showContainerProgress(SYSTEM_DEPENDENCY_TASKS, statusText)
+                val result = runCommand(script)
+                if (!result.success) {
+                    failContainer(failureOf(step, result.summary(), result.output))
+                    return
+                }
+            }
+            // 先按设置/并发测速确定本机最快的 Debian 软件源，再写入容器并按优选顺序装系统依赖
+            showContainerProgress(SYSTEM_DEPENDENCY_TASKS, "正在测速选择最快的 Debian 软件源...")
+            val aptMirrors = mirrors.resolveAptMirrors(allowSpeedTest = true)
+            val primaryApt = aptMirrors.first()
+            val aptSteps = listOf(
+                Triple("正在配置 ${primaryApt.name}...", FailureStep.AptMirror, ContainerSetupScripts.configureAptMirror(aptMirrors)),
+                Triple(
+                    "正在容器内安装 Git、curl 和证书...",
+                    FailureStep.AptInstall,
+                    ContainerSetupScripts.installSystemDependencies(aptMirrors)
+                )
+            )
+            for ((statusText, step, script) in aptSteps) {
                 showContainerProgress(SYSTEM_DEPENDENCY_TASKS, statusText)
                 val result = runCommand(script)
                 if (!result.success) {
@@ -316,16 +332,30 @@ internal class OobeSetupManager(
         val dnsScript = ContainerSetupScripts.configureDns(ContainerDns.systemServers(appContext))
         if (!runInstallCommand(dnsTaskKind, FailureStep.ContainerDns, "正在配置容器 DNS...", dnsScript)) return
 
-        if (!readiness.isMaiBotSourceReady() &&
-            !runInstallCommand(OobeTaskKind.MaiBotSource, FailureStep.MaiBotClone, "正在克隆 MaiBot...", MaiBotScripts.clone())
-        ) {
-            return
+        var gitHubMirrors = mirrors.currentGitHubMirrors()
+        if (!readiness.isMaiBotSourceReady()) {
+            showInstallRunning(OobeTaskKind.MaiBotSource, "正在测速选择最快的 GitHub 镜像...")
+            gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+            if (!runInstallCommand(OobeTaskKind.MaiBotSource, FailureStep.MaiBotClone, "正在克隆 MaiBot...", MaiBotScripts.clone(gitHubMirrors))) {
+                return
+            }
         }
 
-        // 依赖三步每次都跑：脚本都能重复执行，已就绪时 uv、Python 立刻跳过，uv sync 只核对一遍（真机上几十毫秒）。
-        // 以前按“site-packages 非空”跳过，装包时被打断留下的半套依赖会被当成装好，到启动时才以 WebUI 超时的样子暴露。
+        // 依赖三步每次都跑：先确保 GitHub（uv/Python）和 PyPI（uv sync）均按最新测速或用户设置排序，再依次执行。
+        if (!readiness.isMaiBotDependencyReady()) {
+            showInstallRunning(OobeTaskKind.PythonDependencies, "正在测速选择最快的 GitHub / PyPI 镜像...")
+            gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+        }
+        val pyPiMirrors = mirrors.resolvePyPiMirrors(allowSpeedTest = !readiness.isMaiBotDependencyReady())
         for (step in MaiBotDependencyStep.entries) {
-            if (!runInstallCommand(OobeTaskKind.PythonDependencies, step.failureStep, step.progressText, step.script(), step::failure)) {
+            if (!runInstallCommand(
+                    OobeTaskKind.PythonDependencies,
+                    step.failureStep,
+                    step.progressText,
+                    step.script(gitHubMirrors, pyPiMirrors),
+                    step::failure
+                )
+            ) {
                 return
             }
         }

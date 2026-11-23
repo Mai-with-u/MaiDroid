@@ -11,9 +11,9 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.maiwithu.maidroid.runtime.openDirectOrDefault
 import java.io.File
 import java.net.ConnectException
-import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
@@ -166,7 +166,8 @@ internal class NapCatWebUiClient(private val webUiConfigFile: File) {
     }
 
     private fun post(path: String, body: String = "{}", authorization: String? = null): ApiResponse {
-        val connection = URL("http://127.0.0.1:${readPort()}$path").openConnection() as HttpURLConnection
+        // 本机 NapCat WebUI 接口强制走直连免代理，确保开着系统代理时也能正常读码和注销账号。
+        val connection = openDirectOrDefault(URL("http://127.0.0.1:${readPort()}$path"))
         try {
             connection.requestMethod = "POST"
             connection.connectTimeout = CONNECT_TIMEOUT_MS

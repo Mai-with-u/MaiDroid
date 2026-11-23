@@ -51,19 +51,20 @@ internal object GitHubMirrors {
         "release-assets.githubusercontent.com"
     )
 
-    // shell 函数里每项是“显示名|地址前缀”，前缀为空表示直连。
-    private val MIRROR_SPECS = ALL.map { "${it.name}|${it.prefix}" }
-
-    /** 宿主侧下载一个地址时可以试的线路：GitHub 的地址返回直连加全部镜像，其它地址只有直连。 */
-    fun candidatesFor(url: String): List<GitHubMirror> {
+    /** 宿主侧下载一个地址时可以试的线路：按入参 [mirrors] 决定先后顺序，其它非 GitHub 地址只有直连。 */
+    fun candidatesFor(url: String, mirrors: List<GitHubMirror> = ALL): List<GitHubMirror> {
+        val effective = mirrors.ifEmpty { ALL }
         val host = runCatching { URI(url).host?.lowercase() }.getOrNull()
-        if (host == null || host !in MIRRORED_HOSTS) return ALL.filter { it.isDirect }
-        return ALL
+        if (host == null || host !in MIRRORED_HOSTS) {
+            return effective.filter { it.isDirect }.ifEmpty { listOf(GitHubMirror(DIRECT_NAME, "")) }
+        }
+        return effective
     }
 
-    /** 定义 maidroid_github_clone、maidroid_github_fetch 两个 shell 函数（及其内部辅助函数）。 */
-    fun shellFunctions(): String {
-        val mirrorSpecArguments = MIRROR_SPECS.joinToString(" \\\n                ") {
+    /** 按入参 [mirrors] 顺序定义 maidroid_github_clone、maidroid_github_fetch 两个 shell 函数。 */
+    fun shellFunctions(mirrors: List<GitHubMirror> = ALL): String {
+        val specs = mirrors.ifEmpty { ALL }.map { "${it.name}|${it.prefix}" }
+        val mirrorSpecArguments = specs.joinToString(" \\\n                ") {
             shellQuote(it)
         }
         return """

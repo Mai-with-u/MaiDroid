@@ -3,9 +3,11 @@ package org.maiwithu.maidroid.platform.snowluma
 import org.maiwithu.maidroid.platform.qq.LinuxQqRuntimeDeps
 import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
+import org.maiwithu.maidroid.runtime.AptMirror
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
@@ -101,11 +103,17 @@ internal object SnowLumaScripts {
      * 从用户指定的自定义来源下载 SnowLuma 发行包、验证归档并对比官方 sha256、解到程序目录 ->
      * 写全局 OneBot 配置 -> 打完成标记 -> 生成启动脚本。
      */
-    fun install(token: String, webUiPassword: String, source: QqCustomSource): ContainerScript = ContainerScript(
+    fun install(
+        token: String,
+        webUiPassword: String,
+        source: QqCustomSource,
+        aptMirrors: List<AptMirror> = AptMirrors.ALL,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
+    ): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
-            AptMirrors.shellFunctions(),
-            GitHubMirrors.shellFunctions(),
+            AptMirrors.shellFunctions(aptMirrors),
+            GitHubMirrors.shellFunctions(gitHubMirrors),
             // 和 NapCat 共用一份 OneBot token：装过 NapCat 的沿用它的，MaiBot 侧的适配器配置不用改
             QqOneBot.ensureTokenScript(token, variable = "onebot_token"),
             installBody(webUiPassword, source),
@@ -116,10 +124,10 @@ internal object SnowLumaScripts {
     )
 
     /** 每次启动前执行：检测并自愈补装缺失的 LinuxQQ 运行依赖库，补齐目录并重新生成启动脚本。 */
-    fun prepareRuntime(): ContainerScript = ContainerScript(
+    fun prepareRuntime(aptMirrors: List<AptMirror> = AptMirrors.ALL): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
-            AptMirrors.shellFunctions(),
+            AptMirrors.shellFunctions(aptMirrors),
             LinuxQqRuntimeDeps.ensureScript(
                 logPrefix = "[SnowLuma]",
                 failOnError = false,
@@ -191,7 +199,7 @@ internal object SnowLumaScripts {
             printf "[SnowLuma] %s\n" "${'$'}2"
         }
 
-        # 依次试每个地址下载到 $1，下到的 sha256 必须是 $2（用于严格校验固定版本的 LinuxQQ deb）。
+        # 依次试每个地址下载到 $1，同一来源支持最多 3 次 curl -C - 断点续传重试，下到的 sha256 必须是 $2（用于严格校验固定版本的 LinuxQQ deb）。
         maidroid_snowluma_fetch() {
             fetch_out="${'$'}1"
             fetch_sha="${'$'}2"
@@ -199,14 +207,34 @@ internal object SnowLumaScripts {
             for fetch_url in "${'$'}@"; do
                 rm -f "${'$'}fetch_out.part"
                 printf "[SnowLuma] downloading %s\n" "${'$'}fetch_url"
-                if curl -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 -o "${'$'}fetch_out.part" "${'$'}fetch_url"; then
-                    fetch_got="${'$'}(sha256sum "${'$'}fetch_out.part" | awk '{print ${'$'}1}')"
-                    if [ "${'$'}fetch_got" = "${'$'}fetch_sha" ]; then
-                        mv "${'$'}fetch_out.part" "${'$'}fetch_out"
-                        return 0
+                fetch_attempt=1
+                while [ "${'$'}fetch_attempt" -le 3 ]; do
+                    curl_rc=0
+                    curl -fsSL -C - --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+                        -o "${'$'}fetch_out.part" "${'$'}fetch_url" || curl_rc=${'$'}?
+                    if [ "${'$'}curl_rc" -eq 0 ]; then
+                        fetch_got="${'$'}(sha256sum "${'$'}fetch_out.part" | awk '{print ${'$'}1}')"
+                        if [ "${'$'}fetch_got" = "${'$'}fetch_sha" ]; then
+                            mv "${'$'}fetch_out.part" "${'$'}fetch_out"
+                            return 0
+                        fi
+                        printf "[SnowLuma] checksum mismatch (got %s), trying next source\n" "${'$'}fetch_got"
+                        rm -f "${'$'}fetch_out.part"
+                        break
                     fi
-                    printf "[SnowLuma] checksum mismatch (got %s), trying next source\n" "${'$'}fetch_got"
-                fi
+                    if [ "${'$'}curl_rc" -eq 22 ] && [ ! -s "${'$'}fetch_out.part" ]; then
+                        printf "[SnowLuma] source unavailable (http error), trying next source\n"
+                        rm -f "${'$'}fetch_out.part"
+                        break
+                    fi
+                    if [ "${'$'}curl_rc" -eq 22 ] || [ "${'$'}curl_rc" -eq 33 ]; then
+                        rm -f "${'$'}fetch_out.part"
+                    fi
+                    printf "[SnowLuma] download attempt %s/3 failed (rc=%s), retrying\n" "${'$'}fetch_attempt" "${'$'}curl_rc"
+                    fetch_attempt=${'$'}((fetch_attempt + 1))
+                    sleep 2
+                done
+                rm -f "${'$'}fetch_out.part"
             done
             rm -f "${'$'}fetch_out.part"
             return 1

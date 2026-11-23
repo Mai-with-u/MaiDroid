@@ -3,6 +3,10 @@ package org.maiwithu.maidroid.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -41,12 +46,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.appDependencies
@@ -60,10 +68,14 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
+import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
+import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
@@ -96,11 +108,13 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val PermissionSettingsDetail = "permissions"
+internal const val MirrorSettingsDetail = "mirrors"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
  * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题、QQ 反馈群、清理空间），最底下是“安全退出”按钮。
- * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
+ * 横屏或宽屏时左右分栏：右侧默认只居中显示一枚液态玻璃应用图标，点击左侧“权限管理”后再展示权限详情（再点或返回恢复默认图标）；
+ * 竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
 internal fun SettingsPage(
@@ -123,6 +137,9 @@ internal fun SettingsPage(
     val appUpdateState by appUpdater.state.collectAsState()
     val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
+    val mirrorManager = remember(context) { context.appDependencies.mirrorManager }
+    val mirrorState by mirrorManager.state.collectAsState()
+    val mirrorSummaryText = remember(mirrorState) { mirrorSettingsSummaryText(mirrorState) }
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 或 SnowLuma 在线、官方机器人已启用且无连接报错都算。
     val runningPlatformCount = remember(napCatState, snowLumaState, qqOfficialState) {
         installedPlatformCards(napCatState, snowLumaState, qqOfficialState).count { it.running }
@@ -180,9 +197,12 @@ internal fun SettingsPage(
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        val navigationWidth = settingsNavigationWidthDp(maxWidth.value).dp
+        // 左右栏共用的顶部标题展开留白与手机横屏紧凑态开关，确保主从两栏标题基线与字号严丝合缝。
+        val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
+        val compactTwoPane = maxHeight.value < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp
 
-        BackHandler(enabled = !useTwoPane && selectedDetail != null) {
+        // 无论是竖屏推入还是横屏在右栏点开了权限管理，按系统返回键都可以退回默认列表或右栏液态玻璃图标空态。
+        BackHandler(enabled = selectedDetail != null) {
             selectedDetail = null
         }
 
@@ -210,6 +230,7 @@ internal fun SettingsPage(
         }
 
         if (useTwoPane) {
+            // 横屏与宽屏采用全站统一的 38% : 62% 分栏，中间保留 0.5dp 细竖线凸显主从设置与详情层级。
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -222,9 +243,25 @@ internal fun SettingsPage(
                     sshState = sshState,
                     updateState = updateState,
                     runningPlatformCount = runningPlatformCount,
-                    permissionSelected = true,
+                    permissionSelected = selectedDetail == PermissionSettingsDetail,
+                    mirrorSummaryText = mirrorSummaryText,
+                    mirrorSelected = selectedDetail == MirrorSettingsDetail,
                     compact = true,
-                    onPermissionClick = {},
+                    expandedTopOffset = topSpacing,
+                    onPermissionClick = {
+                        selectedDetail = resolveSettingsDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = PermissionSettingsDetail,
+                            useTwoPane = true
+                        )
+                    },
+                    onMirrorClick = {
+                        selectedDetail = resolveSettingsDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = MirrorSettingsDetail,
+                            useTwoPane = true
+                        )
+                    },
                     onSshConfigureClick = { openSshDialog() },
                     onSshEnabledChange = onSshEnabledChange,
                     onUpdateClick = { showUpdateDialog = true },
@@ -236,71 +273,126 @@ internal fun SettingsPage(
                     onQqGroupClick = { showQqGroupDialog = true },
                     onCleanupClick = { showCleanupDialog = true },
                     modifier = Modifier
-                        .width(navigationWidth)
+                        .weight(HomeTwoPaneSpec.LeftPaneWeight)
                         .fillMaxHeight()
                 )
 
                 Box(
                     modifier = Modifier
-                        .width(0.5.dp)
+                        .width(HomeTwoPaneSpec.MasterDetailDividerThickness)
                         .fillMaxHeight()
                         .background(CardDivider)
                 )
 
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
+                        .weight(HomeTwoPaneSpec.RightPaneWeight)
+                        .fillMaxHeight()
                         .background(PageBackground)
                 ) {
-                    PermissionManagementPage(
-                        state = permissionState,
-                        actions = permissionActions,
-                        onBack = {},
-                        showBackButton = false,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    AnimatedContent(
+                        targetState = selectedDetail,
+                        modifier = Modifier.fillMaxSize(),
+                        transitionSpec = {
+                            fadeIn(tween(durationMillis = 220)) togetherWith
+                                fadeOut(tween(durationMillis = 180))
+                        },
+                        label = "SettingsTwoPaneDetail"
+                    ) { detail ->
+                        when (detail) {
+                            PermissionSettingsDetail -> PermissionManagementPage(
+                                state = permissionState,
+                                actions = permissionActions,
+                                onBack = { selectedDetail = null },
+                                showBackButton = false,
+                                compact = compactTwoPane,
+                                expandedTopOffset = topSpacing,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            MirrorSettingsDetail -> MirrorSettingsPage(
+                                manager = mirrorManager,
+                                state = mirrorState,
+                                onBack = { selectedDetail = null },
+                                showBackButton = false,
+                                compact = compactTwoPane,
+                                expandedTopOffset = topSpacing,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            else -> {
+                                // 横屏/宽屏默认不展示任何具体设置详情或文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
+                                SettingsEmptyDetailPane(
+                                    compact = compactTwoPane,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
                 }
             }
         } else {
             AnimatedContent(
-                targetState = selectedDetail != null,
+                targetState = selectedDetail,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PageBackground),
-                transitionSpec = { horizontalSlideTransition(forward = targetState, dampingRatio = 0.82f) },
+                transitionSpec = { horizontalSlideTransition(forward = targetState != null, dampingRatio = 0.82f) },
                 label = "SettingsPermissionTransition"
-            ) { showingPermissionPage ->
-                if (showingPermissionPage) {
-                    PermissionManagementPage(
+            ) { detail ->
+                when (detail) {
+                    PermissionSettingsDetail -> PermissionManagementPage(
                         state = permissionState,
                         actions = permissionActions,
                         onBack = { selectedDetail = null },
+                        expandedTopOffset = topSpacing,
                         modifier = Modifier.fillMaxSize()
                     )
-                } else {
-                    SettingsNavigationPane(
-                        webUiOnline = webUiOnline,
-                        versionName = versionName,
-                        permissionState = permissionState,
-                        sshState = sshState,
-                        updateState = updateState,
-                        runningPlatformCount = runningPlatformCount,
-                        permissionSelected = false,
-                        compact = false,
-                        onPermissionClick = { selectedDetail = PermissionSettingsDetail },
-                        onSshConfigureClick = { openSshDialog() },
-                        onSshEnabledChange = onSshEnabledChange,
-                        onUpdateClick = { showUpdateDialog = true },
-                        onOpenFilesClick = onOpenFilesClick,
-                        appUpdateState = appUpdateState,
-                        onAppUpdateClick = { openAppUpdateDialog() },
-                        onSafeExitClick = { showSafeExitConfirm = true },
-                        onFeedbackClick = { showFeedbackDialog = true },
-                        onQqGroupClick = { showQqGroupDialog = true },
-                        onCleanupClick = { showCleanupDialog = true },
+                    MirrorSettingsDetail -> MirrorSettingsPage(
+                        manager = mirrorManager,
+                        state = mirrorState,
+                        onBack = { selectedDetail = null },
+                        expandedTopOffset = topSpacing,
                         modifier = Modifier.fillMaxSize()
                     )
+                    else -> {
+                        SettingsNavigationPane(
+                            webUiOnline = webUiOnline,
+                            versionName = versionName,
+                            permissionState = permissionState,
+                            sshState = sshState,
+                            updateState = updateState,
+                            runningPlatformCount = runningPlatformCount,
+                            permissionSelected = false,
+                            mirrorSummaryText = mirrorSummaryText,
+                            mirrorSelected = false,
+                            compact = false,
+                            expandedTopOffset = topSpacing,
+                            onPermissionClick = {
+                                selectedDetail = resolveSettingsDetailSelection(
+                                    currentDetail = selectedDetail,
+                                    targetDetail = PermissionSettingsDetail,
+                                    useTwoPane = false
+                                )
+                            },
+                            onMirrorClick = {
+                                selectedDetail = resolveSettingsDetailSelection(
+                                    currentDetail = selectedDetail,
+                                    targetDetail = MirrorSettingsDetail,
+                                    useTwoPane = false
+                                )
+                            },
+                            onSshConfigureClick = { openSshDialog() },
+                            onSshEnabledChange = onSshEnabledChange,
+                            onUpdateClick = { showUpdateDialog = true },
+                            onOpenFilesClick = onOpenFilesClick,
+                            appUpdateState = appUpdateState,
+                            onAppUpdateClick = { openAppUpdateDialog() },
+                            onSafeExitClick = { showSafeExitConfirm = true },
+                            onFeedbackClick = { showFeedbackDialog = true },
+                            onQqGroupClick = { showQqGroupDialog = true },
+                            onCleanupClick = { showCleanupDialog = true },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -360,11 +452,19 @@ internal fun SettingsPage(
     }
 }
 
+/** 横屏窗口（至少 520dp 宽以免极窄分屏挤爆两栏）与平板大屏启用左右主从双栏。 */
 internal fun settingsUseTwoPane(widthDp: Float, heightDp: Float): Boolean =
-    widthDp > heightDp || widthDp >= 960f
+    (widthDp > heightDp && widthDp >= HomeTwoPaneSpec.CompactTwoPaneMinWidthDp) || widthDp >= 960f
+
+/** 点击设置详情项时的目标状态：双栏模式再次点击当前已选项可收起回到居中图标空态，竖屏单列则始终进入目标详情。 */
+internal fun resolveSettingsDetailSelection(
+    currentDetail: String?,
+    targetDetail: String,
+    useTwoPane: Boolean
+): String? = if (useTwoPane && currentDetail == targetDetail) null else targetDetail
 
 internal fun settingsNavigationWidthDp(availableWidthDp: Float): Float =
-    availableWidthDp.coerceAtLeast(0f) / 3f
+    HomeTwoPaneSpec.leftPaneWidthDp(availableWidthDp)
 
 @Composable
 private fun SettingsNavigationPane(
@@ -375,8 +475,12 @@ private fun SettingsNavigationPane(
     updateState: MaiBotUpdateState,
     runningPlatformCount: Int,
     permissionSelected: Boolean,
+    mirrorSummaryText: String,
+    mirrorSelected: Boolean,
     compact: Boolean,
+    expandedTopOffset: Dp,
     onPermissionClick: () -> Unit,
+    onMirrorClick: () -> Unit,
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
     onUpdateClick: () -> Unit,
@@ -399,49 +503,62 @@ private fun SettingsNavigationPane(
         settings.telemetryEnabled = enabled
         telemetryEnabled = enabled
     }
-    // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
-    // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
-    val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
+    val density = LocalDensity.current
+    val listState = rememberLazyListState()
+    val collapseDistancePx = with(density) { (if (compact) 40.dp else 56.dp).toPx() }
+    val collapseProgress = computeLazyHeaderCollapseProgress(
+        firstVisibleItemIndex = listState.firstVisibleItemIndex,
+        firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+        collapseDistancePx = collapseDistancePx
+    )
+    val subtitleAlpha = computeHeaderSubtitleAlpha(collapseProgress)
+    val horizontalPadding = if (compact) HomeTwoPaneSpec.OuterHorizontalPadding else 20.dp
 
-    LazyColumn(
-        modifier = modifier
-            .background(PageBackground)
-            .padding(top = statusBarTop),
-        overscrollEffect = overscroll,
-        contentPadding = PaddingValues(
-            top = if (compact) compactTop else 44.dp,
-            start = if (compact) 12.dp else 18.dp,
-            end = if (compact) 12.dp else 18.dp,
-            bottom = LocalBottomNavigationClearance.current
-        ),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
+    // 单一“设置”标题随滚动平滑缩小吸顶，卡片在状态栏后穿过时呈现渐进羽化毛玻璃效果。
+    CollapsingGlassHeaderContainer(
+        title = "设置",
+        collapseProgress = collapseProgress,
+        statusBarTop = statusBarTop,
+        horizontalPadding = horizontalPadding,
+        expandedTopOffset = expandedTopOffset,
+        expandedFontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
+        collapsedFontSize = if (compact) 18.sp else 19.sp,
+        topBarHeight = if (compact) 46.dp else 52.dp,
+        headerOverscrollPx = overscroll.headerOverscrollPx,
+        modifier = modifier.background(PageBackground)
     ) {
-        item {
-            Column(
-                modifier = Modifier
-                    .overscrollHeader(overscroll)
-                    .padding(horizontal = if (compact) 4.dp else 2.dp)
-            ) {
-                Text(
-                    text = "设置",
-                    color = TextPrimary,
-                    fontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = if (compact) 30.sp else 34.sp
-                )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            overscrollEffect = overscroll,
+            contentPadding = PaddingValues(
+                top = statusBarTop + expandedTopOffset,
+                start = if (compact) HomeTwoPaneSpec.OuterHorizontalPadding else 18.dp,
+                end = if (compact) 12.dp else 18.dp,
+                bottom = LocalBottomNavigationClearance.current
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
+        ) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .overscrollHeader(overscroll)
+                        .padding(horizontal = if (compact) 0.dp else 2.dp)
+                ) {
+                    // 顶部主标题改由连续缩小顶栏直接渲染，首项仅留标题占位与副标题。
+                    Spacer(modifier = Modifier.height(if (compact) 38.dp else 44.dp))
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = if (compact) "MaiDroid 控制中心" else "管理服务、权限和应用状态",
-                    color = TextMuted,
-                    fontSize = TextSizes.Body,
-                    lineHeight = 17.sp
-                )
+                    Text(
+                        text = if (compact) "MaiDroid 控制中心" else "管理服务、权限和应用状态",
+                        color = TextMuted,
+                        fontSize = TextSizes.Body,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.graphicsLayer { alpha = subtitleAlpha }
+                    )
+                }
             }
-        }
 
         if (bannerAnnouncements.isNotEmpty()) {
             item {
@@ -547,6 +664,26 @@ private fun SettingsNavigationPane(
                             SettingsRowArrow(
                                 contentDescription = "进入权限管理",
                                 tint = if (permissionSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                )
+
+                SettingsDivider()
+
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.MirrorSources,
+                    iconColor = IconCyanBlue,
+                    title = "镜像源设置",
+                    supportingText = mirrorSummaryText,
+                    selected = mirrorSelected,
+                    exposesSelection = true,
+                    onClick = onMirrorClick,
+                    trailing = if (compact) null else {
+                        {
+                            SettingsRowArrow(
+                                contentDescription = "进入镜像源设置",
+                                tint = if (mirrorSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
                             )
                         }
                     }
@@ -675,6 +812,7 @@ private fun SettingsNavigationPane(
                     .overscrollBody(overscroll)
                     .padding(top = if (compact) 4.dp else 8.dp)
             )
+        }
         }
     }
 }

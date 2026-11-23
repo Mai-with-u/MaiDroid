@@ -7,8 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -29,15 +27,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -50,17 +46,17 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import eightbitlab.com.blurview.BlurTarget
-import org.maiwithu.maidroid.ui.component.BackdropBlurView
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.shapes.RoundedRectangle
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.LocalLiquidBackdrop
+import org.maiwithu.maidroid.ui.component.liquidGlassDialogSurface
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DouyinSans
-import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.HarmonySans
-import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
-import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
@@ -74,7 +70,7 @@ private const val PrivacyAgreementUrl = "https://github.com/Mai-with-u/MaiBot/bl
 @Composable
 internal fun OobeAuthorizationDialog(
     visible: Boolean,
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     onAgree: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier
@@ -135,7 +131,8 @@ internal fun OobeAuthorizationDialog(
 
             if (useAdaptiveLayout) {
                 val isShort = maxHeight < 420.dp
-                val screenPadding = if (isShort) 10.dp else 24.dp
+                // 手机横屏也留出清晰的上下边距，让授权卡读起来是浮在引导页上的一张卡片。
+                val screenPadding = if (isShort) 18.dp else 24.dp
 
                 BoxWithConstraints(
                     modifier = Modifier
@@ -147,22 +144,24 @@ internal fun OobeAuthorizationDialog(
                     val fontScale = LocalDensity.current.fontScale
                     val useSideBySide = maxWidth >= 560.dp * fontScale.coerceAtMost(1.6f)
                     val cardHeightLimit = minOf(maxHeight, if (isShort) 340.dp else 420.dp)
+                    // 手机横屏宽度按比例收敛并封顶 600dp，左右露出背景，避免横向铺满整屏；平板仍最多 720dp。
+                    val cardWidthLimit = if (isShort) minOf(maxWidth * 0.84f, 600.dp) else 720.dp
 
                     AdaptiveAuthorizationCard(
-                        blurTarget = blurTarget,
+                        backdrop = backdrop,
                         bodyText = bodyText,
                         useSideBySide = useSideBySide,
                         onAgree = onAgree,
                         onExit = onExit,
                         modifier = Modifier
-                            .widthIn(max = 720.dp)
+                            .widthIn(max = cardWidthLimit)
                             .fillMaxWidth()
                             .heightIn(max = cardHeightLimit)
                     )
                 }
             } else {
                 PhonePortraitAuthorizationCard(
-                    blurTarget = blurTarget,
+                    backdrop = backdrop,
                     bodyText = bodyText,
                     onAgree = onAgree,
                     onExit = onExit
@@ -178,136 +177,157 @@ internal fun OobeAuthorizationDialog(
  */
 @Composable
 private fun PhonePortraitAuthorizationCard(
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     bodyText: AnnotatedString,
     onAgree: () -> Unit,
     onExit: () -> Unit
 ) {
-    val cardShape = RoundedCornerShape(Corners.Pill)
+    val cardShape = { RoundedRectangle(Corners.Pill) }
+    val cardBackdrop = rememberLayerBackdrop()
 
-    Box(
-        modifier = Modifier
-            .width(326.dp)
-            .height(168.dp)
-            .clip(cardShape)
-            .border(1.dp, GlassStroke, cardShape)
-    ) {
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = SubtleGlassBlurRadius,
-            overlayColor = SubtleGlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
-
-        Text(
-            text = "需要授权",
-            color = BrandOrange,
-            fontFamily = DouyinSans,
-            fontSize = TextSizes.Headline,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 25.sp,
+    CompositionLocalProvider(LocalLiquidBackdrop provides cardBackdrop) {
+        Box(
             modifier = Modifier
-                .offset(x = 22.dp, y = 21.dp)
-                .width(120.dp)
-        )
-
-        Text(
-            text = bodyText,
-            style = TextStyle(
-                color = TextPrimary,
-                fontFamily = HarmonySans,
-                fontSize = TextSizes.BodyLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 19.sp
-            ),
-            modifier = Modifier
-                .offset(x = 22.dp, y = 53.dp)
-                .width(271.dp)
-                .height(42.dp)
-        )
-
-        Row(
-            modifier = Modifier
-                .offset(x = 16.dp, y = 101.dp)
-                .width(294.dp)
-                .height(50.dp)
+                .width(326.dp)
+                .height(168.dp)
+                .liquidGlassDialogSurface(
+                    backdrop = backdrop,
+                    shape = cardShape,
+                    exportedBackdrop = cardBackdrop
+                )
         ) {
-            DialogActionButton(
-                text = "同意",
-                background = BrandOrange.copy(alpha = 0.6f),
-                onClick = onAgree
+            Text(
+                text = "需要授权",
+                color = BrandOrange,
+                fontFamily = DouyinSans,
+                fontSize = TextSizes.Headline,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 25.sp,
+                modifier = Modifier
+                    .offset(x = 22.dp, y = 21.dp)
+                    .width(120.dp)
             )
 
-            DialogActionButton(
-                text = "退出",
-                background = CardBorder.copy(alpha = 0.6f),
-                onClick = onExit,
-                modifier = Modifier.offset(x = 14.dp)
+            Text(
+                text = bodyText,
+                style = TextStyle(
+                    color = TextPrimary,
+                    fontFamily = HarmonySans,
+                    fontSize = TextSizes.BodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 19.sp
+                ),
+                modifier = Modifier
+                    .offset(x = 22.dp, y = 53.dp)
+                    .width(271.dp)
+                    .height(42.dp)
             )
+
+            Row(
+                modifier = Modifier
+                    .offset(x = 16.dp, y = 101.dp)
+                    .width(294.dp)
+                    .height(50.dp)
+            ) {
+                LiquidButton(
+                    onClick = onAgree,
+                    style = LiquidButtonStyle.Primary,
+                    shape = { RoundedRectangle(Corners.Card) },
+                    minHeight = 50.dp,
+                    modifier = Modifier
+                        .width(140.dp)
+                        .height(50.dp)
+                ) {
+                    Text(
+                        text = "同意",
+                        fontFamily = DouyinSans,
+                        fontSize = TextSizes.TitleLarge,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 24.sp
+                    )
+                }
+
+                LiquidButton(
+                    onClick = onExit,
+                    style = LiquidButtonStyle.Secondary,
+                    shape = { RoundedRectangle(Corners.Card) },
+                    minHeight = 50.dp,
+                    modifier = Modifier
+                        .offset(x = 14.dp)
+                        .width(140.dp)
+                        .height(50.dp)
+                ) {
+                    Text(
+                        text = "退出",
+                        fontFamily = DouyinSans,
+                        fontSize = TextSizes.TitleLarge,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 24.sp
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun AdaptiveAuthorizationCard(
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     bodyText: AnnotatedString,
     useSideBySide: Boolean,
     onAgree: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cardShape = RoundedCornerShape(Corners.Pill)
+    val cardShape = { RoundedRectangle(Corners.Pill) }
     val scrollState = rememberScrollState()
+    val cardBackdrop = rememberLayerBackdrop()
 
-    Box(
-        modifier = modifier
-            .clip(cardShape)
-            .border(1.dp, GlassStroke, cardShape)
-    ) {
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = SubtleGlassBlurRadius,
-            overlayColor = SubtleGlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
+    CompositionLocalProvider(LocalLiquidBackdrop provides cardBackdrop) {
+        Box(
+            modifier = modifier.liquidGlassDialogSurface(
+                backdrop = backdrop,
+                shape = cardShape,
+                exportedBackdrop = cardBackdrop
+            )
+        ) {
+            if (useSideBySide) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 32.dp, vertical = 28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(36.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AuthorizationHeading(
+                        modifier = Modifier.weight(0.72f)
+                    )
 
-        if (useSideBySide) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 32.dp, vertical = 28.dp),
-                horizontalArrangement = Arrangement.spacedBy(36.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AuthorizationHeading(
-                    modifier = Modifier.weight(0.72f)
-                )
+                    AuthorizationDetails(
+                        bodyText = bodyText,
+                        onAgree = onAgree,
+                        onExit = onExit,
+                        modifier = Modifier.weight(1.28f)
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 24.dp, vertical = 22.dp)
+                ) {
+                    AuthorizationHeading()
 
-                AuthorizationDetails(
-                    bodyText = bodyText,
-                    onAgree = onAgree,
-                    onExit = onExit,
-                    modifier = Modifier.weight(1.28f)
-                )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp, vertical = 22.dp)
-            ) {
-                AuthorizationHeading()
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                Spacer(modifier = Modifier.height(18.dp))
-
-                AuthorizationDetails(
-                    bodyText = bodyText,
-                    onAgree = onAgree,
-                    onExit = onExit
-                )
+                    AuthorizationDetails(
+                        bodyText = bodyText,
+                        onAgree = onAgree,
+                        onExit = onExit
+                    )
+                }
             }
         }
     }
@@ -376,72 +396,37 @@ private fun AuthorizationDetails(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AdaptiveDialogActionButton(
-                text = "同意",
-                background = BrandOrangeMuted,
+            LiquidButton(
                 onClick = onAgree,
+                style = LiquidButtonStyle.Primary,
+                shape = { RoundedRectangle(Corners.Card) },
+                minHeight = 50.dp,
                 modifier = Modifier.weight(1f)
-            )
+            ) {
+                Text(
+                    text = "同意",
+                    fontFamily = DouyinSans,
+                    fontSize = TextSizes.TitleLarge,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 24.sp
+                )
+            }
 
-            AdaptiveDialogActionButton(
-                text = "退出",
-                background = CardBorder.copy(alpha = 0.8f),
+            LiquidButton(
                 onClick = onExit,
+                style = LiquidButtonStyle.Secondary,
+                shape = { RoundedRectangle(Corners.Card) },
+                minHeight = 50.dp,
                 modifier = Modifier.weight(1f)
-            )
+            ) {
+                Text(
+                    text = "退出",
+                    fontFamily = DouyinSans,
+                    fontSize = TextSizes.TitleLarge,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 24.sp
+                )
+            }
         }
-    }
-}
-
-@Composable
-private fun AdaptiveDialogActionButton(
-    text: String,
-    background: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(Corners.Card))
-            .background(background)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = TextPrimary,
-            fontFamily = DouyinSans,
-            fontSize = TextSizes.TitleLarge,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 24.sp
-        )
-    }
-}
-
-@Composable
-private fun DialogActionButton(
-    text: String,
-    background: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .width(140.dp)
-            .height(50.dp)
-            .clip(RoundedCornerShape(Corners.Card))
-            .background(background)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            color = TextPrimary,
-            fontFamily = DouyinSans,
-            fontSize = TextSizes.TitleLarge,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 24.sp
-        )
     }
 }

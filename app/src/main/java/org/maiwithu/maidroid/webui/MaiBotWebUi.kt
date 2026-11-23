@@ -9,9 +9,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.maiwithu.maidroid.runtime.RuntimePaths
+import org.maiwithu.maidroid.runtime.openDirectOrDefault
 import org.maiwithu.maidroid.terminal.AnsiText
 import java.io.File
-import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
@@ -46,7 +46,7 @@ internal object MaiBotWebUi {
      */
     suspend fun isReachable(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
-            val connection = URL(URL).openConnection() as HttpURLConnection
+            val connection = openDirectOrDefault(URL(URL))
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = PROBE_TIMEOUT_MS

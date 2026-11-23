@@ -72,10 +72,16 @@ internal interface ApkDownloadListener {
  *   这样选中的是此刻真正最快的线路；中途断开或 20 秒没有数据，就排除这条线路重新赛跑，从新的断点接着下。
  * 安装包直接流式写进 .part 文件，不整个读进内存。
  */
-internal class AppUpdateClient(userAgent: String) {
+internal class AppUpdateClient(
+    userAgent: String,
+    private val gitHubMirrorsProvider: () -> List<GitHubMirror> = { GitHubMirrors.ALL },
+    private val preferFirstMirror: () -> Boolean = { false }
+) {
     private companion object {
         const val CHECK_TIMEOUT_MS = 20_000L
+        const val PREFERRED_CHECK_TIMEOUT_MS = 8_000L
         const val PROBE_TIMEOUT_MS = 45_000L
+        const val PREFERRED_PROBE_TIMEOUT_MS = 12_000L
         const val PROBE_BYTES = 512 * 1024
         const val BUFFER_BYTES = 64 * 1024
         const val MAX_RELEASE_JSON_BYTES = 2 * 1024 * 1024
@@ -103,22 +109,41 @@ internal class AppUpdateClient(userAgent: String) {
 
     /** 查最新正式版 Release；所有线路都失败或都不是有效的 Release 时返回 null。 */
     suspend fun fetchLatestRelease(apiUrl: String): MirrorWin<AppRelease>? = withContext(Dispatchers.IO) {
-        raceMirrors(
-            mirrors = GitHubMirrors.candidatesFor(apiUrl),
-            timeoutMs = CHECK_TIMEOUT_MS,
-            request = { mirror ->
-                Request.Builder()
-                    .url(mirror.url(apiUrl))
-                    .header("Accept", "application/vnd.github+json")
-                    .header("X-GitHub-Api-Version", "2022-11-28")
-                    .build()
-            },
-            accept = { _, _, response ->
-                response.use {
-                    val body = it.body
-                    if (!it.isSuccessful || body == null) null else readCapped(body)?.let(::parseAppRelease)
-                }
+        val candidates = GitHubMirrors.candidatesFor(apiUrl, gitHubMirrorsProvider())
+        val requestBuilder: (GitHubMirror) -> Request = { mirror ->
+            Request.Builder()
+                .url(mirror.url(apiUrl))
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .build()
+        }
+        val acceptRelease: (GitHubMirror, Call, Response) -> AppRelease? = { _, _, response ->
+            response.use {
+                val body = it.body
+                if (!it.isSuccessful || body == null) null else readCapped(body)?.let(::parseAppRelease)
             }
+        }
+        // 用户手动锁定或自定义了 GitHub 镜像时，先优先尝试该首选源；仅在其不支持/失败后再放开其余线路并发兜底。
+        if (preferFirstMirror() && candidates.size > 1) {
+            val preferredWin = raceMirrors(
+                mirrors = listOf(candidates.first()),
+                timeoutMs = PREFERRED_CHECK_TIMEOUT_MS,
+                request = requestBuilder,
+                accept = acceptRelease
+            )
+            if (preferredWin != null) return@withContext preferredWin
+            return@withContext raceMirrors(
+                mirrors = candidates.drop(1),
+                timeoutMs = CHECK_TIMEOUT_MS,
+                request = requestBuilder,
+                accept = acceptRelease
+            )
+        }
+        raceMirrors(
+            mirrors = candidates,
+            timeoutMs = CHECK_TIMEOUT_MS,
+            request = requestBuilder,
+            accept = acceptRelease
         )
     }
 
@@ -133,9 +158,10 @@ internal class AppUpdateClient(userAgent: String) {
     ) = withContext(Dispatchers.IO) {
         partFile.parentFile?.mkdirs()
         val total = asset.size
-        val allMirrors = GitHubMirrors.candidatesFor(asset.downloadUrl)
+        val allMirrors = GitHubMirrors.candidatesFor(asset.downloadUrl, gitHubMirrorsProvider())
         var excluded: GitHubMirror? = null
         var roundsWithoutProgress = 0
+        var triedPreferredOnly = false
 
         while (true) {
             ensureActive()
@@ -147,11 +173,17 @@ internal class AppUpdateClient(userAgent: String) {
                 continue
             }
 
-            // 刚断开的线路这一轮先不参加，只剩它一条时照样用它
-            val candidates = allMirrors.filter { it != excluded }.ifEmpty { allMirrors }
+            val usePreferredFirst = preferFirstMirror() && !triedPreferredOnly && excluded == null && allMirrors.size > 1
+            val candidates = if (usePreferredFirst) {
+                triedPreferredOnly = true
+                listOf(allMirrors.first())
+            } else {
+                // 刚断开的线路这一轮先不参加，只剩它一条时照样用它
+                allMirrors.filter { it != excluded }.ifEmpty { allMirrors }
+            }
             val win = raceMirrors(
                 mirrors = candidates,
-                timeoutMs = PROBE_TIMEOUT_MS,
+                timeoutMs = if (usePreferredFirst) PREFERRED_PROBE_TIMEOUT_MS else PROBE_TIMEOUT_MS,
                 request = { mirror ->
                     Request.Builder()
                         .url(mirror.url(asset.downloadUrl))
@@ -163,6 +195,10 @@ internal class AppUpdateClient(userAgent: String) {
             )
 
             if (win == null) {
+                if (usePreferredFirst) {
+                    excluded = allMirrors.first()
+                    continue
+                }
                 roundsWithoutProgress++
                 if (roundsWithoutProgress >= MAX_ROUNDS_WITHOUT_PROGRESS) {
                     throw IOException("GitHub 和所有镜像都连不上")

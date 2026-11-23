@@ -61,30 +61,84 @@ class PillTiltDamperTest {
         var now = 1_000_000_000L
         var side = PillDockSide.Left
 
-        // 先稳定在竖直正姿，再持续向右倾斜：前 350ms 仍在阻尼过滤期不得秒切，1.2s 内平稳切到右侧
+        // 先稳定在竖直正姿，再持续向右倾斜：前 150ms 仍在阻尼过滤期不得秒切，500ms 内平稳切到右侧
         side = damper.onSensorSample(0f, 8.8f, 4.3f, now, currentSide = side)
-        repeat(7) {
+        repeat(3) {
             now += stepNanos
             side = damper.onSensorSample(-3.8f, 8.8f, 2.0f, now, currentSide = side)
             assertEquals(PillDockSide.Left, side)
         }
-        repeat(17) {
+        repeat(7) {
             now += stepNanos
             side = damper.onSensorSample(-3.8f, 8.8f, 2.0f, now, currentSide = side)
         }
         assertEquals(PillDockSide.Right, side)
 
-        // 切至右侧后的 1.2s 冷却期内即便向左倾斜也不回弹，待冷却结束持续左倾再平滑切回左侧
-        repeat(18) {
+        // 切至右侧后的 0.70s 冷却期内即便向左倾斜也不回弹，待冷却结束持续左倾再平滑切回左侧
+        repeat(12) {
             now += stepNanos
             side = damper.onSensorSample(3.8f, 8.8f, 2.0f, now, currentSide = side)
             assertEquals(PillDockSide.Right, side)
         }
-        repeat(20) {
+        repeat(14) {
             now += stepNanos
             side = damper.onSensorSample(3.8f, 8.8f, 2.0f, now, currentSide = side)
         }
         assertEquals(PillDockSide.Left, side)
+    }
+
+    @Test
+    fun `small angle hand switch triggers side change while near-upright hold stays steady`() {
+        // 端正握持略微偏斜（约 3.8 度）持续 2 秒仍应保持原停靠边不误切
+        val steadyDamper = PillTiltDamper()
+        var now = 1_000_000_000L
+        var steadySide = steadyDamper.onSensorSample(0f, 8.8f, 4.3f, now, currentSide = PillDockSide.Left)
+        repeat(40) {
+            now += stepNanos
+            steadySide = steadyDamper.onSensorSample(-0.65f, 8.8f, 4.3f, now, currentSide = steadySide)
+            assertEquals(PillDockSide.Left, steadySide)
+        }
+
+        // 换手轻幅偏转（从略左倾 +1.1 转为略右倾 -1.1，约 6.4 度）在 1 秒内平稳切换至右侧
+        val switchDamper = PillTiltDamper()
+        now = 1_000_000_000L
+        var switchSide = switchDamper.onSensorSample(1.1f, 8.7f, 4.3f, now, currentSide = PillDockSide.Left)
+        repeat(20) {
+            now += stepNanos
+            switchSide = switchDamper.onSensorSample(-1.1f, 8.7f, 4.3f, now, currentSide = switchSide)
+        }
+        assertEquals(PillDockSide.Right, switchSide)
+
+        // 低俯角单手握持（距桌面约 18 度）时轻微右偏也在 1 秒内正常换边，不被平放阈值拦截
+        val lowPitchDamper = PillTiltDamper()
+        now = 1_000_000_000L
+        var lowPitchSide = lowPitchDamper.onSensorSample(0f, 2.9f, 9.3f, now, currentSide = PillDockSide.Left)
+        repeat(20) {
+            now += stepNanos
+            lowPitchSide = lowPitchDamper.onSensorSample(-1.2f, 2.9f, 9.3f, now, currentSide = lowPitchSide)
+        }
+        assertEquals(PillDockSide.Right, lowPitchSide)
+    }
+
+    @Test
+    fun `walking sway oscillation does not switch dock side`() {
+        val damper = PillTiltDamper()
+        var now = 1_000_000_000L
+        var side = damper.onSensorSample(0f, 8.8f, 4.3f, now, currentSide = PillDockSide.Left)
+
+        // 模拟步行手持时每 150ms 左右来回晃动：过滤与瞬时余尾校验共同阻断误切
+        repeat(10) {
+            repeat(3) {
+                now += stepNanos
+                side = damper.onSensorSample(-1.5f, 8.7f, 4.3f, now, currentSide = side)
+                assertEquals(PillDockSide.Left, side)
+            }
+            repeat(3) {
+                now += stepNanos
+                side = damper.onSensorSample(1.5f, 8.7f, 4.3f, now, currentSide = side)
+                assertEquals(PillDockSide.Left, side)
+            }
+        }
     }
 
     @Test

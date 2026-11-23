@@ -19,10 +19,28 @@ internal data class QqOfficialCredentials(
  * 禁言、撤回、统一账号 ID 这些用户可能在 MaiBot WebUI 的插件配置里改过，不能被覆盖。逐行读写交给 PluginConfigToml。
  */
 internal object QqOfficialAdapterConfig {
-    // 与适配器 settings.py 的默认配置版本一致，只在第一次生成配置文件时写入。
-    private const val ConfigVersion = "0.4.1"
+    // 外置插件与 MaiBot 内置插件在读不到 settings.py 默认值时的兜底配置版本；
+    // 优先从容器内插件的 settings.py 动态提取默认 config_version，已有配置一律保留原版本号以免触发误迁移。
+    internal const val FallbackLegacyConfigVersion = "0.4.1"
+    internal const val FallbackBuiltInConfigVersion = "0.5.4"
     private const val PluginSection = "plugin"
     private const val CredentialSection = "qq_official"
+
+    // 匹配插件 settings.py 中的 config_version 默认值，兼容直接赋值与 Pydantic Field(default=...)；
+    // 行首按空白锚定，自动跳过 `#` 注释行。
+    private val settingsDefaultConfigVersionRegex = Regex(
+        """(?m)^\s*config_version\s*(?::[^=]+)?=\s*(?:Field\s*\([^)]*?default\s*=\s*)?["']([^"'\r\n]+)["']"""
+    )
+
+    /** 从插件 `settings.py` 提取 `config_version` 默认值；找不到或文本为空时返回 null。 */
+    fun parseDefaultConfigVersion(settingsPyText: String?): String? {
+        if (settingsPyText.isNullOrBlank()) return null
+        return settingsDefaultConfigVersionRegex.find(settingsPyText)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
 
     fun read(text: String?): QqOfficialCredentials {
         if (text.isNullOrBlank()) return QqOfficialCredentials()
@@ -39,15 +57,20 @@ internal object QqOfficialAdapterConfig {
 
     /**
      * 写入凭据并启用插件：还没有配置文件时生成最小配置（其余字段由 MaiBot 按默认值补齐）；
-     * 已有配置时逐行替换这三项，节或键不存在就补上。
+     * 已有配置时逐行替换这三项，节或键不存在就补上，原 config_version 与其他节完整保留。
      */
-    fun write(existing: String?, appId: String, appSecret: String): String {
+    fun write(
+        existing: String?,
+        appId: String,
+        appSecret: String,
+        defaultConfigVersion: String = FallbackLegacyConfigVersion
+    ): String {
         if (existing.isNullOrBlank()) {
             return PluginConfigToml.join(
                 listOf(
                     "[$PluginSection]",
                     "enabled = true",
-                    "config_version = ${PluginConfigToml.tomlString(ConfigVersion)}",
+                    "config_version = ${PluginConfigToml.tomlString(defaultConfigVersion)}",
                     "",
                     "[$CredentialSection]",
                     "app_id = ${PluginConfigToml.tomlString(appId)}",

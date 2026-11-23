@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.ui.oobe
 
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.LinearEasing
@@ -14,6 +15,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,38 +31,60 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.Shadow
+import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.oobe.OobeSetupState
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.oobe.OobeTask
 import org.maiwithu.maidroid.oobe.OobeTaskStatus
+import org.maiwithu.maidroid.ui.component.InteractiveHighlight
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.computeLiquidButtonDragTransform
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
+import org.maiwithu.maidroid.ui.component.resolveLiquidBackdrop
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
+import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
+import org.maiwithu.maidroid.ui.theme.GlassShadow
+import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
@@ -186,15 +210,17 @@ internal fun OobeStepFooter(
 }
 
 /**
- * 打开或收起终端输出的按钮。平时只显示图标；出错或等太久（attention）时展开成“遇到问题？”，
- * 终端已展开（expanded）时显示“收起终端”。
+ * 打开或收起终端输出的液态玻璃胶囊按钮：
+ * 平时为 44dp 圆形玻璃折射按钮实时透出下方插画；出错或等太久（attention）时弹性展开成“遇到问题？”，
+ * 终端已展开（expanded）时渲染暖橙玻璃态并显示“收起终端”，按压带随指高光与果冻形变。
  */
 @Composable
 internal fun CommandLogButton(
     attention: Boolean,
     expanded: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    backdrop: Backdrop = resolveLiquidBackdrop(OobeBackground)
 ) {
     val showLabel = attention || expanded
     val buttonWidth by animateDpAsState(
@@ -205,20 +231,66 @@ internal fun CommandLogButton(
         ),
         label = "CommandLogButtonWidth"
     )
+    val animationScope = rememberCoroutineScope()
+    val interactiveHighlight = remember(animationScope) { InteractiveHighlight(animationScope) }
+    val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val pillShape = { Capsule() }
+    val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.8.dp, GlassStroke, Capsule())
 
     Row(
         modifier = modifier
             .width(buttonWidth)
             .height(44.dp)
-            .clip(RoundedCornerShape(Corners.Chip))
-            .background(
-                if (expanded) {
-                    BrandOrange.copy(alpha = 0.18f)
-                } else {
-                    OobeSurface.copy(alpha = 0.82f)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = pillShape,
+                effects = {
+                    // 折射下方 OOBE 插画或深色工作区，展开态与圆钮态保持一致的液态光学质感
+                    vibrancy()
+                    blur(12f.dp.toPx())
+                    lens(14f.dp.toPx(), 24f.dp.toPx())
+                },
+                highlight = { Highlight.Default.copy(alpha = 0.9f) },
+                shadow = { CommandLogButtonShadow },
+                layerBlock = {
+                    val transform = computeLiquidButtonDragTransform(
+                        widthPx = size.width,
+                        heightPx = size.height,
+                        maxDragHeightPx = 3f.dp.toPx(),
+                        pressProgress = interactiveHighlight.pressProgress,
+                        offsetX = interactiveHighlight.offset.x,
+                        offsetY = interactiveHighlight.offset.y
+                    )
+                    translationX = transform.translationXPx
+                    translationY = transform.translationYPx
+                    scaleX = transform.scaleX
+                    scaleY = transform.scaleY
+                },
+                onDrawSurface = {
+                    val baseSurface = if (hasRenderEffect) GlassButtonSurface else GlassFallbackSurface
+                    when {
+                        expanded -> {
+                            drawRect(BrandOrange, blendMode = BlendMode.Hue)
+                            drawRect(BrandOrange.copy(alpha = 0.28f))
+                            drawRect(baseSurface)
+                        }
+                        attention -> {
+                            drawRect(BrandOrange.copy(alpha = 0.22f))
+                            drawRect(baseSurface)
+                        }
+                        else -> drawRect(baseSurface)
+                    }
                 }
             )
-            .clickable(onClick = onClick)
+            .then(fallbackBorder)
+            .clickable(
+                interactionSource = null,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .then(interactiveHighlight.modifier)
+            .then(interactiveHighlight.gestureModifier)
             .padding(horizontal = if (showLabel) 12.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (showLabel) Arrangement.Start else Arrangement.Center
@@ -244,6 +316,11 @@ internal fun CommandLogButton(
     }
 }
 
+private val CommandLogButtonShadow = Shadow(
+    radius = 14.dp,
+    color = GlassShadow
+)
+
 /** 步骤切换动画：前进时新内容从右边推进来，后退时从左边推进来。 */
 internal fun AnimatedContentTransitionScope<OobeStep>.oobeStepTransition() =
     horizontalSlideTransition(forward = targetState > initialState, dampingRatio = 0.84f)
@@ -255,19 +332,14 @@ private fun NextButton(
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Button(
+    LiquidButton(
         onClick = onNext,
         enabled = enabled,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        shape = RoundedCornerShape(Corners.Chip),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = BrandOrangeMuted,
-            contentColor = OnBrandOrange,
-            disabledContainerColor = Color.White.copy(alpha = 0.12f),
-            disabledContentColor = OobeTextSecondary
-        )
+        backdrop = rememberSurfaceBackdrop(OobeBackground),
+        style = LiquidButtonStyle.Primary,
+        shape = { RoundedRectangle(Corners.Chip) },
+        minHeight = 64.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
         Text(
             text = text,
@@ -332,19 +404,14 @@ private fun SetupFooter(
             FailureNotice(failure = failure, textColor = OobeTextSecondary, modifier = Modifier.padding(start = 38.dp))
         }
 
-        Button(
+        LiquidButton(
             onClick = if (canProceed) onProceed else onRetry,
             enabled = canProceed || waitingEnabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp),
-            shape = RoundedCornerShape(Corners.Control),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BrandOrangeMuted,
-                contentColor = OnBrandOrange,
-                disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                disabledContentColor = OobeTextSecondary
-            )
+            backdrop = rememberSurfaceBackdrop(OobeSurface),
+            style = LiquidButtonStyle.Primary,
+            shape = { RoundedRectangle(Corners.Control) },
+            minHeight = 44.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = if (canProceed) proceedText else waitingText,

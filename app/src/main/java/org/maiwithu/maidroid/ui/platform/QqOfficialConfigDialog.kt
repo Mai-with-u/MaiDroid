@@ -2,13 +2,11 @@ package org.maiwithu.maidroid.ui.platform
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -19,16 +17,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
+import org.maiwithu.maidroid.ui.component.MaiDialogTextField
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
-import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -55,111 +62,105 @@ internal fun QqOfficialConfigDialog(
     var appSecretText by rememberSaveable { mutableStateOf(state.credentials.appSecret) }
     val canConfirm = appIdText.isNotBlank() && appSecretText.isNotBlank() && !state.isInstalling
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("QQ 官方机器人") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (state.installed) {
-                    StackedConfigValueRow(
-                        label = "连接状态",
-                        value = qqOfficialStatusDetail(state),
-                        valueColor = qqOfficialStatusColor(state)
-                    )
-                }
-
-                state.failure?.let { failure ->
-                    Text(
-                        text = "安装失败：${failure.message}",
-                        color = StatusDanger,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 15.sp
-                    )
-                    FailureNotice(failure = failure)
-                }
-
-                OutlinedTextField(
-                    value = appIdText,
-                    onValueChange = { appIdText = it.trim() },
-                    singleLine = true,
-                    label = { Text("AppID") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-
-                OutlinedTextField(
-                    value = appSecretText,
-                    onValueChange = { appSecretText = it.trim() },
-                    singleLine = true,
-                    label = { Text("AppSecret") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-                )
-
-                Text(
-                    text = "在 QQ 开放平台（q.qq.com）创建机器人并开通群聊、单聊能力，" +
-                        "把开发设置里的 AppID 和 AppSecret 填到这里。\n" +
-                        "IP 白名单请留空：手机网络的 IP 会变，填了容易被拦。\n" +
-                        "群里要 @机器人 才会收到消息。确认后会重启 MaiBot，期间所有平台暂停收发消息。",
-                    color = TextFaint,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 15.sp
+    MaiDialog(
+        title = "QQ 官方机器人",
+        subtitle = if (state.installed) "配置开放平台凭据并接入 MaiBot" else "填写凭据以启用内置官方适配器",
+        icon = FlatFeatureIcons.Platforms,
+        iconBackground = IconSkyBlue,
+        size = MaiDialogSize.Expanded,
+        headerBadge = if (state.installed) {
+            {
+                MaiDialogInfoChip(
+                    text = qqOfficialStatusText(state),
+                    color = qqOfficialStatusColor(state)
                 )
             }
+        } else {
+            null
         },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = {
-            PlatformPrimaryButton(
-                text = if (state.installed) "保存" else "安装并启用",
-                enabled = canConfirm,
-                onClick = { onConfirm(appIdText, appSecretText) }
-            )
+        secondaryContent = {
+            // 横屏时将三条接入指南并列排在右列，左列专注表单填写。
+            MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "配置说明",
+                    color = TextPrimary,
+                    fontSize = TextSizes.Caption,
+                    fontWeight = FontWeight.Bold
+                )
+                QqOfficialGuideBullet("在 QQ 开放平台（q.qq.com）创建机器人并开通群聊、单聊能力。")
+                QqOfficialGuideBullet("IP 白名单请留空：手机网络的出口 IP 会变化，填了容易被拦截。")
+                QqOfficialGuideBullet("群里需要 @机器人 才会收到消息；确认后会重启 MaiBot，期间暂不收发。")
+            }
         },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
-}
-
-/** 上下两行的键值对展示（仅用于 QQ 官方机器人凭据弹窗，区别于协议配置弹窗的左右行 ConfigKeyValueRow）。 */
-@Composable
-private fun StackedConfigValueRow(
-    label: String,
-    value: String,
-    valueColor: Color = TextMuted
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
+        onDismissRequest = onDismiss,
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = if (state.installed) "保存" else "安装并启用",
+                    style = MaiDialogButtonStyle.Primary,
+                    enabled = canConfirm,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onConfirm(appIdText, appSecretText) }
+                )
+            }
+        }
     ) {
-        Text(
-            text = label,
-            color = TextFaint,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 14.sp
-        )
-        Text(
-            text = value,
-            color = valueColor,
-            fontSize = TextSizes.Body,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 18.sp
-        )
+        if (state.installed && state.connectionError != null) {
+            MaiDialogCallout(
+                title = "连接失败",
+                body = state.connectionError,
+                accentColor = StatusDanger
+            )
+        }
+
+        state.failure?.let { failure ->
+            FailureNotice(failure = failure, summary = failure.message)
+        }
+
+        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            MaiDialogTextField(
+                value = appIdText,
+                onValueChange = { appIdText = it.trim() },
+                label = "AppID",
+                placeholder = "QQ 开放平台机器人 AppID",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+
+            MaiDialogTextField(
+                value = appSecretText,
+                onValueChange = { appSecretText = it.trim() },
+                label = "AppSecret",
+                placeholder = "QQ 开放平台机器人 AppSecret",
+                isPassword = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+        }
     }
 }
 
-// 弹窗里比卡片多说一句：连接失败带上原因，“已启用”说明是按没有报错推断的。
-private fun qqOfficialStatusDetail(state: QqOfficialPlatformState): String {
-    val summary = qqOfficialStatusText(state)
-    return when {
-        state.connectionError != null -> "$summary：${state.connectionError}"
-        state.presumedOnline -> "$summary，近一分钟没有连接报错"
-        else -> summary
+@Composable
+private fun QqOfficialGuideBullet(text: String) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "•",
+            color = BrandOrange,
+            fontSize = TextSizes.Caption,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 16.sp
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = text,
+            color = TextMuted,
+            fontSize = TextSizes.Caption,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f)
+        )
     }
 }

@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,16 +11,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -30,15 +26,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.service.SafeExitService
 import org.maiwithu.maidroid.service.SafeExitStage
 import org.maiwithu.maidroid.service.SafeExitState
 import org.maiwithu.maidroid.service.describe
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogDivider
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
+import org.maiwithu.maidroid.ui.theme.IconWarmCoral
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -55,17 +62,13 @@ internal fun SafeExitButton(onClick: () -> Unit, modifier: Modifier = Modifier) 
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 去掉外圈微红硬描边，改为柔和低饱和纯平胶囊按钮
-        Button(
+        // 采用柔和危险态 LiquidButton 替换普通扁平胶囊按钮，保留果冻微胀与高光折射
+        LiquidButton(
             onClick = onClick,
-            shape = RoundedCornerShape(Corners.Chip),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = StatusDanger.copy(alpha = 0.12f),
-                contentColor = StatusDanger
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
+            style = LiquidButtonStyle.SoftDanger,
+            shape = { RoundedRectangle(Corners.Chip) },
+            minHeight = 52.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
                 imageVector = Icons.Outlined.PowerSettingsNew,
@@ -96,53 +99,42 @@ internal fun SafeExitConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MaiDialog(
+        title = "安全退出 MaiDroid？",
+        subtitle = "依次停下麦麦、QQ 与容器 SSH",
+        icon = FlatFeatureIcons.BackgroundKeepAlive,
+        iconBackground = IconRoseAlert,
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "安全退出 MaiDroid？",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            Text(
-                text = "将通知麦麦、QQ 和容器 SSH 正常退出：麦麦先保存好记忆和数据（通常几秒，最长约一分半钟），" +
-                    "QQ 随之下线。全部停下后 MaiDroid 自动关闭，再次打开时会重新唤醒麦麦。\n\n" +
-                    "退出期间可以切到后台或划掉 MaiDroid，通知栏会显示进度，请不要强行停止。",
-                color = TextMuted,
-                fontSize = TextSizes.Body,
-                lineHeight = 18.sp
-            )
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
                 )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = StatusDanger,
-                    contentColor = TextPrimary
+                MaiDialogButton(
+                    text = "安全退出",
+                    style = MaiDialogButtonStyle.Danger,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm
                 )
-            ) {
-                Text(text = "安全退出", fontWeight = FontWeight.Bold)
             }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    ) {
+        Text(
+            text = "将通知麦麦、QQ 和容器 SSH 正常退出：麦麦先保存好记忆和数据（通常几秒，最长约一分半钟），QQ 随之下线。全部停下后 MaiDroid 自动关闭，再次打开时会重新唤醒麦麦。",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+        Text(
+            text = "退出期间可以切到后台或划掉 MaiDroid，通知栏会显示进度，请不要强行停止。",
+            color = TextMuted,
+            fontSize = TextSizes.Caption,
+            lineHeight = 16.sp
+        )
+    }
 }
 
 /**
@@ -154,49 +146,43 @@ internal fun SafeExitProgressDialog(
     state: SafeExitState,
     onMoveToBackground: () -> Unit
 ) {
-    AlertDialog(
+    MaiDialog(
+        title = if (state.finished) "正在关闭 MaiDroid" else "正在安全退出",
+        subtitle = "正在保存记忆并按顺序停止服务",
+        icon = FlatFeatureIcons.BackgroundKeepAlive,
+        iconBackground = IconWarmCoral,
+        size = MaiDialogSize.Medium,
+        showCloseButton = false,
+        dismissOnBackPress = false,
+        dismissOnClickOutside = false,
         onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = {
-            Text(
-                text = if (state.finished) "正在关闭 MaiDroid" else "正在安全退出",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
+        footer = {
+            MaiDialogButton(
+                text = "切到后台",
+                style = MaiDialogButtonStyle.Secondary,
+                modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
+                onClick = onMoveToBackground
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                SafeExitService.entries.forEach { service ->
+        }
+    ) {
+        MaiDialogSectionCard(
+            contentPadding = PaddingValues(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            SafeExitService.entries.forEachIndexed { index, service ->
+                if (index > 0) MaiDialogDivider()
+                Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     SafeExitServiceRow(service, state.stages[service] ?: SafeExitStage.Stopping)
                 }
-                Text(
-                    text = "可以离开应用，全部停下后 MaiDroid 会自动关闭。",
-                    color = TextMuted,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 16.sp
-                )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = onMoveToBackground,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(text = "切到后台", fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+        Text(
+            text = "可以离开应用，全部停下后 MaiDroid 会自动关闭。",
+            color = TextMuted,
+            fontSize = TextSizes.Caption,
+            lineHeight = 16.sp
+        )
+    }
 }
 
 @Composable
@@ -230,7 +216,7 @@ private fun SafeExitServiceRow(service: SafeExitService, stage: SafeExitStage) {
             Text(
                 text = service.label,
                 color = TextPrimary,
-                fontSize = TextSizes.BodyLarge,
+                fontSize = TextSizes.Body,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 18.sp
             )

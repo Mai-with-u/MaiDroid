@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
@@ -16,6 +17,10 @@ import org.maiwithu.maidroid.maibot.MaiBotConsoleLogRotator
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
+import org.maiwithu.maidroid.pet.DesktopPetManager
+import org.maiwithu.maidroid.pet.PetOverlayService
+import org.maiwithu.maidroid.pet.PetRecordsActivity
+import org.maiwithu.maidroid.pet.PetWindowLauncher
 import org.maiwithu.maidroid.platform.napcat.NapCatPlatformManager
 import org.maiwithu.maidroid.platform.napcat.NapCatProcessSupervisor
 import org.maiwithu.maidroid.platform.qq.QqAdapterFiles
@@ -28,6 +33,7 @@ import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformManager
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
 import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
@@ -69,10 +75,11 @@ internal class AppDependencies(context: Context) {
         systemCrashes = { recentSystemCrashes(appContext) }
     )
 
-    // ── 容器运行时：路径、就绪检查、命令执行 ─────────────────────────────
+    // ── 容器运行时：路径、就绪检查、命令执行与全链路镜像源测速 ───────────
     val runtimePaths = RuntimePaths.from(appContext)
     val runtimeReadiness = RuntimeReadiness(runtimePaths)
     val commandRunner = ContainerCommandRunner(runtimePaths)
+    val mirrorManager: MirrorManager by lazy { MirrorManager(settings, runtimePaths.rootfsDir) }
 
     // ── 容器里的长驻进程与功能模块 ───────────────────────────────────────
     // MaiBot 控制台日志兜底轮转：worker-console.log 不滚动，MaiDroid 侧按大小 copytruncate（见类注释）。
@@ -84,11 +91,11 @@ internal class AppDependencies(context: Context) {
         MaiBotProcessSupervisor(runtimePaths, runtimeReadiness, commandRunner)
     }
     val containerSsh: ContainerSshManager by lazy {
-        ContainerSshManager(settings, runtimeReadiness, commandRunner)
+        ContainerSshManager(settings, runtimeReadiness, commandRunner, mirrorManager)
     }
     // MaiBot 侧的 SnowLuma 适配器：消息平台页安装 NapCat、SnowLuma 和两边启动前的换装共用一个，迁移配置时靠它的锁串行。
     private val snowLumaAdapterInstaller: SnowLumaAdapterInstaller by lazy {
-        SnowLumaAdapterInstaller(QqAdapterFiles(runtimePaths), commandRunner)
+        SnowLumaAdapterInstaller(QqAdapterFiles(runtimePaths), commandRunner, mirrorManager)
     }
     private val qqAdapterUpkeep: QqAdapterUpkeep by lazy {
         QqAdapterUpkeep(QqAdapterFiles(runtimePaths), snowLumaAdapterInstaller, maiBotProcess)
@@ -99,28 +106,28 @@ internal class AppDependencies(context: Context) {
         QqClientSwitcher(qqClientChoice, napCatProcess, snowLumaProcess)
     }
     val napCatProcess: NapCatProcessSupervisor by lazy {
-        NapCatProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice)
+        NapCatProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice, mirrorManager)
     }
     val snowLumaProcess: SnowLumaProcessSupervisor by lazy {
-        SnowLumaProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice)
+        SnowLumaProcessSupervisor(runtimePaths, commandRunner, qqAdapterUpkeep, qqClientChoice, mirrorManager)
     }
     val napCat: NapCatPlatformManager by lazy {
         NapCatPlatformManager(
             appContext, settings, runtimePaths, runtimeReadiness, commandRunner, napCatProcess,
-            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
+            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor, mirrorManager
         )
     }
     val snowLuma: SnowLumaPlatformManager by lazy {
         SnowLumaPlatformManager(
             appContext, settings, runtimePaths, runtimeReadiness, commandRunner, snowLumaProcess,
-            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor
+            snowLumaAdapterInstaller, qqClientSwitcher, networkMonitor, mirrorManager
         )
     }
     val qqOfficial: QqOfficialPlatformManager by lazy {
-        QqOfficialPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess)
+        QqOfficialPlatformManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess, mirrorManager)
     }
     val maiBotUpdater: MaiBotUpdateManager by lazy {
-        MaiBotUpdateManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess)
+        MaiBotUpdateManager(appContext, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess, mirrorManager)
     }
     // “反馈问题”：收集版本、设备、容器和进程状态，打码后生成诊断包；只读文件，不创建平台管理器。
     val diagnostics: DiagnosticsManager by lazy {
@@ -128,13 +135,45 @@ internal class AppDependencies(context: Context) {
             appContext, settings, runtimePaths, runtimeReadiness, diagnosticsFiles, terminalLogRecorder, maiBotProcess
         )
     }
+    // 本机悬浮桌宠管理：挂载在扩展组件页，不随容器默认开机自启。
+    val desktopPet: DesktopPetManager by lazy {
+        DesktopPetManager(
+            context = appContext,
+            settings = settings,
+            runtimePaths = runtimePaths,
+            launcher = object : PetWindowLauncher {
+                override fun startOverlay(context: Context) {
+                    PetOverlayService.start(context)
+                }
+
+                override fun openRecords(context: Context) {
+                    context.startActivity(
+                        Intent(context, PetRecordsActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+
+                override fun closeRecords() {
+                    PetRecordsActivity.closeIfOpen()
+                }
+            }
+        )
+    }
+
     // 设置页和“空间不足”提示里的“清理空间”：量各类缓存的大小，删掉勾选的。
     val storageCleanup: StorageCleanupManager by lazy {
         StorageCleanupManager(runtimePaths, runtimeReadiness, commandRunner)
     }
-    // 设置页的“安全退出”：让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
+    // 设置页的“安全退出”：先在主线程关掉悬浮桌宠，再让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
-        SafeExitManager(settings, maiBotProcess, napCatProcess, snowLumaProcess, containerSsh)
+        SafeExitManager(
+            settings = settings,
+            maiBotProcess = maiBotProcess,
+            napCatProcess = napCatProcess,
+            snowLumaProcess = snowLumaProcess,
+            containerSsh = containerSsh,
+            stopDesktopPet = { desktopPet.stop() }
+        )
     }
 
     // 手机有没有网：断网失败后等网络恢复自动重试用
@@ -142,15 +181,24 @@ internal class AppDependencies(context: Context) {
 
     // 首次引导的执行者放在进程级：界面被划掉、转屏都不打断正在装的，重新打开时接着显示进度
     val oobeSetup: OobeSetupManager by lazy {
-        OobeSetupManager(appContext, settings, runtimePaths, runtimeReadiness, commandRunner, maiBotProcess, networkMonitor)
+        OobeSetupManager(
+            appContext,
+            settings,
+            runtimePaths,
+            runtimeReadiness,
+            commandRunner,
+            maiBotProcess,
+            networkMonitor,
+            mirrorManager
+        )
     }
 
     // ── MaiDroid 应用本体的在线更新与远程公告诊断（与容器无关） ────────────────
     val appUpdater: AppUpdateManager by lazy {
-        AppUpdateManager(appContext, BuildConfig.VERSION_NAME, BuildConfig.APP_UPDATE_API_URL)
+        AppUpdateManager(appContext, BuildConfig.VERSION_NAME, BuildConfig.APP_UPDATE_API_URL, mirrorManager)
     }
     val remoteOps: RemoteOpsManager by lazy {
-        RemoteOpsManager(appContext, settings, runtimePaths, crashRecorder) { diagnostics }
+        RemoteOpsManager(appContext, settings, runtimePaths, crashRecorder, mirrorManager) { diagnostics }
     }
 }
 

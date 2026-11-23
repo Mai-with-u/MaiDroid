@@ -9,22 +9,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -49,15 +43,21 @@ import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.remote.AnnouncementLevel
 import org.maiwithu.maidroid.remote.RemoteAnnouncement
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
 import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.settings.AppUpdateDialogHost
 import org.maiwithu.maidroid.ui.settings.MaiBotUpdateDialogHost
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
-import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -183,70 +183,57 @@ internal fun AnnouncementModalDialogHost(
         ?: parsedTarget?.let(::defaultRemoteActionLabel)
 
     if (activeModalAction == null) {
-        AlertDialog(
+        val isWarning = announcement.level == AnnouncementLevel.Warning
+        // 统一收拢紧急公告到 MaiDialog，有动作目标时在底部并排“知道了”与跳转操作。
+        MaiDialog(
+            title = announcement.title,
+            subtitle = if (isWarning) "重要提醒" else "应用公告",
+            icon = FlatFeatureIcons.AppVersion,
+            iconBackground = if (isWarning) IconRoseAlert else IconSkyBlue,
             onDismissRequest = onDismiss,
-            title = {
-                Text(
-                    text = announcement.title,
-                    color = TextPrimary,
-                    fontSize = TextSizes.TitleLarge,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 22.sp
-                )
-            },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        text = announcement.body,
-                        color = TextMuted,
-                        fontSize = TextSizes.Body,
-                        lineHeight = 19.sp
-                    )
-                }
-            },
-            dismissButton = if (parsedTarget != null) {
-                {
-                    Button(
-                        onClick = onDismiss,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-                    ) {
-                        Text(text = "知道了", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold)
-                    }
-                }
-            } else {
-                null
-            },
-            confirmButton = {
+            footer = {
                 if (parsedTarget != null && actionLabel != null && announcement.actionTarget != null) {
-                    Button(
-                        onClick = {
-                            dispatchRemoteAction(context, announcement.actionTarget) { modalKey ->
-                                activeModalAction = modalKey
-                            }
-                            if (parsedTarget is RemoteActionTarget.WebUrl || parsedTarget is RemoteActionTarget.AppPermissions) {
-                                onDismiss()
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = OnBrandOrange)
-                    ) {
-                        Text(text = actionLabel, fontSize = TextSizes.Body, fontWeight = FontWeight.Bold)
+                    MaiDialogButtonRow {
+                        MaiDialogButton(
+                            text = "知道了",
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            style = MaiDialogButtonStyle.Secondary
+                        )
+                        MaiDialogButton(
+                            text = actionLabel,
+                            onClick = {
+                                dispatchRemoteAction(context, announcement.actionTarget) { modalKey ->
+                                    activeModalAction = modalKey
+                                }
+                                if (parsedTarget is RemoteActionTarget.WebUrl || parsedTarget is RemoteActionTarget.AppPermissions) {
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            style = MaiDialogButtonStyle.Primary
+                        )
                     }
                 } else {
-                    Button(
+                    // 只有一个按钮时：竖屏铺满整行与其他弹窗对齐，横屏按文字定宽紧贴底栏右侧。
+                    MaiDialogButton(
+                        text = "知道了",
                         onClick = onDismiss,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = OnBrandOrange)
-                    ) {
-                        Text(text = "知道了", fontSize = TextSizes.Body, fontWeight = FontWeight.Bold)
-                    }
+                        modifier = if (LocalMaiDialogPhoneLandscape.current) Modifier else Modifier.fillMaxWidth(),
+                        style = MaiDialogButtonStyle.Primary
+                    )
                 }
-            },
-            containerColor = CardSurface,
-            titleContentColor = TextPrimary,
-            textContentColor = TextMuted
-        )
+            }
+        ) {
+            MaiDialogSectionCard {
+                Text(
+                    text = announcement.body,
+                    color = TextPrimary,
+                    fontSize = TextSizes.BodyLarge,
+                    lineHeight = 20.sp
+                )
+            }
+        }
     }
 
     RemoteActionDialogHost(

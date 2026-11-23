@@ -390,6 +390,84 @@ internal object FlatFeatureIcons {
             fillLayer(IconForeground) { sparklePath(12.0f, 12.0f, 4.7f, 1.65f) }
         }
     }
+
+    /** 悬浮桌宠图标：圆润猫耳麦麦剪影与灵动笑眼，专用于「扩展组件」悬浮桌宠卡片。 */
+    val DesktopPet: ImageVector by lazy {
+        flatVector("FlatDesktopPet") {
+            fillLayer(IconSecondary) {
+                moveTo(4.4f, 12.2f)
+                curveTo(4.1f, 8.8f, 4.6f, 4.8f, 5.8f, 4.5f)
+                curveTo(6.9f, 4.2f, 8.6f, 5.8f, 9.5f, 6.9f)
+                curveTo(11.1f, 6.4f, 12.9f, 6.4f, 14.5f, 6.9f)
+                curveTo(15.4f, 5.8f, 17.1f, 4.2f, 18.2f, 4.5f)
+                curveTo(19.4f, 4.8f, 19.9f, 8.8f, 19.6f, 12.2f)
+                curveTo(19.8f, 16.9f, 16.8f, 19.8f, 12.0f, 19.8f)
+                curveTo(7.2f, 19.8f, 4.2f, 16.9f, 4.4f, 12.2f)
+                close()
+            }
+            fillLayer(IconForeground) {
+                roundedRectPath(7.8f, 10.4f, 9.8f, 13.4f, 1.0f)
+                roundedRectPath(14.2f, 10.4f, 16.2f, 13.4f, 1.0f)
+            }
+            strokeLayer(IconForeground, width = 1.85f) {
+                moveTo(9.8f, 15.1f)
+                quadTo(10.9f, 16.4f, 12.0f, 15.1f)
+                quadTo(13.1f, 16.4f, 14.2f, 15.1f)
+            }
+        }
+    }
+
+    /** 语音合成（TTS）扩展图标：柔白声学圆底配前景三柱居中声纹，表达语音部署与音色合成。 */
+    val TtsVoice: ImageVector by lazy {
+        flatVector("FlatTtsVoice") {
+            fillLayer(IconSecondary) {
+                roundedRectPath(3.0f, 3.6f, 21.0f, 20.4f, 6.2f)
+            }
+            fillLayer(IconForeground) {
+                roundedRectPath(6.6f, 9.6f, 9.0f, 14.4f, 1.2f)
+                roundedRectPath(10.8f, 6.8f, 13.2f, 17.2f, 1.2f)
+                roundedRectPath(15.0f, 8.6f, 17.4f, 15.4f, 1.2f)
+            }
+        }
+    }
+
+    /** 生态联动桥接图标：斜向双主节点连桥与次级卫星节点，表达外部麦系工具协同。 */
+    val EcosystemBridge: ImageVector by lazy {
+        flatVector("FlatEcosystemBridge") {
+            strokeLayer(IconSecondary, width = 2.6f) {
+                moveTo(7.5f, 16.5f)
+                lineTo(16.5f, 7.5f)
+            }
+            fillLayer(IconSecondary) {
+                circlePath(6.8f, 6.8f, 2.3f)
+                circlePath(17.2f, 17.2f, 2.3f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(7.5f, 16.5f, 3.3f)
+                circlePath(16.5f, 7.5f, 3.3f)
+                sparklePath(12.0f, 12.0f, 2.5f, 0.9f)
+            }
+        }
+    }
+
+    /** 镜像源与测速图标：双层经纬环网搭配对称加速节点与中心测速星芒，表达多线网络择优。 */
+    val MirrorSources: ImageVector by lazy {
+        flatVector("FlatMirrorSources") {
+            strokeLayer(IconSecondary, width = 1.9f) {
+                circlePath(12.0f, 12.0f, 8.2f)
+                moveTo(3.9f, 12.0f)
+                lineTo(20.1f, 12.0f)
+                moveTo(12.0f, 3.9f)
+                quadTo(16.5f, 12.0f, 12.0f, 20.1f)
+                quadTo(7.5f, 12.0f, 12.0f, 3.9f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(6.6f, 8.5f, 1.85f)
+                circlePath(17.4f, 15.5f, 1.85f)
+                sparklePath(12.0f, 12.0f, 3.1f, 1.0f)
+            }
+        }
+    }
 }
 
 private inline fun flatVector(

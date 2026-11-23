@@ -5,19 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,15 +22,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogTextField
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
-import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.IconRoseAlert
+import org.maiwithu.maidroid.ui.theme.JetBrainsMono
 import org.maiwithu.maidroid.ui.theme.StatusDanger
+import org.maiwithu.maidroid.ui.theme.TerminalBackground
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -53,30 +57,14 @@ internal fun CustomSourceRiskNotice(
     clientLabel: String,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    MaiDialogCallout(
+        title = "安全风险提示",
+        body = "自定义来源的 $clientLabel 安装包无法保证与原官方发行版 SHA-256 一致。" +
+            "SHA-256 不一致可能代表代码已被修改，存在 QQ 账号、聊天记录等个人信息泄露或恶意投毒行为；" +
+            "继续操作即代表你已了解风险并自行承担后果。",
+        accentColor = StatusDanger,
         modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Corners.Control))
-            .background(StatusDanger.copy(alpha = 0.12f))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            text = "安全风险提示",
-            color = StatusDanger,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 16.sp
-        )
-        Text(
-            text = "自定义来源的 $clientLabel 安装包无法保证与原官方发行版 SHA-256 一致。" +
-                "SHA-256 不一致可能代表代码已被修改，存在 QQ 账号、聊天记录等个人信息泄露或恶意投毒行为；" +
-                "继续操作即代表你已了解风险并自行承担后果。",
-            color = TextPrimary.copy(alpha = 0.9f),
-            fontSize = TextSizes.Caption,
-            lineHeight = 16.sp
-        )
-    }
+    )
 }
 
 /**
@@ -103,42 +91,15 @@ internal fun CustomSourceTextField(
         null
     }
 
-    Column(modifier = modifier.fillMaxWidth()) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            isError = parseError != null,
-            label = { Text(text = labelText) },
-            placeholder = { Text(text = placeholderText, color = TextFaint) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            shape = RoundedCornerShape(Corners.Control),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary,
-                cursorColor = BrandOrange,
-                focusedBorderColor = BrandOrange,
-                unfocusedBorderColor = CardBorder,
-                errorBorderColor = StatusDanger,
-                focusedLabelColor = BrandOrange,
-                unfocusedLabelColor = TextMuted,
-                errorLabelColor = StatusDanger,
-                focusedContainerColor = PageBackground,
-                unfocusedContainerColor = PageBackground,
-                errorContainerColor = PageBackground
-            )
-        )
-        if (parseError != null) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = parseError,
-                color = StatusDanger,
-                fontSize = TextSizes.Caption,
-                lineHeight = 15.sp
-            )
-        }
-    }
+    MaiDialogTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = labelText,
+        placeholder = placeholderText,
+        errorText = parseError,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        modifier = modifier
+    )
 }
 
 /**
@@ -178,20 +139,14 @@ internal fun CustomSourceEditorSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
+                LiquidButton(
                     onClick = { onSaveUrl(normalizedDraft) },
                     enabled = isValid && normalizedDraft != savedUrl,
-                    shape = RoundedCornerShape(Corners.Control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CardBorder,
-                        contentColor = TextPrimary,
-                        disabledContainerColor = CardBorder.copy(alpha = 0.55f),
-                        disabledContentColor = TextFaint
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
+                    style = LiquidButtonStyle.Secondary,
+                    shape = { RoundedRectangle(Corners.Control) },
+                    minHeight = 38.dp,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "保存地址",
@@ -200,20 +155,14 @@ internal fun CustomSourceEditorSection(
                         maxLines = 1
                     )
                 }
-                Button(
+                LiquidButton(
                     onClick = { onRequestReinstall(normalizedDraft) },
                     enabled = isValid && !installing,
-                    shape = RoundedCornerShape(Corners.Control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BrandOrange.copy(alpha = 0.16f),
-                        contentColor = BrandOrange,
-                        disabledContainerColor = CardBorder.copy(alpha = 0.55f),
-                        disabledContentColor = TextFaint
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
+                    style = LiquidButtonStyle.SoftAccent,
+                    shape = { RoundedRectangle(Corners.Control) },
+                    minHeight = 38.dp,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "覆盖重装",
@@ -235,30 +184,49 @@ internal fun CustomSourceReinstallConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MaiDialog(
+        title = "重新安装 ${client.label}？",
+        subtitle = "保留现有配置与 QQ 登录数据，期间 QQ 暂停",
+        icon = FlatFeatureIcons.MaiBotUpdate,
+        iconBackground = IconRoseAlert,
         onDismissRequest = onDismiss,
-        title = { PlatformDialogTitle("重新安装 ${client.label}？") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                PlatformDialogBody(
-                    "将从以下地址重新下载并覆盖 ${client.label} 程序文件（保留现有配置与 QQ 登录数据），期间会暂时停止 QQ："
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
                 )
-                Text(
-                    text = sourceUrl,
-                    color = TextPrimary,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 16.sp
+                MaiDialogButton(
+                    text = "了解风险并重装",
+                    style = MaiDialogButtonStyle.Danger,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm
                 )
-                CustomSourceRiskNotice(clientLabel = client.label)
             }
-        },
-        dismissButton = { PlatformSecondaryButton(text = "取消", onClick = onDismiss) },
-        confirmButton = { PlatformDangerButton(text = "了解风险并重装", onClick = onConfirm) },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    ) {
+        Text(
+            text = "将从以下来源重新下载并覆盖 ${client.label} 程序文件：",
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+        MaiDialogSectionCard(contentPadding = PaddingValues(12.dp)) {
+            Text(
+                text = sourceUrl,
+                color = TextPrimary,
+                fontFamily = JetBrainsMono,
+                fontSize = TextSizes.Caption,
+                lineHeight = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Corners.Tag))
+                    .background(TerminalBackground)
+                    .padding(10.dp)
+            )
+        }
+        CustomSourceRiskNotice(clientLabel = client.label)
+    }
 }

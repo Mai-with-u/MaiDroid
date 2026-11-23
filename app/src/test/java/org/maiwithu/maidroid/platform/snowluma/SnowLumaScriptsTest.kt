@@ -63,7 +63,8 @@ class SnowLumaScriptsTest {
         assertTrue(check in 0 until download)
         // package.json 里写的是“版本号-构建号”（真机读出来的），不是包名里的发布日期
         assertTrue(install.contains("qq_wanted='3.2.32-52194'"))
-        // 官方地址在前，GitHub 备份在后；NapCat 装过别的版本时允许降级
+        // 官方地址在前，GitHub 备份在后，单源支持 curl -C - 断点续传重试；NapCat 装过别的版本时允许降级
+        assertTrue(install.contains("curl -fsSL -C -"))
         assertTrue(install.indexOf("https://qqdl.gtimg.cn/") < install.indexOf("maidroid_download_urls 'https://github.com/Rodert/qq-versions/"))
         assertTrue(install.contains("maidroid_apt_install --allow-downgrades /root/.cache/maidroid-snowluma/QQ_3.2.32_260812_arm64_01.deb"))
         assertTrue(install.contains("0.0.0.0 qqpatch.gtimg.cn"))

@@ -24,6 +24,9 @@ val CardSurface = Color(0xFF1A1B1F)
 val CardBorder = Color(0xFF262830)           // 次级控件槽底、输入框柔边
 val CardSurfaceSelected = Color(0xFF30333C)  // 卡片里选中的一格（接入方式选择器）
 val CardDivider = Color(0x12FFFFFF)          // 7% 纯白行间细丝分隔线
+val DialogInnerSurface = PageBackground.copy(alpha = 0.56f)     // 弹窗内嵌分组与折叠面板底色
+val DialogBackdropScrim = Color(0xFF030405).copy(alpha = 0.52f) // 弹窗外围半透明遮罩（背后页面隐约可见）
+val DialogFooterTray = Color.Black.copy(alpha = 0.14f)          // 弹窗底栏轻微压暗托盘，与内容区拉开层级
 val TextMuted = Color(0xFF8E929B)  // 次要说明文字
 val TextFaint = Color(0xFF6B6F78)  // 更弱一级的提示文字
 
@@ -56,13 +59,17 @@ val StatusOnline = Color(0xFF30D158)   // 在线、已开启、已是最新
 val StatusWarning = Color(0xFFE8A064)  // 离线、未授权、启动失败
 val StatusDanger = Color(0xFFFF453A)   // 危险操作按钮（退出登录等）
 
-// ── 毛玻璃：悬浮导航栏、侧边胶囊、授权弹窗、启动页信息卡 ──────────────────
+// ── 毛玻璃与液态玻璃：悬浮导航栏、侧边胶囊、授权弹窗、启动页信息卡 ──────────────────
 val GlassSurface = Color(0x471E2026)            // ~28% 清透冷灰遮罩，避免高不透明发闷遮住折射光
+val GlassFallbackSurface = Color(0xD91A1C22)    // Android 8–11 无实时 RenderEffect 模糊时的暗玻璃兜底底色
 val GlassStroke = Color(0x29FFFFFF)             // 16% 微光折射玻璃边，透亮且暗底轮廓分明
 val SubtleGlassSurface = Color(0x2E202228)      // ~18% 轻透冷灰遮罩
 val GlassButtonSurface = Color(0x40202228)      // ~25% 清透圆形小按钮与信息卡边框底
 val GlassSelectedIndicator = Color(0x26FFFFFF)  // 15% 轻透选中胶囊滑块，保持背景透光感
 val GlassShadow = Color(0x3D000000)             // 24% 柔和黑阴影，用于悬浮毛玻璃导航条轮廓衬托
+val LiquidBarSurface = Color(0x70121418)        // 导航胶囊/侧栏暗底液态玻璃叠加色，兼顾透光折射与文字对比度
+val DialogGlassSurface = Color(0xBA14161B)      // 弹窗液态玻璃底色，保留背景模糊同时确保长表单与日志高可读
+val LiquidButtonSurface = Color(0x26FFFFFF)     // 次级液态玻璃按钮叠色
 const val SubtleGlassBlurRadius = 8f
 
 // ── 终端输出 ─────────────────────────────────────────────────────

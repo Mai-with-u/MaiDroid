@@ -16,6 +16,12 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- 悬浮窗：用于「扩展组件」中的本机悬浮桌宠在其他应用上层显示 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- 触觉反馈：底部导航栏与液态玻璃滑块跨越选项时触发短促震动（自适应线性马达与转子马达） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- 应用自更新：把下载好的新版本安装包交给系统安装器 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -34,7 +40,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${appLabel}"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MaiDroid"
@@ -45,7 +51,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
+            android:label="${appLabel}"
             android:theme="@style/Theme.MaiDroid"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop">
@@ -61,6 +67,13 @@
             android:theme="@style/Theme.MaiDroid"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- 悬浮桌宠探索记录全屏页 -->
+        <activity
+            android:name=".pet.PetRecordsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MaiDroid"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- 托管 MaiBot、NapCat、SnowLuma、容器 sshd 的前台服务：用 specialUse 承载本地常驻运行时，不设 6 小时运行上限 -->
         <service
             android:name=".service.MaiBotRuntimeService"
@@ -69,6 +82,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="local_bot_container_runtime" />
+        </service>
+
+        <!-- 本机悬浮桌宠前台服务：由用户在「扩展组件」手动开启，关闭时不随容器常驻 -->
+        <service
+            android:name=".pet.PetOverlayService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="local_floating_desktop_pet" />
         </service>
 
         <!-- 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等；MANAGE_DOCUMENTS 保证只有系统文件框架能直接调用 -->

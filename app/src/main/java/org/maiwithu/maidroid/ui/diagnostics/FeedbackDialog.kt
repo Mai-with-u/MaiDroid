@@ -22,9 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,17 +41,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FeedbackPackage
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogCollapsible
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconCoralPink
 import org.maiwithu.maidroid.ui.theme.JetBrainsMono
-import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TerminalBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
@@ -69,11 +79,8 @@ private sealed interface FeedbackPreparation {
 }
 
 /**
- * “反馈问题”弹窗：一打开就在后台收集并打码诊断信息 -> 显示错误码、诊断包里有什么、报告预览 ->
- * “去 GitHub 反馈”：复制诊断信息、打开预填好版本、机型、错误码的缺陷报告，用户把复制的内容粘贴到“日志”一栏；
- * “QQ 群反馈”：打开 QQ 用户反馈群弹窗，查看验证答案并一键跳转进群交流；
- * “保存诊断包”：系统“另存为”一个 zip（报告 + 终端日志 + MaiBot 日志 + 闪退记录），可以拖进 Issue 附件或发到群里。
- * failure 是从哪个失败点打开的（报告开头写它的错误码），从设置页、终端页打开时为 null。
+ * “反馈问题”弹窗：一打开就在后台收集并打码诊断信息 -> 胶囊摘要呈现诊断包构成并折叠长报告预览 ->
+ * 支持生成 6 位故障求助码、导出 zip 诊断包、跳转 QQ 群反馈或一键复制诊断信息到 GitHub Issue。
  */
 @Composable
 internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
@@ -113,129 +120,173 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
         }
     }
 
-    AlertDialog(
+    MaiDialog(
+        title = "反馈问题",
+        subtitle = "密钥、账号与公网 IP 已自动打码",
+        icon = FlatFeatureIcons.Feedback,
+        iconBackground = IconCoralPink,
+        size = MaiDialogSize.Expanded,
+        secondaryContent = pkg?.let { readyPkg ->
+            {
+                // 手机横屏直接展开诊断报告供右列浏览，竖屏仍保持默认折叠避免首屏过长。
+                val expandByDefault = LocalMaiDialogPhoneLandscape.current
+                MaiDialogCollapsible(
+                    title = "预览诊断报告",
+                    summary = "点击展开",
+                    initiallyExpanded = expandByDefault
+                ) {
+                    ReportPreview(readyPkg.reportText)
+                }
+            }
+        },
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "反馈问题",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
+        landscapeFooter = {
+            MaiDialogButton(
+                text = if (saving) "保存中..." else "保存诊断包",
+                style = MaiDialogButtonStyle.Secondary,
+                enabled = pkg != null && !saving,
+                onClick = { pkg?.let { saveLauncher.launch(it.fileName) } }
+            )
+            MaiDialogButton(
+                text = "QQ 群反馈",
+                style = MaiDialogButtonStyle.SoftAccent,
+                onClick = { showQqGroup = true }
+            )
+            MaiDialogButton(
+                text = "复制并去 GitHub 反馈",
+                style = MaiDialogButtonStyle.Primary,
+                enabled = pkg != null,
+                onClick = { pkg?.let { openGitHubFeedback(context, it) } }
             )
         },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                failure?.let { FailureCodeLine(it) }
-                when (val state = preparation) {
-                    FeedbackPreparation.Loading -> Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CircularProgressIndicator(color = BrandOrange, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                        BodyText("正在收集诊断信息并打码...")
-                    }
-                    is FeedbackPreparation.Error -> BodyText("收集诊断信息失败：${state.message}", color = StatusWarning)
-                    is FeedbackPreparation.Ready -> {
-                        val currentCode = helpCode
-                        if (currentCode != null) {
-                            HelpCodeCard(code = currentCode, errorCode = failure?.code)
-                        } else {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(Corners.Control))
-                                    .background(TerminalBackground)
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+        footer = {
+            MaiDialogButton(
+                text = "复制并去 GitHub 反馈",
+                style = MaiDialogButtonStyle.Primary,
+                enabled = pkg != null,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { pkg?.let { openGitHubFeedback(context, it) } }
+            )
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = if (saving) "保存中..." else "保存诊断包",
+                    style = MaiDialogButtonStyle.Secondary,
+                    enabled = pkg != null && !saving,
+                    modifier = Modifier.weight(1f),
+                    onClick = { pkg?.let { saveLauncher.launch(it.fileName) } }
+                )
+                MaiDialogButton(
+                    text = "QQ 群反馈",
+                    style = MaiDialogButtonStyle.SoftAccent,
+                    modifier = Modifier.weight(1f),
+                    onClick = { showQqGroup = true }
+                )
+            }
+        }
+    ) {
+        failure?.let {
+            MaiDialogSectionCard {
+                FailureCodeLine(it)
+            }
+        }
+        when (val state = preparation) {
+            FeedbackPreparation.Loading -> MaiDialogSectionCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(color = BrandOrange, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    BodyText("正在收集诊断信息并打码...")
+                }
+            }
+            is FeedbackPreparation.Error -> MaiDialogCallout(
+                title = "收集诊断信息失败",
+                body = state.message,
+                accentColor = StatusWarning
+            )
+            is FeedbackPreparation.Ready -> {
+                val currentCode = helpCode
+                if (currentCode != null) {
+                    HelpCodeCard(code = currentCode, errorCode = failure?.code)
+                } else {
+                    MaiDialogSectionCard {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 Text(
-                                    text = "不方便导诊断包？点右侧上传脱敏快照（保留 7 天自动清理），拿 6 位求助码发进群即可排查。",
+                                    text = "6 位故障求助码",
+                                    color = TextPrimary,
+                                    fontSize = TextSizes.Body,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "上传脱敏快照（7 天自动清理），报求助码进群即可排查。",
                                     color = TextMuted,
                                     fontSize = TextSizes.Caption,
-                                    lineHeight = 16.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                FeedbackActionButton(
-                                    text = if (generatingCode) "生成中..." else "生成求助码",
-                                    enabled = !generatingCode,
-                                    containerColor = BrandOrange.copy(alpha = 0.22f),
-                                    contentColor = TextPrimary,
-                                    onClick = {
-                                        generatingCode = true
-                                        scope.launch {
-                                            val res = remoteOps.generateHelpCode(state.pkg)
-                                            generatingCode = false
-                                            res.onSuccess { code ->
-                                                helpCode = code
-                                                copyHelpCodeToClipboard(context, code, failure?.code)
-                                            }.onFailure { err ->
-                                                Toast.makeText(context, err.message ?: "生成求助码失败", Toast.LENGTH_LONG).show()
-                                            }
-                                        }
-                                    }
+                                    lineHeight = 16.sp
                                 )
                             }
+                            CompactGenerateButton(
+                                text = if (generatingCode) "生成中..." else "生成",
+                                enabled = !generatingCode,
+                                onClick = {
+                                    generatingCode = true
+                                    scope.launch {
+                                        val res = remoteOps.generateHelpCode(state.pkg)
+                                        generatingCode = false
+                                        res.onSuccess { code ->
+                                            helpCode = code
+                                            copyHelpCodeToClipboard(context, code, failure?.code)
+                                        }.onFailure { err ->
+                                            Toast.makeText(context, err.message ?: "生成求助码失败", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            )
                         }
-
-                        BodyText(feedbackContentsText(state.pkg))
-                        BodyText(
-                            "点“去 GitHub 反馈”会复制诊断信息并打开填好版本、机型和错误码的问题表单：" +
-                                "把复制的内容粘贴到“日志”一栏，再写一句出问题前你在做什么就行；日常小问题也可以点“QQ 群反馈”进群交流。"
-                        )
-                        ReportPreview(state.pkg.reportText)
                     }
                 }
-            }
-        },
-        // 四个操作按钮分成辅助组（关闭、保存诊断包）和反馈组（QQ 群、GitHub）：
-        // 宽屏四钮同排，360dp 竖屏整组流式排成对称两行，按钮用正文级字号避免撑高底部
-        confirmButton = {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FeedbackActionButton(
-                        text = "关闭",
-                        containerColor = CardBorder,
-                        contentColor = TextPrimary,
-                        onClick = onDismiss
-                    )
-                    FeedbackActionButton(
-                        text = if (saving) "保存中..." else "保存诊断包",
-                        enabled = pkg != null && !saving,
-                        containerColor = CardBorder,
-                        contentColor = TextPrimary,
-                        onClick = { pkg?.let { saveLauncher.launch(it.fileName) } }
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FeedbackActionButton(
-                        text = "QQ 群反馈",
-                        containerColor = BrandOrange.copy(alpha = 0.22f),
-                        contentColor = TextPrimary,
-                        onClick = { showQqGroup = true }
-                    )
-                    FeedbackActionButton(
-                        text = "去 GitHub 反馈",
-                        enabled = pkg != null,
-                        containerColor = BrandOrange,
-                        contentColor = OnBrandOrange,
-                        onClick = { pkg?.let { openGitHubFeedback(context, it) } }
+
+                // 胶囊概括诊断包已包含内容，把长报告拆到次列或默认收进折叠面板保持首屏清爽。
+                MaiDialogSectionCard {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        MaiDialogInfoChip(text = "诊断报告", color = TextPrimary, containerColor = CardBorder)
+                        if (state.pkg.terminalLogCount > 0) {
+                            MaiDialogInfoChip(
+                                text = "终端输出 ${state.pkg.terminalLogCount} 份",
+                                color = TextPrimary,
+                                containerColor = CardBorder
+                            )
+                        }
+                        if (state.pkg.includesMaiBotLog) {
+                            MaiDialogInfoChip(text = "MaiBot 日志", color = TextPrimary, containerColor = CardBorder)
+                        }
+                        if (state.pkg.crashCount > 0) {
+                            MaiDialogInfoChip(
+                                text = "闪退记录 ${state.pkg.crashCount} 份",
+                                color = StatusWarning
+                            )
+                        }
+                    }
+                    Text(
+                        text = "聊天记录未作脱敏，提交或发群前可展开核对；点下方按钮会自动复制摘要并预填 GitHub Issue。",
+                        color = TextMuted,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 16.sp
                     )
                 }
             }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    }
 
     if (showQqGroup) {
         QqFeedbackGroupDialog(onDismiss = { showQqGroup = false })
@@ -243,38 +294,31 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun FeedbackActionButton(
+private fun CompactGenerateButton(
     text: String,
-    containerColor: Color,
-    contentColor: Color,
-    onClick: () -> Unit,
-    enabled: Boolean = true
+    enabled: Boolean,
+    onClick: () -> Unit
 ) {
-    Button(
+    LiquidButton(
         onClick = onClick,
         enabled = enabled,
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor)
+        style = LiquidButtonStyle.SoftAccent,
+        shape = { RoundedRectangle(10.dp) },
+        minHeight = 34.dp,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Text(text = text, fontSize = TextSizes.Body, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(text = text, fontSize = TextSizes.Caption, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
 /** 错误码和失败说明一行：等宽字体的码在前，失败弹窗、反馈弹窗共用。 */
 @Composable
 internal fun FailureCodeLine(failure: Failure, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        MaiDialogInfoChip(
             text = "错误码 ${failure.code}",
             color = StatusWarning,
-            fontFamily = JetBrainsMono,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 16.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Corners.Tag))
-                .background(StatusWarning.copy(alpha = 0.14f))
-                .padding(horizontal = 8.dp, vertical = 3.dp)
+            monospace = true
         )
         BodyText(failure.message)
     }

@@ -38,4 +38,18 @@ class GitHubMirrorsTest {
         assertTrue(shell.contains("maidroid_download_urls()"))
         assertTrue(shell.contains("https://github.com/*|https://api.github.com/*"))
     }
+
+    @Test
+    fun `custom ordered github mirror list preserves priority in host candidates and shell functions`() {
+        val ordered = listOf(
+            GitHubMirror("自定义镜像", "https://my.proxy.test"),
+            GitHubMirror(GitHubMirrors.DIRECT_NAME, "")
+        )
+        val candidates = GitHubMirrors.candidatesFor("https://github.com/Mai-with-u/MaiBot.git", ordered)
+        assertEquals(listOf("https://my.proxy.test", ""), candidates.map { it.prefix })
+
+        val shell = GitHubMirrors.shellFunctions(ordered)
+        assertTrue(shell.contains("'自定义镜像|https://my.proxy.test'"))
+        assertTrue(shell.indexOf("'自定义镜像|https://my.proxy.test'") < shell.indexOf("'${GitHubMirrors.DIRECT_NAME}|'"))
+    }
 }

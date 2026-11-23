@@ -73,6 +73,10 @@ internal class BounceOverscrollEffect(
     val topOverscrollPx: Float
         get() = overscrollY.coerceAtLeast(0f)
 
+    /** 顶部下拉过冲时大标题层跟随下沉的像素距离（18% 视差比例），供悬浮连续缩放标题同步偏移。 */
+    val headerOverscrollPx: Float
+        get() = topOverscrollPx * SplitHeaderFollowRatio
+
     private var flingJobX: Job? = null
     private var flingJobY: Job? = null
     private val bounceNode = BounceModifierNode()
@@ -295,7 +299,7 @@ internal fun Modifier.overscrollHeader(effect: BounceOverscrollEffect?): Modifie
         this
     } else {
         graphicsLayer {
-            translationY = effect.topOverscrollPx * SplitHeaderFollowRatio
+            translationY = effect.headerOverscrollPx
         }
     }
 

@@ -16,15 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,24 +29,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
+import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
-import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.IconFreshGreen
 import org.maiwithu.maidroid.ui.theme.IconIrisBlue
 import org.maiwithu.maidroid.ui.theme.IconRoseAlert
@@ -66,7 +72,7 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
  * 设置页里的权限管理：必选的存储权限，可选的通知、电池优化（开关），以及只能跳转系统设置的几项。
- * 竖屏时从设置列表点进来（左上角返回），横屏时作为右侧详情常驻显示。
+ * 竖屏时从设置列表点进来（左上角返回），横屏时作为右侧详情常驻显示，并随左侧主导航对齐顶部标题基线与紧凑顶栏尺寸。
  */
 @Composable
 internal fun PermissionManagementPage(
@@ -74,64 +80,62 @@ internal fun PermissionManagementPage(
     actions: PermissionActions,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    showBackButton: Boolean = true
+    showBackButton: Boolean = true,
+    compact: Boolean = false,
+    expandedTopOffset: Dp = 40.dp
 ) {
     val statusBarTop = statusBarTopInset()
     // 顶部下拉到顶时，大标题微幅跟随后停稳、卡片列表继续下沉拉开呼吸空间，营造自然视差弹性
     val overscroll = rememberSplitHeaderOverscrollEffect()
-
-    Box(
+    val density = LocalDensity.current
+    val listState = rememberLazyListState()
+    val collapseDistancePx = with(density) { (if (compact) 40.dp else 52.dp).toPx() }
+    val collapseProgress = computeLazyHeaderCollapseProgress(
+        firstVisibleItemIndex = listState.firstVisibleItemIndex,
+        firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+        collapseDistancePx = collapseDistancePx
+    )
+    // 单一“权限管理”标题与返回按钮随滚动平滑缩小吸顶，卡片穿过状态栏时提供渐进毛玻璃模糊。
+    CollapsingGlassHeaderContainer(
+        title = "权限管理",
+        collapseProgress = collapseProgress,
+        statusBarTop = statusBarTop,
+        horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
+        expandedTopOffset = expandedTopOffset,
+        expandedFontSize = if (compact) TextSizes.DisplayCompact else TextSizes.Display,
+        collapsedFontSize = if (compact) 18.sp else 19.sp,
+        topBarHeight = if (compact) 46.dp else 52.dp,
+        headerOverscrollPx = overscroll.headerOverscrollPx,
+        leadingAction = if (showBackButton) {
+            {
+                GlassHeaderCircleButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    onClick = onBack
+                )
+            }
+        } else {
+            null
+        },
         modifier = modifier
             .fillMaxSize()
             .background(PageBackground)
     ) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = statusBarTop),
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
             overscrollEffect = overscroll,
             contentPadding = PaddingValues(
-                top = 40.dp,
-                start = 16.dp,
-                end = 16.dp,
+                top = statusBarTop + expandedTopOffset,
+                start = HomeTwoPaneSpec.OuterHorizontalPadding,
+                end = HomeTwoPaneSpec.OuterHorizontalPadding,
                 bottom = LocalBottomNavigationClearance.current
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .overscrollHeader(overscroll)
-                        .padding(bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (showBackButton) {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(CardSurface)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回",
-                                tint = TextPrimary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-                    }
-
-                    Text(
-                        text = "权限管理",
-                        color = TextPrimary,
-                        fontSize = TextSizes.Display,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 32.sp
-                    )
-                }
+                // 顶部标题与返回钮已由外层连续缩放顶栏承接，列表首项只保留占位呼吸留白。
+                Spacer(modifier = Modifier.height(if (compact) 40.dp else 50.dp))
             }
 
             item {
@@ -211,6 +215,18 @@ internal fun PermissionManagementPage(
             }
 
             item {
+                PermissionSwitchCard(
+                    icon = FlatFeatureIcons.DesktopWindow,
+                    iconColor = IconCyanBlue,
+                    title = "悬浮窗权限",
+                    description = "允许「扩展组件」里的悬浮桌宠显示在其他应用上层。",
+                    checked = state.overlayGranted,
+                    onCheckedChange = { actions.requestOverlay() },
+                    modifier = Modifier.overscrollBody(overscroll)
+                )
+            }
+
+            item {
                 PermissionSystemSettingsCard(
                     icon = FlatFeatureIcons.AutoStart,
                     iconColor = IconIrisBlue,
@@ -283,18 +299,13 @@ private fun PermissionActionCard(
         statusColor = if (granted) StatusOnline else StatusWarning,
         modifier = modifier
     ) {
-        Button(
+        LiquidButton(
             onClick = onAction,
             enabled = !granted,
-            modifier = Modifier.height(34.dp),
-            shape = RoundedCornerShape(Corners.Control),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BrandOrange,
-                contentColor = TextPrimary,
-                disabledContainerColor = CardBorder,
-                disabledContentColor = TextMuted
-            ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+            style = LiquidButtonStyle.Primary,
+            shape = { RoundedRectangle(Corners.Control) },
+            minHeight = 34.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Text(
                 text = actionText,

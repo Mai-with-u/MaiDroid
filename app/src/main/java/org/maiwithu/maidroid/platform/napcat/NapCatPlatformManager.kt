@@ -30,6 +30,7 @@ import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -59,7 +60,8 @@ internal class NapCatPlatformManager(
     private val napCatProcess: NapCatProcessSupervisor,
     private val adapterInstaller: SnowLumaAdapterInstaller,
     private val switcher: QqClientSwitcher,
-    private val network: NetworkMonitor
+    private val network: NetworkMonitor,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         const val STATUS_REFRESH_INTERVAL_MS = 2_000L
@@ -306,7 +308,16 @@ internal class NapCatPlatformManager(
         if (forceReinstall || !withContext(Dispatchers.IO) { files.isNapCatReady() }) {
             statusReader.clearInstallProgress()
             startProgressWatcher()
-            val result = runInstallScript(NapCatScripts.install(token = generateToken(), source = source))
+            val aptMirrors = mirrors.resolveAptMirrors(allowSpeedTest = true)
+            val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+            val result = runInstallScript(
+                NapCatScripts.install(
+                    token = generateToken(),
+                    source = source,
+                    aptMirrors = aptMirrors,
+                    gitHubMirrors = gitHubMirrors
+                )
+            )
             progressJob?.cancel()
             progressJob = null
             if (!result.success) {

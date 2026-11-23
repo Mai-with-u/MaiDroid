@@ -36,6 +36,8 @@ import org.maiwithu.maidroid.diagnostics.parseFailureLogLine
 import org.maiwithu.maidroid.diagnostics.updateRemoteFailureHints
 import org.maiwithu.maidroid.maibot.maiBotRecentRunOutput
 import org.maiwithu.maidroid.platform.qq.QqClientChoice
+import org.maiwithu.maidroid.runtime.MirrorCategory
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.writeTextAtomically
@@ -60,6 +62,7 @@ internal class RemoteOpsManager(
     private val settings: AppSettings,
     private val paths: RuntimePaths,
     private val crashRecorder: CrashRecorder,
+    private val mirrors: MirrorManager,
     private val diagnosticsProvider: () -> DiagnosticsManager
 ) {
     companion object {
@@ -91,7 +94,11 @@ internal class RemoteOpsManager(
     private val scope = backgroundScope("远程公告与诊断", Dispatchers.Main.immediate)
     private val refreshMutex = Mutex()
     private val autoErrorMutex = Mutex()
-    private val client = RemoteOpsClient(userAgent = "MaiDroid/${BuildConfig.VERSION_NAME}")
+    private val client = RemoteOpsClient(
+        userAgent = "MaiDroid/${BuildConfig.VERSION_NAME}",
+        gitHubMirrorsProvider = mirrors::currentGitHubMirrors,
+        preferFirstMirror = { mirrors.isManualSelection(MirrorCategory.GitHub) }
+    )
     private val cacheFile = File(appContext.filesDir, "remote/manifest.json")
     private val telemetryJson = Json { encodeDefaults = false }
 
@@ -342,7 +349,7 @@ internal class RemoteOpsManager(
         terminalPlainLines: List<String>
     ) {
         if (!settings.telemetryEnabled) return
-        val category = AutoErrorExtractor.classifyForAutoReport(step, cause) ?: return
+        val category = AutoErrorExtractor.classifyForAutoReport(step, cause, message) ?: return
         // MD-CRASH 统一由 reportPendingCrashIfNeeded 从本地崩溃堆栈文件提取完整栈帧，不从无栈提示处上报空记录
         if (category == AutoErrorCategory.Crash) return
 

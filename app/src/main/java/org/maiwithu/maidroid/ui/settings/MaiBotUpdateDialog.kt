@@ -1,20 +1,11 @@
 package org.maiwithu.maidroid.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,10 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,15 +29,26 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdateAction
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidSegmentItem
+import org.maiwithu.maidroid.ui.component.LiquidSegmentedSelector
+import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogDivider
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
-import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
-import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.IconWarmCoral
+import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
-import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -212,100 +212,106 @@ internal fun MaiBotUpdateDialog(
         state.phase == MaiBotUpdatePhase.Available ||
             state.failedAction == MaiBotUpdateAction.Apply
         )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "MaiBot 更新",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            // 手机横屏时弹窗很矮，内容区可以滚动，不会被截掉。
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                RevisionBlock(
-                    label = state.branch?.let { "当前版本 · ${maiBotBranchLabel(it)}" } ?: "当前版本",
-                    revision = state.installed,
-                    highlight = false
-                )
-
-                if (showLatest) {
-                    RevisionBlock(
-                        label = "上游最新",
-                        revision = state.latest,
-                        highlight = state.phase == MaiBotUpdatePhase.Available
-                    )
-                }
-
-                UpdateStatusLine(state)
-
-                // 失败时：错误码、认出的原因和建议、“反馈问题”
-                val failure = state.failure
-                if (state.phase == MaiBotUpdatePhase.Failed && failure != null) {
-                    FailureNotice(failure = failure)
-                }
-
+    // 顶栏直接用彩色状态胶囊传达比对结论，避免与版本卡内的 commit hash 重复拼接。
+    val statusBadge: Pair<String, Color>? = when (state.phase) {
+        MaiBotUpdatePhase.UpToDate -> "已是最新" to StatusOnline
+        MaiBotUpdatePhase.Updated -> "更新完成" to StatusOnline
+        MaiBotUpdatePhase.Available -> "发现新版本" to BrandOrange
+        MaiBotUpdatePhase.Failed -> "更新失败" to StatusDanger
+        MaiBotUpdatePhase.Checking -> "检查中" to BrandOrange
+        MaiBotUpdatePhase.Updating -> (if (state.switchTarget != null) "切换中" else "更新中") to BrandOrange
+        MaiBotUpdatePhase.Idle -> null
+    }
+    val secondaryBlock: (@Composable ColumnScope.() -> Unit)? =
+        if (showLocalChangeNote || showChannelSelector) {
+            {
                 if (showLocalChangeNote) {
-                    UpdateNote(
-                        "检测到 ${state.localChangeCount} 个 MaiBot 源码文件被改动过，更新时会直接还原为上游版本；" +
-                            "配置、数据和插件不受影响。"
+                    MaiDialogCallout(
+                        title = "本地源码改动提醒",
+                        body = "检测到 ${state.localChangeCount} 个 MaiBot 源码文件被改动过，更新时会直接还原为上游版本；" +
+                            "配置、数据和插件不受影响。",
+                        accentColor = BrandOrange
                     )
                 }
 
                 // 还没读到当前分支时不让选：不知道现在在哪个通道，也就说不清要切到哪
                 if (showChannelSelector) {
-                    MaiBotChannelSelector(
-                        selected = state.channel,
-                        enabled = !state.isBusy && state.branch != null,
-                        onSelect = { channel -> pendingChannel = channel }
-                    )
+                    MaiDialogSectionCard {
+                        MaiBotChannelSelector(
+                            selected = state.channel,
+                            enabled = !state.isBusy && state.branch != null,
+                            onSelect = { channel -> pendingChannel = channel }
+                        )
+                    }
                 }
             }
+        } else {
+            null
+        }
+
+    MaiDialog(
+        title = "MaiBot 更新",
+        // maiBotBranchLabel 已自带“正式版（main）”括号分支名，不再重复拼接。
+        subtitle = state.branch?.let(::maiBotBranchLabel) ?: "从上游仓库检查最新提交",
+        icon = FlatFeatureIcons.MaiBotUpdate,
+        iconBackground = IconSkyBlue,
+        size = MaiDialogSize.Expanded,
+        headerBadge = statusBadge?.let { (badgeText, badgeColor) ->
+            { MaiDialogInfoChip(text = badgeText, color = badgeColor) }
         },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
-                )
-            ) {
-                Text(
+        secondaryContent = secondaryBlock,
+        onDismissRequest = onDismiss,
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
                     text = if (state.isBusy) "后台继续" else "关闭",
-                    fontWeight = FontWeight.Bold
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
                 )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    when (primaryButton.action) {
-                        MaiBotUpdateButtonAction.Check -> onCheck()
-                        MaiBotUpdateButtonAction.Apply -> onApply()
-                        MaiBotUpdateButtonAction.Switch -> state.switchTarget?.let(onSwitchChannel)
-                        MaiBotUpdateButtonAction.None -> Unit
+                MaiDialogButton(
+                    text = primaryButton.label,
+                    style = MaiDialogButtonStyle.Primary,
+                    enabled = primaryButton.enabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        when (primaryButton.action) {
+                            MaiBotUpdateButtonAction.Check -> onCheck()
+                            MaiBotUpdateButtonAction.Apply -> onApply()
+                            MaiBotUpdateButtonAction.Switch -> state.switchTarget?.let(onSwitchChannel)
+                            MaiBotUpdateButtonAction.None -> Unit
+                        }
                     }
-                },
-                enabled = primaryButton.enabled,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary
                 )
-            ) {
-                Text(text = primaryButton.label, fontWeight = FontWeight.Bold)
             }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    ) {
+        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            RevisionBlock(
+                label = state.branch?.let { "当前版本 · ${maiBotBranchLabel(it)}" } ?: "当前版本",
+                revision = state.installed,
+                highlight = false
+            )
+
+            if (showLatest) {
+                MaiDialogDivider(horizontalPadding = 0.dp)
+                RevisionBlock(
+                    label = "上游最新",
+                    revision = state.latest,
+                    highlight = state.phase == MaiBotUpdatePhase.Available
+                )
+            }
+
+            MaiDialogDivider(horizontalPadding = 0.dp)
+            UpdateStatusLine(state)
+        }
+
+        // 失败时：错误码、认出的原因和建议、“反馈问题”
+        val failure = state.failure
+        if (state.phase == MaiBotUpdatePhase.Failed && failure != null) {
+            FailureNotice(failure = failure, summary = failure.message)
+        }
+    }
 
     pendingChannel?.let { target ->
         MaiBotChannelSwitchDialog(
@@ -319,73 +325,39 @@ internal fun MaiBotUpdateDialog(
     }
 }
 
-// 更新弹窗底部的“版本通道”：两格胶囊选择器，高亮的是仓库当前所在的通道。
-// 点另一格不会马上切换，只是交给外面弹确认框；点当前这格什么也不做。
+// 更新弹窗底部的“版本通道”：三层液态玻璃两格胶囊选择器，高亮的是仓库当前所在的通道。
+// 点选或滑到另一格不会马上切换，先交给外层弹确认框（取消时水滴滑块会自动弹回原通道）；点当前格什么也不做。
 @Composable
 private fun MaiBotChannelSelector(
     selected: MaiBotChannel?,
     enabled: Boolean,
     onSelect: (MaiBotChannel) -> Unit
 ) {
-    Column(
-        modifier = Modifier.padding(top = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    val selectorItems = remember {
+        MaiBotChannel.entries.map { channel ->
+            LiquidSegmentItem(label = channel.label, subtitle = channel.branch)
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "版本通道",
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
+            color = TextPrimary,
+            fontSize = TextSizes.Body,
             fontWeight = FontWeight.Bold,
-            lineHeight = 14.sp
+            lineHeight = 16.sp
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Corners.Chip))
-                .background(CardBorder)
-                .padding(2.dp)
-                .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            MaiBotChannel.entries.forEach { channel ->
-                val isSelected = channel == selected
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Corners.Chip))
-                        .background(if (isSelected) CardSurfaceSelected else Color.Transparent)
-                        .selectable(
-                            selected = isSelected,
-                            enabled = enabled,
-                            role = Role.RadioButton,
-                            onClick = { if (!isSelected) onSelect(channel) }
-                        )
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = channel.label,
-                        color = when {
-                            !enabled -> TextFaint
-                            isSelected -> TextPrimary
-                            else -> TextMuted
-                        },
-                        fontSize = TextSizes.Body,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 17.sp,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = channel.branch,
-                        color = if (enabled) TextMuted else TextFaint,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 14.sp,
-                        maxLines = 1
-                    )
-                }
+        LiquidSegmentedSelector(
+            items = selectorItems,
+            selectedIndex = selected?.let(MaiBotChannel.entries::indexOf),
+            enabled = enabled,
+            height = 54.dp,
+            modifier = Modifier.fillMaxWidth(),
+            onSelect = { index ->
+                val target = MaiBotChannel.entries.getOrNull(index) ?: return@LiquidSegmentedSelector
+                if (target != selected) onSelect(target)
             }
-        }
+        )
 
         Text(
             text = "正式版跟随上游 main 分支；测试版跟随 dev 分支，能先用上新功能，但可能不稳定。",
@@ -404,52 +376,36 @@ private fun MaiBotChannelSwitchDialog(
     onDismiss: () -> Unit
 ) {
     val prompt = maiBotChannelSwitchPrompt(target)
-    AlertDialog(
+    MaiDialog(
+        title = prompt.title,
+        subtitle = "将切换到 ${target.branch} 分支并重启 MaiBot",
+        icon = FlatFeatureIcons.MaiBotUpdate,
+        iconBackground = IconWarmCoral,
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = prompt.title,
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            Text(
-                text = prompt.message,
-                color = TextMuted,
-                fontSize = TextSizes.Body,
-                lineHeight = 19.sp,
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            )
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CardBorder,
-                    contentColor = TextPrimary
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = "取消",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
                 )
-            ) {
-                Text(text = "取消", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = TextPrimary
+                MaiDialogButton(
+                    text = "切换并重启",
+                    style = MaiDialogButtonStyle.Primary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm
                 )
-            ) {
-                Text(text = "切换并重启", fontWeight = FontWeight.Bold)
             }
-        },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        }
+    ) {
+        Text(
+            text = prompt.message,
+            color = TextMuted,
+            fontSize = TextSizes.Body,
+            lineHeight = 19.sp
+        )
+    }
 }
 
 @Composable
@@ -463,7 +419,7 @@ private fun RevisionBlock(
             text = label,
             color = TextMuted,
             fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 14.sp
         )
 
@@ -486,12 +442,14 @@ private fun RevisionBlock(
         )
 
         if (revision.subject.isNotBlank()) {
+            // 横屏左列高度有限，提交摘要收拢到单行，让底部的更新状态提示首屏直出。
+            val subjectMaxLines = if (LocalMaiDialogPhoneLandscape.current) 1 else 2
             Text(
                 text = revision.subject,
                 color = TextMuted,
                 fontSize = TextSizes.Caption,
                 lineHeight = 15.sp,
-                maxLines = 2,
+                maxLines = subjectMaxLines,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -527,14 +485,4 @@ private fun UpdateStatusLine(state: MaiBotUpdateState) {
             lineHeight = 17.sp
         )
     }
-}
-
-@Composable
-private fun UpdateNote(text: String) {
-    Text(
-        text = text,
-        color = TextMuted,
-        fontSize = TextSizes.Caption,
-        lineHeight = 16.sp
-    )
 }

@@ -35,6 +35,11 @@ val remoteManifestFallbackUrl = providers.gradleProperty("remoteManifestFallback
 val remoteSigningPublicKeys = providers.gradleProperty("remoteSigningPublicKeys").orNull?.trim()
     ?: ""
 
+// 本地多机共存测试包开关：仅在向已装正式版的手机并存安装测试包时通过 -PappIdSuffix=.test -PappLabelSuffix=" Test" 传入；
+// 默认均为空，日常开发与 CI 构建保持原始包名 org.maiwithu.maidroid 与名称 MaiDroid 不变。
+val appIdSuffix = providers.gradleProperty("appIdSuffix").orNull?.trim().orEmpty()
+val appLabelSuffix = providers.gradleProperty("appLabelSuffix").orNull.orEmpty()
+
 android {
     namespace = "org.maiwithu.maidroid"
     compileSdk {
@@ -47,12 +52,20 @@ android {
         applicationId = "org.maiwithu.maidroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.3.1"
+        versionCode = 12
+        versionName = "0.4.0"
         buildConfigField("String", "APP_UPDATE_API_URL", "\"$appUpdateApiUrl\"")
         buildConfigField("String", "REMOTE_OPS_BASE_URL", "\"$remoteOpsBaseUrl\"")
         buildConfigField("String", "REMOTE_MANIFEST_FALLBACK_URL", "\"$remoteManifestFallbackUrl\"")
         buildConfigField("String", "REMOTE_SIGNING_PUBLIC_KEYS", "\"$remoteSigningPublicKeys\"")
+        if (appIdSuffix.isNotEmpty()) {
+            applicationIdSuffix = appIdSuffix
+        }
+        manifestPlaceholders["appLabel"] = if (appLabelSuffix.isEmpty()) {
+            "@string/app_name"
+        } else {
+            "MaiDroid$appLabelSuffix"
+        }
     }
 
     signingConfigs {
@@ -129,8 +142,12 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
 
-    // Blur
-    implementation(libs.blurview)
+    // Liquid Glass
+    implementation(libs.liquid.glass.backdrop)
+    implementation(libs.liquid.glass.shapes)
+
+    // Embedded Web Engine (GeckoView arm64)
+    implementation(libs.geckoview)
 
     // Testing：只有 JVM 单元测试，没有设备上的仪器测试
     testImplementation(libs.junit)

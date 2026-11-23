@@ -5,6 +5,8 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -13,9 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -42,12 +41,22 @@ import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
 import org.maiwithu.maidroid.appupdate.ReleaseNoteKind
 import org.maiwithu.maidroid.appupdate.formatBytes
-import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.appupdate.releaseNoteLines
+import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.MaiDialog
+import org.maiwithu.maidroid.ui.component.MaiDialogButton
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
+import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
+import org.maiwithu.maidroid.ui.component.MaiDialogCallout
+import org.maiwithu.maidroid.ui.component.MaiDialogDivider
+import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
+import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
+import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
@@ -162,7 +171,7 @@ internal fun appUpdateStatusText(state: AppUpdateState, installPermissionGranted
                     "要换成发布版，需要先卸载 MaiDroid（会清掉容器里的 MaiBot 和数据），再安装下载页里的安装包。"
             // 点安装时发现安装包已被系统清理，会退回这里并带上原因，提示用户重新下载
             state.failure != null -> state.failure.message
-            state.partialBytes > 0 ->"上次已下载 ${formatBytes(state.partialBytes)}，继续下载会接着下。"
+            state.partialBytes > 0 -> "上次已下载 ${formatBytes(state.partialBytes)}，继续下载会接着下。"
             else -> "发现新版本。"
         }
         AppUpdatePhase.Downloading -> state.progress?.let(::appDownloadProgressText) ?: "正在下载..."
@@ -263,83 +272,96 @@ internal fun AppUpdateDialog(
         state.phase == AppUpdatePhase.Available || state.phase == AppUpdatePhase.ReadyToInstall
         )
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "MaiDroid 更新",
-                color = TextPrimary,
-                fontSize = TextSizes.TitleLarge,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 22.sp
-            )
-        },
-        text = {
-            // 手机横屏时弹窗很矮，内容区可以滚动，不会被截掉；更新说明自己限高滚动，嵌在里面互不影响。
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                VersionLine(label = "当前版本", value = "v${state.currentVersion}", highlight = false)
-
+    val secondaryBlock: (@Composable ColumnScope.() -> Unit)? =
+        if (showNewRelease || maiBotAutoUpdateSwitch != null) {
+            {
                 if (showNewRelease) {
-                    val details = listOfNotNull(
-                        release.tag,
-                        release.publishedAtEpochSeconds?.let(::formatReleaseDate),
-                        release.apk?.size?.takeIf { it > 0 }?.let(::formatBytes)
-                    )
-                    VersionLine(label = "最新版本", value = details.joinToString(" · "), highlight = true)
-                    ReleaseNotes(release.notes)
-                } else if (state.phase == AppUpdatePhase.UpToDate && release != null) {
-                    VersionLine(label = "最新版本", value = release.tag, highlight = false)
+                    ReleaseNotesCard(release.notes)
                 }
-
-                UpdateStatus(state, installPermissionGranted)
-
-                // 失败时：错误码、认出的原因和建议、“反馈问题”
-                val failure = state.failure
-                if (state.phase == AppUpdatePhase.Failed && failure != null) {
-                    FailureNotice(failure = failure)
-                }
-
-                if (showInstallNote) {
-                    Text(text = INSTALL_NOTE, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)
-                }
-
-                maiBotAutoUpdateSwitch?.let { MaiBotAutoUpdateRow(it) }
-            }
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = CardBorder, contentColor = TextPrimary)
-            ) {
-                Text(text = if (state.isBusy) "后台继续" else "关闭", fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    when (primaryButton.action) {
-                        AppUpdateButtonAction.Check -> onCheck()
-                        AppUpdateButtonAction.Download -> onDownload()
-                        AppUpdateButtonAction.CancelDownload -> onCancelDownload()
-                        AppUpdateButtonAction.GrantInstallPermission -> onGrantInstallPermission()
-                        AppUpdateButtonAction.Install -> onInstall()
-                        AppUpdateButtonAction.OpenReleasePage -> onOpenReleasePage()
-                        AppUpdateButtonAction.None -> Unit
+                maiBotAutoUpdateSwitch?.let {
+                    MaiDialogSectionCard(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
+                        MaiBotAutoUpdateRow(it)
                     }
-                },
-                enabled = primaryButton.enabled,
-                colors = ButtonDefaults.buttonColors(containerColor = BrandOrange, contentColor = TextPrimary)
-            ) {
-                Text(text = primaryButton.label, fontWeight = FontWeight.Bold)
+                }
             }
+        } else {
+            null
+        }
+
+    MaiDialog(
+        title = "MaiDroid 更新",
+        subtitle = "当前版本 v${state.currentVersion}",
+        icon = FlatFeatureIcons.AppVersion,
+        iconBackground = IconCyanBlue,
+        size = MaiDialogSize.Expanded,
+        headerBadge = release?.takeIf { showNewRelease }?.let {
+            { MaiDialogInfoChip(text = it.tag, color = BrandOrange) }
         },
-        containerColor = CardSurface,
-        titleContentColor = TextPrimary,
-        textContentColor = TextMuted
-    )
+        secondaryContent = secondaryBlock,
+        onDismissRequest = onDismiss,
+        footer = {
+            MaiDialogButtonRow {
+                MaiDialogButton(
+                    text = if (state.isBusy) "后台继续" else "关闭",
+                    style = MaiDialogButtonStyle.Secondary,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+                MaiDialogButton(
+                    text = primaryButton.label,
+                    style = if (primaryButton.action == AppUpdateButtonAction.CancelDownload) {
+                        MaiDialogButtonStyle.SoftDanger
+                    } else {
+                        MaiDialogButtonStyle.Primary
+                    },
+                    enabled = primaryButton.enabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        when (primaryButton.action) {
+                            AppUpdateButtonAction.Check -> onCheck()
+                            AppUpdateButtonAction.Download -> onDownload()
+                            AppUpdateButtonAction.CancelDownload -> onCancelDownload()
+                            AppUpdateButtonAction.GrantInstallPermission -> onGrantInstallPermission()
+                            AppUpdateButtonAction.Install -> onInstall()
+                            AppUpdateButtonAction.OpenReleasePage -> onOpenReleasePage()
+                            AppUpdateButtonAction.None -> Unit
+                        }
+                    }
+                )
+            }
+        }
+    ) {
+        MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (showNewRelease) {
+                val details = listOfNotNull(
+                    release.tag,
+                    release.publishedAtEpochSeconds?.let(::formatReleaseDate),
+                    release.apk?.size?.takeIf { it > 0 }?.let(::formatBytes)
+                )
+                VersionLine(label = "最新版本", value = details.joinToString(" · "), highlight = true)
+                MaiDialogDivider(horizontalPadding = 0.dp)
+            } else if (state.phase == AppUpdatePhase.UpToDate && release != null) {
+                VersionLine(label = "最新版本", value = release.tag, highlight = false)
+                MaiDialogDivider(horizontalPadding = 0.dp)
+            }
+
+            UpdateStatus(state, installPermissionGranted)
+        }
+
+        // 失败时：错误码、认出的原因和建议、“反馈问题”
+        val failure = state.failure
+        if (state.phase == AppUpdatePhase.Failed && failure != null) {
+            FailureNotice(failure = failure, summary = failure.message)
+        }
+
+        if (showInstallNote) {
+            MaiDialogCallout(
+                title = "安装前提醒",
+                body = INSTALL_NOTE,
+                accentColor = BrandOrange
+            )
+        }
+    }
 }
 
 private fun formatReleaseDate(epochSeconds: Long): String =
@@ -354,7 +376,7 @@ private fun VersionLine(label: String, value: String, highlight: Boolean) {
             text = label,
             color = TextMuted,
             fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             lineHeight = 14.sp
         )
         Text(
@@ -367,38 +389,49 @@ private fun VersionLine(label: String, value: String, highlight: Boolean) {
     }
 }
 
-// 更新说明来自 CHANGELOG，一版可能有二三十条，限高后在弹窗里单独滚动。
+// 更新说明来自 CHANGELOG，一版可能有二三十条，装进暗色卡片并限高独立滚动。
 @Composable
-private fun ReleaseNotes(notes: String) {
+private fun ReleaseNotesCard(notes: String) {
     val lines = releaseNoteLines(notes)
     if (lines.isEmpty()) return
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 240.dp)
-            .verticalScroll(rememberScrollState()),
+    MaiDialogSectionCard(
+        contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        lines.forEach { line ->
-            when (line.kind) {
-                ReleaseNoteKind.Heading -> Text(
-                    text = line.text,
-                    color = TextPrimary,
-                    fontSize = TextSizes.Body,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-                ReleaseNoteKind.Bullet -> Row(modifier = Modifier.padding(start = (line.indent * 14).dp)) {
-                    Text(text = "•  ", color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)
-                    Text(text = line.text, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)
+        Text(
+            text = "更新内容",
+            color = TextPrimary,
+            fontSize = TextSizes.Caption,
+            fontWeight = FontWeight.Bold
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 200.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            lines.forEach { line ->
+                when (line.kind) {
+                    ReleaseNoteKind.Heading -> Text(
+                        text = line.text,
+                        color = TextPrimary,
+                        fontSize = TextSizes.Body,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    ReleaseNoteKind.Bullet -> Row(modifier = Modifier.padding(start = (line.indent * 14).dp)) {
+                        Text(text = "•  ", color = BrandOrange, fontSize = TextSizes.Caption, lineHeight = 16.sp)
+                        Text(text = line.text, color = TextMuted, fontSize = TextSizes.Caption, lineHeight = 16.sp)
+                    }
+                    ReleaseNoteKind.Text -> Text(
+                        text = line.text,
+                        color = TextMuted,
+                        fontSize = TextSizes.Caption,
+                        lineHeight = 16.sp
+                    )
                 }
-                ReleaseNoteKind.Text -> Text(
-                    text = line.text,
-                    color = TextMuted,
-                    fontSize = TextSizes.Caption,
-                    lineHeight = 16.sp
-                )
             }
         }
     }
@@ -410,8 +443,7 @@ private fun MaiBotAutoUpdateRow(switch: MaiBotAutoUpdateSwitch) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(value = switch.disabled, role = Role.Switch, onValueChange = switch.onChange)
-            .padding(top = 4.dp),
+            .toggleable(value = switch.disabled, role = Role.Switch, onValueChange = switch.onChange),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -478,7 +510,7 @@ private fun UpdateStatus(state: AppUpdateState, installPermissionGranted: Boolea
                 text = appUpdateStatusText(state, installPermissionGranted),
                 color = color,
                 fontSize = TextSizes.Body,
-                lineHeight = 17.sp
+                lineHeight = 18.sp
             )
         }
     }

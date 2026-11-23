@@ -7,7 +7,6 @@ import android.graphics.Shader
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,10 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -46,20 +43,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import eightbitlab.com.blurview.BlurTarget
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawPlainBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.ui.component.BackdropBlurView
-import org.maiwithu.maidroid.ui.component.BlurTargetHost
+import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
 import org.maiwithu.maidroid.ui.theme.DouyinSans
-import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
+import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.HarmonySans
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.SplashEdgeShade
 import org.maiwithu.maidroid.ui.theme.SplashSideBlurOverlay
-import org.maiwithu.maidroid.ui.theme.SubtleGlassBlurRadius
-import org.maiwithu.maidroid.ui.theme.SubtleGlassSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 
 private const val StartupSplashArtDesignWidth = 424f
@@ -161,7 +161,10 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        var blurTarget by remember { mutableStateOf<BlurTarget?>(null) }
+        val splashBackdrop = rememberLayerBackdrop {
+            drawRect(CardSurface)
+            drawContent()
+        }
 
         if (useAdaptiveLayout) {
             val geometry = startupSplashAdaptiveGeometry(
@@ -169,9 +172,10 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
                 heightDp = maxHeight.value
             )
 
-            BlurTargetHost(
-                onTargetChanged = { blurTarget = it },
-                modifier = Modifier.matchParentSize()
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .layerBackdrop(splashBackdrop)
             ) {
                 AdaptiveSplashBackground(modifier = Modifier.fillMaxSize())
             }
@@ -179,14 +183,14 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
             val sideWidth = geometry.artLeftDp.coerceAtLeast(0f).dp
             if (sideWidth > 0.dp) {
                 StartupSideBlur(
-                    blurTarget = blurTarget,
+                    backdrop = splashBackdrop,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .width(sideWidth)
                         .fillMaxHeight()
                 )
                 StartupSideBlur(
-                    blurTarget = blurTarget,
+                    backdrop = splashBackdrop,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .width(sideWidth)
@@ -195,7 +199,7 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
             }
 
             StartupInfoCard(
-                blurTarget = blurTarget,
+                backdrop = splashBackdrop,
                 originX = (
                     geometry.infoLeftDp - StartupSplashInfoOffsetX * geometry.infoScale
                 ).dp,
@@ -212,9 +216,10 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
                 heightDp = maxHeight.value
             )
 
-            BlurTargetHost(
-                onTargetChanged = { blurTarget = it },
-                modifier = Modifier.matchParentSize()
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .layerBackdrop(splashBackdrop)
             ) {
                 Image(
                     painter = painterResource(R.drawable.startup_splash_background),
@@ -228,7 +233,7 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
             }
 
             StartupInfoCard(
-                blurTarget = blurTarget,
+                backdrop = splashBackdrop,
                 positionScaleX = geometry.scaleX,
                 positionScaleY = geometry.scaleY,
                 contentScale = geometry.contentScale
@@ -306,7 +311,7 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
 
 @Composable
 private fun StartupInfoCard(
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     positionScaleX: Float,
     positionScaleY: Float,
     contentScale: Float,
@@ -317,7 +322,7 @@ private fun StartupInfoCard(
     fun y(value: Float): Dp = (value * positionScaleY).dp
     fun d(value: Float): Dp = (value * contentScale).dp
     fun scaledSp(value: Float) = (value * contentScale).sp
-    val infoShape = RoundedCornerShape(d(24f))
+    val infoShape = RoundedRectangle(d(24f))
 
     Box(
         modifier = Modifier
@@ -325,20 +330,16 @@ private fun StartupInfoCard(
                 x = originX + x(StartupSplashInfoOffsetX),
                 y = originY + y(StartupSplashInfoOffsetY)
             )
-            .clip(infoShape)
-            .border(
-                width = 1.dp,
-                color = GlassButtonSurface,
-                shape = infoShape
+            .liquidGlassSurface(
+                backdrop = backdrop,
+                shape = { infoShape },
+                blurRadius = 10.dp,
+                refractionHeight = 16.dp,
+                refractionAmount = 24.dp,
+                surfaceColor = LiquidBarSurface,
+                fallbackSurfaceColor = GlassFallbackSurface
             )
     ) {
-        BackdropBlurView(
-            blurTarget = blurTarget,
-            blurRadius = SubtleGlassBlurRadius,
-            overlayColor = SubtleGlassSurface,
-            modifier = Modifier.matchParentSize()
-        )
-
         Row(
             modifier = Modifier.padding(d(16f)),
             horizontalArrangement = Arrangement.spacedBy(d(16f)),
@@ -387,16 +388,22 @@ private fun StartupInfoCard(
     }
 }
 
-// 宽屏时插画两侧的留白：模糊插画边缘并压一层很淡的黑，让留白和插画自然衔接。
+// 宽屏时插画两侧的留白：实时采样插画边缘并做高斯模糊和微压暗遮罩，让留白自然融入主视觉。
 @Composable
 private fun StartupSideBlur(
-    blurTarget: BlurTarget?,
+    backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
-    BackdropBlurView(
-        blurTarget = blurTarget,
-        blurRadius = StartupSplashSideBlurRadius,
-        overlayColor = SplashSideBlurOverlay,
-        modifier = modifier
+    Box(
+        modifier = modifier.drawPlainBackdrop(
+            backdrop = backdrop,
+            shape = { RectangleShape },
+            effects = {
+                blur(StartupSplashSideBlurRadius.dp.toPx())
+            },
+            onDrawSurface = {
+                drawRect(SplashSideBlurOverlay)
+            }
+        )
     )
 }

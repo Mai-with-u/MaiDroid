@@ -86,4 +86,25 @@ class LogRedactorTest {
         // 验证二次脱敏保持完全幂等
         assertEquals(once, redactor.redact(once))
     }
+
+    @Test
+    fun fragmentTicketLinksAreMaskedIdempotentlyWithoutEatingChineseSuffix() {
+        val raw = "WebUI：http://127.0.0.1:8001/bots#ticket=YtkDevRmDk42a23EqRBYYbqEsEpmXjS-_lVEnAxPmlI（登录链接一分钟内有效）"
+        val once = redactor.redact(raw)
+
+        assertEquals(
+            "WebUI：http://127.0.0.1:8001/bots#ticket=<已隐藏>（登录链接一分钟内有效）",
+            once
+        )
+        assertEquals(once, redactor.redact(once))
+    }
+
+    @Test
+    fun historicalTemporaryWebUiPasswordLinesAreMaskedIdempotently() {
+        val raw = "11-22 19:28:38.464 WebUI 临时登录密码：980d3f6b7050581e30a45cdf3c43561334f0c080e75c30217d047ac5e1ee7959"
+        val once = redactor.redact(raw)
+
+        assertEquals("11-22 19:28:38.464 WebUI 临时登录密码：<已隐藏>", once)
+        assertEquals(once, redactor.redact(once))
+    }
 }

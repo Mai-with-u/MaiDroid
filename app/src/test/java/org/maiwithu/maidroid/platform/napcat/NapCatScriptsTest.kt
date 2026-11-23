@@ -19,8 +19,12 @@ class NapCatScriptsTest {
         val install = NapCatScripts.install("token", repoSource).body
 
         assertTrue(install.contains("maidroid_download_urls"))
-        // 内置 LinuxQQ 检查与下载，不再依赖原第三方安装脚本和 g++ 编译
+        // 内置 LinuxQQ 检查与下载，支持单源断点续传及 3.2.35 备源回退，不再依赖原第三方安装脚本和 g++ 编译
+        assertTrue(install.contains("maidroid_napcat_fetch_linuxqq"))
         assertTrue(install.contains("https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/linuxqq_3.2.34-53644_arm64.deb"))
+        assertTrue(install.contains("https://qqdl.gtimg.cn/qqfile/QQNT/9.9.37/beta/816b3c79/linuxqq_${NapCatScripts.QQ_FALLBACK_VERSION}_arm64.deb"))
+        assertTrue(install.contains("curl -fL -C -"))
+        assertTrue(install.contains("dpkg-deb -I"))
         assertTrue(install.contains("buildVersion | tonumber >= 53644"))
         assertFalse(install.contains("g++"))
         // 自定义仓库先尝试 latest，失败再走 GitHub Releases API；每次下载用 unzip -t 拦截伪造页面

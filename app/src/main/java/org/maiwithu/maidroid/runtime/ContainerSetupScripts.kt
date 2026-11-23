@@ -54,59 +54,66 @@ internal object ContainerSetupScripts {
     )
 
     /**
-     * 把 apt 源换成 AptMirrors.DEFAULT（清华镜像）：备份原 sources.list（只备份一次）->
+     * 把 apt 源换成首选镜像（自动测速最快源或用户指定/自定义源）：备份原 sources.list（只备份一次）->
      * 停用 sources.list.d 里的其他源 -> 写入新源和重试配置 -> 清空旧的索引缓存。
-     * 清华镜像下载不下来时，下一步 installSystemDependencies 会自己换源重试。
+     * 首选镜像下载不下来时，下一步 installSystemDependencies 会按有序列表自动换源重试。
      */
-    fun configureAptMirror(): ContainerScript = ContainerScript(
-        listOf(
-            AptMirrors.shellFunctions(),
-            """
-            set -e
-            mkdir -p /etc/apt/sources.list.d /etc/apt/apt.conf.d
-            if [ -f /etc/apt/sources.list ] && [ ! -f /etc/apt/sources.list.maidroid.bak ]; then
-                cp /etc/apt/sources.list /etc/apt/sources.list.maidroid.bak
-            fi
-            for source_file in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-                [ -e "${'$'}source_file" ] || continue
-                case "${'$'}source_file" in
-                    *.maidroid.disabled) ;;
-                    *) mv "${'$'}source_file" "${'$'}source_file.maidroid.disabled" ;;
-                esac
-            done
-            maidroid_apt_write_sources ${shellQuote(AptMirrors.DEFAULT.baseUrl)}
-            maidroid_apt_write_network_conf
-            maidroid_apt_reset_lists
-            """.trimIndent()
-        ).joinToString("\n")
-    )
+    fun configureAptMirror(mirrors: List<AptMirror> = AptMirrors.ALL): ContainerScript {
+        val effective = mirrors.ifEmpty { AptMirrors.ALL }
+        val primary = effective.first()
+        return ContainerScript(
+            listOf(
+                AptMirrors.shellFunctions(effective),
+                """
+                set -e
+                mkdir -p /etc/apt/sources.list.d /etc/apt/apt.conf.d
+                if [ -f /etc/apt/sources.list ] && [ ! -f /etc/apt/sources.list.maidroid.bak ]; then
+                    cp /etc/apt/sources.list /etc/apt/sources.list.maidroid.bak
+                fi
+                for source_file in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+                    [ -e "${'$'}source_file" ] || continue
+                    case "${'$'}source_file" in
+                        *.maidroid.disabled) ;;
+                        *) mv "${'$'}source_file" "${'$'}source_file.maidroid.disabled" ;;
+                    esac
+                done
+                maidroid_apt_write_sources ${shellQuote(primary.baseUrl)}
+                maidroid_apt_write_network_conf
+                maidroid_apt_reset_lists
+                """.trimIndent()
+            ).joinToString("\n")
+        )
+    }
 
     /**
      * 安装 MaiBot 安装流程依赖的系统工具：git 克隆源码，curl 和 CA 证书下载 uv。
-     * 收拾上次被打断的 dpkg -> 更新软件源索引 -> 安装；下载失败时按 AptMirrors 的顺序自动换源重试，
+     * 收拾上次被打断的 dpkg -> 更新软件源索引 -> 安装；下载失败时按 [mirrors] 顺序自动换源重试，
      * 换成功的源留着给之后的 apt 用。每一步失败都以中文原因结尾，供页脚显示。
      */
-    fun installSystemDependencies(): ContainerScript = ContainerScript(
-        listOf(
-            AptMirrors.shellFunctions(),
-            """
-            export DEBIAN_FRONTEND=noninteractive
-            # OOBE 期间没有前台服务，装到一半时切到后台、划掉应用都会让系统结束进程，留下 dpkg 半装状态；
-            # 不先收拾，之后每次 apt-get install 都报 dpkg was interrupted，点多少次“重新配置”都过不去。
-            if ! dpkg --configure -a; then
-                printf "[apt] dpkg --configure -a failed, apt-get -f install will try to repair\n"
-            fi
-            # apt-get update 有源下载失败时只打 W: 警告、照样返回 0，真正的网络错误会被吞掉，
-            # 后面只剩一句 Unable to locate package；maidroid_apt_install 里用 --error-on=any 让它如实失败。
-            if ! maidroid_apt_install git ca-certificates curl; then
-                case "${'$'}maidroid_apt_failed_step" in
-                    mirrors) printf "软件源下载失败（${AptMirrors.allNames}都试过了），请检查网络后点重新配置\n" ;;
-                    update) printf "软件源索引更新失败，详情见终端输出\n" ;;
-                    *) printf "安装 Git、curl 和证书失败，详情见终端输出\n" ;;
-                esac
-                exit 1
-            fi
-            """.trimIndent()
-        ).joinToString("\n")
-    )
+    fun installSystemDependencies(mirrors: List<AptMirror> = AptMirrors.ALL): ContainerScript {
+        val effective = mirrors.ifEmpty { AptMirrors.ALL }
+        return ContainerScript(
+            listOf(
+                AptMirrors.shellFunctions(effective),
+                """
+                export DEBIAN_FRONTEND=noninteractive
+                # OOBE 期间没有前台服务，装到一半时切到后台、划掉应用都会让系统结束进程，留下 dpkg 半装状态；
+                # 不先收拾，之后每次 apt-get install 都报 dpkg was interrupted，点多少次“重新配置”都过不去。
+                if ! dpkg --configure -a; then
+                    printf "[apt] dpkg --configure -a failed, apt-get -f install will try to repair\n"
+                fi
+                # apt-get update 有源下载失败时只打 W: 警告、照样返回 0，真正的网络错误会被吞掉，
+                # 后面只剩一句 Unable to locate package；maidroid_apt_install 里用 --error-on=any 让它如实失败。
+                if ! maidroid_apt_install git ca-certificates curl; then
+                    case "${'$'}maidroid_apt_failed_step" in
+                        mirrors) printf "软件源下载失败（${AptMirrors.displayNames(effective)}都试过了），请检查网络后点重新配置\n" ;;
+                        update) printf "软件源索引更新失败，详情见终端输出\n" ;;
+                        *) printf "安装 Git、curl 和证书失败，详情见终端输出\n" ;;
+                    esac
+                    exit 1
+                fi
+                """.trimIndent()
+            ).joinToString("\n")
+        )
+    }
 }
