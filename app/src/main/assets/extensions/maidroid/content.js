@@ -204,13 +204,105 @@
     } catch (err) {}
   }
 
-  // 4. 视口与桌面版宽度管理。
+  function isScroller(el) {
+    if (!el || el.scrollHeight - el.clientHeight < 1) return false;
+    if (el === document.scrollingElement) return true;
+    var overflowY = getComputedStyle(el).overflowY;
+    return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+  }
+
+  // 4. 视口、桌面版宽度与软键盘退避/焦点显露管理。
+  var DEFAULT_PORTRAIT_VIEWPORT = 'width=device-width, initial-scale=1.0';
+  var INTERACTIVE_WIDGET_DIRECTIVE = 'interactive-widget=resizes-content';
+  var NON_TEXT_INPUT_TYPES = {
+    button: true,
+    checkbox: true,
+    color: true,
+    file: true,
+    hidden: true,
+    image: true,
+    radio: true,
+    range: true,
+    reset: true,
+    submit: true
+  };
   var currentConfig = null;
   var originalViewportContent = null;
   var viewportListenersInstalled = false;
+  var lastViewportHeight = 0;
+  var revealRaf = 0;
+  var revealTimer = 0;
+
+  // Gecko 132+ 默认使用 resizes-visual（弹键盘只缩 visualViewport，fixed bottom:0 仍按全屏底边定位），
+  // 会让 MaiBot WebUI 手机底部弹窗/底栏反向向下掉进键盘后面；统一声明 resizes-content 让布局视口随键盘同缩。
+  function withResizesContent(rawContent) {
+    var source = String(rawContent || '').trim() || DEFAULT_PORTRAIT_VIEWPORT;
+    var rawParts = source.split(',');
+    var parts = [];
+    for (var i = 0; i < rawParts.length; i++) {
+      var token = rawParts[i].trim();
+      if (!token) continue;
+      var eqIndex = token.indexOf('=');
+      var key = (eqIndex >= 0 ? token.slice(0, eqIndex) : token).trim().toLowerCase();
+      if (key === 'interactive-widget') continue;
+      parts.push(token);
+    }
+    parts.push(INTERACTIVE_WIDGET_DIRECTIVE);
+    return parts.join(', ');
+  }
+
+  function captureOriginalViewport(metas) {
+    if (originalViewportContent !== null) return;
+    for (var i = 0; i < metas.length; i++) {
+      if (!metas[i].hasAttribute('data-maidroid-created')) {
+        originalViewportContent = metas[i].getAttribute('content') || '';
+        return;
+      }
+    }
+  }
+
+  function syncViewportMeta(targetContent) {
+    var parent = document.head || document.documentElement;
+    if (!parent) return;
+
+    var metas = Array.prototype.slice.call(document.querySelectorAll('meta[name="viewport"]'));
+    captureOriginalViewport(metas);
+
+    if (metas.length === 0) {
+      var created = document.createElement('meta');
+      created.name = 'viewport';
+      created.setAttribute('data-maidroid-created', 'true');
+      created.setAttribute('content', targetContent);
+      parent.appendChild(created);
+      return;
+    }
+
+    if (originalViewportContent !== null && metas[0].hasAttribute('data-maidroid-created')) {
+      metas[0].removeAttribute('data-maidroid-created');
+    }
+    if (metas[0].getAttribute('content') !== targetContent) {
+      metas[0].setAttribute('content', targetContent);
+    }
+    // 丢弃多余的 viewport meta，避免 HTML 后续解析到的第二条 viewport 覆盖桌面宽度或键盘视口策略
+    for (var i = 1; i < metas.length; i++) {
+      metas[i].remove();
+    }
+  }
+
+  function ensureViewportResizesContent() {
+    var metas = Array.prototype.slice.call(document.querySelectorAll('meta[name="viewport"]'));
+    if (metas.length === 0) return;
+    captureOriginalViewport(metas);
+    var baseContent = originalViewportContent !== null
+      ? originalViewportContent
+      : (metas[0].getAttribute('content') || DEFAULT_PORTRAIT_VIEWPORT);
+    syncViewportMeta(withResizesContent(baseContent));
+  }
 
   function readViewportHeight() {
-    var visualHeight = window.visualViewport && window.visualViewport.height;
+    var vv = window.visualViewport;
+    // 仅在未双指放大时采信 visualViewport.height，避免放大浏览时把容器高度错误压扁
+    var visualHeight = (vv && (!vv.scale || vv.scale <= 1.01)) ? vv.height : 0;
     return Math.max(
       1,
       Math.round(
@@ -221,6 +313,93 @@
         1
       )
     );
+  }
+
+  function isEditableControl(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.disabled || el.readOnly) return false;
+    var tag = el.tagName;
+    if (tag === 'TEXTAREA') return true;
+    if (tag === 'INPUT') {
+      var type = String(el.type || 'text').toLowerCase();
+      return !NON_TEXT_INPUT_TYPES[type];
+    }
+    return Boolean(el.isContentEditable);
+  }
+
+  function activeEditableControl() {
+    var el = document.activeElement;
+    while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+      el = el.shadowRoot.activeElement;
+    }
+    return isEditableControl(el) ? el : null;
+  }
+
+  function isRectClippedInBand(rect, minTop, maxBottom) {
+    var bandHeight = maxBottom - minTop;
+    if (bandHeight <= 0) return false;
+    // 超出容器自身高度的大文本框只检查是否完全落出可见区，防止在上下边界来回跳动
+    if (rect.height >= bandHeight) {
+      return rect.bottom <= minTop || rect.top >= maxBottom;
+    }
+    return rect.top < minTop || rect.bottom > maxBottom;
+  }
+
+  function isControlClipped(el, viewportHeight) {
+    var rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    if (isRectClippedInBand(rect, 4, viewportHeight - 4)) return true;
+
+    // 顺着祖先滚动容器（兼容 Radix ScrollArea 与弹窗正文）检查是否被容器底栏/顶栏裁切
+    var node = el.parentElement || (el.getRootNode && el.getRootNode().host) || null;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (node.nodeType === 1 && isScroller(node)) {
+        var box = node.getBoundingClientRect();
+        if (box && box.width > 0 && box.height > 0) {
+          var margin = box.height >= rect.height + 16
+            ? 8
+            : Math.max(0, Math.floor((box.height - rect.height) / 2));
+          if (isRectClippedInBand(rect, box.top + margin, box.bottom - margin)) {
+            return true;
+          }
+        }
+      }
+      node = node.parentElement || (node.getRootNode && node.getRootNode().host) || null;
+    }
+    return false;
+  }
+
+  function revealFocusedControl(expectedEl) {
+    var el = activeEditableControl();
+    if (!el || (expectedEl && el !== expectedEl)) return;
+    if (!isControlClipped(el, readViewportHeight())) return;
+    try {
+      el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+    } catch (err) {}
+  }
+
+  function scheduleEnsureFocusedControlVisible(expectedEl) {
+    if (revealRaf && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(revealRaf);
+    }
+    revealRaf = 0;
+    clearTimeout(revealTimer);
+    revealTimer = 0;
+    if (!expectedEl) return;
+
+    // 首帧视口缩完先居中显露一次，140ms 后再复核（覆盖弹窗展开/输入法动画尾帧），已可见则零改动
+    if (typeof window.requestAnimationFrame === 'function') {
+      revealRaf = window.requestAnimationFrame(function() {
+        revealRaf = 0;
+        revealFocusedControl(expectedEl);
+      });
+    } else {
+      revealFocusedControl(expectedEl);
+    }
+    revealTimer = setTimeout(function() {
+      revealTimer = 0;
+      revealFocusedControl(expectedEl);
+    }, 140);
   }
 
   function applyPortraitViewportPatch(enabled) {
@@ -257,23 +436,49 @@
     if (styleEl.textContent !== cssText) {
       styleEl.textContent = cssText;
     }
+  }
 
-    if (!viewportListenersInstalled) {
-      viewportListenersInstalled = true;
-      var refreshPortraitHeight = function() {
-        if (currentConfig && currentConfig.desktopWidthCss == null && currentConfig.enableViewportPatch) {
-          applyPortraitViewportPatch(true);
-        }
-      };
-      window.addEventListener('resize', refreshPortraitHeight, { passive: true });
-      window.addEventListener('orientationchange', function() {
-        setTimeout(refreshPortraitHeight, 50);
-      }, { passive: true });
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', refreshPortraitHeight, { passive: true });
-      }
+  function handleViewportResize() {
+    var nextHeight = readViewportHeight();
+    var shrank = false;
+    // 对齐增量退避动画与一次性调整：累计收缩超 40px 时触发焦点输入框显露并重置基准高度
+    if (lastViewportHeight <= 0 || nextHeight > lastViewportHeight) {
+      lastViewportHeight = nextHeight;
+    } else if (nextHeight < lastViewportHeight - 40) {
+      shrank = true;
+      lastViewportHeight = nextHeight;
+    }
+
+    if (currentConfig && currentConfig.desktopWidthCss == null && currentConfig.enableViewportPatch) {
+      applyPortraitViewportPatch(true);
+    }
+    if (shrank) {
+      scheduleEnsureFocusedControlVisible(activeEditableControl());
     }
   }
+
+  function installViewportListeners() {
+    if (viewportListenersInstalled) return;
+    viewportListenersInstalled = true;
+    lastViewportHeight = readViewportHeight();
+
+    window.addEventListener('resize', handleViewportResize, { passive: true });
+    window.addEventListener('orientationchange', function() {
+      setTimeout(handleViewportResize, 50);
+    }, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportResize, { passive: true });
+    }
+    // 键盘已弹出时切换下一个输入框（点按或 Tab），若新焦点被容器遮挡则自动滚入可见区
+    document.addEventListener('focusin', function(ev) {
+      var el = activeEditableControl() || (isEditableControl(ev.target) ? ev.target : null);
+      if (el) {
+        scheduleEnsureFocusedControlVisible(el);
+      }
+    }, true);
+  }
+
+  installViewportListeners();
 
   function applyViewportConfig(config) {
     currentConfig = config;
@@ -281,37 +486,14 @@
     if (!parent) return;
 
     var metas = Array.prototype.slice.call(document.querySelectorAll('meta[name="viewport"]'));
+    captureOriginalViewport(metas);
+
     if (config.desktopWidthCss != null) {
-      var targetContent = 'width=' + config.desktopWidthCss;
-      if (metas.length > 0 && originalViewportContent === null && !metas[0].hasAttribute('data-maidroid-created')) {
-        originalViewportContent = metas[0].getAttribute('content');
-      }
-      if (metas.length === 0) {
-        var created = document.createElement('meta');
-        created.name = 'viewport';
-        created.setAttribute('data-maidroid-created', 'true');
-        created.setAttribute('content', targetContent);
-        parent.appendChild(created);
-      } else {
-        for (var i = 0; i < metas.length; i++) {
-          if (metas[i].getAttribute('content') !== targetContent) {
-            metas[i].setAttribute('content', targetContent);
-          }
-        }
-        // 丢弃多余的 viewport meta，避免 HTML 后续解析到的第二条 viewport 覆盖桌面宽度
-        for (var j = 1; j < metas.length; j++) {
-          metas[j].remove();
-        }
-      }
+      syncViewportMeta(withResizesContent('width=' + config.desktopWidthCss));
       applyPortraitViewportPatch(false);
     } else {
-      if (metas.length > 0 && originalViewportContent !== null) {
-        metas[0].setAttribute('content', originalViewportContent);
-        originalViewportContent = null;
-      } else if (metas.length > 0 && metas[0].hasAttribute('data-maidroid-created')) {
-        metas[0].removeAttribute('data-maidroid-created');
-        metas[0].setAttribute('content', 'width=device-width, initial-scale=1.0');
-      }
+      var portraitBase = originalViewportContent !== null ? originalViewportContent : DEFAULT_PORTRAIT_VIEWPORT;
+      syncViewportMeta(withResizesContent(portraitBase));
       applyPortraitViewportPatch(Boolean(config.enableViewportPatch));
     }
   }
@@ -371,8 +553,10 @@
     if (document.head && observedHead !== document.head) {
       observedHead = document.head;
       new MutationObserver(function() {
-        if (currentConfig && currentConfig.desktopWidthCss != null) {
+        if (currentConfig) {
           applyViewportConfig(currentConfig);
+        } else {
+          ensureViewportResizesContent();
         }
         scheduleBackgroundReport();
       }).observe(document.head, {
@@ -380,7 +564,11 @@
         subtree: true,
         characterData: true
       });
-      if (currentConfig) applyViewportConfig(currentConfig);
+      if (currentConfig) {
+        applyViewportConfig(currentConfig);
+      } else {
+        ensureViewportResizesContent();
+      }
     }
   }
 
@@ -392,11 +580,19 @@
   }
   window.addEventListener('DOMContentLoaded', function() {
     attachBackgroundObservers();
-    if (currentConfig) applyViewportConfig(currentConfig);
+    if (currentConfig) {
+      applyViewportConfig(currentConfig);
+    } else {
+      ensureViewportResizesContent();
+    }
     scheduleBackgroundReport();
   });
   window.addEventListener('load', function() {
-    if (currentConfig) applyViewportConfig(currentConfig);
+    if (currentConfig) {
+      applyViewportConfig(currentConfig);
+    } else {
+      ensureViewportResizesContent();
+    }
     reportPageBackground(false);
   });
   var darkQuery = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
@@ -408,13 +604,6 @@
 
   // 6. 两指外层滚动状态机。
   var scrollState = { ratio: 1, chain: [], positions: new Map() };
-
-  function isScroller(el) {
-    if (!el || el.scrollHeight - el.clientHeight < 1) return false;
-    if (el === document.scrollingElement) return true;
-    var overflowY = getComputedStyle(el).overflowY;
-    return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
-  }
 
   function positionEntryOf(el) {
     var entry = scrollState.positions.get(el);

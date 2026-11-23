@@ -150,6 +150,26 @@ class WebUiBridgeProtocolTest {
         assertFalse(dialogRule.contains("[class*="))
     }
 
+    @Test
+    fun builtInExtensionConfiguresResizesContentAndFocusedInputReveal() {
+        val manifestText = extensionAsset("manifest.json").readText(Charsets.UTF_8)
+        val manifest = json.parseToJsonElement(manifestText).jsonObject
+        val extensionVersion = manifest["version"]?.jsonPrimitive?.content
+        // 递增扩展版本，确保已安装设备的 GeckoView ensureBuiltIn 自动更新脚本缓存
+        assertFalse(extensionVersion.isNullOrBlank())
+        assertFalse(extensionVersion == "1.0.0")
+        assertEquals("1.0.1", extensionVersion)
+
+        val contentJs = extensionAsset("content.js").readText(Charsets.UTF_8)
+        // 横竖屏统一声明 resizes-content 并在视口收缩/切焦时自动居中显露被遮挡输入框
+        assertTrue(contentJs.contains("interactive-widget=resizes-content"))
+        assertTrue(contentJs.contains("withResizesContent"))
+        assertTrue(contentJs.contains("ensureViewportResizesContent"))
+        assertTrue(contentJs.contains("isControlClipped"))
+        assertTrue(contentJs.contains("scrollIntoView"))
+        assertTrue(contentJs.contains("focusin"))
+    }
+
     private fun extensionAsset(fileName: String): File =
         File("src/main/assets/extensions/maidroid/$fileName").takeIf { it.isFile }
             ?: File("app/src/main/assets/extensions/maidroid/$fileName").also {
