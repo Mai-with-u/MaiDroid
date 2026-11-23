@@ -56,7 +56,6 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -76,10 +75,10 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** 横屏侧栏竖条固定宽度（dp）：留出 68dp 内槽宽，使选中指示器呈类似手机底栏的舒展横向椭圆。 */
-internal const val HomeNavigationRailBarWidthDp = 76f
+/** 横屏侧栏竖条固定宽度（dp）：外框保持纯正全圆药丸 Capsule()（36dp 半圆弧），内槽宽 64dp 呈舒展横向椭圆。 */
+internal const val HomeNavigationRailBarWidthDp = 72f
 
-/** 侧栏竖条统一宽度：外框 76dp，4dp 内边距后内部滑块宽 68dp，保证四字中文标签清晰不溢边。 */
+/** 侧栏竖条统一宽度：外框 72dp 全圆药丸，4dp 内边距后内部滑块宽 64dp，与手机版横向椭圆同源且零溢边。 */
 internal val HomeNavigationRailBarWidth = HomeNavigationRailBarWidthDp.dp
 
 /** 正常高度下的侧栏留白，用于计算页面正文左偏移与窄矮屏统一基准。 */
@@ -96,8 +95,8 @@ private const val CompactFullCircleMinHeightDp = 356f
 
 /**
  * 横屏侧栏在不同可用高度下的几何尺寸（dp）：
- * - 页签竖栏加宽至 76dp（4dp 内边距后内槽呈 68×52/48/44dp 横向椭圆），与下方居中 64dp 正圆终端/小圆刷新钮形成克制主从比例；
- * - 外框连续圆角跟随 `tabHeightDp * 0.5f + 4f` 与内部全圆椭圆保持严格同心边距，避免顶底两端把斜角压进内文字。
+ * - 页签竖栏固定为 72dp 宽纯全圆药丸 `Capsule()`，4dp 内边距后内槽为 64×56/52/46dp 横向椭圆 `Capsule()`；
+ * - 内椭圆各档四角与 72dp 外圆弧均留有正几何裕量不顶弧，下方刷新小圆与 64dp 终端正圆居中对齐。
  */
 internal data class HomeRailMetrics(
     val compact: Boolean,
@@ -110,21 +109,17 @@ internal data class HomeRailMetrics(
     val tabRailHeightDp: Float
         get() = tabHeightDp * HomeTab.entries.size + 8f
 
-    /** 外框连续圆角半径（与内部椭圆 Capsule() 半圆弧保持严格 4dp 同心间距）。 */
-    val outerCornerRadiusDp: Float
-        get() = tabHeightDp * 0.5f + 4f
-
     val minimumTotalHeightDp: Float
         get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonSizeDp + refreshBottomGapDp + terminalButtonSizeDp
 }
 
-/** 按当前容器高度计算横屏侧栏三档尺寸：页签栏 76dp 宽、内槽呈横向椭圆，下方刷新小圆与 64dp 终端正圆居中对齐。 */
+/** 按当前容器高度计算横屏侧栏三档尺寸：外层全圆药丸 72dp 宽、内槽呈横向椭圆，下方刷新与 64dp 终端居中对齐。 */
 internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
     when {
         maxHeightDp < CompactFullCircleMinHeightDp -> HomeRailMetrics(
             compact = true,
             railPaddingDp = 6f,
-            tabHeightDp = 44f,
+            tabHeightDp = 46f,
             refreshButtonSizeDp = 38f,
             refreshBottomGapDp = 8f,
             terminalButtonSizeDp = HomeNavUnitSizeDp
@@ -133,7 +128,7 @@ internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
         maxHeightDp < CompactRailMaxHeightDp -> HomeRailMetrics(
             compact = true,
             railPaddingDp = 6f,
-            tabHeightDp = 48f,
+            tabHeightDp = 52f,
             refreshButtonSizeDp = 40f,
             refreshBottomGapDp = 10f,
             terminalButtonSizeDp = HomeNavUnitSizeDp
@@ -142,7 +137,7 @@ internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
         else -> HomeRailMetrics(
             compact = false,
             railPaddingDp = HomeNavigationRailPadding.value,
-            tabHeightDp = 52f,
+            tabHeightDp = HomeTabButtonHeightDp,
             refreshButtonSizeDp = 44f,
             refreshBottomGapDp = 12f,
             terminalButtonSizeDp = HomeNavUnitSizeDp
@@ -182,7 +177,6 @@ internal fun HomeNavigationRail(
                 selectedTab = selectedTab,
                 backdrop = backdrop,
                 compact = metrics.compact,
-                outerCornerRadiusDp = metrics.outerCornerRadiusDp,
                 onTabSelected = onTabSelected,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -220,7 +214,6 @@ private fun AnimatedHomeTabRail(
     selectedTab: HomeTab,
     backdrop: Backdrop,
     compact: Boolean,
-    outerCornerRadiusDp: Float,
     onTabSelected: (HomeTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -230,8 +223,8 @@ private fun AnimatedHomeTabRail(
     val tabsCount = HomeTab.entries.size
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val latestOnTabSelected by rememberUpdatedState(onTabSelected)
-    // 外框采用与 4dp 内边距严格同心的连续圆角（tabHeight / 2 + 4），内部滑块保持全圆 Capsule() 横向椭圆。
-    val barShape = { RoundedRectangle(outerCornerRadiusDp.dp) }
+    // 外框采用全圆药丸 Capsule()（72dp 宽下外半圆弧半径 36dp），内滑块（4dp 内边距后 64dp 宽）保持全圆 Capsule() 横向椭圆。
+    val barShape = { HomeNavBarShape }
     val indicatorShape = { HomeNavIndicatorShape }
     val tabsBackdrop = rememberLayerBackdrop()
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -372,7 +365,7 @@ private fun AnimatedHomeTabRail(
                 .padding(innerPadding)
         ) {
             HomeTab.entries.forEach { tab ->
-                // 横屏 76dp 宽椭圆侧栏（内槽 68dp 宽）保留默认清晰字号与零字距，由 HomeTabButton 自适应紧凑态高度。
+                // 横屏 72dp 宽药丸侧栏（内槽 64dp 宽横向椭圆）保留清晰 11sp 字号与零字距，由 HomeTabButton 自适应紧凑态高度。
                 HomeTabButton(
                     tab = tab,
                     selected = selectedTab == tab,

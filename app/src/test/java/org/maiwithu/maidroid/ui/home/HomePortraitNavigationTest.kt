@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.sqrt
 
 class HomePortraitNavigationTest {
 
@@ -178,41 +179,51 @@ class HomePortraitNavigationTest {
         val phone360 = computeHomeRailMetrics(360f)
         assertTrue(phone360.compact)
         assertTrue(phone360.minimumTotalHeightDp < 360f)
-        assertEquals(48f, phone360.tabHeightDp, 0.001f)
-        assertEquals(28f, phone360.outerCornerRadiusDp, 0.001f)
-        assertEquals(200f, phone360.tabRailHeightDp, 0.001f)
+        assertEquals(52f, phone360.tabHeightDp, 0.001f)
+        assertEquals(216f, phone360.tabRailHeightDp, 0.001f)
         assertEquals(40f, phone360.refreshButtonSizeDp, 0.001f)
         assertEquals(HomeNavUnitSizeDp, phone360.terminalButtonSizeDp, 0.001f)
 
         val phone320 = computeHomeRailMetrics(320f)
         assertTrue(phone320.compact)
         assertTrue(phone320.minimumTotalHeightDp < 320f)
-        assertEquals(44f, phone320.tabHeightDp, 0.001f)
-        assertEquals(26f, phone320.outerCornerRadiusDp, 0.001f)
+        assertEquals(46f, phone320.tabHeightDp, 0.001f)
         assertEquals(38f, phone320.refreshButtonSizeDp, 0.001f)
         assertEquals(HomeNavUnitSizeDp, phone320.terminalButtonSizeDp, 0.001f)
 
         val tablet600 = computeHomeRailMetrics(600f)
         assertFalse(tablet600.compact)
         assertTrue(tablet600.minimumTotalHeightDp < 600f)
-        assertEquals(52f, tablet600.tabHeightDp, 0.001f)
-        assertEquals(30f, tablet600.outerCornerRadiusDp, 0.001f)
+        assertEquals(HomeTabButtonHeightDp, tablet600.tabHeightDp, 0.001f)
         assertTrue(HomeNavigationRailBarWidth.value - 8f > tablet600.tabHeightDp)
         assertEquals(44f, tablet600.refreshButtonSizeDp, 0.001f)
         assertEquals(HomeNavUnitSizeDp, tablet600.terminalButtonSizeDp, 0.001f)
     }
 
     @Test
-    fun `home navigation unifies Capsule indicator shape with 64dp portrait bar and 76dp oval rail`() {
-        // 竖屏底栏、竖屏 WebUI 侧边胶囊继续保持 64dp 基准；横屏侧栏加宽至 76dp，使 68dp 内槽呈舒展横向椭圆
+    fun `home navigation unifies Capsule bar and indicator shapes with 64dp portrait bar and 72dp oval rail`() {
+        // 竖屏底栏、竖屏 WebUI 侧边胶囊保持 64dp 基准；横屏侧栏外框使用 72dp 纯全圆药丸，内部 64dp 槽位呈横向椭圆
         assertEquals(Capsule(), HomeNavBarShape)
         assertEquals(Capsule(), HomeNavIndicatorShape)
         assertEquals(64.dp, PortraitBottomBarHeight)
-        assertEquals(76.dp, HomeNavigationRailBarWidth)
+        assertEquals(72.dp, HomeNavigationRailBarWidth)
         assertEquals(64f, CollapsedPillWidthDp, 0.001f)
         assertEquals(64f, ExpandedPillWidthDp, 0.001f)
         assertEquals(48f, ExpandedTabSlotHeightDp, 0.001f)
         assertEquals(282f, ExpandedPillHeightDp, 0.001f)
+
+        // 验证三档内层横向椭圆（64x56 / 64x52 / 64x46）放入 72dp 外层全圆药丸半圆弧内时 45° 角落不顶外弧
+        val outerRadiusDp = HomeNavigationRailBarWidthDp * 0.5f
+        val innerInsetDp = 4f
+        listOf(56f, 52f, 46f).forEach { innerHeightDp ->
+            val innerRadiusDp = innerHeightDp * 0.5f
+            val centerOffsetDp = outerRadiusDp - (innerInsetDp + innerRadiusDp)
+            val cornerDistanceDp = innerRadiusDp + sqrt(2f) * centerOffsetDp
+            assertTrue(
+                "64x$innerHeightDp inner oval corner ($cornerDistanceDp) must fit inside 72dp outer capsule radius ($outerRadiusDp)",
+                cornerDistanceDp < outerRadiusDp
+            )
+        }
     }
 
     @Test
@@ -278,12 +289,12 @@ class HomePortraitNavigationTest {
     @Test
     fun `all 6 navigation slot geometries keep four-character Chinese labels inside indicator chord`() {
         val scenarios = listOf(
-            // 平板横屏椭圆侧栏 68x52
-            Triple(68f, 52f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
-            // 手机横屏椭圆侧栏 68x48
-            Triple(68f, 48f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
-            // 极矮分屏椭圆侧栏 68x44
-            Triple(68f, 44f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
+            // 平板横屏椭圆侧栏 64x56
+            Triple(64f, 56f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
+            // 手机横屏椭圆侧栏 64x52
+            Triple(64f, 52f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
+            // 极矮分屏椭圆侧栏 64x46
+            Triple(64f, 46f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
             // 竖屏 WebUI 展开侧边胶囊 56x48
             Triple(56f, 48f, resolveHomeNavTabTypography(narrowVertical = true, compact = true)),
             // 最窄底栏 59x56（244dp 宽四等分减去内边距）

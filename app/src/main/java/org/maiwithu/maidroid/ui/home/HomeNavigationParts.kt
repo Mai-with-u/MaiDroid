@@ -81,14 +81,14 @@ internal fun resolveHomeNavTabTypography(
         labelSizeSp = 9.5f,
         labelLineHeightSp = 11f
     )
-    // 手机紧凑横屏椭圆侧栏（76dp 宽、68×48/68×44 内槽）：保持清晰 11sp 标签不溢边
+    // 手机紧凑横屏椭圆侧栏（72dp 宽、64×52/64×46 内槽）：保持清晰 11sp 标签不溢边
     compact -> HomeNavTabTypography(
         iconSizeDp = 20f,
         labelGapDp = 2f,
         labelSizeSp = 11f,
         labelLineHeightSp = 13f
     )
-    // 平板横屏椭圆侧栏（68×52 内槽）与竖屏底栏（59~75×56 椭圆）：兼顾清晰度与窄屏 45dp+ 底边弦宽
+    // 平板横屏椭圆侧栏（64×56 内槽）与竖屏底栏（59~75×56 椭圆）：兼顾清晰度与窄屏 45dp+ 底边弦宽
     else -> HomeNavTabTypography(
         iconSizeDp = 21f,
         labelGapDp = 2.5f,
