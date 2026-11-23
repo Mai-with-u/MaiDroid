@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.ui.unit.dp
+import com.kyant.shapes.Capsule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,8 +29,9 @@ class HomePortraitNavigationTest {
     }
 
     @Test
-    fun `collapsed pill stays smaller than expanded pill and shifts up only near bottom`() {
-        assertTrue(CollapsedPillWidthDp < ExpandedPillWidthDp)
+    fun `collapsed pill keeps unified 64dp width with expanded pill and shifts up only near bottom`() {
+        assertEquals(HomeNavUnitSizeDp, CollapsedPillWidthDp, 0.001f)
+        assertEquals(CollapsedPillWidthDp, ExpandedPillWidthDp, 0.001f)
         assertTrue(CollapsedPillHeightDp < ExpandedPillHeightDp)
 
         val upperCollapsedTop = computeDockedPillTopDp(
@@ -157,33 +159,39 @@ class HomePortraitNavigationTest {
     }
 
     @Test
-    fun `landscape rail fits 4 tabs inside compact phone height and locks buttons to rail bar width`() {
+    fun `landscape rail fits 4 tabs and keeps 64dp full-circle bottom buttons aligned with bar`() {
         val phone360 = computeHomeRailMetrics(360f)
         assertTrue(phone360.compact)
         assertTrue(phone360.minimumTotalHeightDp < 360f)
-        assertEquals(HomeNavigationRailBarWidth.value, phone360.buttonWidthDp, 0.001f)
-        assertEquals(42f, phone360.refreshButtonHeightDp, 0.001f)
-        assertEquals(46f, phone360.terminalButtonHeightDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone360.buttonWidthDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone360.refreshButtonHeightDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone360.terminalButtonHeightDp, 0.001f)
 
         val phone320 = computeHomeRailMetrics(320f)
         assertTrue(phone320.compact)
         assertTrue(phone320.minimumTotalHeightDp < 320f)
-        assertEquals(HomeNavigationRailBarWidth.value, phone320.buttonWidthDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone320.buttonWidthDp, 0.001f)
+        assertEquals(44f, phone320.refreshButtonHeightDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone320.terminalButtonHeightDp, 0.001f)
 
         val tablet600 = computeHomeRailMetrics(600f)
         assertFalse(tablet600.compact)
         assertTrue(tablet600.minimumTotalHeightDp < 600f)
         assertEquals(HomeTabButtonHeightDp, tablet600.tabHeightDp, 0.001f)
-        assertEquals(HomeNavigationRailBarWidth.value, tablet600.buttonWidthDp, 0.001f)
-        assertEquals(48f, tablet600.refreshButtonHeightDp, 0.001f)
-        assertEquals(HomeTabButtonHeightDp, tablet600.terminalButtonHeightDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, tablet600.buttonWidthDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, tablet600.refreshButtonHeightDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, tablet600.terminalButtonHeightDp, 0.001f)
     }
 
     @Test
-    fun `home navigation corners keep concentric 24dp outer and 20dp inner geometry`() {
-        // 竖屏底栏、竖屏 WebUI 侧边胶囊与横屏导航竖栏统一外圆角 24dp、内滑块 20dp，严格同心扣除 4dp 内边距
-        assertEquals(24.dp, HomeNavBarCornerRadius)
-        assertEquals(20.dp, HomeNavIndicatorCornerRadius)
-        assertEquals(4.dp, HomeNavBarCornerRadius - HomeNavIndicatorCornerRadius)
+    fun `home navigation unifies full-circle Capsule shape and 64dp base thickness across modes`() {
+        // 竖屏底栏、竖屏 WebUI 侧边胶囊与横屏导航竖栏统一使用全圆 Capsule()，短边 64dp -> 32dp 外半圆角、内槽 56dp -> 28dp 同心圆
+        assertEquals(Capsule(), HomeNavBarShape)
+        assertEquals(Capsule(), HomeNavIndicatorShape)
+        assertEquals(64.dp, PortraitBottomBarHeight)
+        assertEquals(64.dp, HomeNavigationRailBarWidth)
+        assertEquals(64f, CollapsedPillWidthDp, 0.001f)
+        assertEquals(64f, ExpandedPillWidthDp, 0.001f)
+        assertEquals(56f, ExpandedTabSlotHeightDp, 0.001f)
     }
 }

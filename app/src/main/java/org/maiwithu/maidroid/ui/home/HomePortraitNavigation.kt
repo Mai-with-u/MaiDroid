@@ -107,27 +107,30 @@ import kotlin.math.roundToInt
 private const val PillIdleFadeDelayMs = 3_000L
 
 private const val PillInnerInsetDp = 4f
-private const val CollapsedNavButtonHeightDp = 54f
-private const val CollapsedItemGapDp = 4f
-private const val CollapsedRefreshButtonHeightDp = 52f
+// 竖屏 WebUI 胶囊无论收起还是展开均固定 64dp 短边，与竖屏底栏、横屏侧栏及正圆终端按钮共享 32dp 外圆角 + 28dp 同心内圆。
+private const val CollapsedNavButtonHeightDp = HomeTabButtonHeightDp
+private const val CollapsedItemGapDp = 2f
+private const val CollapsedRefreshButtonHeightDp = HomeTabButtonHeightDp
 private const val CollapsedRefreshTopDp =
     PillInnerInsetDp + CollapsedNavButtonHeightDp + CollapsedItemGapDp
 
-internal const val CollapsedPillWidthDp = 64f
+internal const val CollapsedPillWidthDp = HomeNavUnitSizeDp
 internal const val CollapsedPillHeightDp =
     CollapsedRefreshTopDp + CollapsedRefreshButtonHeightDp + PillInnerInsetDp
 
-/** 侧边展开态每个页签槽位的紧凑高度（4 个标签总高控制适中，单手易点且竖屏安全不裁切）。 */
-internal const val ExpandedTabSlotHeightDp = 52f
+/** 侧边展开态每个页签槽位高度（56×56 正圆同心槽，兼顾四栏与竖屏安全高度）。 */
+internal const val ExpandedTabSlotHeightDp = HomeTabButtonHeightDp
 
 private val ExpandedActionsTopDp =
     PillInnerInsetDp + ExpandedTabSlotHeightDp * HomeTab.entries.size
 private const val ExpandedDividerSlotHeightDp = 9f
-private const val ExpandedActionButtonHeightDp = 52f
+private const val ExpandedRefreshButtonHeightDp = 52f
+// 底部「终端」槽保持 56dp 正圆高度，与外框 32dp 半圆弧严格同心，避免弧线内收挤压底边文字。
+private const val ExpandedTerminalButtonHeightDp = HomeTabButtonHeightDp
 
-internal const val ExpandedPillWidthDp = 74f
+internal const val ExpandedPillWidthDp = HomeNavUnitSizeDp
 internal val ExpandedPillHeightDp =
-    ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedActionButtonHeightDp * 2f + PillInnerInsetDp
+    ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedRefreshButtonHeightDp + ExpandedTerminalButtonHeightDp + PillInnerInsetDp
 
 private val CollapsedPillWidth = CollapsedPillWidthDp.dp
 private val CollapsedPillHeight = CollapsedPillHeightDp.dp
@@ -137,7 +140,8 @@ private val ExpandedPillHeight = ExpandedPillHeightDp.dp
 private val PillOuterPadding = PillInnerInsetDp.dp
 private val CollapsedRefreshButtonHeight = CollapsedRefreshButtonHeightDp.dp
 private val ExpandedDividerSlotHeight = ExpandedDividerSlotHeightDp.dp
-private val ExpandedActionButtonHeight = ExpandedActionButtonHeightDp.dp
+private val ExpandedRefreshButtonHeight = ExpandedRefreshButtonHeightDp.dp
+private val ExpandedTerminalButtonHeight = ExpandedTerminalButtonHeightDp.dp
 private val PillEdgeMargin = 10.dp
 private val PillBottomClearance = 84.dp
 
@@ -607,7 +611,7 @@ internal fun HomePortraitNavigation(
             clampedBottomProgress
         ).dp
 
-        // 竖屏 WebUI 侧边胶囊与底栏共用同一套连续圆角标准（外框 24dp、内滑块同心 20dp）。
+        // 竖屏 WebUI 侧边胶囊与底栏统一为 64dp 短边与全圆 Capsule()（外圆角 32dp、内滑块 28dp 严格同心）。
         val barShape = { HomeNavBarShape }
         val indicatorShape = { HomeNavIndicatorShape }
         val tabsBackdrop = rememberLayerBackdrop()
@@ -693,7 +697,7 @@ internal fun HomePortraitNavigation(
                         .wrapContentSize(align = Alignment.TopStart, unbounded = true)
                         .size(
                             width = ExpandedPillWidth - PillOuterPadding * 2,
-                            height = ExpandedDividerSlotHeight + ExpandedActionButtonHeight * 2
+                            height = ExpandedDividerSlotHeight + ExpandedRefreshButtonHeight + ExpandedTerminalButtonHeight
                         )
                         .graphicsLayer { alpha = expandedExtraAlpha * foregroundIdleAlpha }
                 )
@@ -738,6 +742,7 @@ internal fun HomePortraitNavigation(
                             HomeTabButton(
                                 tab = tab,
                                 selected = selectedTab == tab,
+                                compact = clampedBottomProgress < 0.5f,
                                 enabled = !isWebUi || expanded,
                                 onClick = {
                                     if (isWebUi) {
@@ -746,9 +751,7 @@ internal fun HomePortraitNavigation(
                                     }
                                     onTabSelected(tab)
                                 },
-                                modifier = Modifier
-                                    .wrapContentSize(align = Alignment.Center, unbounded = true)
-                                    .size(width = maxOf(frame.tabWidthDp, 62f).dp, height = frame.tabHeightDp.dp)
+                                modifier = Modifier.size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
                             )
                         }
                     }
@@ -832,13 +835,12 @@ internal fun HomePortraitNavigation(
                                 HomeTabButton(
                                     tab = tab,
                                     selected = true,
+                                    compact = clampedBottomProgress < 0.5f,
                                     enabled = false,
                                     accentHighlighted = true,
                                     clickableEnabled = false,
                                     onClick = {},
-                                    modifier = Modifier
-                                        .wrapContentSize(align = Alignment.Center, unbounded = true)
-                                        .size(width = maxOf(frame.tabWidthDp, 62f).dp, height = frame.tabHeightDp.dp)
+                                    modifier = Modifier.size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
                                 )
                             }
                         }
@@ -915,7 +917,7 @@ internal fun HomePortraitNavigation(
                 .then(fallbackBorder)
         )
 
-        // 右下角独立终端按钮：切离 WebUI 时从侧边胶囊底部平滑分离就位，切回 WebUI 时顺畅融入胶囊，外圆角与底栏统一为 24dp
+        // 右下角独立正圆终端按钮：切离 WebUI 时从侧边胶囊底部平滑分离就位，切回 WebUI 时顺畅融入胶囊，保持 64dp 全圆。
         if (frame.terminalAlpha > 0.02f) {
             HomeTerminalButton(
                 backdrop = backdrop,
@@ -1038,7 +1040,7 @@ private fun ExpandedExtraActions(
             onClick = onRefresh,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(ExpandedActionButtonHeight)
+                .height(ExpandedRefreshButtonHeight)
         ) {
             Icon(
                 imageVector = Icons.Outlined.Refresh,
@@ -1057,7 +1059,7 @@ private fun ExpandedExtraActions(
             onClick = onOpenTerminal,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(ExpandedActionButtonHeight)
+                .height(ExpandedTerminalButtonHeight)
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_terminal_code),
@@ -1069,7 +1071,7 @@ private fun ExpandedExtraActions(
     }
 }
 
-/** 胶囊内部通用“上图下文”动作按钮：取消默认灰水波纹并统一采用同心连续圆角裁剪。 */
+/** 胶囊内部通用“上图下文”动作按钮：取消默认灰水波纹并统一采用全圆 Capsule() 裁剪。 */
 @Composable
 private fun PillLabeledButton(
     label: String,

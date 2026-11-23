@@ -73,8 +73,8 @@ import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** 侧栏里标签竖条的宽度（容得下“消息平台”“扩展组件”四个字），同时也是下方刷新与终端按钮的统一宽度。 */
-internal val HomeNavigationRailBarWidth = 72.dp
+/** 侧栏竖条统一宽度：锁定 64dp 基准短边，使横竖屏全圆 Capsule() 外圆角半径一致维持 32dp，下方按钮同宽呈正圆。 */
+internal val HomeNavigationRailBarWidth = HomeNavUnitSizeDp.dp
 
 /** 正常高度下的侧栏留白，用于计算页面正文左偏移与窄矮屏统一基准。 */
 private val HomeNavigationRailPadding = 12.dp
@@ -82,13 +82,17 @@ private val HomeNavigationRailPadding = 12.dp
 /** 侧栏连同两侧留白的总宽度：页面内容左边让出这么多，静止时不被侧栏盖住。 */
 internal val HomeNavigationRailWidth = HomeNavigationRailBarWidth + HomeNavigationRailPadding * 2
 
-/** 矮屏（例如手机横屏约 360dp 高）下切换紧凑尺寸的高度分界线。 */
+/** 矮屏（例如手机横屏约 360dp 高）下切换紧凑页签高度的分界线。 */
 private const val CompactRailMaxHeightDp = 420f
+
+/** 下方刷新与终端按钮均保持 64×64 正圆所需的最小高度；极矮分屏再压低刷新钮保零裁剪。 */
+private const val CompactFullCircleMinHeightDp = 356f
 
 /**
  * 横屏侧栏在不同可用高度下的几何尺寸（dp）：
- * 4 个页签 + 刷新按钮 + 终端按钮统一保持 72dp 视觉列宽并复用 24dp 连续圆角；
- * 矮屏自动切为紧凑垂直高度确保在 320dp~360dp 横屏下零裁剪、零重叠。
+ * - 页签竖栏与下方刷新、终端按钮统一锁定 64dp 列宽并全程采用全圆 Capsule()；
+ * - 常规高度（>= 420dp）与主流 360dp 手机横屏（>= 356dp）下，刷新与终端均为完整 64×64 正圆；
+ * - 极矮横屏（< 356dp，如 320dp）保持终端为 64×64 正圆，刷新钮自动压高为 64×44 全圆药丸确保零裁剪。
  */
 internal data class HomeRailMetrics(
     val compact: Boolean,
@@ -106,27 +110,37 @@ internal data class HomeRailMetrics(
         get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonHeightDp + refreshBottomGapDp + terminalButtonHeightDp
 }
 
-/** 按当前容器高度计算横屏侧栏各元素尺寸，刷新按钮与终端按钮恒定与上方页签竖栏同宽（72dp）。 */
+/** 按当前容器高度计算横屏侧栏三档尺寸：页签栏与下方按钮同宽 64dp，全圆 Capsule() 与 360dp 手机横屏双正圆兼得。 */
 internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
-    if (maxHeightDp < CompactRailMaxHeightDp) {
-        HomeRailMetrics(
+    when {
+        maxHeightDp < CompactFullCircleMinHeightDp -> HomeRailMetrics(
             compact = true,
-            railPaddingDp = 8f,
-            tabHeightDp = 46f,
-            buttonWidthDp = HomeNavigationRailBarWidth.value,
-            refreshButtonHeightDp = 42f,
-            refreshBottomGapDp = 8f,
-            terminalButtonHeightDp = 46f
+            railPaddingDp = 6f,
+            tabHeightDp = 44f,
+            buttonWidthDp = HomeNavUnitSizeDp,
+            refreshButtonHeightDp = 44f,
+            refreshBottomGapDp = 6f,
+            terminalButtonHeightDp = HomeNavUnitSizeDp
         )
-    } else {
-        HomeRailMetrics(
+
+        maxHeightDp < CompactRailMaxHeightDp -> HomeRailMetrics(
+            compact = true,
+            railPaddingDp = 6f,
+            tabHeightDp = 50f,
+            buttonWidthDp = HomeNavUnitSizeDp,
+            refreshButtonHeightDp = HomeNavUnitSizeDp,
+            refreshBottomGapDp = 6f,
+            terminalButtonHeightDp = HomeNavUnitSizeDp
+        )
+
+        else -> HomeRailMetrics(
             compact = false,
             railPaddingDp = HomeNavigationRailPadding.value,
             tabHeightDp = HomeTabButtonHeightDp,
-            buttonWidthDp = HomeNavigationRailBarWidth.value,
-            refreshButtonHeightDp = 48f,
+            buttonWidthDp = HomeNavUnitSizeDp,
+            refreshButtonHeightDp = HomeNavUnitSizeDp,
             refreshBottomGapDp = 10f,
-            terminalButtonHeightDp = HomeTabButtonHeightDp
+            terminalButtonHeightDp = HomeNavUnitSizeDp
         )
     }
 
@@ -192,7 +206,7 @@ internal fun HomeNavigationRail(
                 width = metrics.buttonWidthDp.dp,
                 height = metrics.terminalButtonHeightDp.dp,
                 shape = { HomeNavBarShape },
-                iconSizeDp = if (metrics.compact) 28f else 30f
+                iconSizeDp = 30f
             )
         }
     }
@@ -213,7 +227,7 @@ private fun AnimatedHomeTabRail(
     val tabsCount = HomeTab.entries.size
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val latestOnTabSelected by rememberUpdatedState(onTabSelected)
-    // 外框采用 24dp 连续圆角、内滑块严格采用 20dp 同心连续圆角，与竖屏形态统一。
+    // 外框与内滑块全部采用全圆 Capsule()（64dp 宽下外圆角 32dp，4dp 内边距后内滑块 28dp 严格同心）。
     val barShape = { HomeNavBarShape }
     val indicatorShape = { HomeNavIndicatorShape }
     val tabsBackdrop = rememberLayerBackdrop()
@@ -487,7 +501,7 @@ private fun RailRefreshButton(
         width = widthDp.dp,
         height = heightDp.dp,
         shape = { HomeNavBarShape },
-        iconSize = if (heightDp < 46f) 22.dp else 24.dp,
+        iconSize = if (heightDp < 56f) 22.dp else 26.dp,
         modifier = modifier
     )
 }

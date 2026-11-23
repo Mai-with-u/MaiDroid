@@ -32,11 +32,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
-import com.kyant.shapes.RoundedRectangle
+import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
@@ -51,8 +50,15 @@ internal enum class HomeTab(val label: String) {
     Settings("设置")
 }
 
-/** 竖屏底部导航栏与独立圆形终端按钮的统一高度。 */
-internal val PortraitBottomBarHeight = 64.dp
+/**
+ * 首页导航统一基准宽度/高度（dp）：
+ * 竖屏底栏高、竖屏右下角正圆终端按钮直径、竖屏 WebUI 侧边胶囊宽、横屏左侧导航竖栏宽以及横屏下方正圆按钮直径全部对齐至 64dp，
+ * 使全圆 Capsule() 的外半圆角半径在各种状态下严格保持 32dp，内滑块（4dp 内边距后 56dp）严格同心 28dp。
+ */
+internal const val HomeNavUnitSizeDp = 64f
+
+/** 竖屏底部导航栏与独立正圆终端按钮的统一高度。 */
+internal val PortraitBottomBarHeight = HomeNavUnitSizeDp.dp
 
 /** 竖屏底部导航栏离容器底边的留白。 */
 internal val PortraitBottomBarBottomPadding = 16.dp
@@ -69,16 +75,13 @@ internal const val HomeTabButtonHeightDp = 56f
 /** 单个标签按钮的高度（竖屏底栏与正常高度横屏侧栏通用）。 */
 internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
 
-/** 首页导航外框统一连续圆角（竖屏底栏、竖屏 WebUI 侧边栏、横屏导航竖栏与独立工具按钮共用）。 */
-internal val HomeNavBarCornerRadius = Corners.Card
+/** 首页导航外框统一全圆胶囊形状（短边 64dp 时严格呈 32dp 半圆弧，正方形时呈正圆）。 */
+internal val HomeNavBarShape: Shape = Capsule()
 
-/** 首页导航内部滑块与槽位统一同心连续圆角（外圆角 24dp 减去 4dp 内边距 = 20dp，严格同心不夹紧文字）。 */
-internal val HomeNavIndicatorCornerRadius = Corners.Chip
+/** 首页导航内部滑块与槽位统一全圆胶囊形状（56dp 宽/高时严格呈 28dp 半圆弧，与外框 4dp 内边距完美同心）。 */
+internal val HomeNavIndicatorShape: Shape = Capsule()
 
-internal val HomeNavBarShape: Shape = RoundedRectangle(HomeNavBarCornerRadius)
-internal val HomeNavIndicatorShape: Shape = RoundedRectangle(HomeNavIndicatorCornerRadius)
-
-/** 计算竖屏底部四栏标签胶囊的目标宽度（dp），为右下角圆形终端按钮与左右留白让出间距。 */
+/** 计算竖屏底部四栏标签胶囊的目标宽度（dp），为右下角正圆终端按钮与左右留白让出间距。 */
 internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
     val availableWidthDp = maxWidthDp - PortraitBottomBarHorizontalPadding.value * 2f
     val terminalButtonSizeDp = PortraitBottomBarHeight.value
@@ -86,7 +89,7 @@ internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
         .coerceAtLeast(244f)
 }
 
-/** 液态玻璃终端按钮：按压触发随指高光、微位移与果冻弹性拉伸；默认采用与导航外框统一的 24dp 连续圆角。 */
+/** 全圆液态玻璃终端按钮：按压触发随指高光、微位移与果冻弹性拉伸；默认采用 64dp 正圆全圆造型。 */
 @Composable
 internal fun HomeTerminalButton(
     backdrop: Backdrop,
