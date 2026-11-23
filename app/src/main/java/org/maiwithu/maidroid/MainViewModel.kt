@@ -113,7 +113,7 @@ internal class MainViewModel(
             dependencies.remoteOps.reportPendingCrashIfNeeded()
             setupComplete.collectLatest { complete ->
                 if (!complete) return@collectLatest
-                dependencies.remoteOps.reportDailyHeartbeat()
+                dependencies.remoteOps.reportOnlineHeartbeat(force = true)
                 dependencies.appUpdater.checkOnLaunch()
                 if (autoUpdatingMaiBot) {
                     dependencies.maiBotUpdater.updateAfterAppUpgrade()

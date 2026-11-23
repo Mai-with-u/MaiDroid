@@ -71,6 +71,9 @@ class MaiBotRuntimeService : Service() {
         // 常驻后台期间每小时拉取一次远程公告与排障热规则，照顾长期挂后台不打开界面的旧手机
         private const val REMOTE_OPS_POLL_MS = 60 * 60 * 1000L
 
+        // 运行期间每 10 分钟上报一次实时在线心跳与电池温耗快照，配合服务端 15 分钟窗口统计在线设备
+        private const val ONLINE_HEARTBEAT_POLL_MS = 10 * 60 * 1000L
+
         /** 重启 MaiBot（以及没在跑的 QQ 协议端），用于装好或改了平台适配器之后让 MaiBot 重新加载插件。 */
         const val ACTION_RESTART_RUNTIME = "org.maiwithu.maidroid.action.RESTART_RUNTIME"
 
@@ -139,6 +142,16 @@ class MaiBotRuntimeService : Service() {
     private var lowBatteryPaused = false
     private var lowBatteryPauseJob: Job? = null
 
+    // 屏幕点亮/熄灭广播（粘性无，由系统实时触发）：记录每个采样周期内的真实亮屏时长占比。
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_ON -> appDependencies.powerTelemetry.onScreenInteractiveChanged(true)
+                Intent.ACTION_SCREEN_OFF -> appDependencies.powerTelemetry.onScreenInteractiveChanged(false)
+            }
+        }
+    }
+
     // 电量、充电状态一变系统就发这条（粘性广播，注册时立刻收到一次当前状态）。
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -202,6 +215,15 @@ class MaiBotRuntimeService : Service() {
             IntentFilter(Intent.ACTION_SHUTDOWN),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         // 电量广播是粘性的，注册时就返回当前电量：服务一起来就先按它判断，
         // 开机自启、打开应用时电量已经很低，onStartCommand 里的启动请求就会被拦下，不会拉起来又马上停掉。
         ContextCompat.registerReceiver(
@@ -223,7 +245,14 @@ class MaiBotRuntimeService : Service() {
                 delay(REMOTE_OPS_POLL_MS)
                 if (runtimeRequested && !lowBatteryPaused && !safeExitRunning) {
                     appDependencies.remoteOps.refreshFromBackgroundService()
-                    appDependencies.remoteOps.reportDailyHeartbeat()
+                }
+            }
+        }
+        serviceScope.launch {
+            while (true) {
+                delay(ONLINE_HEARTBEAT_POLL_MS)
+                if (runtimeRequested && !lowBatteryPaused && !safeExitRunning) {
+                    appDependencies.remoteOps.reportOnlineHeartbeat()
                 }
             }
         }
@@ -308,6 +337,8 @@ class MaiBotRuntimeService : Service() {
         } else {
             maiBotProcess.start()
         }
+        // 拉起或升级自启动后立即刷新一次实时在线态与版本号（内部带 60s 防抖与版本变更即时放行）。
+        appDependencies.remoteOps.reportOnlineHeartbeat(force = true)
 
         return START_STICKY
     }
@@ -348,6 +379,7 @@ class MaiBotRuntimeService : Service() {
         instance = null
         unregisterReceiver(timeZoneReceiver)
         unregisterReceiver(shutdownReceiver)
+        unregisterReceiver(screenReceiver)
         unregisterReceiver(batteryReceiver)
         serviceScope.cancel()
         // 只为首次引导开的服务：没有拉起过任何容器进程，不用去停
@@ -386,7 +418,10 @@ class MaiBotRuntimeService : Service() {
             }
         }
         serviceScope.launch {
+            val offlineReport = launch { appDependencies.remoteOps.reportOffline() }
             safeExit.run()
+            // 停完容器后顺带等一眼离线通知（最多已限 3s），避免进程刚退出时连接被硬掐断。
+            offlineReport.join()
             notificationUpdates.cancel()
             closeAppOnDestroy = true
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -396,6 +431,7 @@ class MaiBotRuntimeService : Service() {
 
     // 电量变化：按 LowBatteryPolicy 判断该不该暂停，和现在不一样才动手。安全退出开始后不再管，退出流程会把它们都停掉。
     private fun onBatteryChanged(intent: Intent) {
+        appDependencies.powerTelemetry.onBatteryChanged(intent)
         if (safeExitRunning || safeExit.started) return
         val percent = LowBatteryPolicy.percentOf(
             intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1),
@@ -416,6 +452,7 @@ class MaiBotRuntimeService : Service() {
         TerminalLog.append("[MaiDroid] 电量只剩 $percent%，又没在充电：先让麦麦和 QQ 保存好数据停下，插上充电后自动启动")
         refreshRuntimeNotification()
         lowBatteryPauseJob = serviceScope.launch {
+            launch { appDependencies.remoteOps.reportOffline() }
             withContext(Dispatchers.IO) {
                 supervisorScope {
                     launch { maiBotProcess.pauseForLowBattery() }
@@ -445,6 +482,7 @@ class MaiBotRuntimeService : Service() {
             napCatProcess.start()
             snowLumaProcess.start()
             maiBotProcess.start()
+            appDependencies.remoteOps.reportOnlineHeartbeat(force = true)
         }
     }
 

@@ -86,6 +86,20 @@ class MainActivity : ComponentActivity() {
         handleAnnouncementIntent(intent)
     }
 
+    // 进入前台时通知电源遥测统计亮屏前景状态，已同意隐私授权后立即补报一次实时在线心跳。
+    override fun onStart() {
+        super.onStart()
+        appDependencies.powerTelemetry.onUiForegroundChanged(true)
+        if (appDependencies.settings.authorizationAccepted) {
+            appDependencies.remoteOps.reportOnlineHeartbeat(force = true)
+        }
+    }
+
+    override fun onStop() {
+        appDependencies.powerTelemetry.onUiForegroundChanged(false)
+        super.onStop()
+    }
+
     // 从系统设置页回来时权限可能变了，重新读一遍。
     override fun onResume() {
         super.onResume()

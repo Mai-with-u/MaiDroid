@@ -25,6 +25,7 @@ import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterFiles
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialAdapterConfig
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaFiles
+import org.maiwithu.maidroid.remote.PowerTelemetryTracker
 import org.maiwithu.maidroid.runtime.ContainerDns
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -53,7 +54,8 @@ internal class DiagnosticsManager(
     private val readiness: RuntimeReadiness,
     private val files: DiagnosticsFiles,
     private val logRecorder: TerminalLogRecorder,
-    private val maiBotProcess: MaiBotProcessSupervisor
+    private val maiBotProcess: MaiBotProcessSupervisor,
+    private val powerTelemetry: PowerTelemetryTracker? = null
 ) {
     private companion object {
         // 诊断包最多带最近几份终端日志（每份最多 2 MB），以及 MaiBot 最新一份日志的最后 1 MB
@@ -170,7 +172,7 @@ internal class DiagnosticsManager(
             "存储" to (storage?.let { "可用 ${formatBytes(it.availableBytes)} / 共 ${formatBytes(it.totalBytes)}" } ?: "读不到"),
             "内存" to "可用 ${formatBytes(memory.availMem)} / 共 ${formatBytes(memory.totalMem)}" +
                 if (memory.lowMemory) "（系统认为内存不足）" else ""
-        ))
+        ) + powerTelemetry?.formatDiagnosticsSummary().orEmpty())
     }
 
     private fun permissionSection(): ReportSection {

@@ -505,6 +505,9 @@ private fun SettingsNavigationPane(
     val onTelemetryChange: (Boolean) -> Unit = { enabled ->
         settings.telemetryEnabled = enabled
         telemetryEnabled = enabled
+        if (enabled && settings.authorizationAccepted) {
+            remoteOps.reportOnlineHeartbeat(force = true)
+        }
     }
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
@@ -812,7 +815,7 @@ private fun SettingsNavigationPane(
                     icon = FlatFeatureIcons.Telemetry,
                     iconColor = IconIrisBlue,
                     title = "匿名运行统计",
-                    supportingText = "上报匿名版本、崩溃堆栈与脱敏的安装/启动报错以改进稳定性，绝不含聊天记录、QQ 号与密钥",
+                    supportingText = "上报匿名版本、在线状态、电池温耗与脱敏报错以改进稳定性，绝不含聊天记录、QQ 号与密钥",
                     onClick = { onTelemetryChange(!telemetryEnabled) },
                     trailing = if (compact) null else {
                         {

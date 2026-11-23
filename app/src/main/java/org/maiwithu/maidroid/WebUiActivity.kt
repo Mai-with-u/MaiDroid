@@ -130,9 +130,19 @@ class WebUiActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        appDependencies.powerTelemetry.onUiForegroundChanged(true)
+    }
+
     override fun onResume() {
         super.onResume()
         applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
+    }
+
+    override fun onStop() {
+        appDependencies.powerTelemetry.onUiForegroundChanged(false)
+        super.onStop()
     }
 
     override fun onDestroy() {

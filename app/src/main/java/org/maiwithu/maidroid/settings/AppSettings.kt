@@ -46,6 +46,9 @@ internal class AppSettings(
         const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
         const val KEY_TELEMETRY_INSTALL_ID = "telemetry_install_id"
         const val KEY_LAST_HEARTBEAT_SECONDS = "telemetry_last_heartbeat_sec"
+        const val KEY_LAST_ONLINE_HEARTBEAT_SECONDS = "telemetry_last_online_heartbeat_sec"
+        const val KEY_LAST_TELEMETRY_VERSION_CODE = "telemetry_last_version_code"
+        const val KEY_LAST_TELEMETRY_VERSION_NAME = "telemetry_last_version_name"
         const val KEY_LAST_AUTO_CRASH_MILLIS = "telemetry_last_auto_crash_ms"
         const val KEY_AUTO_ERROR_DAY = "telemetry_auto_error_day"
         const val KEY_AUTO_ERROR_DAY_COUNT = "telemetry_auto_error_day_count"
@@ -233,6 +236,27 @@ internal class AppSettings(
         get() = kv.decodeLong(KEY_LAST_HEARTBEAT_SECONDS, 0L)
         set(value) {
             kv.encode(KEY_LAST_HEARTBEAT_SECONDS, value)
+        }
+
+    /** 上次成功发送实时在线心跳的时间戳（秒），用于 10 分钟心跳与 60 秒强制触发节流。 */
+    var lastOnlineHeartbeatSeconds: Long
+        get() = kv.decodeLong(KEY_LAST_ONLINE_HEARTBEAT_SECONDS, 0L)
+        set(value) {
+            kv.encode(KEY_LAST_ONLINE_HEARTBEAT_SECONDS, value)
+        }
+
+    /** 最近一次已成功上报给远端遥测的 MaiDroid versionCode，版本升级时立即放行新版本心跳。 */
+    var lastTelemetryReportedVersionCode: Int
+        get() = kv.decodeInt(KEY_LAST_TELEMETRY_VERSION_CODE, 0)
+        set(value) {
+            kv.encode(KEY_LAST_TELEMETRY_VERSION_CODE, value)
+        }
+
+    /** 最近一次已成功上报给远端遥测的 MaiDroid 版本名，覆盖安装热修时也会及时同步。 */
+    var lastTelemetryReportedVersionName: String
+        get() = kv.decodeString(KEY_LAST_TELEMETRY_VERSION_NAME, "") ?: ""
+        set(value) {
+            kv.encode(KEY_LAST_TELEMETRY_VERSION_NAME, value)
         }
 
     /** 上次已成功自动补报的崩溃记录时间戳（毫秒），成功上传后推进，避免跨进程重复上报同一场闪退。 */

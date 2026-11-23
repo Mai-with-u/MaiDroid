@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -63,6 +64,7 @@ internal class RemoteOpsManager(
     private val paths: RuntimePaths,
     private val crashRecorder: CrashRecorder,
     private val mirrors: MirrorManager,
+    private val powerTelemetry: PowerTelemetryTracker? = null,
     private val diagnosticsProvider: () -> DiagnosticsManager
 ) {
     companion object {
@@ -71,7 +73,9 @@ internal class RemoteOpsManager(
 
         private const val MIN_FOREGROUND_REFRESH_MS = 5 * 60 * 1000L
         private const val BACKGROUND_POLL_INTERVAL_MS = 60 * 60 * 1000L
-        private const val DAILY_HEARTBEAT_INTERVAL_SEC = 24 * 3600L
+        internal const val ONLINE_HEARTBEAT_INTERVAL_SEC = 10 * 60L
+        internal const val MIN_FORCED_HEARTBEAT_INTERVAL_SEC = 60L
+        private const val OFFLINE_REPORT_TIMEOUT_MS = 3_000L
         private const val FAILURE_REPORT_COOLDOWN_MS = 60 * 60 * 1000L
         private const val AUTO_ERROR_COOLDOWN_SEC = 24 * 3600L
         private const val MAX_AUTO_ERRORS_PER_DAY = 8
@@ -94,6 +98,7 @@ internal class RemoteOpsManager(
     private val scope = backgroundScope("远程公告与诊断", Dispatchers.Main.immediate)
     private val refreshMutex = Mutex()
     private val autoErrorMutex = Mutex()
+    private val heartbeatMutex = Mutex()
     private val client = RemoteOpsClient(
         userAgent = "MaiDroid/${BuildConfig.VERSION_NAME}",
         gitHubMirrorsProvider = mirrors::currentGitHubMirrors,
@@ -120,6 +125,7 @@ internal class RemoteOpsManager(
     private data class TelemetryPayload(
         val installId: String,
         val event: String,
+        val buildType: String,
         val appVersion: String,
         val versionCode: Int,
         val manufacturer: String,
@@ -129,7 +135,8 @@ internal class RemoteOpsManager(
         val setupComplete: Boolean,
         val activeQqClient: String? = null,
         val errorCode: String? = null,
-        val lastExitReason: String? = null
+        val lastExitReason: String? = null,
+        val power: PowerTelemetryPayload? = null
     )
 
     @Serializable
@@ -268,15 +275,61 @@ internal class RemoteOpsManager(
         return generateHelpCode(pkg)
     }
 
-    fun reportDailyHeartbeat() {
+    /**
+     * 发送实时在线心跳并顺带携带当前电源/温度/CPU 匿名快照。
+     * 应用升级后（versionCode 或 versionName 变化）无视节流立即上报一次，让看板旧版本计数同步减一。
+     */
+    fun reportOnlineHeartbeat(force: Boolean = false) {
         if (!settings.telemetryEnabled) return
-        val nowSec = Instant.now().epochSecond
-        if (nowSec - settings.lastDailyHeartbeatSeconds < DAILY_HEARTBEAT_INTERVAL_SEC) return
+        val probeSec = Instant.now().epochSecond
+        if (!shouldSendOnlineHeartbeat(
+                nowSec = probeSec,
+                lastSentSec = settings.lastOnlineHeartbeatSeconds,
+                lastVersionCode = settings.lastTelemetryReportedVersionCode,
+                lastVersionName = settings.lastTelemetryReportedVersionName,
+                currentVersionCode = BuildConfig.VERSION_CODE,
+                currentVersionName = BuildConfig.VERSION_NAME,
+                force = force
+            )
+        ) {
+            return
+        }
         scope.launch {
-            val payload = buildTelemetryPayload(event = "daily_heartbeat")
-            if (client.sendTelemetry(BuildConfig.REMOTE_OPS_BASE_URL, telemetryJson.encodeToString(payload))) {
-                settings.lastDailyHeartbeatSeconds = nowSec
+            heartbeatMutex.withLock {
+                if (!settings.telemetryEnabled || !NetworkStatus.read(appContext).connected) return@withLock
+                val nowSec = Instant.now().epochSecond
+                if (!shouldSendOnlineHeartbeat(
+                        nowSec = nowSec,
+                        lastSentSec = settings.lastOnlineHeartbeatSeconds,
+                        lastVersionCode = settings.lastTelemetryReportedVersionCode,
+                        lastVersionName = settings.lastTelemetryReportedVersionName,
+                        currentVersionCode = BuildConfig.VERSION_CODE,
+                        currentVersionName = BuildConfig.VERSION_NAME,
+                        force = force
+                    )
+                ) {
+                    return@withLock
+                }
+                val payload = buildTelemetryPayload(event = "online_heartbeat", includePower = true)
+                if (client.sendTelemetry(BuildConfig.REMOTE_OPS_BASE_URL, telemetryJson.encodeToString(payload))) {
+                    settings.lastOnlineHeartbeatSeconds = nowSec
+                    settings.lastTelemetryReportedVersionCode = BuildConfig.VERSION_CODE
+                    settings.lastTelemetryReportedVersionName = BuildConfig.VERSION_NAME
+                }
             }
+        }
+    }
+
+    /** 兼容旧调用点：统一委派为实时在线心跳。 */
+    fun reportDailyHeartbeat() = reportOnlineHeartbeat(force = false)
+
+    /** 安全退出或低电量暂停时尽力在超时前通知服务端即时下线，绝不阻塞退出主流程。 */
+    suspend fun reportOffline(timeoutMs: Long = OFFLINE_REPORT_TIMEOUT_MS) {
+        if (!settings.telemetryEnabled) return
+        withTimeoutOrNull(timeoutMs) {
+            if (!NetworkStatus.read(appContext).connected) return@withTimeoutOrNull
+            val payload = buildTelemetryPayload(event = "offline", includePower = true)
+            client.sendTelemetry(BuildConfig.REMOTE_OPS_BASE_URL, telemetryJson.encodeToString(payload))
         }
     }
 
@@ -438,12 +491,15 @@ internal class RemoteOpsManager(
         event: String,
         oobeStep: String? = settings.oobeStep,
         setupCompleteOverride: Boolean = settings.setupComplete,
-        errorCode: String? = null
+        errorCode: String? = null,
+        includePower: Boolean = false
     ): TelemetryPayload = withContext(Dispatchers.IO) {
         val activeQq = runCatching { QqClientChoice(paths).read().name.lowercase() }.getOrNull()
+        val power = if (includePower) powerTelemetry?.captureSnapshot() else null
         TelemetryPayload(
             installId = settings.telemetryInstallId(),
             event = event,
+            buildType = BuildConfig.BUILD_TYPE,
             appVersion = BuildConfig.VERSION_NAME,
             versionCode = BuildConfig.VERSION_CODE,
             manufacturer = Build.MANUFACTURER,
@@ -453,7 +509,8 @@ internal class RemoteOpsManager(
             setupComplete = setupCompleteOverride,
             activeQqClient = activeQq,
             errorCode = errorCode,
-            lastExitReason = latestExitReasonText(appContext)
+            lastExitReason = latestExitReasonText(appContext),
+            power = power
         )
     }
 
@@ -525,4 +582,33 @@ internal class RemoteOpsManager(
                 manager.notify(NOTIFICATION_BASE_ID + (ann.id.hashCode() and 0x7FFF), notification)
             }
     }
+}
+
+/**
+ * 判断此刻是否允许发送实时在线心跳：
+ * 版本号或版本名一旦变化立即放行上报，让服务端立刻将旧版在线/设备计数迁出到新版本；
+ * 同版本下，强制触发（前台切回、开机拉起）至少间隔 60 秒，后台巡检至少间隔 10 分钟。
+ */
+internal fun shouldSendOnlineHeartbeat(
+    nowSec: Long,
+    lastSentSec: Long,
+    lastVersionCode: Int,
+    lastVersionName: String,
+    currentVersionCode: Int,
+    currentVersionName: String,
+    force: Boolean
+): Boolean {
+    if (lastVersionCode != currentVersionCode || lastVersionName != currentVersionName) {
+        return true
+    }
+    if (lastSentSec <= 0L || nowSec < lastSentSec) {
+        return true
+    }
+    val elapsed = nowSec - lastSentSec
+    val minInterval = if (force) {
+        RemoteOpsManager.MIN_FORCED_HEARTBEAT_INTERVAL_SEC
+    } else {
+        RemoteOpsManager.ONLINE_HEARTBEAT_INTERVAL_SEC
+    }
+    return elapsed >= minInterval
 }
