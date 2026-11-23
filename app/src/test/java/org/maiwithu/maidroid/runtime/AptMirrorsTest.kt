@@ -57,4 +57,17 @@ class AptMirrorsTest {
         assertTrue(ssh.contains("maidroid_apt_install openssh-server"))
         assertTrue(ssh.startsWith(AptMirrors.shellFunctions()))
     }
+
+    @Test
+    fun `custom mirror list with subpath preserves full base url regex and sources format`() {
+        val custom = listOf(AptMirror("自建源", "http://192.168.1.5/mirror/apt")) + AptMirrors.ALL
+        val shell = AptMirrors.shellFunctions(custom)
+
+        assertTrue(shell.contains("'http://192.168.1.5/mirror/apt') printf '%s' '自建源' ;;"))
+        // 正则支持匹配带多段子路径的镜像根地址
+        assertTrue(shell.contains("https\\{0,1\\}://[^ ]*"))
+        val sources = AptMirrors.sourcesListContent("http://192.168.1.5/mirror/apt/", "bookworm")
+        assertTrue(sources.contains("deb http://192.168.1.5/mirror/apt/debian bookworm main contrib"))
+        assertTrue(sources.contains("deb http://192.168.1.5/mirror/apt/debian-security bookworm-security main contrib"))
+    }
 }
