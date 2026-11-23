@@ -6,6 +6,10 @@ import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.GitHubMirror
+import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.PyPiMirror
+import org.maiwithu.maidroid.runtime.PyPiMirrors
 
 /**
  * 安装 MaiBot Python 依赖的三步，按声明顺序执行，任一步失败就停：
@@ -23,10 +27,13 @@ internal enum class MaiBotDependencyStep(
     Python("正在准备 Python 解释器...", "准备 Python 解释器失败", FailureStep.PythonInstall),
     Packages("正在安装 Python 依赖包（uv sync），可能需要几分钟...", "安装 Python 依赖包失败", FailureStep.UvSync);
 
-    fun script(): ContainerScript = when (this) {
-        Uv -> MaiBotScripts.installUv()
-        Python -> MaiBotScripts.installPython()
-        Packages -> MaiBotScripts.syncDependencies()
+    fun script(
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL,
+        pyPiMirrors: List<PyPiMirror> = PyPiMirrors.ALL
+    ): ContainerScript = when (this) {
+        Uv -> MaiBotScripts.installUv(gitHubMirrors)
+        Python -> MaiBotScripts.installPython(gitHubMirrors)
+        Packages -> MaiBotScripts.syncDependencies(pyPiMirrors)
     }
 
     /**

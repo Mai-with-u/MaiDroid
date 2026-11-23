@@ -2,6 +2,8 @@ package org.maiwithu.maidroid.maibot
 
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.runtime.GitHubMirror
+import org.maiwithu.maidroid.runtime.PyPiMirror
 
 class MaiBotScriptsTest {
     @Test
@@ -24,5 +26,23 @@ class MaiBotScriptsTest {
         assertTrue(MaiBotScripts.installPython().body.contains(readIndex))
         // 启动时 uv run 也会同步依赖，必须和装依赖用同一个源
         assertTrue(MaiBotScripts.launch().body.contains(readIndex))
+    }
+
+    @Test
+    fun `proxy preferred github order puts proxy before astral official fallback and custom pypi overrides first`() {
+        val proxyFirst = listOf(
+            GitHubMirror("自定义镜像", "https://fast.gh.example"),
+            GitHubMirror("直连", "")
+        )
+        val uv = MaiBotScripts.installUv(proxyFirst).body
+        assertTrue(uv.indexOf("maidroid_github_mirror_specs") < uv.indexOf("releases.astral.sh / github.com"))
+
+        val python = MaiBotScripts.installPython(proxyFirst).body
+        assertTrue(python.indexOf("UV_PYTHON_INSTALL_MIRROR") < python.lastIndexOf("via official source"))
+
+        val syncCustom = MaiBotScripts.syncDependencies(
+            listOf(PyPiMirror("自定义 PyPI 源", "https://custom.pypi.test/simple"))
+        ).body
+        assertTrue(syncCustom.contains("preferred_pypi_url='https://custom.pypi.test/simple'"))
     }
 }

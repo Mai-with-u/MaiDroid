@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.maibot.update
 import org.maiwithu.maidroid.diagnostics.AUTO_FIX_LOG_PREFIX
 import org.maiwithu.maidroid.maibot.MaiBotScripts
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -43,8 +44,11 @@ internal object MaiBotUpdateScripts {
      * 拉取上游最新提交但不动工作区，MaiBot 运行中也能执行；顺带报出数据库结构版本，判断换过去会不会降级。
      * targetBranch 不为空时拉取的是那个分支（切换通道前的预检），打印的 BRANCH、LATEST 也是它的，不是当前分支的。
      */
-    fun fetchLatest(targetBranch: String? = null): ContainerScript = script(
-        GitHubMirrors.shellFunctions(),
+    fun fetchLatest(
+        targetBranch: String? = null,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
+    ): ContainerScript = script(
+        GitHubMirrors.shellFunctions(gitHubMirrors),
         repositoryPrelude(targetBranch),
         staleGitLockScript(),
         fetchScript(),
@@ -57,8 +61,11 @@ internal object MaiBotUpdateScripts {
      * targetBranch 为空时跟随当前分支（在线更新）；不为空时拉取这个分支并切过去（切换版本通道）。
      * 会降级时以退出码 4 结束，源码和分支都不动。
      */
-    fun fetchAndReset(targetBranch: String? = null): ContainerScript = script(
-        GitHubMirrors.shellFunctions(),
+    fun fetchAndReset(
+        targetBranch: String? = null,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
+    ): ContainerScript = script(
+        GitHubMirrors.shellFunctions(gitHubMirrors),
         repositoryPrelude(targetBranch),
         staleGitLockScript(),
         fetchScript(),

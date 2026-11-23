@@ -3,9 +3,11 @@ package org.maiwithu.maidroid.platform.snowluma
 import org.maiwithu.maidroid.platform.qq.LinuxQqRuntimeDeps
 import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
+import org.maiwithu.maidroid.runtime.AptMirror
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
@@ -101,11 +103,17 @@ internal object SnowLumaScripts {
      * 从用户指定的自定义来源下载 SnowLuma 发行包、验证归档并对比官方 sha256、解到程序目录 ->
      * 写全局 OneBot 配置 -> 打完成标记 -> 生成启动脚本。
      */
-    fun install(token: String, webUiPassword: String, source: QqCustomSource): ContainerScript = ContainerScript(
+    fun install(
+        token: String,
+        webUiPassword: String,
+        source: QqCustomSource,
+        aptMirrors: List<AptMirror> = AptMirrors.ALL,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
+    ): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
-            AptMirrors.shellFunctions(),
-            GitHubMirrors.shellFunctions(),
+            AptMirrors.shellFunctions(aptMirrors),
+            GitHubMirrors.shellFunctions(gitHubMirrors),
             // 和 NapCat 共用一份 OneBot token：装过 NapCat 的沿用它的，MaiBot 侧的适配器配置不用改
             QqOneBot.ensureTokenScript(token, variable = "onebot_token"),
             installBody(webUiPassword, source),
@@ -116,10 +124,10 @@ internal object SnowLumaScripts {
     )
 
     /** 每次启动前执行：检测并自愈补装缺失的 LinuxQQ 运行依赖库，补齐目录并重新生成启动脚本。 */
-    fun prepareRuntime(): ContainerScript = ContainerScript(
+    fun prepareRuntime(aptMirrors: List<AptMirror> = AptMirrors.ALL): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
-            AptMirrors.shellFunctions(),
+            AptMirrors.shellFunctions(aptMirrors),
             LinuxQqRuntimeDeps.ensureScript(
                 logPrefix = "[SnowLuma]",
                 failOnError = false,

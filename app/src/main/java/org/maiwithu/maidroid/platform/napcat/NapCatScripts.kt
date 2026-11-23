@@ -3,10 +3,12 @@ package org.maiwithu.maidroid.platform.napcat
 import org.maiwithu.maidroid.platform.qq.LinuxQqRuntimeDeps
 import org.maiwithu.maidroid.platform.qq.QqCustomSource
 import org.maiwithu.maidroid.platform.qq.QqOneBot
+import org.maiwithu.maidroid.runtime.AptMirror
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.ContainerBindMount
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ExitTarget
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.killMatchingProcessesScript
 import org.maiwithu.maidroid.runtime.requestExitScript
@@ -46,15 +48,20 @@ internal object NapCatScripts {
     const val QQ_PACKAGE_JSON_TARGET = "/opt/QQ/resources/app/package.json"
 
     /**
-     * 安装或重装 NapCat 本体：写入 OneBot token -> 装系统依赖与官方 LinuxQQ ->
-     * 从用户指定的自定义来源下载 NapCat.Shell.zip（保留已有 config/plugins）-> 生成 OneBot11 WebSocket 配置 ->
-     * 打 napcat_ready 标记 -> 生成 loadNapCat.cjs、qq-package.json 与 launcher.sh。
+     * 安装或重装 NapCat 本体：写入 OneBot token -> 按 [aptMirrors] 装系统依赖与官方 LinuxQQ ->
+     * 按 [gitHubMirrors] 从用户指定的自定义来源下载 NapCat.Shell.zip（保留已有 config/plugins）->
+     * 生成 OneBot11 WebSocket 配置 -> 打 napcat_ready 标记 -> 生成 loadNapCat.cjs、qq-package.json 与 launcher.sh。
      */
-    fun install(token: String, source: QqCustomSource): ContainerScript = ContainerScript(
+    fun install(
+        token: String,
+        source: QqCustomSource,
+        aptMirrors: List<AptMirror> = AptMirrors.ALL,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
+    ): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
-            AptMirrors.shellFunctions(),
-            GitHubMirrors.shellFunctions(),
+            AptMirrors.shellFunctions(aptMirrors),
+            GitHubMirrors.shellFunctions(gitHubMirrors),
             // 读出已保存的 token，没有才存下新的；后面写 onebot11.json 时用 shell 变量 napcat_token
             QqOneBot.ensureTokenScript(token, variable = "napcat_token"),
             installBody(source),
@@ -65,10 +72,10 @@ internal object NapCatScripts {
     )
 
     /** 每次启动 NapCat 前执行：检测并自愈补装缺失的 LinuxQQ 运行依赖库，补齐目录，更新 loadNapCat.cjs / qq-package.json，并重新生成 /root/launcher.sh。 */
-    fun prepareRuntime(): ContainerScript = ContainerScript(
+    fun prepareRuntime(aptMirrors: List<AptMirror> = AptMirrors.ALL): ContainerScript = ContainerScript(
         body = listOf(
             "set -e",
-            AptMirrors.shellFunctions(),
+            AptMirrors.shellFunctions(aptMirrors),
             LinuxQqRuntimeDeps.ensureScript(
                 logPrefix = "[NapCat]",
                 failOnError = false,

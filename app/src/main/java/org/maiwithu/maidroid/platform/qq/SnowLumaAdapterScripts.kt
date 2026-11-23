@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.platform.qq
 
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -31,19 +32,20 @@ internal object SnowLumaAdapterScripts {
     const val LEGACY_DIR_NAME = "MaiBot-Napcat-Adapter"
 
     /**
-     * 只把新适配器经 GitHub 镜像克隆到 plugins 下的点开头暂存目录，不直接覆盖正式目录、也不删旧适配器：
+     * 只把新适配器经 [gitHubMirrors] 顺序克隆到 plugins 下的点开头暂存目录，不直接覆盖正式目录、也不删旧适配器：
      * 宿主侧先读暂存目录里的 `_manifest.json` 核对 `host_application` 与当前 MaiBot 是否兼容，
      * 兼容才扶正并清理旧适配器；不兼容时删掉暂存目录，旧适配器与当前配置原封不动。
      * core.createObject=rename 避免 proot 把 packfile 硬链接变成绝对路径符号链接，改名后仓库仍可读。
      */
     fun cloneToStaging(
         logPrefix: String = QqClient.NapCat.logPrefix,
-        pluginsDir: String = InContainerPaths.MAIBOT_PLUGINS_DIR
+        pluginsDir: String = InContainerPaths.MAIBOT_PLUGINS_DIR,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
     ): ContainerScript {
         val stagingDir = "${pluginsDir.trimEnd('/')}/$STAGING_DIR_NAME"
         return ContainerScript(
             listOf(
-                GitHubMirrors.shellFunctions(),
+                GitHubMirrors.shellFunctions(gitHubMirrors),
                 """
                 set -e
                 mkdir -p ${shellQuote(pluginsDir)}

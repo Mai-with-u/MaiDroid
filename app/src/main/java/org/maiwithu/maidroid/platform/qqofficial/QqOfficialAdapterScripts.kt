@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.platform.qqofficial
 
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.GitHubMirror
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.InContainerPaths
 import org.maiwithu.maidroid.runtime.shellQuote
@@ -16,18 +17,21 @@ internal object QqOfficialAdapterScripts {
     const val PLUGIN_ID = "Mai-with-u.qq-adapter"
 
     /**
-     * 安装 QQ 官方机器人适配器：已装好就直接退出 -> 经 GitHub 镜像克隆到 plugins 下的点开头临时目录 ->
+     * 安装 QQ 官方机器人适配器：已装好就直接退出 -> 按 [gitHubMirrors] 经 GitHub 镜像克隆到 plugins 下的点开头临时目录 ->
      * 改名为正式目录。临时目录以点开头，MaiBot 扫插件和热重载时会跳过它，不会把克隆了一半的目录当插件加载；
      * core.createObject=rename 避免 proot 把 packfile 硬链接变成绝对路径符号链接，改名后仓库仍可读。
      * 凭据由宿主侧直接写 config.toml，不经过命令行，避免 AppSecret 出现在进程参数和日志里。
      */
-    fun install(pluginsDir: String = InContainerPaths.MAIBOT_PLUGINS_DIR): ContainerScript {
+    fun install(
+        pluginsDir: String = InContainerPaths.MAIBOT_PLUGINS_DIR,
+        gitHubMirrors: List<GitHubMirror> = GitHubMirrors.ALL
+    ): ContainerScript {
         val basePluginsDir = pluginsDir.trimEnd('/')
         val adapterDir = "$basePluginsDir/$DIR_NAME"
         val stagingDir = "$basePluginsDir/.$DIR_NAME.tmp"
         return ContainerScript(
             listOf(
-                GitHubMirrors.shellFunctions(),
+                GitHubMirrors.shellFunctions(gitHubMirrors),
                 """
                 set -e
                 if [ -f ${shellQuote("$adapterDir/_manifest.json")} ] && [ -f ${shellQuote("$adapterDir/plugin.py")} ]; then
