@@ -10,6 +10,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
@@ -86,13 +88,13 @@ import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.ui.component.DampedDragAnimation
 import org.maiwithu.maidroid.ui.component.InteractiveHighlight
-import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
 import org.maiwithu.maidroid.ui.component.resolveLiquidHapticSlot
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
@@ -116,21 +118,19 @@ internal const val CollapsedPillWidthDp = HomeNavUnitSizeDp
 internal const val CollapsedPillHeightDp =
     CollapsedRefreshTopDp + CollapsedRefreshButtonHeightDp + PillInnerInsetDp
 
-/** 侧边展开态每个页签槽位高度（50dp），与 360dp 横屏侧栏构成完全同款的 64×208dp 紧凑全圆椭圆。 */
-internal const val ExpandedTabSlotHeightDp = 50f
+/** 竖屏 WebUI 侧边展开态页签槽位高度（48dp）：把四格页签与刷新、终端收束回单一紧凑全圆椭圆，避免长条臃肿。 */
+internal const val ExpandedTabSlotHeightDp = 48f
+
+private val ExpandedActionsTopDp =
+    PillInnerInsetDp + ExpandedTabSlotHeightDp * HomeTab.entries.size
+private const val ExpandedDividerSlotHeightDp = 6f
+private const val ExpandedRefreshButtonHeightDp = 36f
+// 底部「终端」纯图标槽（40dp）：图标底边距外框底缘 12dp，自然落于 32dp 半圆弧心区且不挤压裁切。
+private const val ExpandedTerminalButtonHeightDp = 40f
 
 internal const val ExpandedPillWidthDp = HomeNavUnitSizeDp
 internal val ExpandedPillHeightDp =
-    PillInnerInsetDp * 2f + ExpandedTabSlotHeightDp * HomeTab.entries.size
-
-/** 竖屏 WebUI 展开时位于主椭圆下方居中悬浮的独立刷新小圆尺寸与间距（防误触且不拉长主胶囊）。 */
-internal const val ExpandedSideRefreshGapDp = 8f
-internal const val ExpandedSideRefreshSizeDp = 40f
-internal const val ExpandedSideTerminalGapDp = 8f
-
-/** 展开态主椭圆 + 下方两枚独立圆形工具钮的总高度（dp），用于停靠底边时的安全上让避让。 */
-internal val ExpandedSideGroupTotalHeightDp =
-    ExpandedPillHeightDp + ExpandedSideRefreshGapDp + ExpandedSideRefreshSizeDp + ExpandedSideTerminalGapDp + HomeNavUnitSizeDp
+    ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedRefreshButtonHeightDp + ExpandedTerminalButtonHeightDp + PillInnerInsetDp
 
 private val CollapsedPillWidth = CollapsedPillWidthDp.dp
 private val CollapsedPillHeight = CollapsedPillHeightDp.dp
@@ -139,12 +139,15 @@ private val ExpandedPillHeight = ExpandedPillHeightDp.dp
 
 private val PillOuterPadding = PillInnerInsetDp.dp
 private val CollapsedRefreshButtonHeight = CollapsedRefreshButtonHeightDp.dp
+private val ExpandedDividerSlotHeight = ExpandedDividerSlotHeightDp.dp
+private val ExpandedRefreshButtonHeight = ExpandedRefreshButtonHeightDp.dp
+private val ExpandedTerminalButtonHeight = ExpandedTerminalButtonHeightDp.dp
 private val PillEdgeMargin = 10.dp
 private val PillBottomClearance = 84.dp
 
 /**
  * 竖屏统一导航在任意过渡帧的二维几何描述（单位 dp）：
- * 既描述侧边/底部共用的主液态玻璃胶囊外框及内部 4 颗标签位置，也描述侧边展开态下独立刷新小圆与通用终端正圆的轨迹。
+ * 既描述侧边/底部共用的主液态玻璃胶囊外框及内部 4 颗标签位置，也描述切离 WebUI 进入底栏时独立圆形终端按钮的分离/融入轨迹。
  */
 internal data class PortraitNavFrame(
     val capsuleLeftDp: Float,
@@ -154,10 +157,6 @@ internal data class PortraitNavFrame(
     val tabWidthDp: Float,
     val tabHeightDp: Float,
     val tabPositionsDp: List<Pair<Float, Float>>,
-    val refreshLeftDp: Float,
-    val refreshTopDp: Float,
-    val refreshAlpha: Float,
-    val refreshScale: Float,
     val terminalLeftDp: Float,
     val terminalTopDp: Float,
     val terminalAlpha: Float,
@@ -193,7 +192,8 @@ internal fun computeDockedPillTopDp(
 
 /**
  * 计算侧边胶囊（左或右侧停靠）与底部导航栏之间的连续二维形变插值几何：
- * - [bottomProgress] 为 0 时处于侧边胶囊态，为 1 时精确对齐底部四标签 + 右下终端按钮布局；
+ * - [bottomProgress] 为 0 时处于侧边单一胶囊态（展开时刷新与终端仍留在主胶囊内部），
+ *   为 1 时精确对齐底部四标签 + 右下独立终端按钮布局；
  * - 位移使用未夹紧的 [bottomProgress] 保留阻尼弹簧缓冲，外框尺寸与透明度按 [0, 1] 夹紧严防越界。
  */
 internal fun computePortraitNavFrame(
@@ -231,28 +231,12 @@ internal fun computePortraitNavFrame(
         tabX to tabY
     }
 
-    val refreshLeft = sideLeftDp + (sideWidthDp - ExpandedSideRefreshSizeDp) * 0.5f
-    val refreshTop = lerpFloat(
-        sideTopDp + sideHeightDp - ExpandedSideRefreshSizeDp,
-        sideTopDp + ExpandedPillHeightDp + ExpandedSideRefreshGapDp,
-        clampedExpanded
-    )
-    val refreshAlpha = (clampedExpanded * (1f - clampedBottom * 2f)).coerceIn(0f, 1f)
-    val refreshScale = 0.72f + 0.28f * clampedExpanded
-
-    val expandedTerminalTop =
-        sideTopDp + ExpandedPillHeightDp + ExpandedSideRefreshGapDp + ExpandedSideRefreshSizeDp + ExpandedSideTerminalGapDp
     val sideTerminalAnchorLeft = sideLeftDp + (sideWidthDp - bottomBarHeight) * 0.5f
-    val sideTerminalAnchorTop = lerpFloat(
-        sideTopDp + sideHeightDp - bottomBarHeight,
-        expandedTerminalTop,
-        clampedExpanded
-    )
+    val sideTerminalAnchorTop = sideTopDp + sideHeightDp - bottomBarHeight
     val terminalLeft = lerpFloat(sideTerminalAnchorLeft, bottomTerminalLeft, bottomProgress)
     val terminalTop = lerpFloat(sideTerminalAnchorTop, bottomBarTop, bottomProgress)
-    val bottomTerminalAlpha = ((clampedBottom - 0.08f) / 0.72f).coerceIn(0f, 1f)
-    val terminalAlpha = maxOf(clampedExpanded, bottomTerminalAlpha)
-    val terminalScale = 0.82f + 0.18f * maxOf(clampedExpanded, clampedBottom)
+    val terminalAlpha = ((clampedBottom - 0.08f) / 0.72f).coerceIn(0f, 1f)
+    val terminalScale = 0.82f + 0.18f * clampedBottom
 
     return PortraitNavFrame(
         capsuleLeftDp = capsuleLeft,
@@ -262,10 +246,6 @@ internal fun computePortraitNavFrame(
         tabWidthDp = tabWidth,
         tabHeightDp = tabHeight,
         tabPositionsDp = tabPositions,
-        refreshLeftDp = refreshLeft,
-        refreshTopDp = refreshTop,
-        refreshAlpha = refreshAlpha,
-        refreshScale = refreshScale,
         terminalLeftDp = terminalLeft,
         terminalTopDp = terminalTop,
         terminalAlpha = terminalAlpha,
@@ -547,8 +527,8 @@ internal fun HomePortraitNavigation(
             maxHeightDp = sideMaxHeightDp,
             bottomClearanceDp = PillBottomClearance.value,
             collapsedHeightDp = CollapsedPillHeight.value,
-            // 停靠底部附近展开时按整组（四格椭圆 + 独立刷新小圆 + 终端正圆）避让，防工具钮溢出底栏安全区。
-            currentHeightDp = if (effectiveSideExpanded) ExpandedSideGroupTotalHeightDp else CollapsedPillHeightDp,
+            // 停靠底部附近展开时按展开后单一胶囊总高（282dp）避让，防止底层刷新/终端区超出安全范围。
+            currentHeightDp = if (effectiveSideExpanded) ExpandedPillHeightDp else CollapsedPillHeightDp,
             verticalBias = verticalBias
         ).dp
         val sideDockedLeft =
@@ -620,14 +600,16 @@ internal fun HomePortraitNavigation(
 
         val navLabelAlpha = ((1f - clampedExpandedProgress) * (1f - clampedBottomProgress * 2f)).coerceIn(0f, 1f)
         val collapsedRefreshAlpha = ((1f - clampedExpandedProgress) * (1f - clampedBottomProgress)).coerceIn(0f, 1f)
+        val expandedExtraAlpha = (clampedExpandedProgress * (1f - clampedBottomProgress * 2f)).coerceIn(0f, 1f)
         val secondaryTabsAlpha = maxOf(clampedExpandedProgress, clampedBottomProgress)
+        val compactExpandedFraction = clampedExpandedProgress * (1f - clampedBottomProgress)
         val primaryContentAlpha = lerpFloat(
             1f,
-            if (selectedTab == HomeTab.WebUi) 1f else 0.78f,
+            if (selectedTab == HomeTab.WebUi) 1f else HomeNavInactiveContentAlpha,
             clampedBottomProgress
         ) * foregroundIdleAlpha
         val primaryIconGap = lerpFloat(
-            lerpFloat(3f, 4f, clampedExpandedProgress),
+            lerpFloat(3f, 2f, clampedExpandedProgress),
             4f,
             clampedBottomProgress
         ).dp
@@ -700,10 +682,35 @@ internal fun HomePortraitNavigation(
                     )
                 }
         ) {
+            // 侧边展开态下方附加工具区留在单一胶囊内（分隔线 + 紧凑刷新与终端图标钮），不拆分到外侧悬浮圆。
+            if (expandedExtraAlpha > 0.01f) {
+                ExpandedExtraActions(
+                    spinDegrees = refreshSpin.value,
+                    enabled = isWebUi && expanded && clampedBottomProgress < 0.15f,
+                    onRefresh = {
+                        triggerRefresh()
+                        expanded = false
+                    },
+                    onOpenTerminal = {
+                        expanded = false
+                        onTerminalClick()
+                    },
+                    modifier = Modifier
+                        .zIndex(if (isWebUi && expanded) 1f else 0f)
+                        .offset { IntOffset(PillOuterPadding.roundToPx(), ExpandedActionsTopDp.dp.roundToPx()) }
+                        .wrapContentSize(align = Alignment.TopStart, unbounded = true)
+                        .size(
+                            width = ExpandedPillWidth - PillOuterPadding * 2,
+                            height = ExpandedDividerSlotHeight + ExpandedRefreshButtonHeight + ExpandedTerminalButtonHeight
+                        )
+                        .graphicsLayer { alpha = expandedExtraAlpha * foregroundIdleAlpha }
+                )
+            }
+
             if (collapsedRefreshAlpha > 0.01f) {
                 PillLabeledButton(
                     label = "刷新",
-                    contentAlpha = 0.84f,
+                    contentAlpha = HomeNavInactiveContentAlpha,
                     enabled = isWebUi && !expanded && clampedBottomProgress < 0.15f,
                     onClick = { triggerRefresh() },
                     modifier = Modifier
@@ -761,6 +768,7 @@ internal fun HomePortraitNavigation(
                 navLabelAlpha = navLabelAlpha,
                 primaryContentAlpha = primaryContentAlpha,
                 primaryIconGap = primaryIconGap,
+                compactExpandedFraction = compactExpandedFraction,
                 accentHighlighted = false,
                 clickableEnabled = true,
                 onClick = {
@@ -850,6 +858,7 @@ internal fun HomePortraitNavigation(
                     navLabelAlpha = navLabelAlpha,
                     primaryContentAlpha = foregroundIdleAlpha,
                     primaryIconGap = primaryIconGap,
+                    compactExpandedFraction = compactExpandedFraction,
                     accentHighlighted = true,
                     clickableEnabled = false,
                     onClick = {},
@@ -914,48 +923,14 @@ internal fun HomePortraitNavigation(
                 .then(fallbackBorder)
         )
 
-        // 竖屏 WebUI 展开态独立小正圆刷新按钮：居于紧凑四格椭圆下方 8dp，切离 WebUI 时随收起淡出。
-        if (frame.refreshAlpha > 0.02f) {
-            LiquidGlassIconButton(
-                onClick = {
-                    triggerRefresh()
-                    expanded = false
-                },
-                backdrop = backdrop,
-                size = ExpandedSideRefreshSizeDp.dp,
-                shape = { HomeNavBarShape },
-                enabled = isWebUi && expanded && clampedBottomProgress < 0.15f,
-                modifier = Modifier
-                    .offset { IntOffset(frame.refreshLeftDp.dp.roundToPx(), frame.refreshTopDp.dp.roundToPx()) }
-                    .graphicsLayer {
-                        alpha = frame.refreshAlpha * foregroundIdleAlpha
-                        scaleX = frame.refreshScale
-                        scaleY = frame.refreshScale
-                    }
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = "刷新 WebUI",
-                    tint = TextPrimary,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer { rotationZ = refreshSpin.value }
-                )
-            }
-        }
-
-        // 独立 64dp 正圆终端按钮：WebUI 展开时显现在刷新小圆下方，切离 WebUI 时无缝平滑飞往右下角，切回时收起融入胶囊。
+        // 切离 WebUI 进入底栏时分离出右下角 64dp 正圆终端按钮，切回 WebUI 时收拢消融回单一侧边胶囊。
         if (frame.terminalAlpha > 0.02f) {
             HomeTerminalButton(
                 backdrop = backdrop,
-                onClick = {
-                    expanded = false
-                    onTerminalClick()
-                },
-                enabled = !isWebUi || (expanded && clampedBottomProgress < 0.15f),
+                onClick = onTerminalClick,
+                enabled = !isWebUi && clampedBottomProgress > 0.5f,
                 size = PortraitBottomBarHeight,
                 shape = { HomeNavBarShape },
-                iconSizeDp = 30f,
                 modifier = Modifier
                     .offset { IntOffset(frame.terminalLeftDp.dp.roundToPx(), frame.terminalTopDp.dp.roundToPx()) }
                     .graphicsLayer {
@@ -968,7 +943,7 @@ internal fun HomePortraitNavigation(
     }
 }
 
-/** 首格「导航 / WebUI」共享槽位：底层与隐藏折射层复用，避免交叉文本几何错位。 */
+/** 首格「导航 / WebUI」共享槽位：底层与隐藏折射层复用，并在侧边展开态同步缩小到紧凑尺寸对齐另外三格页签。 */
 @Composable
 private fun WebUiPrimaryTabSlot(
     isWebUi: Boolean,
@@ -976,6 +951,7 @@ private fun WebUiPrimaryTabSlot(
     navLabelAlpha: Float,
     primaryContentAlpha: Float,
     primaryIconGap: Dp,
+    compactExpandedFraction: Float,
     accentHighlighted: Boolean,
     clickableEnabled: Boolean,
     onClick: () -> Unit,
@@ -983,6 +959,8 @@ private fun WebUiPrimaryTabSlot(
 ) {
     val accentScale = LocalLiquidBottomTabScale.current
     val textColor = if (accentHighlighted) BrandOrange else TextPrimary
+    val iconSize = lerpFloat(24f, 21f, compactExpandedFraction).dp
+    val labelSize = lerpFloat(TextSizes.Caption.value, 11f, compactExpandedFraction).sp
     val clickMod = if (clickableEnabled) {
         Modifier.clickable(interactionSource = null, indication = null, onClick = onClick)
     } else {
@@ -1009,14 +987,14 @@ private fun WebUiPrimaryTabSlot(
             Image(
                 painter = painterResource(R.drawable.ic_maibot),
                 contentDescription = if (isWebUi && !expanded) "展开导航菜单" else HomeTab.WebUi.label,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(iconSize)
             )
             Spacer(modifier = Modifier.height(primaryIconGap))
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     text = "导航",
                     color = textColor,
-                    fontSize = TextSizes.Caption,
+                    fontSize = labelSize,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 12.sp,
                     maxLines = 1,
@@ -1025,13 +1003,77 @@ private fun WebUiPrimaryTabSlot(
                 Text(
                     text = HomeTab.WebUi.label,
                     color = textColor,
-                    fontSize = TextSizes.Caption,
+                    fontSize = labelSize,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 12.sp,
                     maxLines = 1,
                     modifier = Modifier.graphicsLayer { alpha = 1f - navLabelAlpha }
                 )
             }
+        }
+    }
+}
+
+/** 竖屏 WebUI 展开胶囊内下半区操作：细分隔线 + 紧凑纯图标「刷新」与「终端」槽（共用 78% 灰白前景）。 */
+@Composable
+private fun ExpandedExtraActions(
+    spinDegrees: Float,
+    enabled: Boolean,
+    onRefresh: () -> Unit,
+    onOpenTerminal: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ExpandedDividerSlotHeight),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp)
+                    .height(0.8.dp)
+                    .background(CardDivider)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ExpandedRefreshButtonHeight)
+                .clip(HomeNavIndicatorShape)
+                .clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onRefresh),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Refresh,
+                contentDescription = "刷新 WebUI",
+                tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer { rotationZ = spinDegrees }
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ExpandedTerminalButtonHeight)
+                .clip(HomeNavIndicatorShape)
+                .clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onOpenTerminal),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_terminal_code),
+                contentDescription = "查看终端输出",
+                tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }

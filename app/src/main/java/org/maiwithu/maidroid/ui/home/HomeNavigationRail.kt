@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.ui.component.DampedDragAnimation
+import org.maiwithu.maidroid.ui.component.DefaultLiquidGlassHighlight
 import org.maiwithu.maidroid.ui.component.InteractiveHighlight
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
@@ -70,6 +71,7 @@ import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import org.maiwithu.maidroid.ui.theme.TextPrimary
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -197,8 +199,7 @@ internal fun HomeNavigationRail(
                 backdrop = backdrop,
                 onClick = onTerminalClick,
                 size = metrics.terminalButtonSizeDp.dp,
-                shape = { HomeNavBarShape },
-                iconSizeDp = 30f
+                shape = { HomeNavBarShape }
             )
         }
     }
@@ -492,6 +493,9 @@ private fun RailRefreshButton(
         size = sizeDp.dp,
         shape = { HomeNavBarShape },
         iconSize = if (sizeDp < 42f) 20.dp else 22.dp,
+        tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
+        surfaceColor = LiquidBarSurface,
+        highlight = { DefaultLiquidGlassHighlight },
         modifier = modifier
     )
 }

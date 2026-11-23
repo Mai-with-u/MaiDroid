@@ -34,8 +34,10 @@ import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.R
+import org.maiwithu.maidroid.ui.component.DefaultLiquidGlassHighlight
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
@@ -89,7 +91,10 @@ internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
         .coerceAtLeast(244f)
 }
 
-/** 全圆液态玻璃终端按钮：按压触发随指高光、微位移与果冻弹性拉伸；默认采用 64dp 正圆全圆造型。 */
+/** 首页导航未选中页签与工具按钮图标文字统一使用的半透明前景不透明度（78%），与 Tab 栏视觉权重对齐。 */
+internal const val HomeNavInactiveContentAlpha = 0.78f
+
+/** 全圆液态玻璃终端按钮：沿用与 Tab 栏一致的 LiquidBarSurface 暗玻璃、灰边高光和 78% 灰白前景，降低视觉膨胀感。 */
 @Composable
 internal fun HomeTerminalButton(
     backdrop: Backdrop,
@@ -100,7 +105,7 @@ internal fun HomeTerminalButton(
     height: Dp = size,
     shape: () -> Shape = { HomeNavBarShape },
     enabled: Boolean = true,
-    iconSizeDp: Float = 32f
+    iconSizeDp: Float = 26f
 ) {
     LiquidGlassIconButton(
         painter = painterResource(R.drawable.ic_terminal_code),
@@ -112,6 +117,9 @@ internal fun HomeTerminalButton(
         height = height,
         shape = shape,
         iconSize = iconSizeDp.dp,
+        tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
+        surfaceColor = LiquidBarSurface,
+        highlight = { DefaultLiquidGlassHighlight },
         enabled = enabled,
         modifier = modifier
     )
@@ -135,7 +143,7 @@ internal fun HomeTabButton(
     clickableEnabled: Boolean = true
 ) {
     val contentAlpha by animateFloatAsState(
-        targetValue = if (accentHighlighted || selected) 1f else 0.78f,
+        targetValue = if (accentHighlighted || selected) 1f else HomeNavInactiveContentAlpha,
         animationSpec = spring(
             dampingRatio = 1f,
             stiffness = Spring.StiffnessMediumLow

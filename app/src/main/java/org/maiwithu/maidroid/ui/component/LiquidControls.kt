@@ -202,7 +202,7 @@ internal fun LiquidButton(
     }
 }
 
-/** 圆形或连续圆角胶囊形的液态玻璃图标按钮：用于终端快捷按钮、顶栏返回/工具按钮、弹窗关闭按钮等，支持自定义宽高以对齐侧栏宽度。 */
+/** 圆形或连续圆角胶囊形的液态玻璃图标按钮：用于终端快捷按钮、顶栏返回/工具按钮、弹窗关闭按钮等，支持自定义宽高与材质高光。 */
 @Composable
 internal fun LiquidGlassIconButton(
     onClick: () -> Unit,
@@ -219,6 +219,7 @@ internal fun LiquidGlassIconButton(
     blurRadius: Dp = 12.dp,
     refractionHeight: Dp = 14.dp,
     refractionAmount: Dp = 24.dp,
+    highlight: (() -> Highlight?)? = { Highlight.Default.copy(alpha = if (enabled) 0.88f else 0.35f) },
     shadow: (() -> Shadow?)? = { DefaultIconButtonShadow },
     content: @Composable () -> Unit
 ) {
@@ -240,9 +241,7 @@ internal fun LiquidGlassIconButton(
                     blur(blurRadius.toPx())
                     lens(refractionHeight.toPx(), refractionAmount.toPx())
                 },
-                highlight = {
-                    Highlight.Default.copy(alpha = if (enabled) 0.88f else 0.35f)
-                },
+                highlight = highlight,
                 shadow = shadow,
                 layerBlock = if (activeInteractive) {
                     {
@@ -307,8 +306,12 @@ internal fun LiquidGlassIconButton(
     shape: () -> Shape = { Capsule() },
     iconSize: Dp = 22.dp,
     tint: Color = TextPrimary,
+    surfaceColor: Color = GlassButtonSurface,
+    highlight: (() -> Highlight?)? = null,
     enabled: Boolean = true
 ) {
+    // 若未定制高光，沿用主函数按可用状态计算的默认高光；首页导航圆钮传入 DefaultLiquidGlassHighlight 对齐 Tab 栏灰边
+    val resolvedHighlight = highlight ?: { Highlight.Default.copy(alpha = if (enabled) 0.88f else 0.35f) }
     LiquidGlassIconButton(
         onClick = onClick,
         modifier = modifier,
@@ -317,7 +320,9 @@ internal fun LiquidGlassIconButton(
         width = width,
         height = height,
         shape = shape,
-        enabled = enabled
+        enabled = enabled,
+        surfaceColor = surfaceColor,
+        highlight = resolvedHighlight
     ) {
         Icon(
             imageVector = icon,
@@ -342,8 +347,11 @@ internal fun LiquidGlassIconButton(
     shape: () -> Shape = { Capsule() },
     iconSize: Dp = 24.dp,
     tint: Color = TextPrimary,
+    surfaceColor: Color = GlassButtonSurface,
+    highlight: (() -> Highlight?)? = null,
     enabled: Boolean = true
 ) {
+    val resolvedHighlight = highlight ?: { Highlight.Default.copy(alpha = if (enabled) 0.88f else 0.35f) }
     LiquidGlassIconButton(
         onClick = onClick,
         modifier = modifier,
@@ -352,7 +360,9 @@ internal fun LiquidGlassIconButton(
         width = width,
         height = height,
         shape = shape,
-        enabled = enabled
+        enabled = enabled,
+        surfaceColor = surfaceColor,
+        highlight = resolvedHighlight
     ) {
         Icon(
             painter = painter,

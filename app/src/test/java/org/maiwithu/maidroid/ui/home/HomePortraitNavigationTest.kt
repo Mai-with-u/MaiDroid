@@ -65,11 +65,11 @@ class HomePortraitNavigationTest {
             maxHeightDp = 800f,
             bottomClearanceDp = 84f,
             collapsedHeightDp = CollapsedPillHeightDp,
-            currentHeightDp = ExpandedSideGroupTotalHeightDp,
+            currentHeightDp = ExpandedPillHeightDp,
             verticalBias = 1.0f
         )
         assertTrue(bottomExpandedTop < bottomCollapsedTop)
-        assertEquals(800f - 84f - ExpandedSideGroupTotalHeightDp, bottomExpandedTop, 0.001f)
+        assertEquals(800f - 84f - ExpandedPillHeightDp, bottomExpandedTop, 0.001f)
     }
 
     @Test
@@ -90,7 +90,6 @@ class HomePortraitNavigationTest {
         assertEquals(320f, sideFrame.capsuleTopDp, 0.001f)
         assertEquals(CollapsedPillWidthDp, sideFrame.capsuleWidthDp, 0.001f)
         assertEquals(CollapsedPillHeightDp, sideFrame.capsuleHeightDp, 0.001f)
-        assertEquals(0f, sideFrame.refreshAlpha, 0.001f)
         assertEquals(0f, sideFrame.terminalAlpha, 0.001f)
 
         val expandedSideFrame = computePortraitNavFrame(
@@ -103,20 +102,10 @@ class HomePortraitNavigationTest {
             expandedProgress = 1f,
             bottomProgress = 0f
         )
-        // 竖屏 WebUI 展开后主胶囊精简为 64×208 紧凑四格全圆椭圆，下方居中悬停 40dp 刷新小圆与 64dp 终端正圆
+        // 竖屏 WebUI 展开后刷新与终端回归同一紧凑全圆胶囊内（64×282dp），不再拆成外置圆钮
         assertEquals(64f, expandedSideFrame.capsuleWidthDp, 0.001f)
-        assertEquals(208f, expandedSideFrame.capsuleHeightDp, 0.001f)
-        assertEquals(computeHomeRailMetrics(360f).tabRailHeightDp, expandedSideFrame.capsuleHeightDp, 0.001f)
-        assertEquals(1f, expandedSideFrame.refreshAlpha, 0.001f)
-        assertEquals(10f + (64f - ExpandedSideRefreshSizeDp) * 0.5f, expandedSideFrame.refreshLeftDp, 0.001f)
-        assertEquals(240f + 208f + ExpandedSideRefreshGapDp, expandedSideFrame.refreshTopDp, 0.001f)
-        assertEquals(1f, expandedSideFrame.terminalAlpha, 0.001f)
-        assertEquals(10f, expandedSideFrame.terminalLeftDp, 0.001f)
-        assertEquals(
-            240f + 208f + ExpandedSideRefreshGapDp + ExpandedSideRefreshSizeDp + ExpandedSideTerminalGapDp,
-            expandedSideFrame.terminalTopDp,
-            0.001f
-        )
+        assertEquals(282f, expandedSideFrame.capsuleHeightDp, 0.001f)
+        assertEquals(0f, expandedSideFrame.terminalAlpha, 0.001f)
 
         val bottomFrame = computePortraitNavFrame(
             maxWidthDp = maxWidth,
@@ -133,7 +122,6 @@ class HomePortraitNavigationTest {
         assertEquals(maxHeight - 80f, bottomFrame.capsuleTopDp, 0.001f)
         assertEquals(expectedBottomWidth, bottomFrame.capsuleWidthDp, 0.001f)
         assertEquals(64f, bottomFrame.capsuleHeightDp, 0.001f)
-        assertEquals(0f, bottomFrame.refreshAlpha, 0.001f)
         assertEquals(maxWidth - 16f - 64f, bottomFrame.terminalLeftDp, 0.001f)
         assertEquals(maxHeight - 80f, bottomFrame.terminalTopDp, 0.001f)
         assertEquals(1f, bottomFrame.terminalAlpha, 0.001f)
@@ -190,7 +178,7 @@ class HomePortraitNavigationTest {
         val phone360 = computeHomeRailMetrics(360f)
         assertTrue(phone360.compact)
         assertTrue(phone360.minimumTotalHeightDp < 360f)
-        assertEquals(ExpandedPillHeightDp, phone360.tabRailHeightDp, 0.001f)
+        assertEquals(208f, phone360.tabRailHeightDp, 0.001f)
         assertEquals(40f, phone360.refreshButtonSizeDp, 0.001f)
         assertEquals(HomeNavUnitSizeDp, phone360.terminalButtonSizeDp, 0.001f)
 
@@ -210,14 +198,14 @@ class HomePortraitNavigationTest {
 
     @Test
     fun `home navigation unifies full-circle Capsule shape and 64dp base thickness across modes`() {
-        // 竖屏底栏、竖屏 WebUI 侧边胶囊与横屏导航竖栏统一使用全圆 Capsule()，短边 64dp -> 32dp 外半圆角、槽位 50~56dp 同心圆
+        // 竖屏底栏、竖屏 WebUI 侧边胶囊与横屏导航竖栏统一使用全圆 Capsule()，短边 64dp -> 32dp 外半圆角、槽位 48~56dp 同心圆
         assertEquals(Capsule(), HomeNavBarShape)
         assertEquals(Capsule(), HomeNavIndicatorShape)
         assertEquals(64.dp, PortraitBottomBarHeight)
         assertEquals(64.dp, HomeNavigationRailBarWidth)
         assertEquals(64f, CollapsedPillWidthDp, 0.001f)
         assertEquals(64f, ExpandedPillWidthDp, 0.001f)
-        assertEquals(50f, ExpandedTabSlotHeightDp, 0.001f)
-        assertEquals(208f, ExpandedPillHeightDp, 0.001f)
+        assertEquals(48f, ExpandedTabSlotHeightDp, 0.001f)
+        assertEquals(282f, ExpandedPillHeightDp, 0.001f)
     }
 }

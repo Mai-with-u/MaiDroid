@@ -160,7 +160,7 @@ internal fun Modifier.liquidGlassIndicator(
     }
 )
 
-private val DefaultLiquidGlassHighlight = Highlight(
+internal val DefaultLiquidGlassHighlight = Highlight(
     width = 0.8.dp,
     alpha = 0.88f,
     style = HighlightStyle.Default(
