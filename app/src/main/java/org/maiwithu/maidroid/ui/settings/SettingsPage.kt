@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,7 +51,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -972,31 +971,40 @@ private fun CompactSettingSwitchRow(
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    // 左右交互彻底分离：左侧占满剩余宽度防止窄屏挤压，右侧开关独立承接点击与液态拖拽，避免整行按压蒙层盖在开关上方。
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(
-                value = checked,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = onCheckedChange
-            )
-            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1
-        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .defaultMinSize(minHeight = 40.dp)
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onClick = { onCheckedChange(!checked) }
+                ),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = label,
+                color = TextMuted,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         FlatSwitch(
             checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            modifier = Modifier.clearAndSetSemantics {}
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
         )
     }
 }

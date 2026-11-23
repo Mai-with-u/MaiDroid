@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.ui.settings
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -28,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -437,17 +436,25 @@ private fun ReleaseNotesCard(notes: String) {
     }
 }
 
-// 弹窗底部的开关行：左边标题和说明，右边开关，整行可点。默认关闭，即 MaiDroid 更新后第一次启动自动升级 MaiBot。
+// 弹窗底部的开关行：左边文字与右边开关各自独立响应，避免整行手势拦截导致开关无法直接点拖。默认关闭，即 MaiDroid 更新后第一次启动自动升级 MaiBot。
 @Composable
 private fun MaiBotAutoUpdateRow(switch: MaiBotAutoUpdateSwitch) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(value = switch.disabled, role = Role.Switch, onValueChange = switch.onChange),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    role = Role.Switch,
+                    onClick = { switch.onChange(!switch.disabled) }
+                ),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
             Text(
                 text = "关闭 MaiBot 自动更新",
                 color = TextPrimary,
@@ -468,8 +475,7 @@ private fun MaiBotAutoUpdateRow(switch: MaiBotAutoUpdateSwitch) {
         }
         FlatSwitch(
             checked = switch.disabled,
-            onCheckedChange = null,
-            modifier = Modifier.clearAndSetSemantics {}
+            onCheckedChange = switch.onChange
         )
     }
 }
