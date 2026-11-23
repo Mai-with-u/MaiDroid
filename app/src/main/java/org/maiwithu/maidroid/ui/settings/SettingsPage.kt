@@ -108,6 +108,7 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val PermissionSettingsDetail = "permissions"
+internal const val MirrorSettingsDetail = "mirrors"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
@@ -136,6 +137,9 @@ internal fun SettingsPage(
     val appUpdateState by appUpdater.state.collectAsState()
     val qqOfficialManager = remember(context) { context.appDependencies.qqOfficial }
     val qqOfficialState by qqOfficialManager.state.collectAsState()
+    val mirrorManager = remember(context) { context.appDependencies.mirrorManager }
+    val mirrorState by mirrorManager.state.collectAsState()
+    val mirrorSummaryText = remember(mirrorState) { mirrorSettingsSummaryText(mirrorState) }
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 或 SnowLuma 在线、官方机器人已启用且无连接报错都算。
     val runningPlatformCount = remember(napCatState, snowLumaState, qqOfficialState) {
         installedPlatformCards(napCatState, snowLumaState, qqOfficialState).count { it.running }
@@ -240,12 +244,21 @@ internal fun SettingsPage(
                     updateState = updateState,
                     runningPlatformCount = runningPlatformCount,
                     permissionSelected = selectedDetail == PermissionSettingsDetail,
+                    mirrorSummaryText = mirrorSummaryText,
+                    mirrorSelected = selectedDetail == MirrorSettingsDetail,
                     compact = true,
                     expandedTopOffset = topSpacing,
                     onPermissionClick = {
                         selectedDetail = resolveSettingsDetailSelection(
                             currentDetail = selectedDetail,
                             targetDetail = PermissionSettingsDetail,
+                            useTwoPane = true
+                        )
+                    },
+                    onMirrorClick = {
+                        selectedDetail = resolveSettingsDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = MirrorSettingsDetail,
                             useTwoPane = true
                         )
                     },
@@ -286,8 +299,8 @@ internal fun SettingsPage(
                         },
                         label = "SettingsTwoPaneDetail"
                     ) { detail ->
-                        if (detail == PermissionSettingsDetail) {
-                            PermissionManagementPage(
+                        when (detail) {
+                            PermissionSettingsDetail -> PermissionManagementPage(
                                 state = permissionState,
                                 actions = permissionActions,
                                 onBack = { selectedDetail = null },
@@ -296,63 +309,90 @@ internal fun SettingsPage(
                                 expandedTopOffset = topSpacing,
                                 modifier = Modifier.fillMaxSize()
                             )
-                        } else {
-                            // 横屏/宽屏默认不展示权限管理或任何文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
-                            SettingsEmptyDetailPane(
+                            MirrorSettingsDetail -> MirrorSettingsPage(
+                                manager = mirrorManager,
+                                state = mirrorState,
+                                onBack = { selectedDetail = null },
+                                showBackButton = false,
                                 compact = compactTwoPane,
+                                expandedTopOffset = topSpacing,
                                 modifier = Modifier.fillMaxSize()
                             )
+                            else -> {
+                                // 横屏/宽屏默认不展示任何具体设置详情或文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
+                                SettingsEmptyDetailPane(
+                                    compact = compactTwoPane,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
             }
         } else {
             AnimatedContent(
-                targetState = selectedDetail != null,
+                targetState = selectedDetail,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PageBackground),
-                transitionSpec = { horizontalSlideTransition(forward = targetState, dampingRatio = 0.82f) },
+                transitionSpec = { horizontalSlideTransition(forward = targetState != null, dampingRatio = 0.82f) },
                 label = "SettingsPermissionTransition"
-            ) { showingPermissionPage ->
-                if (showingPermissionPage) {
-                    PermissionManagementPage(
+            ) { detail ->
+                when (detail) {
+                    PermissionSettingsDetail -> PermissionManagementPage(
                         state = permissionState,
                         actions = permissionActions,
                         onBack = { selectedDetail = null },
                         expandedTopOffset = topSpacing,
                         modifier = Modifier.fillMaxSize()
                     )
-                } else {
-                    SettingsNavigationPane(
-                        webUiOnline = webUiOnline,
-                        versionName = versionName,
-                        permissionState = permissionState,
-                        sshState = sshState,
-                        updateState = updateState,
-                        runningPlatformCount = runningPlatformCount,
-                        permissionSelected = false,
-                        compact = false,
+                    MirrorSettingsDetail -> MirrorSettingsPage(
+                        manager = mirrorManager,
+                        state = mirrorState,
+                        onBack = { selectedDetail = null },
                         expandedTopOffset = topSpacing,
-                        onPermissionClick = {
-                            selectedDetail = resolveSettingsDetailSelection(
-                                currentDetail = selectedDetail,
-                                targetDetail = PermissionSettingsDetail,
-                                useTwoPane = false
-                            )
-                        },
-                        onSshConfigureClick = { openSshDialog() },
-                        onSshEnabledChange = onSshEnabledChange,
-                        onUpdateClick = { showUpdateDialog = true },
-                        onOpenFilesClick = onOpenFilesClick,
-                        appUpdateState = appUpdateState,
-                        onAppUpdateClick = { openAppUpdateDialog() },
-                        onSafeExitClick = { showSafeExitConfirm = true },
-                        onFeedbackClick = { showFeedbackDialog = true },
-                        onQqGroupClick = { showQqGroupDialog = true },
-                        onCleanupClick = { showCleanupDialog = true },
                         modifier = Modifier.fillMaxSize()
                     )
+                    else -> {
+                        SettingsNavigationPane(
+                            webUiOnline = webUiOnline,
+                            versionName = versionName,
+                            permissionState = permissionState,
+                            sshState = sshState,
+                            updateState = updateState,
+                            runningPlatformCount = runningPlatformCount,
+                            permissionSelected = false,
+                            mirrorSummaryText = mirrorSummaryText,
+                            mirrorSelected = false,
+                            compact = false,
+                            expandedTopOffset = topSpacing,
+                            onPermissionClick = {
+                                selectedDetail = resolveSettingsDetailSelection(
+                                    currentDetail = selectedDetail,
+                                    targetDetail = PermissionSettingsDetail,
+                                    useTwoPane = false
+                                )
+                            },
+                            onMirrorClick = {
+                                selectedDetail = resolveSettingsDetailSelection(
+                                    currentDetail = selectedDetail,
+                                    targetDetail = MirrorSettingsDetail,
+                                    useTwoPane = false
+                                )
+                            },
+                            onSshConfigureClick = { openSshDialog() },
+                            onSshEnabledChange = onSshEnabledChange,
+                            onUpdateClick = { showUpdateDialog = true },
+                            onOpenFilesClick = onOpenFilesClick,
+                            appUpdateState = appUpdateState,
+                            onAppUpdateClick = { openAppUpdateDialog() },
+                            onSafeExitClick = { showSafeExitConfirm = true },
+                            onFeedbackClick = { showFeedbackDialog = true },
+                            onQqGroupClick = { showQqGroupDialog = true },
+                            onCleanupClick = { showCleanupDialog = true },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -435,9 +475,12 @@ private fun SettingsNavigationPane(
     updateState: MaiBotUpdateState,
     runningPlatformCount: Int,
     permissionSelected: Boolean,
+    mirrorSummaryText: String,
+    mirrorSelected: Boolean,
     compact: Boolean,
     expandedTopOffset: Dp,
     onPermissionClick: () -> Unit,
+    onMirrorClick: () -> Unit,
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
     onUpdateClick: () -> Unit,
@@ -621,6 +664,26 @@ private fun SettingsNavigationPane(
                             SettingsRowArrow(
                                 contentDescription = "进入权限管理",
                                 tint = if (permissionSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                )
+
+                SettingsDivider()
+
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.MirrorSources,
+                    iconColor = IconCyanBlue,
+                    title = "镜像源设置",
+                    supportingText = mirrorSummaryText,
+                    selected = mirrorSelected,
+                    exposesSelection = true,
+                    onClick = onMirrorClick,
+                    trailing = if (compact) null else {
+                        {
+                            SettingsRowArrow(
+                                contentDescription = "进入镜像源设置",
+                                tint = if (mirrorSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
                             )
                         }
                     }

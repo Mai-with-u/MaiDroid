@@ -5,6 +5,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.runtime.AptMirrors
+import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.MirrorCategory
+import org.maiwithu.maidroid.runtime.MirrorPreference
+import org.maiwithu.maidroid.runtime.MirrorSelectionMode
+import org.maiwithu.maidroid.runtime.MirrorSettingsState
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 
 class SettingsPageTest {
@@ -64,5 +70,76 @@ class SettingsPageTest {
                 useTwoPane = false
             )
         )
+    }
+
+    @Test
+    fun `two pane mirror detail toggles back to empty and switches cleanly with permissions`() {
+        assertEquals(
+            MirrorSettingsDetail,
+            resolveSettingsDetailSelection(
+                currentDetail = null,
+                targetDetail = MirrorSettingsDetail,
+                useTwoPane = true
+            )
+        )
+        assertNull(
+            resolveSettingsDetailSelection(
+                currentDetail = MirrorSettingsDetail,
+                targetDetail = MirrorSettingsDetail,
+                useTwoPane = true
+            )
+        )
+        assertEquals(
+            MirrorSettingsDetail,
+            resolveSettingsDetailSelection(
+                currentDetail = "permissions",
+                targetDetail = MirrorSettingsDetail,
+                useTwoPane = true
+            )
+        )
+        assertEquals(
+            MirrorSettingsDetail,
+            resolveSettingsDetailSelection(
+                currentDetail = MirrorSettingsDetail,
+                targetDetail = MirrorSettingsDetail,
+                useTwoPane = false
+            )
+        )
+    }
+
+    @Test
+    fun `mirrorSettingsSummaryText summarizes auto and manual selections accurately`() {
+        val allAuto = MirrorSettingsState()
+        assertEquals("自动测速优选（GitHub / Debian / PyPI）", mirrorSettingsSummaryText(allAuto))
+
+        val partialManual = MirrorSettingsState(
+            preferences = mapOf(
+                MirrorCategory.GitHub to MirrorPreference(
+                    mode = MirrorSelectionMode.Preset,
+                    presetValue = "https://ghfast.top"
+                ),
+                MirrorCategory.Apt to MirrorPreference(),
+                MirrorCategory.PyPi to MirrorPreference()
+            )
+        )
+        assertEquals("手动：GitHub(ghfast.top) · 其余自动", mirrorSettingsSummaryText(partialManual))
+
+        val allManual = MirrorSettingsState(
+            preferences = mapOf(
+                MirrorCategory.GitHub to MirrorPreference(
+                    mode = MirrorSelectionMode.Preset,
+                    presetValue = GitHubMirrors.ALL.last().prefix
+                ),
+                MirrorCategory.Apt to MirrorPreference(
+                    mode = MirrorSelectionMode.Custom,
+                    customUrl = "http://mirrors.example.com"
+                ),
+                MirrorCategory.PyPi to MirrorPreference(
+                    mode = MirrorSelectionMode.Preset,
+                    presetValue = ""
+                )
+            )
+        )
+        assertEquals("手动：GitHub(ghfast.top) · APT(自定义) · PyPI(MaiBot 自带的源)", mirrorSettingsSummaryText(allManual))
     }
 }

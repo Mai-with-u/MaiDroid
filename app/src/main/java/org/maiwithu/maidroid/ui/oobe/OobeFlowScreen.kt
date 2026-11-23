@@ -17,9 +17,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +42,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
@@ -47,10 +52,13 @@ import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.MaiDroidApp
+import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
+import org.maiwithu.maidroid.ui.settings.MirrorSettingsDialog
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputPanel
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
+import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.OobeBackground
 
 // 配置容器或安装一直没完成时，过这么久把终端按钮展开成“遇到问题？”提醒用户看日志。
@@ -185,20 +193,23 @@ internal fun OobeFlowScreen(
             embeddedTerminalDefaultApplied = resolvedState.embeddedDefaultApplied
         }
 
+        var showMirrorDialog by rememberSaveable { mutableStateOf(false) }
         val stepContent = OobeStepContent(currentStep, setupState, permissionState, permissionActions, onNext, onRetry)
         if (useAdaptiveLayout) {
             AdaptiveOobeLayout(
                 content = stepContent,
                 terminal = terminal,
                 insets = insets,
-                availableWidth = maxWidth
+                availableWidth = maxWidth,
+                onOpenMirrorSettings = { showMirrorDialog = true }
             )
         } else {
             CompactOobeLayout(
                 content = stepContent,
                 terminal = terminal,
                 insets = insets,
-                maxHeight = maxHeight
+                maxHeight = maxHeight,
+                onOpenMirrorSettings = { showMirrorDialog = true }
             )
         }
 
@@ -211,10 +222,49 @@ internal fun OobeFlowScreen(
                 embeddedTerminalDefaultApplied = true
             }
         )
+
+        if (showMirrorDialog) {
+            MirrorSettingsDialog(onDismiss = { showMirrorDialog = false })
+        }
     }
 }
 
 // 两种布局都要用到的当前步骤数据和回调。
+// 首次引导顶部右上角（非权限步骤）统一收纳“镜像源设置”液态玻璃按钮与“遇到问题 / 终端输出”按钮。
+@Composable
+private fun OobeTopActionRow(
+    terminal: OobeTerminalControl,
+    backdrop: Backdrop,
+    onOpenMirrorSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LiquidGlassIconButton(
+            onClick = onOpenMirrorSettings,
+            backdrop = backdrop,
+            size = 44.dp
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Language,
+                contentDescription = "镜像源设置",
+                tint = BrandOrange,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        CommandLogButton(
+            attention = terminal.attention,
+            expanded = terminal.expanded,
+            backdrop = backdrop,
+            onClick = terminal.onToggle
+        )
+    }
+}
+
 private class OobeStepContent(
     val step: OobeStep,
     val setupState: OobeSetupState,
@@ -249,7 +299,8 @@ private fun BoxScope.CompactOobeLayout(
     content: OobeStepContent,
     terminal: OobeTerminalControl,
     insets: OobeInsets,
-    maxHeight: Dp
+    maxHeight: Dp,
+    onOpenMirrorSettings: () -> Unit
 ) {
     val step = content.step
     val headerHeight = maxHeight * 0.33f
@@ -277,11 +328,10 @@ private fun BoxScope.CompactOobeLayout(
         )
 
         if (step != OobeStep.Permissions) {
-            CommandLogButton(
-                attention = terminal.attention,
-                expanded = terminal.expanded,
+            OobeTopActionRow(
+                terminal = terminal,
                 backdrop = heroBackdrop,
-                onClick = terminal.onToggle,
+                onOpenMirrorSettings = onOpenMirrorSettings,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = insets.statusBarTop + 8.dp, end = 20.dp)
@@ -362,7 +412,8 @@ private fun AdaptiveOobeLayout(
     content: OobeStepContent,
     terminal: OobeTerminalControl,
     insets: OobeInsets,
-    availableWidth: Dp
+    availableWidth: Dp,
+    onOpenMirrorSettings: () -> Unit
 ) {
     val step = content.step
     val heroWidth = oobeHeroWidthDp(availableWidth.value).dp
@@ -410,11 +461,10 @@ private fun AdaptiveOobeLayout(
             }
 
             if (step != OobeStep.Permissions && !terminal.embeddedMode) {
-                CommandLogButton(
-                    attention = terminal.attention,
-                    expanded = terminal.expanded,
+                OobeTopActionRow(
+                    terminal = terminal,
                     backdrop = heroBackdrop,
-                    onClick = terminal.onToggle,
+                    onOpenMirrorSettings = onOpenMirrorSettings,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = insets.statusBarTop + 12.dp, end = 16.dp)
@@ -470,17 +520,12 @@ private fun AdaptiveOobeLayout(
                 ) {
                     // 嵌入终端模式下，终端开关放在工作区右上角，而不是插画上。
                     if (step != OobeStep.Permissions && terminal.embeddedMode) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            CommandLogButton(
-                                attention = terminal.attention,
-                                expanded = terminal.expanded,
-                                backdrop = rememberSurfaceBackdrop(OobeBackground),
-                                onClick = terminal.onToggle
-                            )
-                        }
+                        OobeTopActionRow(
+                            terminal = terminal,
+                            backdrop = rememberSurfaceBackdrop(OobeBackground),
+                            onOpenMirrorSettings = onOpenMirrorSettings,
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
                         Spacer(modifier = Modifier.height(8.dp))
                     }
