@@ -415,7 +415,32 @@ function createMockD1() {
       return { first: { uniq: 0, done: 0 }, results: [] };
     }
     if (q.includes("FROM device_presence")) {
-      return { first: { uniq: 0, done: 0, cnt: 0, at: null }, results: [] };
+      return {
+        first: {
+          uniq: 0,
+          done: 0,
+          cnt: 0,
+          at: null,
+          reported24h: 0,
+          onlineReported: 0,
+          chargingCount: 0,
+          chargingDrainCount: 0,
+          hotCount: 0,
+          avgTempC: null,
+          maxTempC: null,
+          avgDischargePctHr: null,
+          avgCpuPct: null,
+          keepScreenOnCount: 0,
+          cpuPinnedCount: 0,
+          cpuPinKnownCount: 0,
+          desktopPetCount: 0,
+          cool: 0,
+          warm: 0,
+          hot: 0,
+          severe: 0,
+        },
+        results: [],
+      };
     }
     if (q.includes("FROM diag_snapshots")) {
       return { first: { cnt: 0 } };
@@ -875,4 +900,146 @@ test("migration 001 cleanly backfills deduplicated latest device versions from t
     { install_id: "old-1", app_version: "0.4.0", first_seen_at: 1000, last_seen_at: 2000, is_online: 0 },
     { install_id: "old-2", app_version: "0.3.8", first_seen_at: 1500, last_seen_at: 1500, is_online: 0 },
   ]);
+});
+
+test("Worker /admin/api/overview aggregates live online count, version migration, and power telemetry", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const adminHeaders = { Authorization: "Bearer test-secret" };
+
+  const sendTel = (body, ip) =>
+    worker.fetch(
+      new Request("https://ops.8u.nz/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+      ctx
+    );
+
+  // 红米 K50：先报 0.4.0，随后升级至 0.4.1（开启常亮、未绑核、43.2°C、边充边掉电）
+  await sendTel(
+    {
+      installId: "k50-1",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+    },
+    "10.0.1.1"
+  );
+  await sendTel(
+    {
+      installId: "k50-1",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      activeQqClient: "snowluma",
+      power: {
+        batteryPct: 58,
+        batteryTempC: 43.2,
+        batteryCharging: true,
+        chargePlug: "usb",
+        chargeRatePctPerHr: -6.5,
+        chargingDrain: true,
+        appCpuPct: 182.5,
+        keepScreenOn: true,
+        cpuAffinityPinned: false,
+      },
+    },
+    "10.0.1.1"
+  );
+
+  // 荣耀 V30 Pro：0.4.1 在线且正常（默认关闭常亮、绑核生效、31.0°C）
+  await sendTel(
+    {
+      installId: "v30-1",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+      activeQqClient: "napcat",
+      power: {
+        batteryPct: 80,
+        batteryTempC: 31.0,
+        batteryCharging: false,
+        chargePlug: "none",
+        dischargeRatePctPerHr: 4.5,
+        chargingDrain: false,
+        appCpuPct: 24.0,
+        keepScreenOn: false,
+        cpuAffinityPinned: true,
+      },
+    },
+    "10.0.1.2"
+  );
+
+  // 第三台旧版设备先在线后离线，验证 onlineVersions 只保留真正在线的 0.4.1
+  await sendTel(
+    {
+      installId: "old-3",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "OPPO",
+      model: "Find",
+      sdkInt: 33,
+      setupComplete: true,
+    },
+    "10.0.1.3"
+  );
+  await sendTel(
+    {
+      installId: "old-3",
+      event: "offline",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "OPPO",
+      model: "Find",
+      sdkInt: 33,
+      setupComplete: true,
+    },
+    "10.0.1.3"
+  );
+
+  const resp = await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx);
+  assert.equal(resp.status, 200);
+  const ov = await resp.json();
+
+  assert.equal(ov.kpi.onlineNow, 2);
+  assert.equal(ov.kpi.installs7d, 3);
+  assert.deepEqual(ov.shares.versions, [
+    { label: "0.4.1", count: 2 },
+    { label: "0.4.0", count: 1 },
+  ]);
+  assert.deepEqual(ov.shares.onlineVersions, [{ label: "0.4.1", count: 2 }]);
+
+  assert.equal(ov.power.summary.reported24h, 2);
+  assert.equal(ov.power.summary.chargingDrainCount, 1);
+  assert.equal(ov.power.summary.hotCount, 1);
+  assert.equal(ov.power.summary.maxTempC, 43.2);
+  assert.equal(ov.power.summary.keepScreenOnCount, 1);
+  assert.equal(ov.power.summary.cpuPinnedCount, 1);
+  assert.equal(ov.power.summary.cpuPinKnownCount, 2);
+  assert.deepEqual(ov.power.tempBuckets, [
+    { label: "<35°C", count: 1 },
+    { label: "35-39.9°C", count: 0 },
+    { label: "40-42.9°C", count: 0 },
+    { label: "≥43°C", count: 1 },
+  ]);
+  assert.equal(ov.power.hotModels[0].label, "Xiaomi Redmi K50");
+  assert.equal(ov.power.hotModels[0].chargingDrainCount, 1);
+  assert.equal(ov.power.hotModels[1].label, "HONOR OXF-AN10");
 });

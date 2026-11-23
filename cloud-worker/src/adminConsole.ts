@@ -31,6 +31,7 @@ export const ADMIN_CONSOLE_MARKUP = `
 
   <section class="view on" id="v-overview">
     <div class="deck">
+      <div class="k"><div class="dl"><i class="live"></i>实时在线</div><div class="dv ok" id="kOnline">0</div><div class="rd">近 15 分钟 · 实时心跳</div></div>
       <div class="k"><div class="dl"><i></i>24H 活跃设备</div><div class="dv" id="kActive">0</div><div class="rd">近 24 小时 · 去重安装</div></div>
       <div class="k"><div class="dl">7 日活跃</div><div class="dv" id="k7d">0</div><div class="rd" id="k30d">30 日 0</div></div>
       <div class="k"><div class="dl">引导完成率</div><div class="dv" id="kDone">0</div><div class="rd" id="kDoneRd">-</div></div>
@@ -56,7 +57,18 @@ export const ADMIN_CONSOLE_MARKUP = `
           </div></div>
         <div class="osbar" id="osbar"></div><div id="oslist"></div>
       </div>
-      <div class="panel f7"><div class="ph"><h2>版本分布</h2><span class="sp mono soft">近 7 日 · 去重设备</span></div><div id="verlist"></div></div>
+      <div class="panel f7">
+        <div class="ph"><h2>版本分布</h2>
+          <span class="mono soft" id="verNote">升级自动迁出旧版</span>
+          <div class="sp seg" id="verSeg">
+            <button class="on" data-act="verMode" data-v="all7d">近 7 日最新</button><button data-act="verMode" data-v="online">实时在线</button>
+          </div></div>
+        <div id="verlist"></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="panel f5"><div class="ph"><h2>耗电与温控概览</h2><span class="sp mono soft" id="pwrMeta">24H</span></div><div class="pstats" id="pwrStats"></div><div class="osbar" id="tempBar"></div><div id="tempList"></div></div>
+      <div class="panel f7"><div class="ph"><h2>机型发热与耗电排行</h2><span class="sp mono soft">24H · 按边充掉电/高温排序</span></div><div id="hotModels"></div></div>
     </div>
     <div class="row">
       <div class="panel f7"><div class="ph"><h2>7×24 活跃热力</h2><span class="sp mono soft">近 28 日心跳 · 北京时间</span></div><div class="heat" id="heat"></div></div>
@@ -103,7 +115,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
   const MD = window.MD;
   const PALETTE = ["var(--orange)", "var(--teal)", "var(--mustard)", "var(--brown)", "var(--olive)", "var(--plum)", "var(--mute)", "var(--soft)"];
   const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
-  const st = { view: "overview", ov: null, share: "manufacturers", errStatus: "open", errCat: "all", activeKey: "", detail: null, reply: "", errLoaded: false };
+  const st = { view: "overview", ov: null, share: "manufacturers", verMode: "all7d", errStatus: "open", errCat: "all", activeKey: "", detail: null, reply: "", errLoaded: false };
   // 角色逐级包含；前端按角色隐藏入口只是体验，越权请求服务端一律 403
   const RANK = { viewer: 1, support: 2, maintainer: 3, owner: 4 };
   const ROLE_NAME = { viewer: "观察者", support: "客服", maintainer: "维护者", owner: "所有者" };
@@ -182,9 +194,12 @@ export const ADMIN_CONSOLE_SCRIPT = `
     } finally { busy("overview", false); }
   }
 
+  function dec1(v) { return v == null ? "-" : Number(v).toFixed(1); }
+
   function renderOverview() {
     const o = st.ov;
     const k = o.kpi;
+    roll($("kOnline"), k.onlineNow);
     roll($("kActive"), k.active24h);
     roll($("k7d"), k.installs7d);
     $("k30d").textContent = "30 日 " + fmt(k.installs30d);
@@ -210,11 +225,79 @@ export const ADMIN_CONSOLE_SCRIPT = `
     renderHealth(o.daily);
     renderComps(c);
     renderShare();
-    renderBars("verlist", o.shares.versions, "t", (l) => "v" + l);
+    renderVer();
+    renderPower(o.power);
     renderHeat(o.heatmap);
     renderFunnel(k, o.shares.oobeSteps);
     renderBars("topErr", o.topErrors, "", null);
     renderBars("topExit", o.topExitReasons, "t", null);
+  }
+
+  function renderVer() {
+    const o = st.ov;
+    if (!o || !o.shares) return;
+    const isOnline = st.verMode === "online";
+    const list = isOnline ? (o.shares.onlineVersions || []) : (o.shares.versions || []);
+    $("verNote").textContent = isOnline ? "实时在线（15 分钟内 · 已去重）" : "近 7 日最新（升级自动迁出旧版）";
+    renderBars("verlist", list, isOnline ? "" : "t", (l) => "v" + l);
+  }
+
+  function renderPower(p) {
+    if (!p || !p.summary || !p.summary.reported24h) {
+      $("pwrMeta").textContent = "近 24 小时暂无数据";
+      $("pwrStats").innerHTML = "";
+      $("tempBar").innerHTML = '<span style="flex:1;background:var(--track)"></span>';
+      $("tempList").innerHTML = '<div class="empty">近 24 小时暂无新版本电源/温控心跳</div>';
+      $("hotModels").innerHTML = '<div class="empty">等待搭载温耗采集的新版本客户端上报</div>';
+      return;
+    }
+    const s = p.summary;
+    $("pwrMeta").textContent = fmt(s.reported24h) + " 台已报 · 在线 " + fmt(s.onlineReported);
+    const pinText = s.cpuPinKnownCount > 0 ? (s.cpuPinnedCount + "/" + s.cpuPinKnownCount) : "-";
+    const cards = [
+      ["边充边掉电", fmt(s.chargingDrainCount) + " 台", s.chargingDrainCount > 0 ? "bad" : "ok"],
+      ["高温 ≥40°C", fmt(s.hotCount) + " 台", s.hotCount > 0 ? "warn" : "ok"],
+      ["均温 / 峰值", dec1(s.avgTempC) + " / " + dec1(s.maxTempC) + "°C", (s.maxTempC || 0) >= 43 ? "bad" : ""],
+      ["拔电均耗", s.avgDischargePctHr == null ? "-" : dec1(s.avgDischargePctHr) + "%/h", ""],
+      ["平均 CPU%", s.avgCpuPct == null ? "-" : dec1(s.avgCpuPct) + "%", ""],
+      ["常亮 / 绑核", fmt(s.keepScreenOnCount) + " 台 / " + pinText, ""],
+    ];
+    $("pwrStats").innerHTML = cards.map((c) =>
+      '<div class="pstat"><div class="l">' + esc(c[0]) + '</div><div class="v ' + c[2] + '">' + esc(c[1]) + "</div></div>"
+    ).join("");
+
+    const buckets = (p.tempBuckets || []).filter((b) => b.count > 0);
+    const totalB = buckets.reduce((a, b) => a + b.count, 0);
+    const bColors = { "<35°C": "var(--teal)", "35-39.9°C": "var(--olive)", "40-42.9°C": "var(--mustard)", "≥43°C": "var(--red)" };
+    if (!totalB) {
+      $("tempBar").innerHTML = '<span style="flex:1;background:var(--track)"></span>';
+      $("tempList").innerHTML = '<div class="empty">近 24 小时暂无温度样本</div>';
+    } else {
+      $("tempBar").innerHTML = buckets.map((b) =>
+        '<span style="flex:' + b.count + ";background:" + (bColors[b.label] || "var(--mute)") + '" data-tip="' + esc(b.label + "|" + b.count + " 台 · " + pct(b.count, totalB) + "%") + '"></span>'
+      ).join("");
+      $("tempList").innerHTML = buckets.map((b) =>
+        '<div class="lrow"><i style="background:' + (bColors[b.label] || "var(--mute)") + '"></i><span class="n">' + esc(b.label) +
+        '</span><span class="c">' + fmt(b.count) + '</span><span class="p">' + pct(b.count, totalB).toFixed(1) + "%</span></div>"
+      ).join("");
+    }
+
+    const models = p.hotModels || [];
+    if (!models.length) {
+      $("hotModels").innerHTML = '<div class="empty">近 24 小时暂无分机型温耗样本</div>';
+      return;
+    }
+    $("hotModels").innerHTML = models.map((m) => {
+      const tags = [];
+      if (m.chargingDrainCount > 0) tags.push('<span class="tag critical">边充掉电×' + fmt(m.chargingDrainCount) + "</span>");
+      if (m.hotCount > 0) tags.push('<span class="tag warn">高温×' + fmt(m.hotCount) + "</span>");
+      if (m.keepScreenOnCount > 0) tags.push('<span class="tag">常亮 ' + fmt(m.keepScreenOnCount) + "</span>");
+      const pinInfo = m.cpuPinKnownCount > 0 ? (" · 绑核 " + m.cpuPinnedCount + "/" + m.cpuPinKnownCount) : "";
+      const chargeInfo = m.minChargeRatePctHr == null ? "" : (" · 最低充率 " + dec1(m.minChargeRatePctHr) + "%/h");
+      return '<div class="prow"><div style="min-width:0"><div><b>' + esc(m.label) + '</b> <span class="soft mono">(' + fmt(m.devices) + ' 台)</span></div>' +
+        '<div class="m">均温 ' + dec1(m.avgTempC) + "°C · 峰温 " + dec1(m.maxTempC) + "°C · CPU " + dec1(m.avgCpuPct) + "%" + esc(pinInfo + chargeInfo) + "</div></div>" +
+        '<div class="r">' + tags.join(" ") + (tags.length ? "" : '<span class="tag ok">正常</span>') + "</div></div>";
+    }).join("");
   }
 
   function renderHealth(daily) {
@@ -298,6 +381,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
       ["活跃装机", base, "var(--ink)"],
       ["完成引导", k.completed7d, "var(--teal)"],
       ["24H 仍在线", k.active24h, "var(--orange)"],
+      ["实时在线", k.onlineNow, "var(--live)"],
     ];
     $("fun").innerHTML = rows.map((r, i) =>
       '<div class="f"><span>' + r[0] + '</span><div class="tr"><span style="width:' + (base ? Math.max(1, pct(r[1], base)) : 0) + "%;background:" + r[2] + ";animation-delay:" + i * 120 + 'ms"></span></div>' +
@@ -538,6 +622,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
     else if (a === "pwdSave") savePwd(el.dataset.forced === "1");
     else if (a === "modalClose") closeModal();
     else if (a === "share") { st.share = el.dataset.v; segOn("shareSeg", st.share); renderShare(); }
+    else if (a === "verMode") { st.verMode = el.dataset.v; segOn("verSeg", st.verMode); renderVer(); }
     else if (a === "errStatus") { st.errStatus = el.dataset.v; segOn("segStatus", st.errStatus); loadErrors(); }
     else if (a === "errCat") { st.errCat = el.dataset.v; segOn("segCat", st.errCat); loadErrors(); }
     else if (a === "errReload") { if (el.tagName !== "INPUT") loadErrors(); }
