@@ -65,11 +65,11 @@ class HomePortraitNavigationTest {
             maxHeightDp = 800f,
             bottomClearanceDp = 84f,
             collapsedHeightDp = CollapsedPillHeightDp,
-            currentHeightDp = ExpandedPillHeightDp,
+            currentHeightDp = ExpandedSideGroupTotalHeightDp,
             verticalBias = 1.0f
         )
         assertTrue(bottomExpandedTop < bottomCollapsedTop)
-        assertEquals(800f - 84f - ExpandedPillHeightDp, bottomExpandedTop, 0.001f)
+        assertEquals(800f - 84f - ExpandedSideGroupTotalHeightDp, bottomExpandedTop, 0.001f)
     }
 
     @Test
@@ -90,7 +90,33 @@ class HomePortraitNavigationTest {
         assertEquals(320f, sideFrame.capsuleTopDp, 0.001f)
         assertEquals(CollapsedPillWidthDp, sideFrame.capsuleWidthDp, 0.001f)
         assertEquals(CollapsedPillHeightDp, sideFrame.capsuleHeightDp, 0.001f)
+        assertEquals(0f, sideFrame.refreshAlpha, 0.001f)
         assertEquals(0f, sideFrame.terminalAlpha, 0.001f)
+
+        val expandedSideFrame = computePortraitNavFrame(
+            maxWidthDp = maxWidth,
+            maxHeightDp = maxHeight,
+            sideLeftDp = 10f,
+            sideTopDp = 240f,
+            sideWidthDp = ExpandedPillWidthDp,
+            sideHeightDp = ExpandedPillHeightDp,
+            expandedProgress = 1f,
+            bottomProgress = 0f
+        )
+        // 竖屏 WebUI 展开后主胶囊精简为 64×208 紧凑四格全圆椭圆，下方居中悬停 40dp 刷新小圆与 64dp 终端正圆
+        assertEquals(64f, expandedSideFrame.capsuleWidthDp, 0.001f)
+        assertEquals(208f, expandedSideFrame.capsuleHeightDp, 0.001f)
+        assertEquals(computeHomeRailMetrics(360f).tabRailHeightDp, expandedSideFrame.capsuleHeightDp, 0.001f)
+        assertEquals(1f, expandedSideFrame.refreshAlpha, 0.001f)
+        assertEquals(10f + (64f - ExpandedSideRefreshSizeDp) * 0.5f, expandedSideFrame.refreshLeftDp, 0.001f)
+        assertEquals(240f + 208f + ExpandedSideRefreshGapDp, expandedSideFrame.refreshTopDp, 0.001f)
+        assertEquals(1f, expandedSideFrame.terminalAlpha, 0.001f)
+        assertEquals(10f, expandedSideFrame.terminalLeftDp, 0.001f)
+        assertEquals(
+            240f + 208f + ExpandedSideRefreshGapDp + ExpandedSideRefreshSizeDp + ExpandedSideTerminalGapDp,
+            expandedSideFrame.terminalTopDp,
+            0.001f
+        )
 
         val bottomFrame = computePortraitNavFrame(
             maxWidthDp = maxWidth,
@@ -107,6 +133,7 @@ class HomePortraitNavigationTest {
         assertEquals(maxHeight - 80f, bottomFrame.capsuleTopDp, 0.001f)
         assertEquals(expectedBottomWidth, bottomFrame.capsuleWidthDp, 0.001f)
         assertEquals(64f, bottomFrame.capsuleHeightDp, 0.001f)
+        assertEquals(0f, bottomFrame.refreshAlpha, 0.001f)
         assertEquals(maxWidth - 16f - 64f, bottomFrame.terminalLeftDp, 0.001f)
         assertEquals(maxHeight - 80f, bottomFrame.terminalTopDp, 0.001f)
         assertEquals(1f, bottomFrame.terminalAlpha, 0.001f)
@@ -159,39 +186,38 @@ class HomePortraitNavigationTest {
     }
 
     @Test
-    fun `landscape rail fits 4 tabs and keeps 64dp full-circle bottom buttons aligned with bar`() {
+    fun `landscape rail fits 4 tabs with restrained refresh circle and 64dp terminal circle`() {
         val phone360 = computeHomeRailMetrics(360f)
         assertTrue(phone360.compact)
         assertTrue(phone360.minimumTotalHeightDp < 360f)
-        assertEquals(HomeNavUnitSizeDp, phone360.buttonWidthDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, phone360.refreshButtonHeightDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, phone360.terminalButtonHeightDp, 0.001f)
+        assertEquals(ExpandedPillHeightDp, phone360.tabRailHeightDp, 0.001f)
+        assertEquals(40f, phone360.refreshButtonSizeDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone360.terminalButtonSizeDp, 0.001f)
 
         val phone320 = computeHomeRailMetrics(320f)
         assertTrue(phone320.compact)
         assertTrue(phone320.minimumTotalHeightDp < 320f)
-        assertEquals(HomeNavUnitSizeDp, phone320.buttonWidthDp, 0.001f)
-        assertEquals(44f, phone320.refreshButtonHeightDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, phone320.terminalButtonHeightDp, 0.001f)
+        assertEquals(38f, phone320.refreshButtonSizeDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, phone320.terminalButtonSizeDp, 0.001f)
 
         val tablet600 = computeHomeRailMetrics(600f)
         assertFalse(tablet600.compact)
         assertTrue(tablet600.minimumTotalHeightDp < 600f)
         assertEquals(HomeTabButtonHeightDp, tablet600.tabHeightDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, tablet600.buttonWidthDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, tablet600.refreshButtonHeightDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, tablet600.terminalButtonHeightDp, 0.001f)
+        assertEquals(44f, tablet600.refreshButtonSizeDp, 0.001f)
+        assertEquals(HomeNavUnitSizeDp, tablet600.terminalButtonSizeDp, 0.001f)
     }
 
     @Test
     fun `home navigation unifies full-circle Capsule shape and 64dp base thickness across modes`() {
-        // 竖屏底栏、竖屏 WebUI 侧边胶囊与横屏导航竖栏统一使用全圆 Capsule()，短边 64dp -> 32dp 外半圆角、内槽 56dp -> 28dp 同心圆
+        // 竖屏底栏、竖屏 WebUI 侧边胶囊与横屏导航竖栏统一使用全圆 Capsule()，短边 64dp -> 32dp 外半圆角、槽位 50~56dp 同心圆
         assertEquals(Capsule(), HomeNavBarShape)
         assertEquals(Capsule(), HomeNavIndicatorShape)
         assertEquals(64.dp, PortraitBottomBarHeight)
         assertEquals(64.dp, HomeNavigationRailBarWidth)
         assertEquals(64f, CollapsedPillWidthDp, 0.001f)
         assertEquals(64f, ExpandedPillWidthDp, 0.001f)
-        assertEquals(56f, ExpandedTabSlotHeightDp, 0.001f)
+        assertEquals(50f, ExpandedTabSlotHeightDp, 0.001f)
+        assertEquals(208f, ExpandedPillHeightDp, 0.001f)
     }
 }

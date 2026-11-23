@@ -90,57 +90,52 @@ private const val CompactFullCircleMinHeightDp = 356f
 
 /**
  * 横屏侧栏在不同可用高度下的几何尺寸（dp）：
- * - 页签竖栏与下方刷新、终端按钮统一锁定 64dp 列宽并全程采用全圆 Capsule()；
- * - 常规高度（>= 420dp）与主流 360dp 手机横屏（>= 356dp）下，刷新与终端均为完整 64×64 正圆；
- * - 极矮横屏（< 356dp，如 320dp）保持终端为 64×64 正圆，刷新钮自动压高为 64×44 全圆药丸确保零裁剪。
+ * - 页签竖栏与下方正圆终端按钮统一锁定 64dp 列宽并全程采用全圆 Capsule()；
+ * - 刷新按钮保持克制的小正圆尺寸（38~44dp）降低误触风险，并在主流 360dp 手机横屏上方留出充足间距。
  */
 internal data class HomeRailMetrics(
     val compact: Boolean,
     val railPaddingDp: Float,
     val tabHeightDp: Float,
-    val buttonWidthDp: Float,
-    val refreshButtonHeightDp: Float,
+    val refreshButtonSizeDp: Float,
     val refreshBottomGapDp: Float,
-    val terminalButtonHeightDp: Float
+    val terminalButtonSizeDp: Float
 ) {
     val tabRailHeightDp: Float
         get() = tabHeightDp * HomeTab.entries.size + 8f
 
     val minimumTotalHeightDp: Float
-        get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonHeightDp + refreshBottomGapDp + terminalButtonHeightDp
+        get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonSizeDp + refreshBottomGapDp + terminalButtonSizeDp
 }
 
-/** 按当前容器高度计算横屏侧栏三档尺寸：页签栏与下方按钮同宽 64dp，全圆 Capsule() 与 360dp 手机横屏双正圆兼得。 */
+/** 按当前容器高度计算横屏侧栏三档尺寸：终端保持 64dp 全圆正圆，刷新钮缩小为克制小正圆防误触。 */
 internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
     when {
         maxHeightDp < CompactFullCircleMinHeightDp -> HomeRailMetrics(
             compact = true,
             railPaddingDp = 6f,
             tabHeightDp = 44f,
-            buttonWidthDp = HomeNavUnitSizeDp,
-            refreshButtonHeightDp = 44f,
-            refreshBottomGapDp = 6f,
-            terminalButtonHeightDp = HomeNavUnitSizeDp
+            refreshButtonSizeDp = 38f,
+            refreshBottomGapDp = 8f,
+            terminalButtonSizeDp = HomeNavUnitSizeDp
         )
 
         maxHeightDp < CompactRailMaxHeightDp -> HomeRailMetrics(
             compact = true,
             railPaddingDp = 6f,
             tabHeightDp = 50f,
-            buttonWidthDp = HomeNavUnitSizeDp,
-            refreshButtonHeightDp = HomeNavUnitSizeDp,
-            refreshBottomGapDp = 6f,
-            terminalButtonHeightDp = HomeNavUnitSizeDp
+            refreshButtonSizeDp = 40f,
+            refreshBottomGapDp = 10f,
+            terminalButtonSizeDp = HomeNavUnitSizeDp
         )
 
         else -> HomeRailMetrics(
             compact = false,
             railPaddingDp = HomeNavigationRailPadding.value,
             tabHeightDp = HomeTabButtonHeightDp,
-            buttonWidthDp = HomeNavUnitSizeDp,
-            refreshButtonHeightDp = HomeNavUnitSizeDp,
-            refreshBottomGapDp = 10f,
-            terminalButtonHeightDp = HomeNavUnitSizeDp
+            refreshButtonSizeDp = 44f,
+            refreshBottomGapDp = 12f,
+            terminalButtonSizeDp = HomeNavUnitSizeDp
         )
     }
 
@@ -192,8 +187,7 @@ internal fun HomeNavigationRail(
             ) {
                 RailRefreshButton(
                     backdrop = backdrop,
-                    widthDp = metrics.buttonWidthDp,
-                    heightDp = metrics.refreshButtonHeightDp,
+                    sizeDp = metrics.refreshButtonSizeDp,
                     onClick = { onRefreshWebUi?.invoke() },
                     modifier = Modifier.padding(bottom = metrics.refreshBottomGapDp.dp)
                 )
@@ -202,9 +196,7 @@ internal fun HomeNavigationRail(
             HomeTerminalButton(
                 backdrop = backdrop,
                 onClick = onTerminalClick,
-                size = metrics.terminalButtonHeightDp.dp,
-                width = metrics.buttonWidthDp.dp,
-                height = metrics.terminalButtonHeightDp.dp,
+                size = metrics.terminalButtonSizeDp.dp,
                 shape = { HomeNavBarShape },
                 iconSizeDp = 30f
             )
@@ -488,8 +480,7 @@ private fun AnimatedHomeTabRail(
 @Composable
 private fun RailRefreshButton(
     backdrop: Backdrop,
-    widthDp: Float,
-    heightDp: Float,
+    sizeDp: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -498,10 +489,9 @@ private fun RailRefreshButton(
         contentDescription = "刷新 WebUI",
         onClick = onClick,
         backdrop = backdrop,
-        width = widthDp.dp,
-        height = heightDp.dp,
+        size = sizeDp.dp,
         shape = { HomeNavBarShape },
-        iconSize = if (heightDp < 56f) 22.dp else 26.dp,
+        iconSize = if (sizeDp < 42f) 20.dp else 22.dp,
         modifier = modifier
     )
 }
