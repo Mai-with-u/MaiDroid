@@ -208,4 +208,51 @@ class HomePortraitNavigationTest {
         assertEquals(48f, ExpandedTabSlotHeightDp, 0.001f)
         assertEquals(282f, ExpandedPillHeightDp, 0.001f)
     }
+
+    @Test
+    fun `portrait tab drag axis only activates in settled bottom bar or expanded webui side pill`() {
+        // WebUI 收起态保留整条拖移，不触发页签水滴滑动
+        assertEquals(
+            PortraitTabDragAxis.None,
+            resolvePortraitTabDragAxis(isWebUi = true, expanded = false, expandedProgress = 0f, bottomProgress = 0f)
+        )
+        // WebUI 展开稳态开放纵向液态滑动
+        assertEquals(
+            PortraitTabDragAxis.VerticalExpandedSide,
+            resolvePortraitTabDragAxis(isWebUi = true, expanded = true, expandedProgress = 1f, bottomProgress = 0f)
+        )
+        // 切离 WebUI 进入底栏稳态开放横向液态滑动
+        assertEquals(
+            PortraitTabDragAxis.HorizontalBottom,
+            resolvePortraitTabDragAxis(isWebUi = false, expanded = false, expandedProgress = 0f, bottomProgress = 1f)
+        )
+        // 变形过渡中途禁止双轴抢手势
+        assertEquals(
+            PortraitTabDragAxis.None,
+            resolvePortraitTabDragAxis(isWebUi = true, expanded = true, expandedProgress = 0.5f, bottomProgress = 0.3f)
+        )
+    }
+
+    @Test
+    fun `expanded side pill distinguishes tap collapse from drag switch or drag-back`() {
+        assertEquals(
+            ExpandedSideDragOutcome.CollapseMenu,
+            resolveExpandedSideDragOutcome(targetIndex = HomeTab.WebUi.ordinal, movedDistancePx = 2f, touchSlopPx = 18f)
+        )
+        assertEquals(
+            ExpandedSideDragOutcome.StayExpanded,
+            resolveExpandedSideDragOutcome(targetIndex = HomeTab.WebUi.ordinal, movedDistancePx = 42f, touchSlopPx = 18f)
+        )
+        assertEquals(
+            ExpandedSideDragOutcome.SwitchTab,
+            resolveExpandedSideDragOutcome(targetIndex = HomeTab.Platforms.ordinal, movedDistancePx = 90f, touchSlopPx = 18f)
+        )
+    }
+
+    @Test
+    fun `liquid accent magnification scales stay bounded to prevent glyph clipping`() {
+        assertTrue(HomeNavVerticalAccentScale in 1.05f..1.12f)
+        assertTrue(HomeNavHorizontalAccentScale in 1.08f..1.16f)
+        assertTrue(HomeNavVerticalAccentScale <= HomeNavHorizontalAccentScale)
+    }
 }

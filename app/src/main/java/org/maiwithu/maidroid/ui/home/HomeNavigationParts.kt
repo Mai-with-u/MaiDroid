@@ -21,13 +21,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,8 +41,14 @@ import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-/** 向隐身高亮层中的页签提供实时缩放因子：拖拽水滴滑块时底层激活内容放大到 1.2x 以配合凸镜折射。 */
+/** 向隐身高亮层中的页签提供实时缩放因子：拖拽水滴滑块时底层激活内容轻度放大以配合凸镜折射。 */
 internal val LocalLiquidBottomTabScale = staticCompositionLocalOf { { 1f } }
+
+/** 横向四栏底栏拖拽高亮时的凸镜放大上限：兼顾透镜折射感与四字标签完整防裁切。 */
+internal const val HomeNavHorizontalAccentScale = 1.14f
+
+/** 纵向窄胶囊（64dp 宽横屏侧栏与竖屏 WebUI 展开胶囊）拖拽高亮时的凸镜放大上限。 */
+internal const val HomeNavVerticalAccentScale = 1.10f
 
 /** 主页导航的四个标签，顺序即底栏从左到右、横屏侧栏从上到下的顺序（也决定切换动画的方向）。 */
 internal enum class HomeTab(val label: String) {
@@ -172,10 +178,9 @@ internal fun HomeTabButton(
         Modifier
     }
 
+    // 槽位自身不做 Capsule 裁剪，避免隐身高亮层放大 1.1x+ 时底部四字标签被近圆弧角削去首尾字角。
     Box(
-        modifier = modifier
-            .clip(HomeNavIndicatorShape)
-            .then(clickModifier),
+        modifier = modifier.then(clickModifier),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -202,9 +207,10 @@ internal fun HomeTabButton(
                 color = labelColor,
                 fontSize = labelSize,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 12.sp,
+                lineHeight = if (compact) 13.sp else 14.sp,
                 maxLines = 1,
-                softWrap = false
+                softWrap = false,
+                overflow = TextOverflow.Visible
             )
         }
     }

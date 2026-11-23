@@ -185,6 +185,7 @@ internal class DampedDragAnimation(
     val visibilityThreshold: Float,
     val initialScale: Float,
     val pressedScale: Float,
+    val pressedScaleProvider: (() -> Float)? = null,
     val onDragStarted: DampedDragAnimation.(position: Offset) -> Unit,
     val onDragStopped: DampedDragAnimation.() -> Unit,
     val onDragCancelled: DampedDragAnimation.() -> Unit = onDragStopped,
@@ -242,10 +243,11 @@ internal class DampedDragAnimation(
         releaseJob?.cancel()
         releaseJob = null
         velocityTracker.resetTracking()
+        val targetPressedScale = pressedScaleProvider?.invoke() ?: pressedScale
         animationScope.launch {
             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
-            launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
-            launch { scaleYAnimation.animateTo(pressedScale, scaleYAnimationSpec) }
+            launch { scaleXAnimation.animateTo(targetPressedScale, scaleXAnimationSpec) }
+            launch { scaleYAnimation.animateTo(targetPressedScale, scaleYAnimationSpec) }
         }
     }
 

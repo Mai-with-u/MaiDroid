@@ -58,9 +58,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
@@ -169,6 +171,53 @@ internal fun clampPillVerticalBias(bias: Float): Float = bias.coerceIn(0f, 1f)
 /** 松手后根据胶囊中心横坐标与容器宽度中线比较，决定自动吸附到左侧还是右侧。 */
 internal fun resolvePillDockSide(centerX: Float, containerWidth: Float): PillDockSide =
     if (centerX >= containerWidth * 0.5f) PillDockSide.Right else PillDockSide.Left
+
+/** 竖屏导航标签水滴拖拽当前激活的手势方向（仅在底栏或展开侧栏稳态下允许跟手滑动，避免收起拖移和过渡帧抢手势）。 */
+internal enum class PortraitTabDragAxis {
+    None,
+    HorizontalBottom,
+    VerticalExpandedSide
+}
+
+/**
+ * 判断竖屏导航水滴滑块当前应响应横向底栏拖拽还是纵向展开胶囊拖拽：
+ * 仅当底栏已落稳（`!isWebUi && bottomProgress > 0.85f`）开放横向拖拽，
+ * 或 WebUI 展开胶囊已落稳（`isWebUi && expanded && expandedProgress > 0.85f && bottomProgress < 0.15f`）开放纵向拖拽。
+ */
+internal fun resolvePortraitTabDragAxis(
+    isWebUi: Boolean,
+    expanded: Boolean,
+    expandedProgress: Float,
+    bottomProgress: Float
+): PortraitTabDragAxis = when {
+    !isWebUi && bottomProgress > 0.85f -> PortraitTabDragAxis.HorizontalBottom
+    isWebUi && expanded && expandedProgress > 0.85f && bottomProgress < 0.15f ->
+        PortraitTabDragAxis.VerticalExpandedSide
+    else -> PortraitTabDragAxis.None
+}
+
+/** 竖屏 WebUI 展开态下，按住首格水滴松手后的交互意图分类。 */
+internal enum class ExpandedSideDragOutcome {
+    CollapseMenu,
+    SwitchTab,
+    StayExpanded
+}
+
+/**
+ * 判定竖屏 WebUI 展开胶囊内纵向水滴滑块松手后的动作：
+ * - 落到其余三格（消息平台/扩展组件/设置）时直接切换对应标签；
+ * - 仍落在首格 WebUI 且总滑动距离小于触摸阈值时视为轻点收起菜单；
+ * - 拖出去又拖回首格松手则保留展开态并把水滴弹回首格。
+ */
+internal fun resolveExpandedSideDragOutcome(
+    targetIndex: Int,
+    movedDistancePx: Float,
+    touchSlopPx: Float
+): ExpandedSideDragOutcome = when {
+    targetIndex != HomeTab.WebUi.ordinal -> ExpandedSideDragOutcome.SwitchTab
+    movedDistancePx < touchSlopPx -> ExpandedSideDragOutcome.CollapseMenu
+    else -> ExpandedSideDragOutcome.StayExpanded
+}
 
 /**
  * 计算停靠时的顶部纵坐标（dp）：
@@ -321,6 +370,11 @@ internal fun HomePortraitNavigation(
     }
 
     val effectiveSideExpanded = if (isWebUi) expanded else leavingFromExpanded
+    val expandedSideProgress by animateFloatAsState(
+        targetValue = if (effectiveSideExpanded) 1f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "PortraitNavContentCrossfade"
+    )
 
     if (isWebUi) {
         bindPillTiltSensor(
@@ -365,6 +419,21 @@ internal fun HomePortraitNavigation(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val maxWidthDp = maxWidth.value
         val maxHeightDp = maxHeight.value
+        val clampedBottomProgress = bottomProgress.coerceIn(0f, 1f)
+        val clampedExpandedProgress = expandedSideProgress.coerceIn(0f, 1f)
+        val dragAxis = resolvePortraitTabDragAxis(
+            isWebUi = isWebUi,
+            expanded = expanded,
+            expandedProgress = clampedExpandedProgress,
+            bottomProgress = clampedBottomProgress
+        )
+        val latestDragAxis by rememberUpdatedState(dragAxis)
+        val latestClampedBottomProgress by rememberUpdatedState(clampedBottomProgress)
+
+        val touchSlopPx = LocalViewConfiguration.current.touchSlop
+        val pillInnerInsetPx = with(density) { PillInnerInsetDp.dp.toPx() }
+        val expandedTabSlotHeightPx by rememberUpdatedState(with(density) { ExpandedTabSlotHeightDp.dp.toPx() })
+        val expandedPillHeightPx = with(density) { ExpandedPillHeightDp.dp.toPx() }
         val bottomTabBarWidth = computeBottomTabBarWidthDp(maxWidthDp)
         val bottomSingleTabWidth = (bottomTabBarWidth - PillInnerInsetDp * 2f) / HomeTab.entries.size
         val bottomSingleTabWidthPx by rememberUpdatedState(with(density) { bottomSingleTabWidth.dp.toPx() })
@@ -373,18 +442,26 @@ internal fun HomePortraitNavigation(
 
         val tabsCount = HomeTab.entries.size
         val panelOffsetAnim = remember { Animatable(0f) }
-        val panelOffsetPx by remember(bottomTabBarWidthPx, maxPanelOffsetPx) {
+        val activeSpanPx = if (clampedBottomProgress < 0.5f) expandedPillHeightPx else bottomTabBarWidthPx
+        val panelOffsetPx by remember(activeSpanPx, maxPanelOffsetPx) {
             derivedStateOf {
                 computeLiquidPanelOffsetPx(
                     accumulatedOffsetPx = panelOffsetAnim.value,
-                    containerSpanPx = bottomTabBarWidthPx,
+                    containerSpanPx = activeSpanPx,
                     maxPanelOffsetPx = maxPanelOffsetPx
                 )
             }
         }
+        val verticalSideFactor = clampedExpandedProgress * (1f - clampedBottomProgress)
+        val barPanelShiftXPx = panelOffsetPx * clampedBottomProgress
+        val barPanelShiftYPx = panelOffsetPx * verticalSideFactor
+        val latestBarPanelShiftXPx by rememberUpdatedState(barPanelShiftXPx)
+        val latestBarPanelShiftYPx by rememberUpdatedState(barPanelShiftYPx)
 
         var currentTabIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
         var isTabDragging by remember { mutableStateOf(false) }
+        var dragStartAxis by remember { mutableStateOf(PortraitTabDragAxis.None) }
+        var dragMovedDistancePx by remember { mutableFloatStateOf(0f) }
         var lastHapticTabIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
         val tabDragAnimation = remember(animationScope) {
             DampedDragAnimation(
@@ -394,36 +471,101 @@ internal fun HomePortraitNavigation(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
-                onDragStarted = { isTabDragging = true },
+                pressedScaleProvider = {
+                    if (latestDragAxis == PortraitTabDragAxis.VerticalExpandedSide) 70f / 56f else 78f / 56f
+                },
+                onDragStarted = {
+                    dragStartAxis = latestDragAxis
+                    dragMovedDistancePx = 0f
+                    isTabDragging = true
+                    interactionTick++
+                },
                 onDragStopped = {
                     isTabDragging = false
                     val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
-                    currentTabIndex = targetIndex
-                    animateToValue(targetIndex.toFloat())
+                    if (dragStartAxis == PortraitTabDragAxis.VerticalExpandedSide) {
+                        when (
+                            resolveExpandedSideDragOutcome(
+                                targetIndex = targetIndex,
+                                movedDistancePx = dragMovedDistancePx,
+                                touchSlopPx = touchSlopPx
+                            )
+                        ) {
+                            ExpandedSideDragOutcome.CollapseMenu -> {
+                                // 首格轻点不带位移松手 -> 直接由 release() 收拢水滴并同步收起侧边菜单
+                                interactionTick++
+                                expanded = false
+                                if (abs(value) > 0.001f) {
+                                    updateValue(0f)
+                                }
+                            }
+                            ExpandedSideDragOutcome.SwitchTab -> {
+                                leavingFromExpanded = true
+                                expanded = false
+                                currentTabIndex = targetIndex
+                                animateToValue(targetIndex.toFloat())
+                            }
+                            ExpandedSideDragOutcome.StayExpanded -> {
+                                currentTabIndex = HomeTab.WebUi.ordinal
+                                animateToValue(0f)
+                            }
+                        }
+                    } else {
+                        currentTabIndex = targetIndex
+                        animateToValue(targetIndex.toFloat())
+                    }
+                    dragStartAxis = PortraitTabDragAxis.None
                     animationScope.launch {
                         panelOffsetAnim.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
                 },
                 onDragCancelled = {
                     isTabDragging = false
-                    val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
-                    currentTabIndex = targetIndex
-                    animateToValue(targetIndex.toFloat())
+                    if (dragStartAxis == PortraitTabDragAxis.VerticalExpandedSide) {
+                        currentTabIndex = HomeTab.WebUi.ordinal
+                        animateToValue(0f)
+                    } else {
+                        val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
+                        currentTabIndex = targetIndex
+                        animateToValue(targetIndex.toFloat())
+                    }
+                    dragStartAxis = PortraitTabDragAxis.None
                     animationScope.launch {
                         panelOffsetAnim.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
                 },
                 onDrag = { _, dragAmount ->
-                    val singleWidth = bottomSingleTabWidthPx.coerceAtLeast(1f)
-                    val step = dragAmount.x / singleWidth * if (isLtr) 1f else -1f
-                    updateValue((targetValue + step).fastCoerceIn(0f, (tabsCount - 1).toFloat()))
-                    animationScope.launch {
-                        panelOffsetAnim.snapTo(panelOffsetAnim.value + dragAmount.x)
+                    dragMovedDistancePx += dragAmount.getDistance()
+                    when (dragStartAxis) {
+                        PortraitTabDragAxis.VerticalExpandedSide -> {
+                            val slotHeight = expandedTabSlotHeightPx.coerceAtLeast(1f)
+                            val step = dragAmount.y / slotHeight
+                            updateValue((targetValue + step).fastCoerceIn(0f, (tabsCount - 1).toFloat()))
+                            animationScope.launch {
+                                panelOffsetAnim.snapTo(panelOffsetAnim.value + dragAmount.y)
+                            }
+                        }
+                        PortraitTabDragAxis.HorizontalBottom -> {
+                            val singleWidth = bottomSingleTabWidthPx.coerceAtLeast(1f)
+                            val step = dragAmount.x / singleWidth * if (isLtr) 1f else -1f
+                            updateValue((targetValue + step).fastCoerceIn(0f, (tabsCount - 1).toFloat()))
+                            animationScope.launch {
+                                panelOffsetAnim.snapTo(panelOffsetAnim.value + dragAmount.x)
+                            }
+                        }
+                        PortraitTabDragAxis.None -> Unit
                     }
                 }
             )
         }
 
+        LaunchedEffect(dragAxis) {
+            if (dragAxis == PortraitTabDragAxis.None && isTabDragging) {
+                isTabDragging = false
+                dragStartAxis = PortraitTabDragAxis.None
+                panelOffsetAnim.snapTo(0f)
+            }
+        }
         LaunchedEffect(selectedTab) {
             // 点按标签或拖拽松手吸附到新页签时若跨格尚未震动，则补充一次落格反馈
             if (lastHapticTabIndex != selectedTab.ordinal) {
@@ -468,13 +610,21 @@ internal fun HomePortraitNavigation(
             InteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, _ ->
-                    val slotW = (size.width / tabsCount).coerceAtLeast(1f)
-                    val centerX = if (isLtr) {
-                        (tabDragAnimation.value + 0.5f) * slotW + panelOffsetPx
+                    if (latestClampedBottomProgress < 0.5f) {
+                        val slotH = expandedTabSlotHeightPx.coerceAtLeast(1f)
+                        Offset(
+                            size.width * 0.5f,
+                            pillInnerInsetPx + (tabDragAnimation.value + 0.5f) * slotH + latestBarPanelShiftYPx
+                        )
                     } else {
-                        size.width - (tabDragAnimation.value + 0.5f) * slotW + panelOffsetPx
+                        val slotW = (size.width / tabsCount).coerceAtLeast(1f)
+                        val centerX = if (isLtr) {
+                            (tabDragAnimation.value + 0.5f) * slotW + latestBarPanelShiftXPx
+                        } else {
+                            size.width - (tabDragAnimation.value + 0.5f) * slotW + latestBarPanelShiftXPx
+                        }
+                        Offset(centerX, size.height * 0.5f)
                     }
-                    Offset(centerX, size.height * 0.5f)
                 }
             )
         }
@@ -512,12 +662,6 @@ internal fun HomePortraitNavigation(
                 stiffness = Spring.StiffnessMedium
             ),
             label = "PortraitNavSideHeight"
-        )
-
-        val expandedSideProgress by animateFloatAsState(
-            targetValue = if (effectiveSideExpanded) 1f else 0f,
-            animationSpec = tween(durationMillis = 160),
-            label = "PortraitNavContentCrossfade"
         )
 
         val minTopDp = statusBarTop.value + 16f
@@ -578,8 +722,6 @@ internal fun HomePortraitNavigation(
             bottomProgress = bottomProgress
         )
 
-        val clampedBottomProgress = bottomProgress.coerceIn(0f, 1f)
-        val clampedExpandedProgress = expandedSideProgress.coerceIn(0f, 1f)
         val continuousTabValue = tabDragAnimation.value.coerceIn(0f, (tabsCount - 1).toFloat())
 
         val indicatorX = lerpFloat(
@@ -619,13 +761,15 @@ internal fun HomePortraitNavigation(
         val indicatorShape = { HomeNavIndicatorShape }
         val tabsBackdrop = rememberLayerBackdrop()
         val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        val activeBottomGestures = !isWebUi && clampedBottomProgress > 0.85f
-        val barPanelShiftPx = panelOffsetPx * clampedBottomProgress
+        val activeTabGestures = dragAxis != PortraitTabDragAxis.None
+        val activeScaleFactor = maxOf(clampedBottomProgress, verticalSideFactor)
         val capsuleWidthPx = with(density) { frame.capsuleWidthDp.dp.toPx() }.coerceAtLeast(1f)
+        val capsuleSpanPx = lerpFloat(expandedPillHeightPx, capsuleWidthPx, clampedBottomProgress).coerceAtLeast(1f)
+        val pressExpansionPx = with(density) { lerpFloat(12f, 16f, clampedBottomProgress).dp.toPx() }
         val barPressScale = lerp(
             1f,
-            1f + with(density) { 16f.dp.toPx() } / capsuleWidthPx,
-            tabDragAnimation.pressProgress * clampedBottomProgress
+            1f + pressExpansionPx / capsuleSpanPx,
+            tabDragAnimation.pressProgress * activeScaleFactor
         )
 
         // ── 兄弟层 1：基础液态玻璃胶囊 + 全部交互按钮 ───────────────────────────────────
@@ -634,7 +778,8 @@ internal fun HomePortraitNavigation(
                 .offset { IntOffset(frame.capsuleLeftDp.dp.roundToPx(), frame.capsuleTopDp.dp.roundToPx()) }
                 .size(width = frame.capsuleWidthDp.dp, height = frame.capsuleHeightDp.dp)
                 .graphicsLayer {
-                    translationX = barPanelShiftPx
+                    translationX = barPanelShiftXPx
+                    translationY = barPanelShiftYPx
                 }
                 .liquidGlassSurface(
                     backdrop = backdrop,
@@ -786,10 +931,11 @@ internal fun HomePortraitNavigation(
             )
         }
 
-        // ── 兄弟层 2：隐身品牌橙 1.2x 放大高亮层（录入 tabsBackdrop，供滑块光学折射采样）───────
+        // ── 兄弟层 2：隐身品牌橙放大高亮层（录入 tabsBackdrop，供滑块光学折射采样）───────
+        val targetAccentScale = lerpFloat(HomeNavVerticalAccentScale, HomeNavHorizontalAccentScale, clampedBottomProgress)
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.2f, tabDragAnimation.pressProgress)
+                lerp(1f, targetAccentScale, tabDragAnimation.pressProgress)
             }
         ) {
             Box(
@@ -800,7 +946,8 @@ internal fun HomePortraitNavigation(
                     .alpha(0f)
                     .layerBackdrop(tabsBackdrop)
                     .graphicsLayer {
-                        translationX = barPanelShiftPx
+                        translationX = barPanelShiftXPx
+                        translationY = barPanelShiftYPx
                     }
                     .drawBackdrop(
                         backdrop = backdrop,
@@ -825,6 +972,23 @@ internal fun HomePortraitNavigation(
                     )
                     .then(barHighlight.modifier)
             ) {
+                if (expandedExtraAlpha > 0.01f) {
+                    ExpandedExtraActions(
+                        spinDegrees = refreshSpin.value,
+                        enabled = false,
+                        onRefresh = {},
+                        onOpenTerminal = {},
+                        modifier = Modifier
+                            .offset { IntOffset(PillOuterPadding.roundToPx(), ExpandedActionsTopDp.dp.roundToPx()) }
+                            .wrapContentSize(align = Alignment.TopStart, unbounded = true)
+                            .size(
+                                width = ExpandedPillWidth - PillOuterPadding * 2,
+                                height = ExpandedDividerSlotHeight + ExpandedRefreshButtonHeight + ExpandedTerminalButtonHeight
+                            )
+                            .graphicsLayer { alpha = expandedExtraAlpha * foregroundIdleAlpha }
+                    )
+                }
+
                 if (secondaryTabsAlpha > 0.01f) {
                     HomeTab.entries
                         .filter { it != HomeTab.WebUi }
@@ -881,11 +1045,12 @@ internal fun HomePortraitNavigation(
                 }
                 .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
                 .graphicsLayer {
-                    translationX = barPanelShiftPx
+                    translationX = barPanelShiftXPx
+                    translationY = barPanelShiftYPx
                     alpha = foregroundIdleAlpha
                 }
-                .then(if (activeBottomGestures) barHighlight.gestureModifier else Modifier)
-                .then(if (activeBottomGestures) tabDragAnimation.modifier else Modifier)
+                .then(if (activeTabGestures) barHighlight.gestureModifier else Modifier)
+                .then(if (activeTabGestures) tabDragAnimation.modifier else Modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = indicatorShape,
@@ -911,8 +1076,14 @@ internal fun HomePortraitNavigation(
                         scaleX = tabDragAnimation.scaleX
                         scaleY = tabDragAnimation.scaleY
                         val velocity = tabDragAnimation.velocity / 10f
-                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        if (latestClampedBottomProgress < 0.5f) {
+                            // 竖屏 WebUI 展开胶囊内纵向拖拽水滴时，沿移动轴（Y 轴）拉伸并在 X 轴微收腰。
+                            scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                            scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        } else {
+                            scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                            scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        }
                     },
                     onDrawSurface = {
                         val progress = tabDragAnimation.pressProgress
@@ -961,16 +1132,16 @@ private fun WebUiPrimaryTabSlot(
     val textColor = if (accentHighlighted) BrandOrange else TextPrimary
     val iconSize = lerpFloat(24f, 21f, compactExpandedFraction).dp
     val labelSize = lerpFloat(TextSizes.Caption.value, 11f, compactExpandedFraction).sp
+    val labelLineHeight = lerpFloat(14f, 13f, compactExpandedFraction).sp
     val clickMod = if (clickableEnabled) {
         Modifier.clickable(interactionSource = null, indication = null, onClick = onClick)
     } else {
         Modifier
     }
 
+    // 槽位不做 Capsule 裁剪，避免隐身高亮层拖拽放大时外缘字角或下行笔画被圆角裁切。
     Box(
-        modifier = modifier
-            .clip(HomeNavIndicatorShape)
-            .then(clickMod),
+        modifier = modifier.then(clickMod),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -996,8 +1167,10 @@ private fun WebUiPrimaryTabSlot(
                     color = textColor,
                     fontSize = labelSize,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = 12.sp,
+                    lineHeight = labelLineHeight,
                     maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible,
                     modifier = Modifier.graphicsLayer { alpha = navLabelAlpha }
                 )
                 Text(
@@ -1005,8 +1178,10 @@ private fun WebUiPrimaryTabSlot(
                     color = textColor,
                     fontSize = labelSize,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = 12.sp,
+                    lineHeight = labelLineHeight,
                     maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible,
                     modifier = Modifier.graphicsLayer { alpha = 1f - navLabelAlpha }
                 )
             }
@@ -1105,8 +1280,10 @@ private fun PillLabeledButton(
                 color = TextPrimary,
                 fontSize = TextSizes.Caption,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 12.sp,
-                maxLines = 1
+                lineHeight = 14.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Visible
             )
         }
     }

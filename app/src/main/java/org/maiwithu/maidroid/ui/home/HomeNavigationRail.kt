@@ -374,10 +374,10 @@ private fun AnimatedHomeTabRail(
             }
         }
 
-        // 兄弟层 2：隐身品牌橙 1.18x 放大高亮层，供上方纵移水滴折射采样
+        // 兄弟层 2：隐身品牌橙放大高亮层，供上方纵移水滴折射采样
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.18f, railDragAnimation.pressProgress)
+                lerp(1f, HomeNavVerticalAccentScale, railDragAnimation.pressProgress)
             }
         ) {
             Column(
