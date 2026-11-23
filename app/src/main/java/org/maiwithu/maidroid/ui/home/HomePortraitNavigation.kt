@@ -91,6 +91,8 @@ import org.maiwithu.maidroid.ui.component.DampedDragAnimation
 import org.maiwithu.maidroid.ui.component.InteractiveHighlight
 import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
+import org.maiwithu.maidroid.ui.component.resolveLiquidHapticSlot
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
@@ -268,6 +270,7 @@ internal fun HomePortraitNavigation(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
     val settings = remember(context) { context.appDependencies.settings }
+    val liquidHaptics = rememberLiquidHaptics()
 
     val isWebUi = selectedTab == HomeTab.WebUi
     val latestSelectedTab by rememberUpdatedState(selectedTab)
@@ -377,6 +380,8 @@ internal fun HomePortraitNavigation(
         }
 
         var currentTabIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
+        var isTabDragging by remember { mutableStateOf(false) }
+        var lastHapticTabIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
         val tabDragAnimation = remember(animationScope) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -385,8 +390,9 @@ internal fun HomePortraitNavigation(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
-                onDragStarted = {},
+                onDragStarted = { isTabDragging = true },
                 onDragStopped = {
+                    isTabDragging = false
                     val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                     currentTabIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
@@ -395,6 +401,7 @@ internal fun HomePortraitNavigation(
                     }
                 },
                 onDragCancelled = {
+                    isTabDragging = false
                     val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                     currentTabIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
@@ -414,12 +421,33 @@ internal fun HomePortraitNavigation(
         }
 
         LaunchedEffect(selectedTab) {
+            // 点按标签或拖拽松手吸附到新页签时若跨格尚未震动，则补充一次落格反馈
+            if (lastHapticTabIndex != selectedTab.ordinal) {
+                lastHapticTabIndex = selectedTab.ordinal
+                liquidHaptics.performTabStep()
+            }
             if (currentTabIndex != selectedTab.ordinal) {
                 currentTabIndex = selectedTab.ordinal
             }
             if (abs(tabDragAnimation.targetValue - selectedTab.ordinal.toFloat()) > 0.01f) {
                 tabDragAnimation.animateToValue(selectedTab.ordinal.toFloat())
             }
+        }
+        LaunchedEffect(tabDragAnimation, liquidHaptics) {
+            // 拖拽过程中滑过选项中线死区瞬间触发一次“哒”，避免停在边界时抖动连震
+            snapshotFlow { isTabDragging to tabDragAnimation.value }
+                .collect { (dragging, continuousValue) ->
+                    if (!dragging) return@collect
+                    val nextSlot = resolveLiquidHapticSlot(
+                        currentSlot = lastHapticTabIndex,
+                        continuousValue = continuousValue,
+                        itemCount = tabsCount
+                    )
+                    if (nextSlot != lastHapticTabIndex) {
+                        lastHapticTabIndex = nextSlot
+                        liquidHaptics.performTabStep()
+                    }
+                }
         }
         LaunchedEffect(tabDragAnimation) {
             snapshotFlow { currentTabIndex }

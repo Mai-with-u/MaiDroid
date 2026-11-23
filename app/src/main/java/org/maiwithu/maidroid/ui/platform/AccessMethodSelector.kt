@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -62,7 +63,9 @@ import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.ui.component.DampedDragAnimation
 import org.maiwithu.maidroid.ui.component.InteractiveHighlight
 import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
 import org.maiwithu.maidroid.ui.component.resolveLiquidBackdrop
+import org.maiwithu.maidroid.ui.component.resolveLiquidHapticSlot
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
@@ -109,6 +112,7 @@ internal fun AccessMethodSelector(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
     val outerBackdrop = resolveLiquidBackdrop()
+    val liquidHaptics = rememberLiquidHaptics()
     val itemCount = accessMethods.size
     val selectedIndex = accessMethods.indexOf(selectedAccessMethod).coerceIn(0, itemCount - 1)
     val latestMethods by rememberUpdatedState(accessMethods)
@@ -125,6 +129,7 @@ internal fun AccessMethodSelector(
     ) {
         val itemWidth = ((maxWidth - horizontalPadding * 2f - itemSpacing * (itemCount - 1).coerceAtLeast(0)) /
             itemCount.toFloat()).coerceAtLeast(0.dp)
+        val itemWidthPx = with(density) { itemWidth.toPx() }
         val itemStepPx by rememberUpdatedState(with(density) { (itemWidth + itemSpacing).toPx() }.coerceAtLeast(1f))
         val trackWidthPx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
         val paddingPx = with(density) { horizontalPadding.toPx() }
@@ -142,6 +147,8 @@ internal fun AccessMethodSelector(
         }
 
         var currentIndex by remember { mutableIntStateOf(selectedIndex) }
+        var isSelectorDragging by remember { mutableStateOf(false) }
+        var lastHapticIndex by remember { mutableIntStateOf(selectedIndex) }
         val dragAnimation = remember(animationScope, itemCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -150,8 +157,9 @@ internal fun AccessMethodSelector(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 1.24f,
-                onDragStarted = {},
+                onDragStarted = { isSelectorDragging = true },
                 onDragStopped = {
+                    isSelectorDragging = false
                     val targetIdx = targetValue.roundToInt().coerceIn(0, (itemCount - 1).coerceAtLeast(0))
                     currentIndex = targetIdx
                     animateToValue(targetIdx.toFloat())
@@ -160,6 +168,7 @@ internal fun AccessMethodSelector(
                     }
                 },
                 onDragCancelled = {
+                    isSelectorDragging = false
                     val targetIdx = targetValue.roundToInt().coerceIn(0, (itemCount - 1).coerceAtLeast(0))
                     currentIndex = targetIdx
                     animateToValue(targetIdx.toFloat())
@@ -180,12 +189,33 @@ internal fun AccessMethodSelector(
 
         LaunchedEffect(selectedIndex, itemCount) {
             val safeTarget = selectedIndex.coerceIn(0, (itemCount - 1).coerceAtLeast(0))
+            // 点按切换或外部变更选中接入方式时，若此前未因跨格震过则补触发一次触觉反馈
+            if (lastHapticIndex != safeTarget) {
+                lastHapticIndex = safeTarget
+                liquidHaptics.performTabStep()
+            }
             if (currentIndex != safeTarget) {
                 currentIndex = safeTarget
             }
             if (abs(dragAnimation.targetValue - safeTarget.toFloat()) > 0.01f) {
                 dragAnimation.animateToValue(safeTarget.toFloat())
             }
+        }
+        LaunchedEffect(dragAnimation, itemCount, liquidHaptics) {
+            // 拖动滑块跨过格间中线死区瞬间触发一次轻震，避免停在分界附近抖动连震
+            snapshotFlow { isSelectorDragging to dragAnimation.value }
+                .collect { (dragging, continuousValue) ->
+                    if (!dragging || itemCount <= 1) return@collect
+                    val nextSlot = resolveLiquidHapticSlot(
+                        currentSlot = lastHapticIndex,
+                        continuousValue = continuousValue,
+                        itemCount = itemCount
+                    )
+                    if (nextSlot != lastHapticIndex) {
+                        lastHapticIndex = nextSlot
+                        liquidHaptics.performTabStep()
+                    }
+                }
         }
         LaunchedEffect(dragAnimation) {
             snapshotFlow { currentIndex }
@@ -312,7 +342,7 @@ internal fun AccessMethodSelector(
                     translationX = if (isLtr) {
                         paddingPx + dragAnimation.value * itemStepPx + panelOffsetPx
                     } else {
-                        trackWidthPx - paddingPx - itemStepPx - dragAnimation.value * itemStepPx + panelOffsetPx
+                        trackWidthPx - paddingPx - itemWidthPx - dragAnimation.value * itemStepPx + panelOffsetPx
                     }
                 }
                 .then(if (itemCount > 1) selectorHighlight.gestureModifier else Modifier)
@@ -329,7 +359,7 @@ internal fun AccessMethodSelector(
                         )
                     },
                     highlight = {
-                        Highlight.Default.copy(alpha = 0.65f + 0.35f * dragAnimation.pressProgress)
+                        Highlight.Default.copy(alpha = 0.55f + 0.45f * dragAnimation.pressProgress)
                     },
                     shadow = {
                         Shadow(radius = 8.dp, alpha = 0.25f + 0.75f * dragAnimation.pressProgress)
@@ -347,8 +377,10 @@ internal fun AccessMethodSelector(
                     },
                     onDrawSurface = {
                         val progress = dragAnimation.pressProgress
-                        drawRect(CardSurfaceSelected.copy(alpha = 0.76f), alpha = 1f - progress)
-                        drawRect(Color.Black.copy(alpha = 0.04f * progress))
+                        // 兄弟层 2 已通过 tabsBackdrop 提供 CardSurfaceSelected 底色与纯正品牌橙文字，
+                        // 静止态只叠极轻透玻璃微光而非高不透明深灰，避免把橙色文字压灰压暗
+                        drawRect(Color.White.copy(alpha = 0.06f), alpha = 1f - progress)
+                        drawRect(Color.Black.copy(alpha = 0.02f * progress))
                     }
                 )
                 .then(fallbackBorder)

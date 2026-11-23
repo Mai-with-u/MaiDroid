@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -64,6 +65,8 @@ import org.maiwithu.maidroid.ui.component.InteractiveHighlight
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.component.computeLiquidPanelOffsetPx
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
+import org.maiwithu.maidroid.ui.component.resolveLiquidHapticSlot
 import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
@@ -200,6 +203,7 @@ private fun AnimatedHomeTabRail(
 ) {
     val density = LocalDensity.current
     val animationScope = rememberCoroutineScope()
+    val liquidHaptics = rememberLiquidHaptics()
     val tabsCount = HomeTab.entries.size
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val latestOnTabSelected by rememberUpdatedState(onTabSelected)
@@ -227,6 +231,8 @@ private fun AnimatedHomeTabRail(
         }
 
         var currentIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
+        var isRailDragging by remember { mutableStateOf(false) }
+        var lastHapticIndex by remember { mutableIntStateOf(selectedTab.ordinal) }
         val railDragAnimation = remember(animationScope) {
             DampedDragAnimation(
                 animationScope = animationScope,
@@ -235,8 +241,9 @@ private fun AnimatedHomeTabRail(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 70f / 56f,
-                onDragStarted = {},
+                onDragStarted = { isRailDragging = true },
                 onDragStopped = {
+                    isRailDragging = false
                     val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                     currentIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
@@ -245,6 +252,7 @@ private fun AnimatedHomeTabRail(
                     }
                 },
                 onDragCancelled = {
+                    isRailDragging = false
                     val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                     currentIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
@@ -263,12 +271,33 @@ private fun AnimatedHomeTabRail(
         }
 
         LaunchedEffect(selectedTab) {
+            // 点按或拖拽落入新页签时若跨格尚未触发，补充一次侧栏落格触觉反馈
+            if (lastHapticIndex != selectedTab.ordinal) {
+                lastHapticIndex = selectedTab.ordinal
+                liquidHaptics.performTabStep()
+            }
             if (currentIndex != selectedTab.ordinal) {
                 currentIndex = selectedTab.ordinal
             }
             if (abs(railDragAnimation.targetValue - selectedTab.ordinal.toFloat()) > 0.01f) {
                 railDragAnimation.animateToValue(selectedTab.ordinal.toFloat())
             }
+        }
+        LaunchedEffect(railDragAnimation, liquidHaptics) {
+            // 横屏侧栏上下拖动水滴跨过标签中线死区时触发一次刻度震动
+            snapshotFlow { isRailDragging to railDragAnimation.value }
+                .collect { (dragging, continuousValue) ->
+                    if (!dragging) return@collect
+                    val nextSlot = resolveLiquidHapticSlot(
+                        currentSlot = lastHapticIndex,
+                        continuousValue = continuousValue,
+                        itemCount = tabsCount
+                    )
+                    if (nextSlot != lastHapticIndex) {
+                        lastHapticIndex = nextSlot
+                        liquidHaptics.performTabStep()
+                    }
+                }
         }
         LaunchedEffect(railDragAnimation) {
             snapshotFlow { currentIndex }

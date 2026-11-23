@@ -19,6 +19,9 @@
     <!-- 悬浮窗：用于「扩展组件」中的本机悬浮桌宠在其他应用上层显示 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- 触觉反馈：底部导航栏与液态玻璃滑块跨越选项时触发短促震动（自适应线性马达与转子马达） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- 应用自更新：把下载好的新版本安装包交给系统安装器 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
