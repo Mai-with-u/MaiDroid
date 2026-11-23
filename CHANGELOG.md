@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 修复弹窗内容滚动区在极窄高度下（例如横屏紧凑模式或软键盘弹出挤压）计算滚动条滑块时触发 `IllegalArgumentException` 空白区间闪退的问题
+- 修复 GeckoView 原生 `alert`/`confirm`/`prompt` 弹窗在点击按钮完成后，随后的对话框关闭回调仍提前求值 `prompt.dismiss()` 导致 `Cannot confirm/dismiss a Prompt twice.` 闪退的问题，并同步保护文件选择弹窗的重复结算边界
+
 ## [0.4.0] - 2026-11-23
 
 > [!TIP]

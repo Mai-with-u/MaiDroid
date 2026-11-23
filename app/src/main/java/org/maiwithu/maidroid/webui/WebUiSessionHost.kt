@@ -25,8 +25,10 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.AlertPrompt
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.BasePrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.ButtonPrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.FilePrompt
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptInstanceDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt
 import org.mozilla.geckoview.GeckoSessionSettings
@@ -378,7 +380,9 @@ internal class WebUiSessionHost(
                 targetSession: GeckoSession,
                 prompt: FilePrompt
             ): GeckoResult<PromptResponse> {
-                if (released) return GeckoResult.fromValue(prompt.dismiss())
+                if (released) {
+                    return if (prompt.isComplete) GeckoResult() else GeckoResult.fromValue(prompt.dismiss())
+                }
                 return fileChooser.show(prompt, hostContext)
             }
 
@@ -459,18 +463,18 @@ internal class WebUiSessionHost(
     }
 
     private fun showAlertPrompt(prompt: AlertPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt.title, prompt.message, { prompt.dismiss() }) { builder, complete ->
-            builder.setPositiveButton("确定") { _, _ -> complete(prompt.dismiss()) }
+        showPromptDialog(prompt, prompt.message) { builder, complete ->
+            builder.setPositiveButton("确定") { _, _ -> complete { prompt.dismiss() } }
         }
 
     private fun showButtonPrompt(prompt: ButtonPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt.title, prompt.message, { prompt.dismiss() }) { builder, complete ->
-            builder.setPositiveButton("确定") { _, _ -> complete(prompt.confirm(ButtonPrompt.Type.POSITIVE)) }
-            builder.setNegativeButton("取消") { _, _ -> complete(prompt.confirm(ButtonPrompt.Type.NEGATIVE)) }
+        showPromptDialog(prompt, prompt.message) { builder, complete ->
+            builder.setPositiveButton("确定") { _, _ -> complete { prompt.confirm(ButtonPrompt.Type.POSITIVE) } }
+            builder.setNegativeButton("取消") { _, _ -> complete { prompt.confirm(ButtonPrompt.Type.NEGATIVE) } }
         }
 
     private fun showTextPrompt(prompt: TextPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt.title, prompt.message, { prompt.dismiss() }) { builder, complete ->
+        showPromptDialog(prompt, prompt.message) { builder, complete ->
             val dialogContext = builder.context
             val input = EditText(dialogContext).apply {
                 setText(prompt.defaultValue.orEmpty())
@@ -482,36 +486,56 @@ internal class WebUiSessionHost(
                 addView(input)
             }
             builder.setView(container)
-            builder.setPositiveButton("确定") { _, _ -> complete(prompt.confirm(input.text?.toString().orEmpty())) }
-            builder.setNegativeButton("取消") { _, _ -> complete(prompt.dismiss()) }
+            builder.setPositiveButton("确定") { _, _ -> complete { prompt.confirm(input.text?.toString().orEmpty()) } }
+            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
         }
 
     private fun showPromptDialog(
-        title: String?,
+        prompt: BasePrompt,
         message: String?,
-        fallbackDismiss: () -> PromptResponse,
-        configure: (AlertDialog.Builder, (PromptResponse) -> Unit) -> Unit
+        configure: (AlertDialog.Builder, (() -> PromptResponse) -> Unit) -> Unit
     ): GeckoResult<PromptResponse> {
-        val activity = usableActivity() ?: return GeckoResult.fromValue(fallbackDismiss())
+        if (prompt.isComplete) return GeckoResult()
+        val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
         val result = GeckoResult<PromptResponse>()
-        var settled = false
-        fun finish(response: PromptResponse) {
-            if (settled) return
-            settled = true
-            activeDialog = null
+        var dialog: AlertDialog? = null
+        val guard = PromptSettlementGuard<PromptResponse>(
+            isAlreadyComplete = { prompt.isComplete }
+        ) { response ->
+            if (activeDialog === dialog) {
+                activeDialog = null
+            }
             result.complete(response)
         }
         val builder = AlertDialog.Builder(activity).apply {
-            title?.takeIf { it.isNotBlank() }?.let(::setTitle)
+            prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
             message?.takeIf { it.isNotBlank() }?.let(::setMessage)
         }
-        configure(builder, ::finish)
-        // 统一监听 dismiss，确保按返回键、点外部或宿主提前 release 关闭对话框时都能结束 GeckoResult。
-        builder.setOnDismissListener { finish(fallbackDismiss()) }
-        val dialog = builder.create()
+        configure(builder) { produce -> guard.settleOnce(produce) }
+        // 统一监听 dismiss，用惰性闭包确保已通过按钮完成弹窗时不会在 Dialog 关闭阶段重复调用 prompt.dismiss()。
+        builder.setOnDismissListener {
+            if (activeDialog === dialog) {
+                activeDialog = null
+            }
+            guard.settleOnce { prompt.dismiss() }
+        }
+        val created = builder.create()
+        dialog = created
+        // 网页主动撤销或关闭标签页时同步关掉原生弹窗，防止界面残留。
+        prompt.delegate = object : PromptInstanceDelegate {
+            override fun onPromptDismiss(targetPrompt: BasePrompt) {
+                runOnMain { created.dismiss() }
+            }
+        }
         activeDialog?.dismiss()
-        activeDialog = dialog
-        dialog.show()
+        activeDialog = created
+        runCatching { created.show() }.onFailure { error ->
+            Log.w(logTag, "Failed to show prompt dialog: ${error.message}")
+            if (activeDialog === created) {
+                activeDialog = null
+            }
+            guard.settleOnce { prompt.dismiss() }
+        }
         return result
     }
 
@@ -558,5 +582,26 @@ internal class WebUiSessionHost(
 
     private companion object {
         const val DIALOG_INPUT_MARGIN_DP = 20
+    }
+}
+
+/**
+ * 弹窗一次性结算保护器：将按钮结果生成推迟到真正尚未结算时才求值，
+ * 防止点击确认/取消后系统继续派发 Dialog.onDismiss 时再次调用 GeckoView 的 prompt.dismiss() 引发二次结算崩溃。
+ */
+internal class PromptSettlementGuard<R>(
+    private val isAlreadyComplete: () -> Boolean = { false },
+    private val onComplete: (R) -> Unit
+) {
+    private var settled = false
+
+    fun settleOnce(produceResponse: () -> R): Boolean {
+        if (settled || isAlreadyComplete()) {
+            settled = true
+            return false
+        }
+        settled = true
+        onComplete(produceResponse())
+        return true
     }
 }

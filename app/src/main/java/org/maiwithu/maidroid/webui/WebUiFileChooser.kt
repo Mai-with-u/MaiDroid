@@ -47,7 +47,9 @@ internal class WebUiFileChooser(
         val result = GeckoResult<PromptResponse>()
         val currentLauncher = launcher
         if (currentLauncher == null) {
-            result.complete(prompt.dismiss())
+            if (!prompt.isComplete) {
+                result.complete(prompt.dismiss())
+            }
             return result
         }
 
@@ -61,7 +63,9 @@ internal class WebUiFileChooser(
             // 系统里没有能选文件的应用（极少见的精简 ROM），直接按取消回复，网页可以再点一次。
             Log.w(logTag, "No activity can pick files: ${error.message}")
             pendingPrompt = null
-            result.complete(prompt.dismiss())
+            if (!prompt.isComplete) {
+                result.complete(prompt.dismiss())
+            }
         }
         return result
     }
@@ -70,6 +74,8 @@ internal class WebUiFileChooser(
     fun onResult(resultCode: Int, data: Intent?) {
         val pending = pendingPrompt ?: return
         pendingPrompt = null
+        // 若选文件期间网页或会话已先行取消该请求，直接跳过，避免重复结算抛出异常。
+        if (pending.prompt.isComplete) return
         val uris = if (resultCode == Activity.RESULT_OK) selectedUris(data) else emptyList()
         val response = if (uris.isEmpty()) {
             pending.prompt.dismiss()
@@ -83,6 +89,7 @@ internal class WebUiFileChooser(
                 }
             }.getOrElse { error ->
                 Log.w(logTag, "Failed to confirm selected file uri: ${error.message}")
+                if (pending.prompt.isComplete) return
                 pending.prompt.dismiss()
             }
         }
@@ -93,7 +100,9 @@ internal class WebUiFileChooser(
     fun cancelPending() {
         val pending = pendingPrompt ?: return
         pendingPrompt = null
-        pending.result.complete(pending.prompt.dismiss())
+        if (!pending.prompt.isComplete) {
+            pending.result.complete(pending.prompt.dismiss())
+        }
     }
 
     // 多选时结果在 ClipData 里，单选时在 data 里；两处都看，去重后按选择顺序返回。

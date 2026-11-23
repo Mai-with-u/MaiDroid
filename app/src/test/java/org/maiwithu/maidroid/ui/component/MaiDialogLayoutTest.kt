@@ -191,4 +191,96 @@ class MaiDialogLayoutTest {
         // 调高右侧按钮权重后可优雅并排
         assertFalse(shouldStackDialogButtons(listOf(80, 220), listOf(0.6f, 1.4f), spacingPx = 20, maxWidthPx = 400))
     }
+
+    @Test
+    fun `scrollbar metrics clamp minimum thumb to track height without crashing on tiny viewports`() {
+        // 精确复现 ops 线上闪退参数（3x 密度下可视高 89px、上下内距各 24px -> 可用轨道 41px < 最小滑块 54px）
+        val atTop = computeMaiDialogScrollbarMetrics(
+            viewportHeightPx = 89f,
+            scrollValuePx = 0,
+            scrollMaxValuePx = 300,
+            trackInsetPx = 24f,
+            minThumbHeightPx = 54f
+        )!!
+        assertEquals(24f, atTop.thumbTopPx, 0.01f)
+        assertEquals(41f, atTop.thumbHeightPx, 0.01f)
+
+        // 即使滑到最底部，滑块也贴合轨道且绝不越界
+        val atBottom = computeMaiDialogScrollbarMetrics(
+            viewportHeightPx = 89f,
+            scrollValuePx = 300,
+            scrollMaxValuePx = 300,
+            trackInsetPx = 24f,
+            minThumbHeightPx = 54f
+        )!!
+        assertEquals(24f, atBottom.thumbTopPx, 0.01f)
+        assertEquals(41f, atBottom.thumbHeightPx, 0.01f)
+    }
+
+    @Test
+    fun `scrollbar metrics return null when viewport or scroll range cannot host a track`() {
+        assertEquals(
+            null,
+            computeMaiDialogScrollbarMetrics(
+                viewportHeightPx = 48f,
+                scrollValuePx = 0,
+                scrollMaxValuePx = 200,
+                trackInsetPx = 24f,
+                minThumbHeightPx = 54f
+            )
+        )
+        assertEquals(
+            null,
+            computeMaiDialogScrollbarMetrics(
+                viewportHeightPx = 48.5f,
+                scrollValuePx = 0,
+                scrollMaxValuePx = 200,
+                trackInsetPx = 24f,
+                minThumbHeightPx = 54f
+            )
+        )
+        assertEquals(
+            null,
+            computeMaiDialogScrollbarMetrics(
+                viewportHeightPx = 0f,
+                scrollValuePx = 0,
+                scrollMaxValuePx = 200,
+                trackInsetPx = 24f,
+                minThumbHeightPx = 54f
+            )
+        )
+        assertEquals(
+            null,
+            computeMaiDialogScrollbarMetrics(
+                viewportHeightPx = 400f,
+                scrollValuePx = 0,
+                scrollMaxValuePx = 0,
+                trackInsetPx = 24f,
+                minThumbHeightPx = 54f
+            )
+        )
+    }
+
+    @Test
+    fun `scrollbar metrics compute expected proportions and floor for normal and long content`() {
+        val middle = computeMaiDialogScrollbarMetrics(
+            viewportHeightPx = 600f,
+            scrollValuePx = 300,
+            scrollMaxValuePx = 600,
+            trackInsetPx = 24f,
+            minThumbHeightPx = 54f
+        )!!
+        assertEquals(276f, middle.thumbHeightPx, 0.01f)
+        assertEquals(162f, middle.thumbTopPx, 0.01f)
+
+        val longBottom = computeMaiDialogScrollbarMetrics(
+            viewportHeightPx = 600f,
+            scrollValuePx = 100000,
+            scrollMaxValuePx = 100000,
+            trackInsetPx = 24f,
+            minThumbHeightPx = 54f
+        )!!
+        assertEquals(54f, longBottom.thumbHeightPx, 0.01f)
+        assertEquals(522f, longBottom.thumbTopPx, 0.01f)
+    }
 }
