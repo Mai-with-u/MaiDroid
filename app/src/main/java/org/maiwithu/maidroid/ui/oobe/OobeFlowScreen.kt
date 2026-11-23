@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.oobe.OobeSetupState
@@ -45,6 +47,7 @@ import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.MaiDroidApp
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputPanel
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
@@ -252,6 +255,11 @@ private fun BoxScope.CompactOobeLayout(
     val headerHeight = maxHeight * 0.33f
     val contentCornerRadius = 48.dp
     val contentTop = maxOf(headerHeight - contentCornerRadius, 0.dp)
+    // 录制顶部麦麦插画作为右上角终端按钮的实时液态玻璃折射采样源
+    val heroBackdrop = rememberLayerBackdrop {
+        drawRect(OobeBackground)
+        drawContent()
+    }
 
     Box(
         modifier = Modifier
@@ -263,13 +271,16 @@ private fun BoxScope.CompactOobeLayout(
             painter = painterResource(R.drawable.oobe_mascot),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .layerBackdrop(heroBackdrop)
         )
 
         if (step != OobeStep.Permissions) {
             CommandLogButton(
                 attention = terminal.attention,
                 expanded = terminal.expanded,
+                backdrop = heroBackdrop,
                 onClick = terminal.onToggle,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -358,6 +369,11 @@ private fun AdaptiveOobeLayout(
     val narrowHero = heroWidth < 220.dp
     val heroHorizontalPadding = if (narrowHero) 16.dp else 24.dp
     val workHorizontalPadding = if (availableWidth < 700.dp) 16.dp else 24.dp
+    // 录制左侧插画与顶部暗角层供横屏右上角调试终端按钮实时折射采样
+    val heroBackdrop = rememberLayerBackdrop {
+        drawRect(OobeBackground)
+        drawContent()
+    }
 
     Row(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -365,32 +381,39 @@ private fun AdaptiveOobeLayout(
                 .weight(OOBE_HERO_PANE_WEIGHT)
                 .fillMaxHeight()
         ) {
-            Image(
-                painter = painterResource(R.drawable.oobe_mascot),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-
-            // 插画底部渐暗，让压在上面的步骤标题看得清。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0f to Color.Black.copy(alpha = 0.08f),
-                                0.42f to Color.Transparent,
-                                1f to OobeBackground.copy(alpha = 0.96f)
+                    .layerBackdrop(heroBackdrop)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.oobe_mascot),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // 插画底部渐暗，让压在上面的步骤标题看得清。
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0f to Color.Black.copy(alpha = 0.08f),
+                                    0.42f to Color.Transparent,
+                                    1f to OobeBackground.copy(alpha = 0.96f)
+                                )
                             )
                         )
-                    )
-            )
+                )
+            }
 
             if (step != OobeStep.Permissions && !terminal.embeddedMode) {
                 CommandLogButton(
                     attention = terminal.attention,
                     expanded = terminal.expanded,
+                    backdrop = heroBackdrop,
                     onClick = terminal.onToggle,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -454,6 +477,7 @@ private fun AdaptiveOobeLayout(
                             CommandLogButton(
                                 attention = terminal.attention,
                                 expanded = terminal.expanded,
+                                backdrop = rememberSurfaceBackdrop(OobeBackground),
                                 onClick = terminal.onToggle
                             )
                         }
