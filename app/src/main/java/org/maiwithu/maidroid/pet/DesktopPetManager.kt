@@ -367,10 +367,18 @@ internal class DesktopPetManager(
         bridge.clearRecordsIfMatches(view)
     }
 
-    internal fun sendDragStarted(gestureId: String) {
+    /** 发送拖起开始事件：按服务端校验要求附带锚点相对按下点的偏移与有限缩放比例，避免 WS 被拒断开。 */
+    internal fun sendDragStarted(payload: DesktopPetDragStartPayload) {
         bridge.evalTransport(
             "sendEvent",
-            JSONArray().put(JSONObject().put("type", "drag_started").put("gesture_id", gestureId))
+            JSONArray().put(
+                JSONObject()
+                    .put("type", "drag_started")
+                    .put("gesture_id", payload.gestureId)
+                    .put("offset_x", payload.offsetX)
+                    .put("offset_y", payload.offsetY)
+                    .put("scale", payload.scale)
+            )
         )
     }
 

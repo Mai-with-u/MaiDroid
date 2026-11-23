@@ -59,4 +59,56 @@ class DesktopPetProtocolTest {
         assertTrue(DesktopPetRemoteConfigState(enabled = false, mode = "remote").needsRemoteActivation)
         assertFalse(DesktopPetRemoteConfigState(enabled = true, mode = "remote").needsRemoteActivation)
     }
+
+    @Test
+    fun `computeDragStartPayload calculates finite anchor offsets and clamps scale`() {
+        val normal = DesktopPetProtocol.computeDragStartPayload(
+            gestureId = "g1",
+            windowX = 300,
+            windowWidth = 780,
+            windowBottom = 1800,
+            pointerDownX = 640.4f,
+            pointerDownY = 1650.2f,
+            density = 3.0f
+        )
+        assertEquals("g1", normal.gestureId)
+        assertEquals(50, normal.offsetX)
+        assertEquals(150, normal.offsetY)
+        assertEquals(3.0, normal.scale, 0.0001)
+
+        val nonFinite = DesktopPetProtocol.computeDragStartPayload(
+            gestureId = "g2",
+            windowX = 100,
+            windowWidth = 520,
+            windowBottom = 1000,
+            pointerDownX = Float.NaN,
+            pointerDownY = Float.POSITIVE_INFINITY,
+            density = Float.NaN
+        )
+        assertEquals(0, nonFinite.offsetX)
+        assertEquals(0, nonFinite.offsetY)
+        assertEquals(1.0, nonFinite.scale, 0.0001)
+
+        val invalidScaleLow = DesktopPetProtocol.computeDragStartPayload(
+            gestureId = "g3",
+            windowX = 100,
+            windowWidth = 520,
+            windowBottom = 1000,
+            pointerDownX = 360f,
+            pointerDownY = 900f,
+            density = -2.0f
+        )
+        assertEquals(1.0, invalidScaleLow.scale, 0.0001)
+
+        val clampedHigh = DesktopPetProtocol.computeDragStartPayload(
+            gestureId = "g4",
+            windowX = 100,
+            windowWidth = 520,
+            windowBottom = 1000,
+            pointerDownX = 360f,
+            pointerDownY = 900f,
+            density = 32.0f
+        )
+        assertEquals(DesktopPetProtocol.MAX_DRAG_SCALE, clampedHigh.scale, 0.0001)
+    }
 }

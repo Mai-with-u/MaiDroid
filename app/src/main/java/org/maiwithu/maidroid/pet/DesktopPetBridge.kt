@@ -234,7 +234,7 @@ internal class DesktopPetBridge(
                         JSONArray().put(
                             JSONObject()
                                 .put("type", "exploration_tasks")
-                                .put("task_id", args.opt(0))
+                                .put("task_id", if (args.isNull(0)) "" else args.optString(0, ""))
                                 .put("request_id", "records:" + args.get(1))
                         )
                     )

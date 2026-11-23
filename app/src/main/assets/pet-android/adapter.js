@@ -30,7 +30,7 @@
       case 'history': return event('history', { cursors: a[0], request_id: a[1] });
       case 'refresh_buttons': return event('buttons_refresh');
       case 'click_button': return event('button_click', { plugin_id: a[0], button_id: a[1], action_id: a[2] });
-      case 'exploration_tasks': return event('exploration_tasks', { task_id: a[0], request_id: a[1] });
+      case 'exploration_tasks': return event('exploration_tasks', { task_id: a[0] ?? '', request_id: a[1] });
       case 'explore': return event('explore', { goal: a[0] });
       case 'screen_action': throw new Error('Android 版暂不支持自动读屏');
       default: return native('pet_call', payload);

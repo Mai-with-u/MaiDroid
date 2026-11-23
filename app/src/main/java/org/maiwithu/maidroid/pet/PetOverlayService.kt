@@ -250,7 +250,17 @@ class PetOverlayService : Service(), PetOverlayHost {
         if (!dragging) return
         if (!moved && hypot((rawX - downX).toDouble(), (rawY - downY).toDouble()) >= dp(4.0)) {
             moved = true
-            manager.sendDragStarted(gestureId)
+            manager.sendDragStarted(
+                DesktopPetProtocol.computeDragStartPayload(
+                    gestureId = gestureId,
+                    windowX = dragX,
+                    windowWidth = params.width,
+                    windowBottom = dragBottom,
+                    pointerDownX = downX,
+                    pointerDownY = downY,
+                    density = density
+                )
+            )
         }
         if (moved) {
             params.x = dragX + (rawX - downX).roundToInt()
