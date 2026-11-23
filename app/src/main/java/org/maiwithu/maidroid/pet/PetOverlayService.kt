@@ -52,6 +52,11 @@ class PetOverlayService : Service(), PetOverlayHost {
         private const val NOTIFICATION_ID = 1002
         private const val ACTION_STOP = "org.maiwithu.maidroid.action.STOP_DESKTOP_PET"
 
+        /** 悬浮桌宠服务当前是否存活，供遥测统计耗时热点而不触发管理器的懒加载初始化。 */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
         fun start(context: Context) {
             val intent = Intent(context, PetOverlayService::class.java)
             context.startForegroundService(intent)
@@ -144,6 +149,7 @@ class PetOverlayService : Service(), PetOverlayHost {
         setupTouchAndKeyListeners(boundPet)
 
         windowManager.addView(frame, params)
+        isRunning = true
         boundPet.loadUrl(DesktopPetProtocol.PET_PAGE_URL)
     }
 
@@ -163,6 +169,7 @@ class PetOverlayService : Service(), PetOverlayHost {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isRunning = false
         if (!closing) {
             closing = true
             removeOverlayFrame()
