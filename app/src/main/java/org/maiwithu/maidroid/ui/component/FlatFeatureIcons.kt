@@ -449,6 +449,25 @@ internal object FlatFeatureIcons {
             }
         }
     }
+
+    /** 镜像源与测速图标：双层经纬环网搭配对称加速节点与中心测速星芒，表达多线网络择优。 */
+    val MirrorSources: ImageVector by lazy {
+        flatVector("FlatMirrorSources") {
+            strokeLayer(IconSecondary, width = 1.9f) {
+                circlePath(12.0f, 12.0f, 8.2f)
+                moveTo(3.9f, 12.0f)
+                lineTo(20.1f, 12.0f)
+                moveTo(12.0f, 3.9f)
+                quadTo(16.5f, 12.0f, 12.0f, 20.1f)
+                quadTo(7.5f, 12.0f, 12.0f, 3.9f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(6.6f, 8.5f, 1.85f)
+                circlePath(17.4f, 15.5f, 1.85f)
+                sparklePath(12.0f, 12.0f, 3.1f, 1.0f)
+            }
+        }
+    }
 }
 
 private inline fun flatVector(
