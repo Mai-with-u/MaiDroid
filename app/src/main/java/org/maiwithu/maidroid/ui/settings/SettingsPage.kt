@@ -3,6 +3,10 @@ package org.maiwithu.maidroid.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -108,7 +112,8 @@ private const val PermissionSettingsDetail = "permissions"
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
  * 应用（消息平台、应用版本与 MaiDroid 自身的更新）、帮助（反馈问题、QQ 反馈群、清理空间），最底下是“安全退出”按钮。
- * 横屏或宽屏时左右分栏，右侧固定显示权限管理；竖屏时点“权限管理”推入详情页，返回键退回列表。
+ * 横屏或宽屏时左右分栏：右侧默认只居中显示一枚液态玻璃应用图标，点击左侧“权限管理”后再展示权限详情（再点或返回恢复默认图标）；
+ * 竖屏时点“权限管理”推入详情页，返回键退回列表。
  */
 @Composable
 internal fun SettingsPage(
@@ -192,7 +197,8 @@ internal fun SettingsPage(
         val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
         val compactTwoPane = maxHeight.value < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp
 
-        BackHandler(enabled = !useTwoPane && selectedDetail != null) {
+        // 无论是竖屏推入还是横屏在右栏点开了权限管理，按系统返回键都可以退回默认列表或右栏液态玻璃图标空态。
+        BackHandler(enabled = selectedDetail != null) {
             selectedDetail = null
         }
 
@@ -233,10 +239,16 @@ internal fun SettingsPage(
                     sshState = sshState,
                     updateState = updateState,
                     runningPlatformCount = runningPlatformCount,
-                    permissionSelected = true,
+                    permissionSelected = selectedDetail == PermissionSettingsDetail,
                     compact = true,
                     expandedTopOffset = topSpacing,
-                    onPermissionClick = {},
+                    onPermissionClick = {
+                        selectedDetail = resolveSettingsDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = PermissionSettingsDetail,
+                            useTwoPane = true
+                        )
+                    },
                     onSshConfigureClick = { openSshDialog() },
                     onSshEnabledChange = onSshEnabledChange,
                     onUpdateClick = { showUpdateDialog = true },
@@ -265,15 +277,33 @@ internal fun SettingsPage(
                         .fillMaxHeight()
                         .background(PageBackground)
                 ) {
-                    PermissionManagementPage(
-                        state = permissionState,
-                        actions = permissionActions,
-                        onBack = {},
-                        showBackButton = false,
-                        compact = compactTwoPane,
-                        expandedTopOffset = topSpacing,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    AnimatedContent(
+                        targetState = selectedDetail,
+                        modifier = Modifier.fillMaxSize(),
+                        transitionSpec = {
+                            fadeIn(tween(durationMillis = 220)) togetherWith
+                                fadeOut(tween(durationMillis = 180))
+                        },
+                        label = "SettingsTwoPaneDetail"
+                    ) { detail ->
+                        if (detail == PermissionSettingsDetail) {
+                            PermissionManagementPage(
+                                state = permissionState,
+                                actions = permissionActions,
+                                onBack = { selectedDetail = null },
+                                showBackButton = false,
+                                compact = compactTwoPane,
+                                expandedTopOffset = topSpacing,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            // 横屏/宽屏默认不展示权限管理或任何文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
+                            SettingsEmptyDetailPane(
+                                compact = compactTwoPane,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                 }
             }
         } else {
@@ -304,7 +334,13 @@ internal fun SettingsPage(
                         permissionSelected = false,
                         compact = false,
                         expandedTopOffset = topSpacing,
-                        onPermissionClick = { selectedDetail = PermissionSettingsDetail },
+                        onPermissionClick = {
+                            selectedDetail = resolveSettingsDetailSelection(
+                                currentDetail = selectedDetail,
+                                targetDetail = PermissionSettingsDetail,
+                                useTwoPane = false
+                            )
+                        },
                         onSshConfigureClick = { openSshDialog() },
                         onSshEnabledChange = onSshEnabledChange,
                         onUpdateClick = { showUpdateDialog = true },
@@ -379,6 +415,13 @@ internal fun SettingsPage(
 /** 横屏窗口（至少 520dp 宽以免极窄分屏挤爆两栏）与平板大屏启用左右主从双栏。 */
 internal fun settingsUseTwoPane(widthDp: Float, heightDp: Float): Boolean =
     (widthDp > heightDp && widthDp >= HomeTwoPaneSpec.CompactTwoPaneMinWidthDp) || widthDp >= 960f
+
+/** 点击设置详情项时的目标状态：双栏模式再次点击当前已选项可收起回到居中图标空态，竖屏单列则始终进入目标详情。 */
+internal fun resolveSettingsDetailSelection(
+    currentDetail: String?,
+    targetDetail: String,
+    useTwoPane: Boolean
+): String? = if (useTwoPane && currentDetail == targetDetail) null else targetDetail
 
 internal fun settingsNavigationWidthDp(availableWidthDp: Float): Float =
     HomeTwoPaneSpec.leftPaneWidthDp(availableWidthDp)

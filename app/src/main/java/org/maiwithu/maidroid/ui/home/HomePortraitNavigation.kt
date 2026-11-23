@@ -80,7 +80,6 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import com.kyant.shapes.Capsule
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
@@ -608,7 +607,9 @@ internal fun HomePortraitNavigation(
             clampedBottomProgress
         ).dp
 
-        val pillShape = { Capsule() }
+        // 竖屏 WebUI 侧边胶囊与底栏共用同一套连续圆角标准（外框 24dp、内滑块同心 20dp）。
+        val barShape = { HomeNavBarShape }
+        val indicatorShape = { HomeNavIndicatorShape }
         val tabsBackdrop = rememberLayerBackdrop()
         val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         val activeBottomGestures = !isWebUi && clampedBottomProgress > 0.85f
@@ -630,9 +631,9 @@ internal fun HomePortraitNavigation(
                 }
                 .liquidGlassSurface(
                     backdrop = backdrop,
-                    shape = pillShape,
+                    shape = barShape,
                     blurRadius = 10.dp,
-                    refractionHeight = 24.dp,
+                    refractionHeight = 20.dp,
                     refractionAmount = 24.dp,
                     surfaceColor = LiquidBarSurface,
                     layerBlock = {
@@ -795,12 +796,12 @@ internal fun HomePortraitNavigation(
                     }
                     .drawBackdrop(
                         backdrop = backdrop,
-                        shape = pillShape,
+                        shape = barShape,
                         effects = {
                             val progress = tabDragAnimation.pressProgress
                             vibrancy()
                             blur(10f.dp.toPx())
-                            lens(24f.dp.toPx() * progress, 24f.dp.toPx() * progress)
+                            lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
                         },
                         highlight = {
                             Highlight.Default.copy(alpha = tabDragAnimation.pressProgress)
@@ -861,7 +862,7 @@ internal fun HomePortraitNavigation(
         }
 
         // ── 兄弟层 3：顶层游走液态水滴滑块（独立于底栏父裁剪外，按压可鼓出边界并实时色散折射）──
-        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, Capsule())
+        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
         Box(
             modifier = Modifier
                 .offset {
@@ -879,7 +880,7 @@ internal fun HomePortraitNavigation(
                 .then(if (activeBottomGestures) tabDragAnimation.modifier else Modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                    shape = pillShape,
+                    shape = indicatorShape,
                     effects = {
                         val progress = tabDragAnimation.pressProgress
                         lens(
@@ -914,13 +915,14 @@ internal fun HomePortraitNavigation(
                 .then(fallbackBorder)
         )
 
-        // 右下角独立圆形终端按钮：切离 WebUI 时从侧边胶囊底部平滑分离就位，切回 WebUI 时顺畅融入胶囊
+        // 右下角独立终端按钮：切离 WebUI 时从侧边胶囊底部平滑分离就位，切回 WebUI 时顺畅融入胶囊，外圆角与底栏统一为 24dp
         if (frame.terminalAlpha > 0.02f) {
             HomeTerminalButton(
                 backdrop = backdrop,
                 onClick = onTerminalClick,
                 enabled = !isWebUi,
                 size = PortraitBottomBarHeight,
+                shape = { HomeNavBarShape },
                 modifier = Modifier
                     .offset { IntOffset(frame.terminalLeftDp.dp.roundToPx(), frame.terminalTopDp.dp.roundToPx()) }
                     .graphicsLayer {
@@ -956,7 +958,7 @@ private fun WebUiPrimaryTabSlot(
 
     Box(
         modifier = modifier
-            .clip(Capsule())
+            .clip(HomeNavIndicatorShape)
             .then(clickMod),
         contentAlignment = Alignment.Center
     ) {
@@ -1067,7 +1069,7 @@ private fun ExpandedExtraActions(
     }
 }
 
-/** 胶囊内部通用“上图下文”动作按钮：取消默认灰水波纹并统一 Capsule 裁剪。 */
+/** 胶囊内部通用“上图下文”动作按钮：取消默认灰水波纹并统一采用同心连续圆角裁剪。 */
 @Composable
 private fun PillLabeledButton(
     label: String,
@@ -1079,7 +1081,7 @@ private fun PillLabeledButton(
 ) {
     Box(
         modifier = modifier
-            .clip(Capsule())
+            .clip(HomeNavIndicatorShape)
             .clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

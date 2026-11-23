@@ -202,13 +202,16 @@ internal fun LiquidButton(
     }
 }
 
-/** 圆形或胶囊形的液态玻璃图标按钮：用于终端快捷按钮、顶栏返回/工具按钮、弹窗关闭按钮等。 */
+/** 圆形或连续圆角胶囊形的液态玻璃图标按钮：用于终端快捷按钮、顶栏返回/工具按钮、弹窗关闭按钮等，支持自定义宽高以对齐侧栏宽度。 */
 @Composable
 internal fun LiquidGlassIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     backdrop: Backdrop = resolveLiquidBackdrop(),
     size: Dp = 42.dp,
+    width: Dp = size,
+    height: Dp = size,
+    shape: () -> Shape = { Capsule() },
     enabled: Boolean = true,
     isInteractive: Boolean = true,
     surfaceColor: Color = GlassButtonSurface,
@@ -223,15 +226,15 @@ internal fun LiquidGlassIconButton(
     val interactiveHighlight = remember(animationScope) { InteractiveHighlight(animationScope) }
     val activeInteractive = enabled && isInteractive
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val shapeProvider = { Capsule() }
-    val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.8.dp, GlassStroke, Capsule())
+    val resolvedShape = shape()
+    val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.8.dp, GlassStroke, resolvedShape)
 
     Box(
         modifier = modifier
-            .size(size)
+            .size(width = width, height = height)
             .drawBackdrop(
                 backdrop = backdrop,
-                shape = shapeProvider,
+                shape = shape,
                 effects = {
                     vibrancy()
                     blur(blurRadius.toPx())
@@ -244,8 +247,8 @@ internal fun LiquidGlassIconButton(
                 layerBlock = if (activeInteractive) {
                     {
                         val transform = computeLiquidButtonDragTransform(
-                            widthPx = size.toPx(),
-                            heightPx = size.toPx(),
+                            widthPx = width.toPx(),
+                            heightPx = height.toPx(),
                             maxDragHeightPx = 3f.dp.toPx(),
                             pressProgress = interactiveHighlight.pressProgress,
                             offsetX = interactiveHighlight.offset.x,
@@ -299,6 +302,9 @@ internal fun LiquidGlassIconButton(
     modifier: Modifier = Modifier,
     backdrop: Backdrop = resolveLiquidBackdrop(),
     size: Dp = 42.dp,
+    width: Dp = size,
+    height: Dp = size,
+    shape: () -> Shape = { Capsule() },
     iconSize: Dp = 22.dp,
     tint: Color = TextPrimary,
     enabled: Boolean = true
@@ -308,6 +314,9 @@ internal fun LiquidGlassIconButton(
         modifier = modifier,
         backdrop = backdrop,
         size = size,
+        width = width,
+        height = height,
+        shape = shape,
         enabled = enabled
     ) {
         Icon(
@@ -328,6 +337,9 @@ internal fun LiquidGlassIconButton(
     modifier: Modifier = Modifier,
     backdrop: Backdrop = resolveLiquidBackdrop(),
     size: Dp = 42.dp,
+    width: Dp = size,
+    height: Dp = size,
+    shape: () -> Shape = { Capsule() },
     iconSize: Dp = 24.dp,
     tint: Color = TextPrimary,
     enabled: Boolean = true
@@ -337,6 +349,9 @@ internal fun LiquidGlassIconButton(
         modifier = modifier,
         backdrop = backdrop,
         size = size,
+        width = width,
+        height = height,
+        shape = shape,
         enabled = enabled
     ) {
         Icon(

@@ -56,7 +56,6 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import com.kyant.shapes.Capsule
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -74,8 +73,8 @@ import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** 侧栏里标签竖条的宽度（容得下“消息平台”“扩展组件”四个字）。 */
-private val HomeNavigationRailBarWidth = 72.dp
+/** 侧栏里标签竖条的宽度（容得下“消息平台”“扩展组件”四个字），同时也是下方刷新与终端按钮的统一宽度。 */
+internal val HomeNavigationRailBarWidth = 72.dp
 
 /** 正常高度下的侧栏留白，用于计算页面正文左偏移与窄矮屏统一基准。 */
 private val HomeNavigationRailPadding = 12.dp
@@ -88,43 +87,46 @@ private const val CompactRailMaxHeightDp = 420f
 
 /**
  * 横屏侧栏在不同可用高度下的几何尺寸（dp）：
- * 4 个页签 + 刷新按钮 + 终端按钮总高度若按常规 56dp 堆叠会超出手机横屏 360dp 高度，
- * 故矮屏自动切为紧凑尺寸确保零裁剪、零重叠。
+ * 4 个页签 + 刷新按钮 + 终端按钮统一保持 72dp 视觉列宽并复用 24dp 连续圆角；
+ * 矮屏自动切为紧凑垂直高度确保在 320dp~360dp 横屏下零裁剪、零重叠。
  */
 internal data class HomeRailMetrics(
     val compact: Boolean,
     val railPaddingDp: Float,
     val tabHeightDp: Float,
-    val refreshButtonSizeDp: Float,
+    val buttonWidthDp: Float,
+    val refreshButtonHeightDp: Float,
     val refreshBottomGapDp: Float,
-    val terminalButtonSizeDp: Float
+    val terminalButtonHeightDp: Float
 ) {
     val tabRailHeightDp: Float
         get() = tabHeightDp * HomeTab.entries.size + 8f
 
     val minimumTotalHeightDp: Float
-        get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonSizeDp + refreshBottomGapDp + terminalButtonSizeDp
+        get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonHeightDp + refreshBottomGapDp + terminalButtonHeightDp
 }
 
-/** 按当前容器高度计算横屏侧栏各元素尺寸。 */
+/** 按当前容器高度计算横屏侧栏各元素尺寸，刷新按钮与终端按钮恒定与上方页签竖栏同宽（72dp）。 */
 internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
     if (maxHeightDp < CompactRailMaxHeightDp) {
         HomeRailMetrics(
             compact = true,
             railPaddingDp = 8f,
             tabHeightDp = 46f,
-            refreshButtonSizeDp = 38f,
+            buttonWidthDp = HomeNavigationRailBarWidth.value,
+            refreshButtonHeightDp = 42f,
             refreshBottomGapDp = 8f,
-            terminalButtonSizeDp = 46f
+            terminalButtonHeightDp = 46f
         )
     } else {
         HomeRailMetrics(
             compact = false,
             railPaddingDp = HomeNavigationRailPadding.value,
             tabHeightDp = HomeTabButtonHeightDp,
-            refreshButtonSizeDp = 44f,
-            refreshBottomGapDp = 12f,
-            terminalButtonSizeDp = HomeTabButtonHeightDp
+            buttonWidthDp = HomeNavigationRailBarWidth.value,
+            refreshButtonHeightDp = 48f,
+            refreshBottomGapDp = 10f,
+            terminalButtonHeightDp = HomeTabButtonHeightDp
         )
     }
 
@@ -176,7 +178,8 @@ internal fun HomeNavigationRail(
             ) {
                 RailRefreshButton(
                     backdrop = backdrop,
-                    sizeDp = metrics.refreshButtonSizeDp,
+                    widthDp = metrics.buttonWidthDp,
+                    heightDp = metrics.refreshButtonHeightDp,
                     onClick = { onRefreshWebUi?.invoke() },
                     modifier = Modifier.padding(bottom = metrics.refreshBottomGapDp.dp)
                 )
@@ -185,8 +188,11 @@ internal fun HomeNavigationRail(
             HomeTerminalButton(
                 backdrop = backdrop,
                 onClick = onTerminalClick,
-                size = metrics.terminalButtonSizeDp.dp,
-                iconSizeDp = if (metrics.compact) 24f else 30f
+                size = metrics.terminalButtonHeightDp.dp,
+                width = metrics.buttonWidthDp.dp,
+                height = metrics.terminalButtonHeightDp.dp,
+                shape = { HomeNavBarShape },
+                iconSizeDp = if (metrics.compact) 28f else 30f
             )
         }
     }
@@ -207,7 +213,9 @@ private fun AnimatedHomeTabRail(
     val tabsCount = HomeTab.entries.size
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val latestOnTabSelected by rememberUpdatedState(onTabSelected)
-    val shape = { Capsule() }
+    // 外框采用 24dp 连续圆角、内滑块严格采用 20dp 同心连续圆角，与竖屏形态统一。
+    val barShape = { HomeNavBarShape }
+    val indicatorShape = { HomeNavIndicatorShape }
     val tabsBackdrop = rememberLayerBackdrop()
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
@@ -333,7 +341,7 @@ private fun AnimatedHomeTabRail(
                 .graphicsLayer { translationY = panelOffsetPx }
                 .liquidGlassSurface(
                     backdrop = backdrop,
-                    shape = shape,
+                    shape = barShape,
                     blurRadius = 10.dp,
                     refractionHeight = 20.dp,
                     refractionAmount = 24.dp,
@@ -374,7 +382,7 @@ private fun AnimatedHomeTabRail(
                     .graphicsLayer { translationY = panelOffsetPx }
                     .drawBackdrop(
                         backdrop = backdrop,
-                        shape = shape,
+                        shape = barShape,
                         effects = {
                             val progress = railDragAnimation.pressProgress
                             vibrancy()
@@ -413,7 +421,7 @@ private fun AnimatedHomeTabRail(
         }
 
         // 兄弟层 3：独立游走纵向水滴滑块（不进竖栏裁剪区，按下自由膨胀并做纵向速度挤压）
-        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, Capsule())
+        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
         Box(
             modifier = Modifier
                 .padding(horizontal = innerPadding)
@@ -424,7 +432,7 @@ private fun AnimatedHomeTabRail(
                 .then(railDragAnimation.modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                    shape = shape,
+                    shape = indicatorShape,
                     effects = {
                         val progress = railDragAnimation.pressProgress
                         lens(
@@ -466,7 +474,8 @@ private fun AnimatedHomeTabRail(
 @Composable
 private fun RailRefreshButton(
     backdrop: Backdrop,
-    sizeDp: Float,
+    widthDp: Float,
+    heightDp: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -475,8 +484,10 @@ private fun RailRefreshButton(
         contentDescription = "刷新 WebUI",
         onClick = onClick,
         backdrop = backdrop,
-        size = sizeDp.dp,
-        iconSize = if (sizeDp < 42f) 20.dp else 22.dp,
+        width = widthDp.dp,
+        height = heightDp.dp,
+        shape = { HomeNavBarShape },
+        iconSize = if (heightDp < 46f) 22.dp else 24.dp,
         modifier = modifier
     )
 }

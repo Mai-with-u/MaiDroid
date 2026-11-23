@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -31,10 +32,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
-import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
@@ -67,6 +69,15 @@ internal const val HomeTabButtonHeightDp = 56f
 /** 单个标签按钮的高度（竖屏底栏与正常高度横屏侧栏通用）。 */
 internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
 
+/** 首页导航外框统一连续圆角（竖屏底栏、竖屏 WebUI 侧边栏、横屏导航竖栏与独立工具按钮共用）。 */
+internal val HomeNavBarCornerRadius = Corners.Card
+
+/** 首页导航内部滑块与槽位统一同心连续圆角（外圆角 24dp 减去 4dp 内边距 = 20dp，严格同心不夹紧文字）。 */
+internal val HomeNavIndicatorCornerRadius = Corners.Chip
+
+internal val HomeNavBarShape: Shape = RoundedRectangle(HomeNavBarCornerRadius)
+internal val HomeNavIndicatorShape: Shape = RoundedRectangle(HomeNavIndicatorCornerRadius)
+
 /** 计算竖屏底部四栏标签胶囊的目标宽度（dp），为右下角圆形终端按钮与左右留白让出间距。 */
 internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
     val availableWidthDp = maxWidthDp - PortraitBottomBarHorizontalPadding.value * 2f
@@ -75,13 +86,16 @@ internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
         .coerceAtLeast(244f)
 }
 
-/** 圆形液态玻璃终端按钮：按压触发随指高光、微位移与果冻弹性拉伸。 */
+/** 液态玻璃终端按钮：按压触发随指高光、微位移与果冻弹性拉伸；默认采用与导航外框统一的 24dp 连续圆角。 */
 @Composable
 internal fun HomeTerminalButton(
     backdrop: Backdrop,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = PortraitBottomBarHeight,
+    width: Dp = size,
+    height: Dp = size,
+    shape: () -> Shape = { HomeNavBarShape },
     enabled: Boolean = true,
     iconSizeDp: Float = 32f
 ) {
@@ -91,6 +105,9 @@ internal fun HomeTerminalButton(
         onClick = onClick,
         backdrop = backdrop,
         size = size,
+        width = width,
+        height = height,
+        shape = shape,
         iconSize = iconSizeDp.dp,
         enabled = enabled,
         modifier = modifier
@@ -146,7 +163,7 @@ internal fun HomeTabButton(
 
     Box(
         modifier = modifier
-            .clip(Capsule())
+            .clip(HomeNavIndicatorShape)
             .then(clickModifier),
         contentAlignment = Alignment.Center
     ) {

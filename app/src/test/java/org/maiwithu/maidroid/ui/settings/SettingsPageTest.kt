@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.ui.settings
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
@@ -37,5 +38,31 @@ class SettingsPageTest {
         assertEquals(HomeTwoPaneSpec.leftPaneWidthDp(1920f), settingsNavigationWidthDp(1920f), 0.001f)
         assertEquals(480f * 0.38f, settingsNavigationWidthDp(480f), 0.001f)
         assertEquals(HomeTwoPaneSpec.leftPaneWidthDp(480f), settingsNavigationWidthDp(480f), 0.001f)
+    }
+
+    @Test
+    fun `two pane detail selection toggles back to centered empty icon while portrait enters detail`() {
+        // 首次从默认空态（null）点击“权限管理”进入详情
+        assertEquals(
+            "permissions",
+            resolveSettingsDetailSelection(currentDetail = null, targetDetail = "permissions", useTwoPane = true)
+        )
+        // 双栏模式下再次点击当前已选详情可收起回到右栏居中液态玻璃图标空态
+        assertNull(
+            resolveSettingsDetailSelection(
+                currentDetail = "permissions",
+                targetDetail = "permissions",
+                useTwoPane = true
+            )
+        )
+        // 竖屏单列模式下保持进入目标详情页
+        assertEquals(
+            "permissions",
+            resolveSettingsDetailSelection(
+                currentDetail = "permissions",
+                targetDetail = "permissions",
+                useTwoPane = false
+            )
+        )
     }
 }
