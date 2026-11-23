@@ -102,7 +102,6 @@ import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSizes
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -751,8 +750,8 @@ internal fun HomePortraitNavigation(
             clampedBottomProgress
         ) * foregroundIdleAlpha
         val primaryIconGap = lerpFloat(
-            lerpFloat(3f, 2f, clampedExpandedProgress),
-            4f,
+            lerpFloat(2.5f, 2f, clampedExpandedProgress),
+            2.5f,
             clampedBottomProgress
         ).dp
 
@@ -892,6 +891,7 @@ internal fun HomePortraitNavigation(
                                 tab = tab,
                                 selected = selectedTab == tab,
                                 compact = clampedBottomProgress < 0.5f,
+                                narrowVertical = clampedBottomProgress < 0.5f,
                                 enabled = !isWebUi || expanded,
                                 onClick = {
                                     if (isWebUi) {
@@ -1005,6 +1005,7 @@ internal fun HomePortraitNavigation(
                                     tab = tab,
                                     selected = true,
                                     compact = clampedBottomProgress < 0.5f,
+                                    narrowVertical = clampedBottomProgress < 0.5f,
                                     enabled = false,
                                     accentHighlighted = true,
                                     clickableEnabled = false,
@@ -1130,9 +1131,18 @@ private fun WebUiPrimaryTabSlot(
 ) {
     val accentScale = LocalLiquidBottomTabScale.current
     val textColor = if (accentHighlighted) BrandOrange else TextPrimary
-    val iconSize = lerpFloat(24f, 21f, compactExpandedFraction).dp
-    val labelSize = lerpFloat(TextSizes.Caption.value, 11f, compactExpandedFraction).sp
-    val labelLineHeight = lerpFloat(14f, 13f, compactExpandedFraction).sp
+    val bottomTypography = resolveHomeNavTabTypography(narrowVertical = false, compact = false)
+    val expandedTypography = resolveHomeNavTabTypography(narrowVertical = true, compact = true)
+    val fontScale = LocalDensity.current.fontScale
+    val iconSize = lerpFloat(bottomTypography.iconSizeDp, expandedTypography.iconSizeDp, compactExpandedFraction).dp
+    val labelSize = clampHomeNavLabelSp(
+        lerpFloat(bottomTypography.labelSizeSp, expandedTypography.labelSizeSp, compactExpandedFraction),
+        fontScale
+    ).sp
+    val labelLineHeight = clampHomeNavLabelSp(
+        lerpFloat(bottomTypography.labelLineHeightSp, expandedTypography.labelLineHeightSp, compactExpandedFraction),
+        fontScale
+    ).sp
     val clickMod = if (clickableEnabled) {
         Modifier.clickable(interactionSource = null, indication = null, onClick = onClick)
     } else {
@@ -1168,6 +1178,7 @@ private fun WebUiPrimaryTabSlot(
                     fontSize = labelSize,
                     fontWeight = FontWeight.Bold,
                     lineHeight = labelLineHeight,
+                    letterSpacing = 0.sp,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Visible,
@@ -1179,6 +1190,7 @@ private fun WebUiPrimaryTabSlot(
                     fontSize = labelSize,
                     fontWeight = FontWeight.Bold,
                     lineHeight = labelLineHeight,
+                    letterSpacing = 0.sp,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Visible,
@@ -1263,6 +1275,10 @@ private fun PillLabeledButton(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit
 ) {
+    val typography = resolveHomeNavTabTypography(narrowVertical = true, compact = false)
+    val fontScale = LocalDensity.current.fontScale
+    val labelSize = clampHomeNavLabelSp(typography.labelSizeSp, fontScale).sp
+    val labelLineHeight = clampHomeNavLabelSp(typography.labelLineHeightSp, fontScale).sp
     Box(
         modifier = modifier
             .clip(HomeNavIndicatorShape)
@@ -1278,9 +1294,10 @@ private fun PillLabeledButton(
             Text(
                 text = label,
                 color = TextPrimary,
-                fontSize = TextSizes.Caption,
+                fontSize = labelSize,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 14.sp,
+                lineHeight = labelLineHeight,
+                letterSpacing = 0.sp,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Visible
