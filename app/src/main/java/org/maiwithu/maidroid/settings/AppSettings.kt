@@ -5,18 +5,22 @@ import com.tencent.mmkv.MMKV
 import com.tencent.mmkv.MMKVHandler
 import com.tencent.mmkv.MMKVLogLevel
 import com.tencent.mmkv.MMKVRecoverStrategic
+import org.maiwithu.maidroid.runtime.MirrorCategory
+import org.maiwithu.maidroid.runtime.MirrorPreference
+import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
+import org.maiwithu.maidroid.runtime.MirrorSelectionMode
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
 import java.util.UUID
 
 /**
  * 用 MMKV 持久化的应用设置：OOBE 是否完成及断点步骤、是否同意协议、自启开关、容器 SSH 配置、
- * 上次打开时的 MaiDroid 版本号、MaiBot 自动升级开关、是否安全退出、QQ 自定义安装包来源，以及竖屏悬浮胶囊停靠位置。
+ * 上次打开时的 MaiDroid 版本号、MaiBot 自动升级开关、是否安全退出、QQ 自定义安装包来源、三类镜像源配置以及竖屏悬浮胶囊停靠位置。
  * MMKV 写入即落盘，读写都很轻，可以在主线程直接访问。既有键名在用户设备上存在，不要随意改动。
  */
 internal class AppSettings(
     private val kv: MMKV = MMKV.defaultMMKV()
-) {
+) : MirrorPreferenceStore {
 
     private companion object {
         const val KEY_SETUP_COMPLETE = "setup_complete"
@@ -46,6 +50,15 @@ internal class AppSettings(
         const val KEY_REMOTE_MANIFEST_ETAG = "remote_manifest_etag"
         const val KEY_DISMISSED_ANNOUNCEMENTS = "dismissed_announcement_ids"
         const val KEY_NOTIFIED_ANNOUNCEMENTS = "notified_announcement_ids"
+        const val KEY_MIRROR_GITHUB_MODE = "mirror_github_mode"
+        const val KEY_MIRROR_GITHUB_PRESET = "mirror_github_preset"
+        const val KEY_MIRROR_GITHUB_CUSTOM = "mirror_github_custom"
+        const val KEY_MIRROR_APT_MODE = "mirror_apt_mode"
+        const val KEY_MIRROR_APT_PRESET = "mirror_apt_preset"
+        const val KEY_MIRROR_APT_CUSTOM = "mirror_apt_custom"
+        const val KEY_MIRROR_PYPI_MODE = "mirror_pypi_mode"
+        const val KEY_MIRROR_PYPI_PRESET = "mirror_pypi_preset"
+        const val KEY_MIRROR_PYPI_CUSTOM = "mirror_pypi_custom"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
         const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
@@ -283,6 +296,29 @@ internal class AppSettings(
 
     fun markAnnouncementNotified(id: String) {
         appendTrackedId(KEY_NOTIFIED_ANNOUNCEMENTS, id)
+    }
+
+    /** 读取指定分类（GitHub / Debian APT / PyPI）的镜像源选择策略、预设键值与自定义地址。 */
+    override fun mirrorPreference(category: MirrorCategory): MirrorPreference {
+        val (modeKey, presetKey, customKey) = mirrorKeys(category)
+        val mode = MirrorSelectionMode.fromStorage(kv.decodeString(modeKey, null))
+        val preset = kv.decodeString(presetKey, "") ?: ""
+        val custom = kv.decodeString(customKey, "")?.trim().orEmpty()
+        return MirrorPreference(mode = mode, presetValue = preset, customUrl = custom)
+    }
+
+    /** 将用户在镜像源设置页选择的模式与自定义地址实时落盘至 MMKV。 */
+    override fun saveMirrorPreference(category: MirrorCategory, preference: MirrorPreference) {
+        val (modeKey, presetKey, customKey) = mirrorKeys(category)
+        kv.encode(modeKey, preference.mode.storageValue)
+        kv.encode(presetKey, preference.presetValue)
+        kv.encode(customKey, preference.customUrl.trim())
+    }
+
+    private fun mirrorKeys(category: MirrorCategory): Triple<String, String, String> = when (category) {
+        MirrorCategory.GitHub -> Triple(KEY_MIRROR_GITHUB_MODE, KEY_MIRROR_GITHUB_PRESET, KEY_MIRROR_GITHUB_CUSTOM)
+        MirrorCategory.Apt -> Triple(KEY_MIRROR_APT_MODE, KEY_MIRROR_APT_PRESET, KEY_MIRROR_APT_CUSTOM)
+        MirrorCategory.PyPi -> Triple(KEY_MIRROR_PYPI_MODE, KEY_MIRROR_PYPI_PRESET, KEY_MIRROR_PYPI_CUSTOM)
     }
 
     private fun decodeIdSet(key: String): Set<String> =
