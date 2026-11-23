@@ -23,6 +23,7 @@ import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.maibot.MaiBotInstance
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
@@ -43,7 +44,8 @@ internal class QqOfficialPlatformManager(
     paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val maiBotProcess: MaiBotProcessSupervisor
+    private val maiBotProcess: MaiBotProcessSupervisor,
+    private val mirrors: MirrorManager
 ) {
     private val adapterFiles = QqOfficialAdapterFiles(paths)
     private val scope = backgroundScope("QQ 官方机器人", Dispatchers.Main.immediate)
@@ -134,8 +136,12 @@ internal class QqOfficialPlatformManager(
                 }
                 updateInstallProgress(0.3f, "下载 QQ 官方机器人适配器")
                 TerminalLog.append("[QQ 官方机器人] 开始安装适配器")
+                val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
                 val result = commandRunner.run(
-                    script = QqOfficialAdapterScripts.install(targetInstance.containerPluginsDir),
+                    script = QqOfficialAdapterScripts.install(
+                        pluginsDir = targetInstance.containerPluginsDir,
+                        gitHubMirrors = gitHubMirrors
+                    ),
                     onLine = TerminalLog::append
                 )
                 val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled(targetInstance) }

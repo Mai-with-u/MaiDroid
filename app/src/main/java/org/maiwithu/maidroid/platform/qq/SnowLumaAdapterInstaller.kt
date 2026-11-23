@@ -16,6 +16,7 @@ import org.maiwithu.maidroid.maibot.readPluginHostVersionRange
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.InContainerPaths
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
@@ -35,7 +36,8 @@ import java.nio.file.StandardCopyOption
  */
 internal class SnowLumaAdapterInstaller(
     private val files: QqAdapterFiles,
-    private val commandRunner: ContainerCommandRunner
+    private val commandRunner: ContainerCommandRunner,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         // 等 MaiBot 生成配置：重启、补装依赖、加载插件在手机上可能要几分钟。
@@ -100,8 +102,13 @@ internal class SnowLumaAdapterInstaller(
             },
             isInstalled = { target -> files.adapterDir(target) != null },
             runClone = { target ->
+                val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
                 commandRunner.run(
-                    SnowLumaAdapterScripts.cloneToStaging(client.logPrefix, target.containerPluginsDir),
+                    SnowLumaAdapterScripts.cloneToStaging(
+                        logPrefix = client.logPrefix,
+                        pluginsDir = target.containerPluginsDir,
+                        gitHubMirrors = gitHubMirrors
+                    ),
                     onLine = onLine
                 )
             },

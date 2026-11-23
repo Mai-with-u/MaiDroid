@@ -23,6 +23,8 @@ import org.maiwithu.maidroid.diagnostics.FailureStep
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.GitHubMirrors
+import org.maiwithu.maidroid.runtime.MirrorCategory
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
@@ -96,7 +98,8 @@ internal data class AppUpdateState(
 internal class AppUpdateManager(
     private val appContext: Context,
     private val currentVersionName: String,
-    private val apiUrl: String
+    private val apiUrl: String,
+    private val mirrors: MirrorManager
 ) {
     companion object {
         // 写进终端输出（TerminalLog）的行首前缀，不是 logcat 标签。
@@ -114,7 +117,11 @@ internal class AppUpdateManager(
     private var silentReleaseJob: Job? = null
     private val currentVersion = VersionNumber.parse(currentVersionName)
     private val files = AppUpdateFiles(appContext.cacheDir)
-    private val client = AppUpdateClient(userAgent = "MaiDroid/$currentVersionName")
+    private val client = AppUpdateClient(
+        userAgent = "MaiDroid/$currentVersionName",
+        gitHubMirrorsProvider = mirrors::currentGitHubMirrors,
+        preferFirstMirror = { mirrors.isManualSelection(MirrorCategory.GitHub) }
+    )
 
     private val _state = MutableStateFlow(AppUpdateState(currentVersion = currentVersionName))
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
@@ -176,7 +183,8 @@ internal class AppUpdateManager(
                 failCheck(failure)
                 return@launch
             }
-            val sourceCount = GitHubMirrors.candidatesFor(apiUrl).size
+            val activeMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = false)
+            val sourceCount = GitHubMirrors.candidatesFor(apiUrl, activeMirrors).size
             TerminalLog.append("")
             TerminalLog.append("$LOG_PREFIX 检查新版本，同时尝试 $sourceCount 条线路，当前 v$currentVersionName")
 

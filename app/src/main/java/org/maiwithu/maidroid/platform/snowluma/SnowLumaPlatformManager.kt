@@ -31,6 +31,7 @@ import org.maiwithu.maidroid.platform.qq.QqSourceParseResult
 import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qq.parseQqCustomSource
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkMonitor
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
@@ -61,7 +62,8 @@ internal class SnowLumaPlatformManager(
     private val snowLumaProcess: SnowLumaProcessSupervisor,
     private val adapterInstaller: SnowLumaAdapterInstaller,
     private val switcher: QqClientSwitcher,
-    private val network: NetworkMonitor
+    private val network: NetworkMonitor,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         const val STATUS_REFRESH_INTERVAL_MS = 2_000L
@@ -298,8 +300,16 @@ internal class SnowLumaPlatformManager(
         if (forceReinstall || !withContext(Dispatchers.IO) { files.isSnowLumaReady() }) {
             clearInstallProgress()
             startProgressWatcher()
+            val aptMirrors = mirrors.resolveAptMirrors(allowSpeedTest = true)
+            val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
             val result = commandRunner.run(
-                SnowLumaScripts.install(token = randomHex(32), webUiPassword = randomHex(16), source = source),
+                SnowLumaScripts.install(
+                    token = randomHex(32),
+                    webUiPassword = randomHex(16),
+                    source = source,
+                    aptMirrors = aptMirrors,
+                    gitHubMirrors = gitHubMirrors
+                ),
                 onLine = TerminalLog::append
             )
             TerminalLog.append("[SnowLuma] 安装流程退出码: ${result.exitCode}")

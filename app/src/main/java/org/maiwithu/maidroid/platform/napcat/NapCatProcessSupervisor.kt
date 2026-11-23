@@ -16,6 +16,7 @@ import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RequestedExit
 import org.maiwithu.maidroid.runtime.RuntimeFileModes
@@ -39,7 +40,8 @@ internal class NapCatProcessSupervisor(
     private val paths: RuntimePaths,
     private val commandRunner: ContainerCommandRunner,
     private val adapterUpkeep: QqAdapterUpkeep,
-    private val choice: QqClientChoice
+    private val choice: QqClientChoice,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         // 停止时等旧一轮读日志（或还在启动）的协程收尾的上限。
@@ -225,7 +227,8 @@ internal class NapCatProcessSupervisor(
         // 需要时换装新版 SnowLuma 适配器、补迁移它的配置（和 SnowLuma 共用，见 QqAdapterUpkeep）
         adapterUpkeep.ensureBeforeStart(QqClient.NapCat)
         runMaintenance(NapCatScripts.cleanup())
-        runMaintenance(NapCatScripts.prepareRuntime())
+        val aptMirrors = mirrors.resolveAptMirrors(allowSpeedTest = false)
+        runMaintenance(NapCatScripts.prepareRuntime(aptMirrors))
 
         if (!files.launcher.isFile) {
             TerminalLog.append("[NapCat] 未找到 /root/launcher.sh，暂不启动 NapCat")

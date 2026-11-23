@@ -20,6 +20,7 @@ import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkStatus
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
@@ -107,7 +108,8 @@ internal class MaiBotUpdateManager(
     private val paths: RuntimePaths,
     private val readiness: RuntimeReadiness,
     private val commandRunner: ContainerCommandRunner,
-    private val maiBotProcess: MaiBotProcessSupervisor
+    private val maiBotProcess: MaiBotProcessSupervisor,
+    private val mirrors: MirrorManager
 ) {
     companion object {
         // 写进终端输出（TerminalLog）的行首前缀，不是 logcat 标签。
@@ -197,7 +199,8 @@ internal class MaiBotUpdateManager(
 
             TerminalLog.append("")
             TerminalLog.append("$LOG_PREFIX 检查上游版本")
-            val result = runCommand(MaiBotUpdateScripts.fetchLatest())
+            val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+            val result = runCommand(MaiBotUpdateScripts.fetchLatest(gitHubMirrors = gitHubMirrors))
             val report = parseMaiBotUpdateReport(result.output)
             applyReport(report)
             if (!result.success || report.installed == null || report.latest == null) {
@@ -334,7 +337,8 @@ internal class MaiBotUpdateManager(
     private suspend fun precheckSwitch(target: MaiBotChannel): Failure? {
         TerminalLog.append("")
         TerminalLog.append("$LOG_PREFIX 切换到${target.label}前先拉取上游 ${target.branch} 分支，确认数据库不会降级")
-        val result = runCommand(MaiBotUpdateScripts.fetchLatest(target.branch))
+        val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+        val result = runCommand(MaiBotUpdateScripts.fetchLatest(target.branch, gitHubMirrors))
         if (!result.success) {
             return failureOf(FailureStep.UpdateFetch, "获取上游 ${target.branch} 分支失败：${result.summary()}", result.output)
         }
@@ -419,7 +423,8 @@ internal class MaiBotUpdateManager(
         (NetworkStatus.read(appContext).offlineFailure(FailureStep.UpdateFetch) ?: updateSpaceShortage())?.let {
             return AutoUpdateOutcome.Skipped(it.message)
         }
-        val result = runCommand(MaiBotUpdateScripts.fetchLatest())
+        val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+        val result = runCommand(MaiBotUpdateScripts.fetchLatest(gitHubMirrors = gitHubMirrors))
         val report = parseMaiBotUpdateReport(result.output)
         applyReport(report)
         if (!result.success || report.installed == null || report.latest == null) {
@@ -477,7 +482,8 @@ internal class MaiBotUpdateManager(
                 "正在拉取上游 ${target.branch} 分支并切换到${target.label}..."
             }
         )
-        val updateResult = runCommand(MaiBotUpdateScripts.fetchAndReset(target?.branch))
+        val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+        val updateResult = runCommand(MaiBotUpdateScripts.fetchAndReset(target?.branch, gitHubMirrors))
         val report = parseMaiBotUpdateReport(updateResult.output)
         applyReport(report)
         // 脚本在动源码之前发现数据库会降级、退出了：源码和分支都没变，说明原因（预检之后上游又变了才会走到这里）
@@ -494,9 +500,11 @@ internal class MaiBotUpdateManager(
     // 源码切换后按 OOBE 同样的三步重装依赖：uv 和 Python 已就绪时脚本会立刻跳过，
     // 兜底处理 uv 被误删、上游改了 Python 版本要求的情况；最后 uv sync 按新的依赖同步。
     private suspend fun installDependencies(): Failure? {
+        val gitHubMirrors = mirrors.resolveGitHubMirrors(allowSpeedTest = true)
+        val pyPiMirrors = mirrors.resolvePyPiMirrors(allowSpeedTest = true)
         for (step in MaiBotDependencyStep.entries) {
             showProgress(MaiBotUpdatePhase.Updating, step.progressText)
-            val result = runCommand(step.script())
+            val result = runCommand(step.script(gitHubMirrors = gitHubMirrors, pyPiMirrors = pyPiMirrors))
             if (!result.success) return step.failure(result)
         }
         return null

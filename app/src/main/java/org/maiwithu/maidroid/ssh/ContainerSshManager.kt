@@ -19,6 +19,7 @@ import org.maiwithu.maidroid.diagnostics.failureOf
 import org.maiwithu.maidroid.runtime.ContainerCommandResult
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.ContainerScript
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import org.maiwithu.maidroid.runtime.killProot
@@ -54,7 +55,8 @@ internal data class ContainerSshState(
 internal class ContainerSshManager(
     private val settings: AppSettings,
     private val readiness: RuntimeReadiness,
-    private val commandRunner: ContainerCommandRunner
+    private val commandRunner: ContainerCommandRunner,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         const val STOP_JOIN_TIMEOUT_MS = 5_000L
@@ -156,7 +158,9 @@ internal class ContainerSshManager(
 
         TerminalLog.append("")
         TerminalLog.append("[ContainerSSH] configuring sshd on port $port")
-        val setupResult = runCommand(ContainerSshScripts.configure(port, password))
+        val aptMirrors = mirrors.resolveAptMirrors(allowSpeedTest = true)
+        if (isAborted(startGen)) return
+        val setupResult = runCommand(ContainerSshScripts.configure(port, password, aptMirrors))
         if (isAborted(startGen)) return
         if (!setupResult.success) {
             fail(failureOf(FailureStep.SshSetup, setupResult.summary(), setupResult.output))

@@ -17,6 +17,7 @@ import org.maiwithu.maidroid.platform.qq.QqAdapterUpkeep
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqClientChoice
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
+import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.ContainerScript
 import org.maiwithu.maidroid.runtime.ProcessExitOutcome
 import org.maiwithu.maidroid.runtime.RequestedExit
@@ -48,7 +49,8 @@ internal class SnowLumaProcessSupervisor(
     private val paths: RuntimePaths,
     private val commandRunner: ContainerCommandRunner,
     private val adapterUpkeep: QqAdapterUpkeep,
-    private val choice: QqClientChoice
+    private val choice: QqClientChoice,
+    private val mirrors: MirrorManager
 ) {
     private companion object {
         // 停止时等旧一轮读日志（或还在启动）的协程收尾的上限。
@@ -244,7 +246,8 @@ internal class SnowLumaProcessSupervisor(
         // 需要时换装新版 SnowLuma 适配器、补迁移它的配置（和 NapCat 共用，见 QqAdapterUpkeep）
         adapterUpkeep.ensureBeforeStart(QqClient.SnowLuma)
         runMaintenance(SnowLumaScripts.cleanup())
-        runMaintenance(SnowLumaScripts.prepareRuntime())
+        val aptMirrors = mirrors.resolveAptMirrors(allowSpeedTest = false)
+        runMaintenance(SnowLumaScripts.prepareRuntime(aptMirrors))
 
         if (!files.launcher.isFile) {
             TerminalLog.append("[SnowLuma] 未找到 ${SnowLumaScripts.LAUNCHER}，暂不启动 SnowLuma")
