@@ -255,6 +255,33 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** 屏幕常亮图标：柔白外圈光芒环绕纯白高亮圆盘，对应常亮阻止息屏状态。 */
+    val KeepScreenOn: ImageVector by lazy {
+        flatVector("FlatKeepScreenOn") {
+            strokeLayer(IconSecondary, width = 2.2f) {
+                moveTo(12.0f, 3.0f)
+                lineTo(12.0f, 5.2f)
+                moveTo(12.0f, 18.8f)
+                lineTo(12.0f, 21.0f)
+                moveTo(3.0f, 12.0f)
+                lineTo(5.2f, 12.0f)
+                moveTo(18.8f, 12.0f)
+                lineTo(21.0f, 12.0f)
+                moveTo(5.6f, 5.6f)
+                lineTo(7.2f, 7.2f)
+                moveTo(16.8f, 16.8f)
+                lineTo(18.4f, 18.4f)
+                moveTo(18.4f, 5.6f)
+                lineTo(16.8f, 7.2f)
+                moveTo(7.2f, 16.8f)
+                lineTo(5.6f, 18.4f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(12.0f, 12.0f, 4.6f)
+            }
+        }
+    }
+
     val Cleanup: ImageVector by lazy {
         flatVector("FlatCleanup") {
             // 斜置小扫帚手柄与闪烁星点用柔白层，前景圆头束腰和扇形扫头用纯白层

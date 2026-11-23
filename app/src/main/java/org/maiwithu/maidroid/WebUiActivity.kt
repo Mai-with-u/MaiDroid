@@ -4,7 +4,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -57,7 +56,8 @@ class WebUiActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // 全屏网页同样遵循设置页的“屏幕常亮”开关，默认允许自动息屏。
+        applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
         // 横屏时和主界面一样隐藏状态栏和导航栏（从边缘滑动临时呼出），竖屏保持系统栏常显。
         applySystemBars(
             window = window,
@@ -128,6 +128,11 @@ class WebUiActivity : ComponentActivity() {
             sessionHost.applyDesktopViewport(enabled = isMaiBotWebUi)
             sessionHost.loadUrl(launchUrl)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
     }
 
     override fun onDestroy() {

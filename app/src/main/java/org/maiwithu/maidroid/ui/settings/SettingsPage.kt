@@ -498,6 +498,10 @@ private fun SettingsNavigationPane(
     val remoteOps = remember(context) { context.appDependencies.remoteOps }
     val bannerAnnouncements by remoteOps.bannerAnnouncements.collectAsState()
     var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
+    val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
+    val onKeepScreenOnChange: (Boolean) -> Unit = { enabled ->
+        settings.keepScreenOn = enabled
+    }
     val onTelemetryChange: (Boolean) -> Unit = { enabled ->
         settings.telemetryEnabled = enabled
         telemetryEnabled = enabled
@@ -687,6 +691,33 @@ private fun SettingsNavigationPane(
                         }
                     }
                 )
+
+                SettingsDivider()
+
+                // 引导完成后按用户开关控制窗口是否保持常亮，避免大屏高刷机型长时间挂在前台发热掉电。
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.KeepScreenOn,
+                    iconColor = IconSunnyAmber,
+                    title = "屏幕常亮",
+                    supportingText = "前台打开界面时阻止自动息屏，关闭可降低发热与耗电",
+                    onClick = { onKeepScreenOnChange(!keepScreenOn) },
+                    trailing = if (compact) null else {
+                        {
+                            FlatSwitch(
+                                checked = keepScreenOn,
+                                onCheckedChange = onKeepScreenOnChange
+                            )
+                        }
+                    }
+                )
+                if (compact) {
+                    CompactSettingSwitchRow(
+                        label = "启用屏幕常亮",
+                        checked = keepScreenOn,
+                        enabled = true,
+                        onCheckedChange = onKeepScreenOnChange
+                    )
+                }
             }
         }
 

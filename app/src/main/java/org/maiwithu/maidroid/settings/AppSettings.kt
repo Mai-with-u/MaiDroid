@@ -5,6 +5,9 @@ import com.tencent.mmkv.MMKV
 import com.tencent.mmkv.MMKVHandler
 import com.tencent.mmkv.MMKVLogLevel
 import com.tencent.mmkv.MMKVRecoverStrategic
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.maiwithu.maidroid.runtime.MirrorCategory
 import org.maiwithu.maidroid.runtime.MirrorPreference
 import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
@@ -59,6 +62,7 @@ internal class AppSettings(
         const val KEY_MIRROR_PYPI_MODE = "mirror_pypi_mode"
         const val KEY_MIRROR_PYPI_PRESET = "mirror_pypi_preset"
         const val KEY_MIRROR_PYPI_CUSTOM = "mirror_pypi_custom"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
         const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
@@ -201,6 +205,18 @@ internal class AppSettings(
         get() = kv.decodeBool(KEY_TELEMETRY_ENABLED, true)
         set(value) {
             kv.encode(KEY_TELEMETRY_ENABLED, value)
+        }
+
+    // 主界面与全屏网页共用这条状态流，设置页切开关时窗口常亮标记会立即增删。
+    private val _keepScreenOn = MutableStateFlow(kv.decodeBool(KEY_KEEP_SCREEN_ON, false))
+    val keepScreenOnFlow: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    /** 前台打开界面时是否阻止系统自动息屏；默认关闭以降低高刷大屏机型亮屏挂机导致的发热与边充边掉电。 */
+    var keepScreenOn: Boolean
+        get() = _keepScreenOn.value
+        set(value) {
+            kv.encode(KEY_KEEP_SCREEN_ON, value)
+            _keepScreenOn.value = value
         }
 
     /** 匿名安装随机标识：首次读取时生成 UUID，卸载重装即变，不绑定任何硬件序列号或账号。 */
