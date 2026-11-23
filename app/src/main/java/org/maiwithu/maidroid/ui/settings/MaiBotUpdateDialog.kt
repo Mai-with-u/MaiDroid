@@ -1,16 +1,11 @@
 package org.maiwithu.maidroid.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,10 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,6 +30,8 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.LiquidSegmentItem
+import org.maiwithu.maidroid.ui.component.LiquidSegmentedSelector
 import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
@@ -49,15 +44,11 @@ import org.maiwithu.maidroid.ui.component.MaiDialogSectionCard
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
-import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.IconWarmCoral
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
-import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -334,14 +325,19 @@ internal fun MaiBotUpdateDialog(
     }
 }
 
-// 更新弹窗底部的“版本通道”：两格胶囊选择器，高亮的是仓库当前所在的通道。
-// 点另一格不会马上切换，只是交给外面弹确认框；点当前这格什么也不做。
+// 更新弹窗底部的“版本通道”：三层液态玻璃两格胶囊选择器，高亮的是仓库当前所在的通道。
+// 点选或滑到另一格不会马上切换，先交给外层弹确认框（取消时水滴滑块会自动弹回原通道）；点当前格什么也不做。
 @Composable
 private fun MaiBotChannelSelector(
     selected: MaiBotChannel?,
     enabled: Boolean,
     onSelect: (MaiBotChannel) -> Unit
 ) {
+    val selectorItems = remember {
+        MaiBotChannel.entries.map { channel ->
+            LiquidSegmentItem(label = channel.label, subtitle = channel.branch)
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "版本通道",
@@ -351,53 +347,17 @@ private fun MaiBotChannelSelector(
             lineHeight = 16.sp
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Corners.Chip))
-                .background(CardBorder)
-                .padding(2.dp)
-                .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            MaiBotChannel.entries.forEach { channel ->
-                val isSelected = channel == selected
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Corners.Chip))
-                        .background(if (isSelected) CardSurfaceSelected else Color.Transparent)
-                        .selectable(
-                            selected = isSelected,
-                            enabled = enabled,
-                            role = Role.RadioButton,
-                            onClick = { if (!isSelected) onSelect(channel) }
-                        )
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = channel.label,
-                        color = when {
-                            !enabled -> TextFaint
-                            isSelected -> TextPrimary
-                            else -> TextMuted
-                        },
-                        fontSize = TextSizes.Body,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 17.sp,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = channel.branch,
-                        color = if (enabled) TextMuted else TextFaint,
-                        fontSize = TextSizes.Caption,
-                        lineHeight = 14.sp,
-                        maxLines = 1
-                    )
-                }
+        LiquidSegmentedSelector(
+            items = selectorItems,
+            selectedIndex = selected?.let(MaiBotChannel.entries::indexOf),
+            enabled = enabled,
+            height = 54.dp,
+            modifier = Modifier.fillMaxWidth(),
+            onSelect = { index ->
+                val target = MaiBotChannel.entries.getOrNull(index) ?: return@LiquidSegmentedSelector
+                if (target != selected) onSelect(target)
             }
-        }
+        )
 
         Text(
             text = "正式版跟随上游 main 分支；测试版跟随 dev 分支，能先用上新功能，但可能不稳定。",
