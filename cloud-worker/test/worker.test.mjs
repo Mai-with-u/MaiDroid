@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT, buildConsoleBundle } from "../src/adminConsole.ts";
 import { ADMIN_MANIFEST_EDITOR_SCRIPT } from "../src/adminManifestEditor.ts";
@@ -24,6 +25,7 @@ import {
   summarizeSampleDistribution,
   validateErrorReportPayload,
 } from "../src/errorAggregation.ts";
+import { createSqliteD1 } from "./sqliteD1.mjs";
 import worker from "../src/index.ts";
 
 test("ECDSA P-256 signs payload into ASN.1 DER and verifies cleanly", async () => {
@@ -412,6 +414,9 @@ function createMockD1() {
     if (q.includes("FROM telemetry_events")) {
       return { first: { uniq: 0, done: 0 }, results: [] };
     }
+    if (q.includes("FROM device_presence")) {
+      return { first: { uniq: 0, done: 0, cnt: 0, at: null }, results: [] };
+    }
     if (q.includes("FROM diag_snapshots")) {
       return { first: { cnt: 0 } };
     }
@@ -724,4 +729,150 @@ test("manifest preview logic mirrors the Android client matching rules", () => {
   assert.equal(P.validateHint({ id: "x", title: "t", advice: "a", containsAny: [] }).some((e) => e[0] === "err"), true);
   assert.equal(P.validateAnn({ ...base, filter: { minAppVersion: "0.3", maxAppVersion: "0.2" } }, 0).some((e) => e[0] === "err"), true);
   assert.match(P.renderBanner({ ...base, title: "<b>x</b>" }), /&lt;b&gt;x/);
+});
+
+test("Worker /v1/telemetry tracks live online state, deduplicates upgraded versions, and handles legacy heartbeats", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const headers = { Authorization: "Bearer test-secret" };
+
+  const postTelemetry = (body, ip = "10.0.0.1") =>
+    worker.fetch(
+      new Request("https://ops.8u.nz/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+      ctx
+    );
+
+  // 1. 设备 A 首次以 0.4.0 上报在线心跳并附带功耗指标 -> 在线 1、明细 1 条
+  const r1 = await postTelemetry({
+    installId: "dev-k50",
+    event: "online_heartbeat",
+    buildType: "release",
+    appVersion: "0.4.0",
+    versionCode: 12,
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+    activeQqClient: "snowluma",
+    power: {
+      batteryPct: 62,
+      batteryTempC: 42.5,
+      batteryCharging: true,
+      chargePlug: "usb",
+      chargingDrain: true,
+      appCpuPct: 168.4,
+      keepScreenOn: true,
+      cpuAffinityPinned: false,
+    },
+  });
+  assert.equal(r1.status, 200);
+
+  // 2. 同版本 1 小时内再次心跳不膨胀 telemetry_events，但更新最新时间
+  const r2 = await postTelemetry({
+    installId: "dev-k50",
+    event: "online_heartbeat",
+    buildType: "release",
+    appVersion: "0.4.0",
+    versionCode: 12,
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+  });
+  assert.equal(r2.status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS c FROM telemetry_events").get().c, 1);
+
+  // 3. 设备 A 升级到 0.4.1 后再上报：device_presence 覆写为 0.4.1，0.4.0 不再残留在现网版本里
+  const r3 = await postTelemetry({
+    installId: "dev-k50",
+    event: "online_heartbeat",
+    buildType: "release",
+    appVersion: "0.4.1",
+    versionCode: 13,
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+  });
+  assert.equal(r3.status, 200);
+  const versionsAfterUpgrade = db.raw
+    .prepare("SELECT app_version, COUNT(*) AS c FROM device_presence GROUP BY app_version")
+    .all()
+    .map((r) => ({ ...r }));
+  assert.deepEqual(versionsAfterUpgrade, [{ app_version: "0.4.1", c: 1 }]);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS c FROM telemetry_events").get().c, 2);
+
+  // 4. 老版本客户端发送无 power/buildType 字段的 daily_heartbeat 也必须兼容
+  const rLegacy = await postTelemetry(
+    {
+      installId: "dev-legacy",
+      event: "daily_heartbeat",
+      appVersion: "0.3.9",
+      versionCode: 11,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+    },
+    "10.0.0.2"
+  );
+  assert.equal(rLegacy.status, 200);
+
+  let stats = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/stats", { headers }), env, ctx)).json();
+  assert.equal(stats.onlineNow, 2);
+  assert.equal(stats.uniqueInstalls, 2);
+
+  // 5. 设备 A 发送 offline 立即从实时在线减一，但保留原有 0.4.1 版本号及当日高温记录
+  const rOff = await postTelemetry({
+    installId: "dev-k50",
+    event: "offline",
+    appVersion: "0.4.1",
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+  });
+  assert.equal(rOff.status, 200);
+
+  stats = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/stats", { headers }), env, ctx)).json();
+  assert.equal(stats.onlineNow, 1);
+  assert.equal(stats.uniqueInstalls, 2);
+
+  const rowK50 = db.raw.prepare("SELECT * FROM device_presence WHERE install_id = 'dev-k50'").get();
+  assert.equal(rowK50.app_version, "0.4.1");
+  assert.equal(rowK50.peak_temp_c, 42.5);
+  assert.equal(rowK50.is_online, 0);
+});
+
+test("migration 001 cleanly backfills deduplicated latest device versions from telemetry_events", () => {
+  const db = createSqliteD1();
+  const insertStmt = db.raw.prepare(
+    `INSERT INTO telemetry_events
+     (created_at, install_id, event_type, app_version, manufacturer, model, sdk_int, oobe_step, setup_complete)
+     VALUES (?, ?, 'daily_heartbeat', ?, ?, ?, ?, 'Install', 1)`
+  );
+  // 设备 1 曾报过 0.3.9 和 0.4.0，设备 2 仅报过 0.3.8
+  insertStmt.run(1000, "old-1", "0.3.9", "Xiaomi", "Redmi K50", 34);
+  insertStmt.run(2000, "old-1", "0.4.0", "Xiaomi", "Redmi K50", 34);
+  insertStmt.run(1500, "old-2", "0.3.8", "HONOR", "OXF-AN10", 31);
+
+  const migrationSql = readFileSync(new URL("../migrations/001_presence_and_power.sql", import.meta.url), "utf8");
+  db.raw.exec(migrationSql);
+  // 重复执行必须严格幂等
+  db.raw.exec(migrationSql);
+
+  const rows = db.raw
+    .prepare("SELECT install_id, app_version, first_seen_at, last_seen_at, is_online FROM device_presence ORDER BY install_id")
+    .all()
+    .map((r) => ({ ...r }));
+  assert.deepEqual(rows, [
+    { install_id: "old-1", app_version: "0.4.0", first_seen_at: 1000, last_seen_at: 2000, is_online: 0 },
+    { install_id: "old-2", app_version: "0.3.8", first_seen_at: 1500, last_seen_at: 1500, is_online: 0 },
+  ]);
 });

@@ -35,6 +35,13 @@ import {
   summarizeSampleDistribution,
   validateErrorReportPayload,
 } from "./errorAggregation.ts";
+import {
+  DEVICE_PRESENCE_TTL_SECONDS,
+  type ExistingPresenceRow,
+  mergePresenceState,
+  ONLINE_WINDOW_SECONDS,
+  parsePowerTelemetry,
+} from "./telemetryPresence.ts";
 
 export interface Env {
   DB: D1Database;
@@ -46,7 +53,7 @@ export interface Env {
 
 const MAX_DIAG_GZIP_BYTES = 128 * 1024;
 const MAX_DIAG_UNCOMPRESSED_BYTES = 1024 * 1024;
-const MAX_TELEMETRY_BYTES = 2 * 1024;
+const MAX_TELEMETRY_BYTES = 4 * 1024;
 const DIAG_TTL_SECONDS = 7 * 86400;
 const TELEMETRY_TTL_SECONDS = 30 * 86400;
 
@@ -203,7 +210,7 @@ async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext
   if (rawText.length > MAX_TELEMETRY_BYTES) {
     return jsonResponse({ error: "Payload too large" }, 413);
   }
-  if (!(await checkRateLimit(request, env, "tel", 30, 3600))) {
+  if (!(await checkRateLimit(request, env, "tel", 120, 3600))) {
     return jsonResponse({ error: "Rate limited" }, 429);
   }
 
@@ -216,33 +223,168 @@ async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext
   }
 
   const now = Math.floor(Date.now() / 1000);
-  await env.DB.prepare(
-    `INSERT INTO telemetry_events
-     (created_at, install_id, event_type, app_version, manufacturer, model, sdk_int,
-      oobe_step, setup_complete, active_qq_client, error_code, last_exit_reason)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(
-      now,
+  const manufacturer = safeStr(body.manufacturer, 48) || "unknown";
+  const model = safeStr(body.model, 64) || "unknown";
+  const sdkInt = typeof body.sdkInt === "number" ? Math.trunc(body.sdkInt) : 0;
+  const versionCode = typeof body.versionCode === "number" && Number.isInteger(body.versionCode) ? body.versionCode : 0;
+  const buildType = (safeStr(body.buildType, 16) || "release").toLowerCase();
+  const oobeStep = safeStr(body.oobeStep, 24);
+  const setupComplete = body.setupComplete === true;
+  const activeQqClient = safeStr(body.activeQqClient, 24);
+  const errorCode = safeStr(body.errorCode, 48);
+  const lastExitReason = safeStr(body.lastExitReason, 80);
+  const power = parsePowerTelemetry(body.power);
+
+  const prev = await env.DB.prepare("SELECT * FROM device_presence WHERE install_id = ?")
+    .bind(installId)
+    .first<ExistingPresenceRow>();
+  const merged = mergePresenceState(
+    prev ?? null,
+    {
       installId,
       eventType,
       appVersion,
-      safeStr(body.manufacturer, 48) || "unknown",
-      safeStr(body.model, 64) || "unknown",
-      typeof body.sdkInt === "number" ? Math.trunc(body.sdkInt) : 0,
-      safeStr(body.oobeStep, 24),
-      body.setupComplete === true ? 1 : 0,
-      safeStr(body.activeQqClient, 24),
-      safeStr(body.errorCode, 48),
-      safeStr(body.lastExitReason, 80)
+      versionCode,
+      buildType,
+      manufacturer,
+      model,
+      sdkInt,
+      oobeStep,
+      setupComplete,
+      activeQqClient,
+      lastExitReason,
+      power,
+    },
+    now
+  );
+  const r = merged.row;
+
+  await env.DB.prepare(
+    `INSERT INTO device_presence (
+       install_id, first_seen_at, last_seen_at, last_online_at, is_online, last_hourly_event_at,
+       app_version, version_code, build_type, manufacturer, model, sdk_int,
+       oobe_step, setup_complete, active_qq_client, last_exit_reason,
+       battery_pct, battery_temp_c, peak_temp_c, peak_temp_at, battery_voltage_mv,
+       battery_charging, charge_plug, battery_current_ma,
+       discharge_rate_pct_hr, discharge_rate_at, charge_rate_pct_hr, charge_rate_at,
+       charging_drain, last_charging_drain_at, thermal_status, app_cpu_pct,
+       screen_on, screen_on_pct, keep_screen_on, cpu_affinity_pinned, desktop_pet_running,
+       power_updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(install_id) DO UPDATE SET
+       last_seen_at = excluded.last_seen_at,
+       last_online_at = excluded.last_online_at,
+       is_online = excluded.is_online,
+       last_hourly_event_at = excluded.last_hourly_event_at,
+       app_version = excluded.app_version,
+       version_code = excluded.version_code,
+       build_type = excluded.build_type,
+       manufacturer = excluded.manufacturer,
+       model = excluded.model,
+       sdk_int = excluded.sdk_int,
+       oobe_step = excluded.oobe_step,
+       setup_complete = excluded.setup_complete,
+       active_qq_client = excluded.active_qq_client,
+       last_exit_reason = excluded.last_exit_reason,
+       battery_pct = excluded.battery_pct,
+       battery_temp_c = excluded.battery_temp_c,
+       peak_temp_c = excluded.peak_temp_c,
+       peak_temp_at = excluded.peak_temp_at,
+       battery_voltage_mv = excluded.battery_voltage_mv,
+       battery_charging = excluded.battery_charging,
+       charge_plug = excluded.charge_plug,
+       battery_current_ma = excluded.battery_current_ma,
+       discharge_rate_pct_hr = excluded.discharge_rate_pct_hr,
+       discharge_rate_at = excluded.discharge_rate_at,
+       charge_rate_pct_hr = excluded.charge_rate_pct_hr,
+       charge_rate_at = excluded.charge_rate_at,
+       charging_drain = excluded.charging_drain,
+       last_charging_drain_at = excluded.last_charging_drain_at,
+       thermal_status = excluded.thermal_status,
+       app_cpu_pct = excluded.app_cpu_pct,
+       screen_on = excluded.screen_on,
+       screen_on_pct = excluded.screen_on_pct,
+       keep_screen_on = excluded.keep_screen_on,
+       cpu_affinity_pinned = excluded.cpu_affinity_pinned,
+       desktop_pet_running = excluded.desktop_pet_running,
+       power_updated_at = excluded.power_updated_at`
+  )
+    .bind(
+      r.install_id,
+      r.first_seen_at,
+      r.last_seen_at,
+      r.last_online_at,
+      r.is_online,
+      r.last_hourly_event_at,
+      r.app_version,
+      r.version_code,
+      r.build_type,
+      r.manufacturer,
+      r.model,
+      r.sdk_int,
+      r.oobe_step,
+      r.setup_complete,
+      r.active_qq_client,
+      r.last_exit_reason,
+      r.battery_pct,
+      r.battery_temp_c,
+      r.peak_temp_c,
+      r.peak_temp_at,
+      r.battery_voltage_mv,
+      r.battery_charging,
+      r.charge_plug,
+      r.battery_current_ma,
+      r.discharge_rate_pct_hr,
+      r.discharge_rate_at,
+      r.charge_rate_pct_hr,
+      r.charge_rate_at,
+      r.charging_drain,
+      r.last_charging_drain_at,
+      r.thermal_status,
+      r.app_cpu_pct,
+      r.screen_on,
+      r.screen_on_pct,
+      r.keep_screen_on,
+      r.cpu_affinity_pinned,
+      r.desktop_pet_running,
+      r.power_updated_at
     )
     .run();
 
+  if (merged.shouldInsertTelemetryEvent) {
+    await env.DB.prepare(
+      `INSERT INTO telemetry_events
+       (created_at, install_id, event_type, app_version, manufacturer, model, sdk_int,
+        oobe_step, setup_complete, active_qq_client, error_code, last_exit_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        now,
+        installId,
+        eventType,
+        appVersion,
+        manufacturer,
+        model,
+        sdkInt,
+        oobeStep,
+        setupComplete ? 1 : 0,
+        activeQqClient,
+        errorCode,
+        lastExitReason
+      )
+      .run();
+  }
+
   if (Math.random() < 0.05) {
     ctx.waitUntil(
-      env.DB.prepare("DELETE FROM telemetry_events WHERE created_at < ?")
-        .bind(now - TELEMETRY_TTL_SECONDS)
-        .run()
+      Promise.all([
+        env.DB.prepare("DELETE FROM telemetry_events WHERE created_at < ?")
+          .bind(now - TELEMETRY_TTL_SECONDS)
+          .run(),
+        env.DB.prepare("DELETE FROM device_presence WHERE last_seen_at < ?")
+          .bind(now - DEVICE_PRESENCE_TTL_SECONDS)
+          .run(),
+      ])
     );
   }
   return jsonResponse({ ok: true }, 200);
@@ -536,12 +678,17 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
   }
 
   if (sub === "stats" && request.method === "GET") {
-    const since = Math.floor(Date.now() / 1000) - 7 * 86400;
-    const [totals, diagCnt, openReleaseIssues, topErrors, topExits] = await Promise.all([
+    const now = Math.floor(Date.now() / 1000);
+    const since = now - 7 * 86400;
+    const sinceOnline = now - ONLINE_WINDOW_SECONDS;
+    const [onlineRow, totals, diagCnt, openReleaseIssues, topErrors, topExits] = await Promise.all([
       env.DB.prepare(
-        `SELECT COUNT(DISTINCT install_id) AS uniq,
-                COUNT(DISTINCT CASE WHEN setup_complete = 1 THEN install_id END) AS done
-         FROM telemetry_events WHERE created_at >= ?`
+        "SELECT COUNT(*) AS cnt FROM device_presence WHERE is_online = 1 AND last_online_at >= ?"
+      ).bind(sinceOnline).first<{ cnt: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS uniq,
+                COALESCE(SUM(CASE WHEN setup_complete = 1 THEN 1 ELSE 0 END), 0) AS done
+         FROM device_presence WHERE last_seen_at >= ?`
       ).bind(since).first<{ uniq: number; done: number }>(),
       env.DB.prepare("SELECT COUNT(*) AS cnt FROM diag_snapshots WHERE created_at >= ?")
         .bind(since).first<{ cnt: number }>(),
@@ -560,6 +707,7 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
       ).bind(since).all<{ label: string; count: number }>(),
     ]);
     return jsonResponse({
+      onlineNow: onlineRow?.cnt ?? 0,
       uniqueInstalls: totals?.uniq ?? 0,
       completedInstalls: totals?.done ?? 0,
       diagCount: diagCnt?.cnt ?? 0,
