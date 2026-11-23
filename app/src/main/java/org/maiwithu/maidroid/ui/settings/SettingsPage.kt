@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.appDependencies
@@ -67,6 +68,7 @@ import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
@@ -186,7 +188,9 @@ internal fun SettingsPage(
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        val navigationWidth = settingsNavigationWidthDp(maxWidth.value).dp
+        // 左右栏共用的顶部标题展开留白与手机横屏紧凑态开关，确保主从两栏标题基线与字号严丝合缝。
+        val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
+        val compactTwoPane = maxHeight.value < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp
 
         BackHandler(enabled = !useTwoPane && selectedDetail != null) {
             selectedDetail = null
@@ -216,6 +220,7 @@ internal fun SettingsPage(
         }
 
         if (useTwoPane) {
+            // 横屏与宽屏采用全站统一的 38% : 62% 分栏，中间保留 0.5dp 细竖线凸显主从设置与详情层级。
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -230,6 +235,7 @@ internal fun SettingsPage(
                     runningPlatformCount = runningPlatformCount,
                     permissionSelected = true,
                     compact = true,
+                    expandedTopOffset = topSpacing,
                     onPermissionClick = {},
                     onSshConfigureClick = { openSshDialog() },
                     onSshEnabledChange = onSshEnabledChange,
@@ -242,21 +248,21 @@ internal fun SettingsPage(
                     onQqGroupClick = { showQqGroupDialog = true },
                     onCleanupClick = { showCleanupDialog = true },
                     modifier = Modifier
-                        .width(navigationWidth)
+                        .weight(HomeTwoPaneSpec.LeftPaneWeight)
                         .fillMaxHeight()
                 )
 
                 Box(
                     modifier = Modifier
-                        .width(0.5.dp)
+                        .width(HomeTwoPaneSpec.MasterDetailDividerThickness)
                         .fillMaxHeight()
                         .background(CardDivider)
                 )
 
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
+                        .weight(HomeTwoPaneSpec.RightPaneWeight)
+                        .fillMaxHeight()
                         .background(PageBackground)
                 ) {
                     PermissionManagementPage(
@@ -264,6 +270,8 @@ internal fun SettingsPage(
                         actions = permissionActions,
                         onBack = {},
                         showBackButton = false,
+                        compact = compactTwoPane,
+                        expandedTopOffset = topSpacing,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -282,6 +290,7 @@ internal fun SettingsPage(
                         state = permissionState,
                         actions = permissionActions,
                         onBack = { selectedDetail = null },
+                        expandedTopOffset = topSpacing,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -294,6 +303,7 @@ internal fun SettingsPage(
                         runningPlatformCount = runningPlatformCount,
                         permissionSelected = false,
                         compact = false,
+                        expandedTopOffset = topSpacing,
                         onPermissionClick = { selectedDetail = PermissionSettingsDetail },
                         onSshConfigureClick = { openSshDialog() },
                         onSshEnabledChange = onSshEnabledChange,
@@ -366,11 +376,12 @@ internal fun SettingsPage(
     }
 }
 
+/** 横屏窗口（至少 520dp 宽以免极窄分屏挤爆两栏）与平板大屏启用左右主从双栏。 */
 internal fun settingsUseTwoPane(widthDp: Float, heightDp: Float): Boolean =
-    widthDp > heightDp || widthDp >= 960f
+    (widthDp > heightDp && widthDp >= HomeTwoPaneSpec.CompactTwoPaneMinWidthDp) || widthDp >= 960f
 
 internal fun settingsNavigationWidthDp(availableWidthDp: Float): Float =
-    availableWidthDp.coerceAtLeast(0f) / 3f
+    HomeTwoPaneSpec.leftPaneWidthDp(availableWidthDp)
 
 @Composable
 private fun SettingsNavigationPane(
@@ -382,6 +393,7 @@ private fun SettingsNavigationPane(
     runningPlatformCount: Int,
     permissionSelected: Boolean,
     compact: Boolean,
+    expandedTopOffset: Dp,
     onPermissionClick: () -> Unit,
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
@@ -405,9 +417,6 @@ private fun SettingsNavigationPane(
         settings.telemetryEnabled = enabled
         telemetryEnabled = enabled
     }
-    // 横屏全屏时状态栏隐藏、statusBarTop 为 0，紧凑排版原本的 4dp 会让“设置”标题贴着屏幕顶边；
-    // 这时和消息平台页一样留 8dp，标题顶端和左侧导航竖栏对齐。
-    val compactTop = if (statusBarTop > 0.dp) 4.dp else 8.dp
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
     val density = LocalDensity.current
@@ -419,8 +428,7 @@ private fun SettingsNavigationPane(
         collapseDistancePx = collapseDistancePx
     )
     val subtitleAlpha = computeHeaderSubtitleAlpha(collapseProgress)
-    val horizontalPadding = if (compact) 16.dp else 20.dp
-    val expandedTopOffset = if (compact) compactTop else 44.dp
+    val horizontalPadding = if (compact) HomeTwoPaneSpec.OuterHorizontalPadding else 20.dp
 
     // 单一“设置”标题随滚动平滑缩小吸顶，卡片在状态栏后穿过时呈现渐进羽化毛玻璃效果。
     CollapsingGlassHeaderContainer(
@@ -441,7 +449,7 @@ private fun SettingsNavigationPane(
             overscrollEffect = overscroll,
             contentPadding = PaddingValues(
                 top = statusBarTop + expandedTopOffset,
-                start = if (compact) 12.dp else 18.dp,
+                start = if (compact) HomeTwoPaneSpec.OuterHorizontalPadding else 18.dp,
                 end = if (compact) 12.dp else 18.dp,
                 bottom = LocalBottomNavigationClearance.current
             ),
@@ -451,7 +459,7 @@ private fun SettingsNavigationPane(
                 Column(
                     modifier = Modifier
                         .overscrollHeader(overscroll)
-                        .padding(horizontal = if (compact) 4.dp else 2.dp)
+                        .padding(horizontal = if (compact) 0.dp else 2.dp)
                 ) {
                     // 顶部主标题改由连续缩小顶栏直接渲染，首项仅留标题占位与副标题。
                     Spacer(modifier = Modifier.height(if (compact) 38.dp else 44.dp))

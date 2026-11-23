@@ -72,6 +72,7 @@ import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialSaveResult
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
+import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeScrollHeaderCollapseProgress
@@ -112,14 +113,11 @@ internal enum class PlatformsLayout {
 }
 
 // 手机横屏约 360dp 高，放不下平板那套固定在顶部的标题、已安装和分类（合计约 320dp），改左右两栏；
-// 两栏至少 520dp 宽，右栏才放得下“发现”标题加四个分类按钮。手机竖屏约 360~420dp 宽，用单列列表。
-private const val PlatformTwoPaneMaxHeightDp = 560f
-private const val PlatformTwoPaneMinWidthDp = 520f
-private const val PlatformListMaxWidthDp = 600f
-
+// 断点、外边距与 38:62 分栏比例统一遵循 HomeTwoPaneSpec，与扩展组件、设置页保持一致。
 internal fun messagePlatformsLayout(widthDp: Float, heightDp: Float): PlatformsLayout = when {
-    heightDp < PlatformTwoPaneMaxHeightDp && widthDp >= PlatformTwoPaneMinWidthDp -> PlatformsLayout.TwoPane
-    widthDp < PlatformListMaxWidthDp -> PlatformsLayout.List
+    heightDp < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp &&
+        widthDp >= HomeTwoPaneSpec.CompactTwoPaneMinWidthDp -> PlatformsLayout.TwoPane
+    widthDp < HomeTwoPaneSpec.SingleColumnMaxWidthDp -> PlatformsLayout.List
     else -> PlatformsLayout.Grid
 }
 
@@ -292,12 +290,10 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     ) {
         val statusBarTop = statusBarTopInset()
         val bottomClearance = LocalBottomNavigationClearance.current
-        val pageWidth = maxWidth
         // 横屏窗口高度逐步拉大时平滑过渡回竖屏间距，避免跨过断点时界面突然跳变
         val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f))
             .coerceIn(0f, 1f)
-        // 原 64dp 顶部留白默认按约 24dp 状态栏估算，这里把视觉呼吸感与系统安全区内边距拆开计算
-        val topSpacing = 8.dp + 32.dp * verticalExpansion
+        val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
         val sectionSpacing = 8.dp + 16.dp * verticalExpansion
 
         // 手机两种排版共用的列表头区：标题与搜索按钮交由连续缩小顶栏承接，列表顶部仅留占位与副标题。
@@ -437,8 +433,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
             }
 
             PlatformsLayout.TwoPane -> {
-                // 手机横屏：左栏单一标题与搜索钮随滚动平滑缩小吸顶，右栏独立滚动。
-                val leftPaneWidth = (pageWidth * 0.4f).coerceIn(220.dp, 320.dp)
+                // 手机横屏：按全站统一 38% : 62% 分栏；左栏单一标题与搜索钮随滚动平滑缩小吸顶，右栏独立滚动。
                 val leftScrollState = rememberScrollState()
                 val leftOverscroll = rememberSplitHeaderOverscrollEffect()
                 val leftCollapseDistancePx = with(density) { 40.dp.toPx() }
@@ -453,7 +448,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         title = "消息平台",
                         collapseProgress = leftCollapseProgress,
                         statusBarTop = statusBarTop,
-                        horizontalPadding = PlatformGridHorizontalPadding,
+                        horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
                         expandedTopOffset = topSpacing,
                         expandedFontSize = TextSizes.DisplayCompact,
                         collapsedFontSize = 18.sp,
@@ -476,14 +471,17 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                             )
                         },
                         modifier = Modifier
-                            .width(leftPaneWidth)
+                            .weight(HomeTwoPaneSpec.LeftPaneWeight)
                             .fillMaxHeight()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(leftScrollState, overscrollEffect = leftOverscroll)
-                                .padding(start = PlatformGridHorizontalPadding, end = 8.dp)
+                                .padding(
+                                    start = HomeTwoPaneSpec.OuterHorizontalPadding,
+                                    end = HomeTwoPaneSpec.PaneHalfGap
+                                )
                                 .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
@@ -498,10 +496,13 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
 
                     Column(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(HomeTwoPaneSpec.RightPaneWeight)
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState())
-                            .padding(start = 8.dp, end = PlatformGridHorizontalPadding)
+                            .padding(
+                                start = HomeTwoPaneSpec.PaneHalfGap,
+                                end = HomeTwoPaneSpec.OuterHorizontalPadding
+                            )
                             .padding(top = statusBarTop + topSpacing, bottom = bottomClearance)
                     ) {
                         discoverSection(true)

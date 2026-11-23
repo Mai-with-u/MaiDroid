@@ -52,6 +52,7 @@ import org.maiwithu.maidroid.pet.DesktopPetUiState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
+import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeScrollHeaderCollapseProgress
@@ -80,8 +81,9 @@ internal enum class ExtensionsLayout {
 
 /** 对齐消息平台页与设置页的响应式断点：矮宽横屏切左右双栏，窄竖屏用单列，宽大屏展双列仪表盘。 */
 internal fun extensionsLayout(widthDp: Float, heightDp: Float): ExtensionsLayout = when {
-    heightDp < 560f && widthDp >= 520f -> ExtensionsLayout.TwoPane
-    widthDp < 600f -> ExtensionsLayout.Compact
+    heightDp < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp &&
+        widthDp >= HomeTwoPaneSpec.CompactTwoPaneMinWidthDp -> ExtensionsLayout.TwoPane
+    widthDp < HomeTwoPaneSpec.SingleColumnMaxWidthDp -> ExtensionsLayout.Compact
     else -> ExtensionsLayout.Wide
 }
 
@@ -196,8 +198,7 @@ internal fun ExtensionsPage(
         val statusBarTop = statusBarTopInset()
         val bottomClearance = LocalBottomNavigationClearance.current
         val density = LocalDensity.current
-        val verticalExpansion = ((maxHeight.value - 480f) / (720f - 480f)).coerceIn(0f, 1f)
-        val topSpacing = 8.dp + 32.dp * verticalExpansion
+        val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
 
         val headerSubtitle: @Composable (Boolean, Float) -> Unit = { compact, subtitleAlpha ->
             Column {
@@ -208,7 +209,8 @@ internal fun ExtensionsPage(
                     fontSize = if (compact) TextSizes.Body else TextSizes.BodyLarge,
                     fontWeight = FontWeight.Bold,
                     lineHeight = if (compact) 17.sp else 18.sp,
-                    maxLines = 1,
+                    // 38% 窄左栏下允许副标题最多换到两行，防止实时状态说明过早被截断。
+                    maxLines = if (compact) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.graphicsLayer { alpha = subtitleAlpha }
                 )
@@ -235,7 +237,7 @@ internal fun ExtensionsPage(
             }
         }
 
-        val ecosystemSection: @Composable (Boolean) -> Unit = { compact ->
+        val ecosystemSection: @Composable (Boolean, Boolean) -> Unit = { compact, stackBadge ->
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExtensionSection(title = "麦麦生态扩展") {
                     Column(
@@ -251,6 +253,7 @@ internal fun ExtensionsPage(
                             UpcomingExtensionRow(
                                 entry = entry,
                                 compact = compact,
+                                stackBadge = stackBadge,
                                 onClick = {
                                     Toast.makeText(
                                         context,
@@ -287,7 +290,7 @@ internal fun ExtensionsPage(
                     title = "扩展组件",
                     collapseProgress = collapseProgress,
                     statusBarTop = statusBarTop,
-                    horizontalPadding = 16.dp,
+                    horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
                     expandedTopOffset = topSpacing,
                     expandedFontSize = TextSizes.Display,
                     collapsedFontSize = 19.sp,
@@ -299,7 +302,7 @@ internal fun ExtensionsPage(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(scrollState, overscrollEffect = overscroll)
-                            .padding(horizontal = 16.dp)
+                            .padding(horizontal = HomeTwoPaneSpec.OuterHorizontalPadding)
                             .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                         verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
@@ -311,15 +314,14 @@ internal fun ExtensionsPage(
                             verticalArrangement = Arrangement.spacedBy(20.dp)
                         ) {
                             petSection(false)
-                            ecosystemSection(false)
+                            ecosystemSection(false, false)
                         }
                     }
                 }
             }
 
             ExtensionsLayout.TwoPane -> {
-                // 手机横屏宽矮窗口：左栏承载标题与悬浮桌宠主控卡，右栏承载生态扩展清单，各自独立滚动不挤占
-                val leftPaneWidth = (maxWidth * 0.56f).coerceIn(280.dp, 460.dp)
+                // 手机横屏按全站统一 38% : 62% 分栏：左 38% 放标题与生态扩展清单，右 62% 放交互丰富的悬浮桌宠主控卡，各自独立滚动。
                 val leftScrollState = rememberScrollState()
                 val leftOverscroll = rememberSplitHeaderOverscrollEffect()
                 val leftCollapseDistancePx = with(density) { 40.dp.toPx() }
@@ -334,21 +336,24 @@ internal fun ExtensionsPage(
                         title = "扩展组件",
                         collapseProgress = leftCollapseProgress,
                         statusBarTop = statusBarTop,
-                        horizontalPadding = 16.dp,
+                        horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
                         expandedTopOffset = topSpacing,
                         expandedFontSize = TextSizes.DisplayCompact,
                         collapsedFontSize = 18.sp,
                         topBarHeight = 46.dp,
                         headerOverscrollPx = leftOverscroll.headerOverscrollPx,
                         modifier = Modifier
-                            .width(leftPaneWidth)
+                            .weight(HomeTwoPaneSpec.LeftPaneWeight)
                             .fillMaxHeight()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(leftScrollState, overscrollEffect = leftOverscroll)
-                                .padding(start = 16.dp, end = 8.dp)
+                                .padding(
+                                    start = HomeTwoPaneSpec.OuterHorizontalPadding,
+                                    end = HomeTwoPaneSpec.PaneHalfGap
+                                )
                                 .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
@@ -356,26 +361,29 @@ internal fun ExtensionsPage(
                                 headerSubtitle(true, leftSubtitleAlpha)
                             }
                             Box(modifier = Modifier.overscrollBody(leftOverscroll)) {
-                                petSection(true)
+                                ecosystemSection(true, true)
                             }
                         }
                     }
 
                     Column(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(HomeTwoPaneSpec.RightPaneWeight)
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState())
-                            .padding(start = 8.dp, end = 16.dp)
+                            .padding(
+                                start = HomeTwoPaneSpec.PaneHalfGap,
+                                end = HomeTwoPaneSpec.OuterHorizontalPadding
+                            )
                             .padding(top = statusBarTop + topSpacing, bottom = bottomClearance)
                     ) {
-                        ecosystemSection(true)
+                        petSection(true)
                     }
                 }
             }
 
             ExtensionsLayout.Wide -> {
-                // 平板或折叠屏大屏：顶部统一吸顶渐进玻璃标题，下方双列仪表盘合理分配空间
+                // 平板或折叠屏大屏：顶部统一吸顶渐进玻璃标题，下方保持左 38% 生态扩展与右 62% 桌宠主控栏，统一中轴比例。
                 val wideScrollState = rememberScrollState()
                 val wideOverscroll = rememberSplitHeaderOverscrollEffect()
                 val collapseDistancePx = with(density) { 52.dp.toPx() }
@@ -389,7 +397,7 @@ internal fun ExtensionsPage(
                     title = "扩展组件",
                     collapseProgress = collapseProgress,
                     statusBarTop = statusBarTop,
-                    horizontalPadding = 24.dp,
+                    horizontalPadding = HomeTwoPaneSpec.WideOuterHorizontalPadding,
                     expandedTopOffset = topSpacing,
                     expandedFontSize = TextSizes.Display,
                     collapsedFontSize = 19.sp,
@@ -401,7 +409,7 @@ internal fun ExtensionsPage(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(wideScrollState, overscrollEffect = wideOverscroll)
-                            .padding(horizontal = 24.dp)
+                            .padding(horizontal = HomeTwoPaneSpec.WideOuterHorizontalPadding)
                             .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
                         verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
@@ -412,14 +420,14 @@ internal fun ExtensionsPage(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .overscrollBody(wideOverscroll),
-                            horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(HomeTwoPaneSpec.WidePaneGap),
                             verticalAlignment = Alignment.Top
                         ) {
-                            Box(modifier = Modifier.weight(1.15f)) {
-                                petSection(false)
+                            Box(modifier = Modifier.weight(HomeTwoPaneSpec.LeftPaneWeight)) {
+                                ecosystemSection(false, true)
                             }
-                            Box(modifier = Modifier.weight(0.85f)) {
-                                ecosystemSection(false)
+                            Box(modifier = Modifier.weight(HomeTwoPaneSpec.RightPaneWeight)) {
+                                petSection(false)
                             }
                         }
                     }
@@ -491,11 +499,12 @@ private fun ExtensionRowDivider(compact: Boolean) {
     )
 }
 
-/** 规划中的外部麦系生态组件列表行：统一使用双层圆标徽章与右侧规划胶囊，点击弹出温和预告提示。 */
+/** 规划中的外部麦系生态组件列表行：统一使用双层圆标徽章与状态胶囊；窄左栏下胶囊沉到说明下方防标题截断。 */
 @Composable
 private fun UpcomingExtensionRow(
     entry: ExtensionEntry,
     compact: Boolean,
+    stackBadge: Boolean = false,
     onClick: () -> Unit
 ) {
     val (icon, badgeColor) = resolveUpcomingIcon(entry.id)
@@ -525,7 +534,7 @@ private fun UpcomingExtensionRow(
                 fontSize = TextSizes.BodyLarge,
                 fontWeight = FontWeight.Medium,
                 lineHeight = 19.sp,
-                maxLines = 1,
+                maxLines = if (stackBadge) 2 else 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(3.dp))
@@ -537,11 +546,18 @@ private fun UpcomingExtensionRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+            if (stackBadge) {
+                // 38% 窄左栏下将“规划中/即将支持”胶囊沉到说明下方，释放右侧整列宽度给标题和说明。
+                Spacer(modifier = Modifier.height(6.dp))
+                ExtensionTagPill(text = entry.badge, color = TextMuted)
+            }
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        if (!stackBadge) {
+            Spacer(modifier = Modifier.width(10.dp))
 
-        ExtensionTagPill(text = entry.badge, color = TextMuted)
+            ExtensionTagPill(text = entry.badge, color = TextMuted)
+        }
     }
 }
 
