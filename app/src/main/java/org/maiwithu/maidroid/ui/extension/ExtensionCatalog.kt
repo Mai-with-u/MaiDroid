@@ -19,13 +19,13 @@ internal data class ExtensionEntry(
 /**
  * 扩展组件目录注册表：
  * - 第一栏固定承载本机悬浮桌宠运行时入口；
- * - 预留语音合成自动部署、Amaidesu 联动等外部组件扩展位，后续新增能力只需补充条目并挂载对应控制卡片。
+ * - 预留语音合成自动部署、Amaidesu 生态联动等外部组件扩展位，后续新增能力只需补充条目并挂载对应控制卡片。
  */
 internal object ExtensionCatalog {
     val primaryEntry = ExtensionEntry(
         id = ExtensionId.DesktopPet,
         title = "MaiBot 悬浮桌宠",
-        subtitle = "在其他应用上层显示可拖拽交互的麦麦悬浮桌宠，自动复用本机 WebUI 身份并跟随容器同步前端资源。",
+        subtitle = "悬浮于其他应用上层的麦麦桌宠，支持自由拖拽与即时互动",
         badge = "本机集成",
         available = true
     )
@@ -33,15 +33,15 @@ internal object ExtensionCatalog {
     val upcomingEntries: List<ExtensionEntry> = listOf(
         ExtensionEntry(
             id = ExtensionId.TtsAutoDeploy,
-            title = "TTS 自动部署",
-            subtitle = "面向麦麦语音合成引擎的一键部署、服务启停与音色参数管理入口。",
+            title = "语音合成（TTS）",
+            subtitle = "一键部署麦麦语音合成服务，自由配置音色与播报参数",
             badge = "规划中",
             available = false
         ),
         ExtensionEntry(
             id = ExtensionId.AmaidesuBridge,
-            title = "Amaidesu 等麦系组件",
-            subtitle = "预留直播交互与其他外部麦系软件的桥接能力，无需再调整首页导航架构即可平铺扩展。",
+            title = "Amaidesu 生态联动",
+            subtitle = "连接直播互动、多端桥接与更多麦系外部工具",
             badge = "即将支持",
             available = false
         )
