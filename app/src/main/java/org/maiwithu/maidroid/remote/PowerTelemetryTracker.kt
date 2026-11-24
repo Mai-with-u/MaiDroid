@@ -263,30 +263,46 @@ private fun rawCurrentToMilliAmperes(rawCurrent: Int): Int? {
 }
 
 /**
- * 与 ProotCommand.excludeTopCpuClusterPrelude() 使用完全一致的探测条件：
- * 从 /sys 读取各核心最大频率，只有读得到且存在 2 个及以上不同频段时，启动脚本的绑核才真正排除最高频簇。
+ * 与 ProotCommand.excludeTopCpuClusterPrelude() 使用完全一致的三级探测条件：
+ * 按核优先读 cpuinfo_max_freq、不可读回退 scaling_max_freq；若整机频点均不可读再回退 cpu_capacity，
+ * 存在 2 个及以上有效核心且包含至少 2 个不同档位时，启动脚本的绑核才真正排除最高性能簇。
  */
 internal fun detectTopCpuClusterPinned(cpuSysDir: File = File("/sys/devices/system/cpu")): Boolean? =
     runCatching {
         val entries = cpuSysDir.listFiles() ?: return@runCatching false
         val freqs = HashSet<Long>()
-        var readableCount = 0
+        var freqReadableCount = 0
+        val capacities = HashSet<Long>()
+        var capReadableCount = 0
         for (dir in entries) {
             if (!dir.isDirectory) continue
             val name = dir.name
             if (!name.startsWith("cpu")) continue
             val suffix = name.substring(3)
             if (suffix.isEmpty() || !suffix.all(Char::isDigit)) continue
-            val freqFile = File(dir, "cpufreq/cpuinfo_max_freq")
-            if (!freqFile.isFile || !freqFile.canRead()) continue
-            val freq = freqFile.readText().trim().toLongOrNull() ?: continue
-            if (freq > 0L) {
-                readableCount++
+            val freq = readPositiveSysLong(File(dir, "cpufreq/cpuinfo_max_freq"))
+                ?: readPositiveSysLong(File(dir, "cpufreq/scaling_max_freq"))
+            if (freq != null) {
+                freqReadableCount++
                 freqs.add(freq)
             }
+            val cap = readPositiveSysLong(File(dir, "cpu_capacity"))
+            if (cap != null) {
+                capReadableCount++
+                capacities.add(cap)
+            }
         }
-        readableCount >= 2 && freqs.size >= 2
+        when {
+            freqReadableCount > 0 -> freqReadableCount >= 2 && freqs.size >= 2
+            else -> capReadableCount >= 2 && capacities.size >= 2
+        }
     }.getOrNull()
+
+private fun readPositiveSysLong(file: File): Long? {
+    if (!file.isFile || !file.canRead()) return null
+    val parsed = file.readText().trim().toLongOrNull() ?: return null
+    return parsed.takeIf { it > 0L }
+}
 
 internal fun chargePlugName(pluggedBits: Int): String = when {
     pluggedBits == 0 -> "none"
@@ -465,6 +481,7 @@ internal class PowerTelemetryTracker(
         return listOf(
             "电池状态" to batteryText,
             "屏幕常亮" to if (settings.keepScreenOn) "已开启" else "未开启（默认）",
+            "Wi-Fi 低延迟锁" to if (settings.wifiLockEnabled) "已开启" else "未开启（默认）",
             "容器 CPU 绑核" to pinnedText
         )
     }

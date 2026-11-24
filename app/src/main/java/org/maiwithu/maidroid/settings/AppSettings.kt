@@ -66,6 +66,7 @@ internal class AppSettings(
         const val KEY_MIRROR_PYPI_PRESET = "mirror_pypi_preset"
         const val KEY_MIRROR_PYPI_CUSTOM = "mirror_pypi_custom"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_WIFI_LOCK_ENABLED = "wifi_lock_enabled"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
         const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
@@ -220,6 +221,18 @@ internal class AppSettings(
         set(value) {
             kv.encode(KEY_KEEP_SCREEN_ON, value)
             _keepScreenOn.value = value
+        }
+
+    // 与前台服务实时联动，默认关闭低延迟 Wi-Fi 锁以免阻止 Wi-Fi 射频进入常规节能休眠。
+    private val _wifiLockEnabled = MutableStateFlow(kv.decodeBool(KEY_WIFI_LOCK_ENABLED, false))
+    val wifiLockEnabledFlow: StateFlow<Boolean> = _wifiLockEnabled.asStateFlow()
+
+    /** 后台运行期间是否持有 Wi-Fi 低延迟锁防止息屏断连；默认关闭以降低射频耗电与发热。 */
+    var wifiLockEnabled: Boolean
+        get() = _wifiLockEnabled.value
+        set(value) {
+            kv.encode(KEY_WIFI_LOCK_ENABLED, value)
+            _wifiLockEnabled.value = value
         }
 
     /** 匿名安装随机标识：首次读取时生成 UUID，卸载重装即变，不绑定任何硬件序列号或账号。 */

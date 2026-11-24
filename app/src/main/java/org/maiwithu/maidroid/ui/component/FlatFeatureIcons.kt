@@ -282,6 +282,28 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** Wi-Fi 低延迟保活图标：柔白双弧信号配前景信号圆点与右下小锁点缀。 */
+    val WifiLock: ImageVector by lazy {
+        flatVector("FlatWifiLock") {
+            strokeLayer(IconSecondary, width = 2.2f) {
+                moveTo(3.8f, 9.4f)
+                quadTo(11.6f, 3.2f, 19.4f, 9.4f)
+                moveTo(6.9f, 12.6f)
+                quadTo(11.6f, 8.6f, 16.3f, 12.6f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(11.6f, 16.5f, 1.85f)
+                roundedRectPath(15.0f, 15.6f, 20.6f, 20.4f, 1.4f)
+            }
+            strokeLayer(IconForeground, width = 1.6f) {
+                moveTo(16.2f, 15.6f)
+                lineTo(16.2f, 14.1f)
+                arcTo(1.6f, 1.6f, 0f, false, true, 19.4f, 14.1f)
+                lineTo(19.4f, 15.6f)
+            }
+        }
+    }
+
     val Cleanup: ImageVector by lazy {
         flatVector("FlatCleanup") {
             // 斜置小扫帚手柄与闪烁星点用柔白层，前景圆头束腰和扇形扫头用纯白层

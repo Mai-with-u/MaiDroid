@@ -120,11 +120,11 @@ internal object ContainerSshScripts {
         return ContainerScript(listOf(AptMirrors.shellFunctions(aptMirrors), script).joinToString("\n"))
     }
 
-    /** 以前台模式（-D）运行 sshd，进程生命周期由 ContainerSshManager 持有，日志经 -e 打到标准错误。 */
+    /** 以前台模式（-D）运行 sshd 并排除最高频 CPU 簇，进程生命周期由 ContainerSshManager 持有，日志经 -e 打到标准错误。 */
     fun launch(port: Int): ContainerScript {
         val safePort = port.coerceIn(ContainerSshPortRange)
         return ContainerScript(
-            """
+            body = """
             set -e
             mkdir -p /run/sshd /var/empty
             chmod 0755 /run /run/sshd /var/empty 2>/dev/null || true
@@ -135,7 +135,8 @@ internal object ContainerSshScripts {
             /usr/sbin/sshd -t
             echo "sshd listening on port $safePort"
             exec /usr/sbin/sshd -D -e -p $safePort
-            """.trimIndent()
+            """.trimIndent(),
+            excludeTopCpuCluster = true
         )
     }
 

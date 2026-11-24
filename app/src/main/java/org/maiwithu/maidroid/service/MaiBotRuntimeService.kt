@@ -256,6 +256,12 @@ class MaiBotRuntimeService : Service() {
                 }
             }
         }
+        // 监听设置页“Wi-Fi 低延迟保活”开关切换：立即按当前开关与暂停状态持有或释放 Wi-Fi 锁。
+        serviceScope.launch {
+            appDependencies.settings.wifiLockEnabledFlow.collect {
+                syncWifiLock()
+            }
+        }
         // 服务刚起或开机自启时先补发一次上次尚未上报的崩溃记录
         appDependencies.remoteOps.reportPendingCrashIfNeeded()
         // 监听后台 MaiBot 启动阶段异常（例如开机自启无人盯盘时连续退出），提取纯 Python Traceback 上报；
@@ -411,6 +417,7 @@ class MaiBotRuntimeService : Service() {
     private fun runSafeExit() {
         if (safeExitRunning) return
         safeExitRunning = true
+        syncWifiLock()
         val notificationManager = getSystemService(NotificationManager::class.java)
         val notificationUpdates = serviceScope.launch {
             safeExit.state.collect { state ->
@@ -542,8 +549,8 @@ class MaiBotRuntimeService : Service() {
         return PendingIntent.getActivity(this, 0, intent, flags)
     }
 
-    // 同时持有 CPU 部分唤醒锁与低延迟 Wi-Fi 锁：拔电息屏后保持容器与网络活跃（防 Wi-Fi 深睡导致 QQ 断线），
-    // 低电量暂停与服务销毁时再一并放开让设备节能。已经拿着就不再新建。
+    // 同时按需持有 CPU 部分唤醒锁与可选 Wi-Fi 低延迟锁：CPU 唤醒锁始终保留以维系 7×24 容器心跳，
+    // 低延迟 Wi-Fi 锁默认关闭减少息屏射频能耗，仅用户开启且未进入低电暂停/安全退出时持有。
     private fun acquireKeepAliveLocks() {
         if (wakeLock?.isHeld != true) {
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
@@ -556,7 +563,16 @@ class MaiBotRuntimeService : Service() {
             }
             Log.d(TAG, "WakeLock acquired")
         }
-        acquireWifiLock()
+        syncWifiLock()
+    }
+
+    private fun syncWifiLock() {
+        val wantWifiLock = shouldHoldWifiLock(
+            wifiLockEnabled = appDependencies.settings.wifiLockEnabled,
+            lowBatteryPaused = lowBatteryPaused,
+            safeExitRunning = safeExitRunning
+        )
+        if (wantWifiLock) acquireWifiLock() else releaseWifiLock()
     }
 
     private fun acquireWifiLock() {
@@ -604,3 +620,10 @@ class MaiBotRuntimeService : Service() {
         wifiLock = null
     }
 }
+
+/** 仅当用户主动开启低延迟保活开关，且当前未因低电量暂停或进入安全退出时，才允许持有 Wi-Fi 锁。 */
+internal fun shouldHoldWifiLock(
+    wifiLockEnabled: Boolean,
+    lowBatteryPaused: Boolean,
+    safeExitRunning: Boolean
+): Boolean = wifiLockEnabled && !lowBatteryPaused && !safeExitRunning

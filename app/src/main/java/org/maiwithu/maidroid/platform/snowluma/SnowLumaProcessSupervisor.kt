@@ -71,9 +71,6 @@ internal class SnowLumaProcessSupervisor(
         // 预算用尽后的冷却时长：歇这么久再把计数清零重新拉起，而不是停手等手动处理。
         // 10 分钟 = 每小时最多 ~6 组重启尝试，重启风暴也罩得住，又不会长时间扔下麦麦。
         const val RESTART_COOLDOWN_MS = 10 * 60 * 1000L
-
-        // 宿主侧轮询 QQ fdinfo 并更新 /proc/locks 替身的间隔（毫秒）。
-        const val PROC_LOCKS_SYNC_INTERVAL_MS = 2_000L
     }
 
     private val files = SnowLumaFiles(paths)
@@ -278,11 +275,25 @@ internal class SnowLumaProcessSupervisor(
                 currentProcess.killProot()
                 return false
             }
-            // SnowLuma 进程已就位：启动宿主侧 /proc/locks 同步协程，代替容器内 bash 子循环以省掉幻影名额。
+            // SnowLuma 进程已就位：宿主侧同步 /proc/locks 替身，内容未变跳过写盘并在锁稳定后自动降频到 15 秒一次。
             procLocksJob = scope.launch {
+                var lastContent: String? = null
+                var unchangedStreak = 0
                 while (currentCoroutineContext().isActive) {
-                    runCatching { QqProcLocksSync.writeProcLocksSnapshot(paths.procLocksStandIn) }
-                    delay(PROC_LOCKS_SYNC_INTERVAL_MS)
+                    val outcome = runCatching {
+                        QqProcLocksSync.syncProcLocksSnapshot(paths.procLocksStandIn, lastContent)
+                    }.getOrNull()
+                    if (outcome != null) {
+                        unchangedStreak = if (outcome.content == lastContent && outcome.hasLocks) {
+                            (unchangedStreak + 1).coerceAtMost(QqProcLocksSync.STEADY_UNCHANGED_THRESHOLD)
+                        } else {
+                            0
+                        }
+                        lastContent = outcome.content
+                        delay(QqProcLocksSync.nextSyncDelayMs(outcome.hasLocks, unchangedStreak))
+                    } else {
+                        delay(QqProcLocksSync.ACTIVE_SYNC_INTERVAL_MS)
+                    }
                 }
             }
             currentProcess.inputStream.bufferedReader().useLines { lines ->

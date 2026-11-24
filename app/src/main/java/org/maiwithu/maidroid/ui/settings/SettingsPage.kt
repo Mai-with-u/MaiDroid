@@ -499,8 +499,12 @@ private fun SettingsNavigationPane(
     val bannerAnnouncements by remoteOps.bannerAnnouncements.collectAsState()
     var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
     val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
+    val wifiLockEnabled by settings.wifiLockEnabledFlow.collectAsState()
     val onKeepScreenOnChange: (Boolean) -> Unit = { enabled ->
         settings.keepScreenOn = enabled
+    }
+    val onWifiLockChange: (Boolean) -> Unit = { enabled ->
+        settings.wifiLockEnabled = enabled
     }
     val onTelemetryChange: (Boolean) -> Unit = { enabled ->
         settings.telemetryEnabled = enabled
@@ -719,6 +723,33 @@ private fun SettingsNavigationPane(
                         checked = keepScreenOn,
                         enabled = true,
                         onCheckedChange = onKeepScreenOnChange
+                    )
+                }
+
+                SettingsDivider()
+
+                // 默认关闭低延迟 Wi-Fi 锁降低息屏射频能耗，仅部分旧机型息屏断连时按需开启。
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.WifiLock,
+                    iconColor = IconTealMint,
+                    title = "Wi-Fi 低延迟保活",
+                    supportingText = "防止部分旧机型息屏后 Wi-Fi 断连；关闭可降低后台射频耗电与发热",
+                    onClick = { onWifiLockChange(!wifiLockEnabled) },
+                    trailing = if (compact) null else {
+                        {
+                            FlatSwitch(
+                                checked = wifiLockEnabled,
+                                onCheckedChange = onWifiLockChange
+                            )
+                        }
+                    }
+                )
+                if (compact) {
+                    CompactSettingSwitchRow(
+                        label = "启用 Wi-Fi 低延迟保活",
+                        checked = wifiLockEnabled,
+                        enabled = true,
+                        onCheckedChange = onWifiLockChange
                     )
                 }
             }

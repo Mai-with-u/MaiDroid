@@ -87,52 +87,92 @@ internal class ProotCommand(private val paths: RuntimePaths) {
         }
     }
 
+    // 注入基础环境变量并限制 glibc arenas，促使容器内 Python/Node/Electron 及时归还空闲内存。
     private fun shellPrelude(): String =
         "unset LD_LIBRARY_PATH; " +
             "export PATH=${shellQuote(DEBIAN_PATH)}; " +
-            "export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh TMPDIR=/tmp; "
+            "export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh TMPDIR=/tmp; " +
+            "export MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=131072; "
 
     /**
-     * 把整棵进程树钉在「非最高频簇」的 CPU 上（能效优化，通用规则不是机型特调）：
-     * 从 /sys 分簇，频率最高的簇（大小核机型的大核；三簇机型的 prime 簇）不进亲和掩码，
-     * 其余全部保留；检测失败、全同频（单簇）或没有 taskset 时不钉。子进程继承亲和性，
-     * 所以钉住这一条 sh，proot 里的 MaiBot/QQ/node/worker 全都会跟着留在中小核上。
-     *
-     * 注：紧连的 -pc 在 util-linux 2.38 的 Debian rootfs 实测可用；
-     * 分开写的「-c 列表 -p pid」会把 -p 当成待执行程序（实测报 failed to execute -p）。
+     * 把容器整棵进程树与宿主外层 proot 父进程一并钉在「非最高频簇」的 CPU 上（通用能效规则，非机型特调）：
+     * 直接枚举 /sys/devices/system/cpu/cpu[0-9]* 避免 512 次无效系统调用；每核优先读 cpuinfo_max_freq，
+     * 不可读时回退 scaling_max_freq，若所有核频点均受限再回退 cpu_capacity；检测失败、单簇或无 taskset 时跳过。
+     * 钉住当前 shell（$$）后，校验父进程 cmdline 含 proot 时同步钉住外层 proot，消除 ptrace 跨簇切换抖动。
      */
     private fun excludeTopCpuClusterPrelude(): String =
         """
         maidroid_exclude_top_cpu_cluster() {
             command -v taskset >/dev/null 2>&1 || return 0
             max_freq=0
-            cpus=''
-            i=0
-            while [ ${'$'}i -lt 512 ]; do
-                f=/sys/devices/system/cpu/cpu${'$'}i/cpufreq/cpuinfo_max_freq
-                if [ -r "${'$'}f" ]; then
-                    v=${'$'}(cat "${'$'}f" 2>/dev/null)
-                    case "${'$'}v" in ''|*[!0-9]*) v=0 ;; esac
-                    if [ "${'$'}v" -gt 0 ]; then
-                        cpus="${'$'}cpus ${'$'}i:${'$'}v"
-                        [ "${'$'}v" -gt "${'$'}max_freq" ] && max_freq=${'$'}v
+            freq_cpus=''
+            max_cap=0
+            cap_cpus=''
+            for dir in /sys/devices/system/cpu/cpu[0-9]*; do
+                [ -d "${'$'}dir" ] || continue
+                idx=${'$'}{dir##*/cpu}
+                case "${'$'}idx" in ''|*[!0-9]*) continue ;; esac
+                fv=''
+                if [ -r "${'$'}dir/cpufreq/cpuinfo_max_freq" ]; then
+                    fv=${'$'}(cat "${'$'}dir/cpufreq/cpuinfo_max_freq" 2>/dev/null)
+                elif [ -r "${'$'}dir/cpufreq/scaling_max_freq" ]; then
+                    fv=${'$'}(cat "${'$'}dir/cpufreq/scaling_max_freq" 2>/dev/null)
+                fi
+                case "${'$'}fv" in ''|*[!0-9]*) fv=0 ;; esac
+                if [ "${'$'}fv" -gt 0 ]; then
+                    freq_cpus="${'$'}freq_cpus ${'$'}idx:${'$'}fv"
+                    [ "${'$'}fv" -gt "${'$'}max_freq" ] && max_freq=${'$'}fv
+                fi
+                if [ -r "${'$'}dir/cpu_capacity" ]; then
+                    cv=${'$'}(cat "${'$'}dir/cpu_capacity" 2>/dev/null)
+                    case "${'$'}cv" in ''|*[!0-9]*) cv=0 ;; esac
+                    if [ "${'$'}cv" -gt 0 ]; then
+                        cap_cpus="${'$'}cap_cpus ${'$'}idx:${'$'}cv"
+                        [ "${'$'}cv" -gt "${'$'}max_cap" ] && max_cap=${'$'}cv
                     fi
                 fi
-                i=${'$'}((i + 1))
             done
-            [ "${'$'}max_freq" -gt 0 ] || return 0
+            src='none'
+            top_val=0
+            pairs=''
             mask=''
-            for pair in ${'$'}cpus; do
+            if [ "${'$'}max_freq" -gt 0 ]; then
+                src='cpufreq'
+                top_val=${'$'}max_freq
+                pairs=${'$'}freq_cpus
+            elif [ "${'$'}max_cap" -gt 0 ]; then
+                src='capacity'
+                top_val=${'$'}max_cap
+                pairs=${'$'}cap_cpus
+            fi
+            [ "${'$'}top_val" -gt 0 ] || return 0
+            for pair in ${'$'}pairs; do
                 idx=${'$'}{pair%%:*}
-                freq=${'$'}{pair##*:}
-                [ "${'$'}freq" -lt "${'$'}max_freq" ] && mask="${'$'}mask${'$'}idx,"
+                val=${'$'}{pair##*:}
+                [ "${'$'}val" -lt "${'$'}top_val" ] && mask="${'$'}mask${'$'}idx,"
             done
             mask=${'$'}{mask%,}
             if [ -z "${'$'}mask" ]; then
                 return 0
             fi
             if taskset -pc "${'$'}mask" ${'$'}${'$'} >/dev/null 2>&1; then
-                echo "[maidroid] CPU affinity pinned to cpus ${'$'}mask (excluding top cluster ${'$'}max_freq kHz)"
+                # 同时尝试将外层 proot 父进程钉入同一能效簇，防止父子跨核簇切换拉高大核功耗。
+                proot_pinned='no'
+                ppid="${'$'}{PPID:-}"
+                if [ -z "${'$'}ppid" ] && [ -r "/proc/${'$'}${'$'}/status" ]; then
+                    ppid=${'$'}(awk '/^PPid:/ {print ${'$'}2; exit}' "/proc/${'$'}${'$'}/status" 2>/dev/null || true)
+                fi
+                case "${'$'}ppid" in ''|*[!0-9]*) ppid='' ;; esac
+                if [ -n "${'$'}ppid" ] && [ -r "/proc/${'$'}ppid/cmdline" ]; then
+                    case "${'$'}(tr '\0' ' ' < "/proc/${'$'}ppid/cmdline" 2>/dev/null)" in
+                        *proot*)
+                            if taskset -pc "${'$'}mask" "${'$'}ppid" >/dev/null 2>&1; then
+                                proot_pinned='yes'
+                            fi
+                            ;;
+                    esac
+                fi
+                echo "[maidroid] CPU affinity pinned to cpus ${'$'}mask (source=${'$'}src, top=${'$'}top_val, proot=${'$'}proot_pinned)"
             fi
         }
         maidroid_exclude_top_cpu_cluster

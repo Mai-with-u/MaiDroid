@@ -210,4 +210,38 @@ class PowerTelemetryTrackerTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun `detectTopCpuClusterPinned falls back to scaling_max_freq and cpu_capacity`() {
+        val scalingRoot = Files.createTempDirectory("cpu_scaling_test").toFile()
+        try {
+            File(scalingRoot, "cpu0/cpufreq").apply { mkdirs() }.let {
+                File(it, "scaling_max_freq").writeText("1800000\n")
+            }
+            File(scalingRoot, "cpu6/cpufreq").apply { mkdirs() }.let {
+                File(it, "scaling_max_freq").writeText("2600000\n")
+            }
+            assertEquals(true, detectTopCpuClusterPinned(scalingRoot))
+        } finally {
+            scalingRoot.deleteRecursively()
+        }
+
+        val capacityRoot = Files.createTempDirectory("cpu_cap_test").toFile()
+        try {
+            File(capacityRoot, "cpu0").apply { mkdirs() }.let {
+                File(it, "cpu_capacity").writeText("320\n")
+            }
+            File(capacityRoot, "cpu1").apply { mkdirs() }.let {
+                File(it, "cpu_capacity").writeText("320\n")
+            }
+            assertEquals(false, detectTopCpuClusterPinned(capacityRoot))
+
+            File(capacityRoot, "cpu4").apply { mkdirs() }.let {
+                File(it, "cpu_capacity").writeText("1024\n")
+            }
+            assertEquals(true, detectTopCpuClusterPinned(capacityRoot))
+        } finally {
+            capacityRoot.deleteRecursively()
+        }
+    }
 }

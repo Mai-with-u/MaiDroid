@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid.platform.snowluma
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -63,6 +64,67 @@ class QqProcLocksSyncTest {
         QqProcLocksSync.clear(target)
         assertTrue(target.isFile)
         assertEquals("", target.readText())
+    }
+
+    @Test
+    fun `skips redundant disk writes when snapshot matches and lowers sync frequency when steady`() {
+        val procRoot = tempFolder.newFolder("proc_steady")
+        createProc(
+            procRoot,
+            pid = 301,
+            uid = 10217,
+            comm = "qq",
+            fdInfos = mapOf("10" to "lock:\t1: POSIX  ADVISORY  WRITE 301 103:3a:111 0 EOF\n")
+        )
+        val target = File(tempFolder.newFolder("tmp_steady"), ".maidroid-proc-locks")
+
+        val first = QqProcLocksSync.syncProcLocksSnapshot(
+            targetFile = target,
+            previousContent = null,
+            procRoot = procRoot,
+            myUid = 10217,
+            myPid = 100
+        )
+        assertTrue(first.wroteFile)
+        assertTrue(first.hasLocks)
+
+        val frozenMtime = 1_700_000_000_000L
+        assertTrue(target.setLastModified(frozenMtime))
+
+        // 锁内容完全一致时跳过写盘与 rename，不修改磁盘文件 mtime
+        val unchanged = QqProcLocksSync.syncProcLocksSnapshot(
+            targetFile = target,
+            previousContent = first.content,
+            procRoot = procRoot,
+            myUid = 10217,
+            myPid = 100
+        )
+        assertFalse(unchanged.wroteFile)
+        assertTrue(unchanged.hasLocks)
+        assertEquals(frozenMtime, target.lastModified())
+
+        // 锁内容变化后立即恢复写盘
+        createProc(
+            procRoot,
+            pid = 301,
+            uid = 10217,
+            comm = "qq",
+            fdInfos = mapOf("10" to "lock:\t1: POSIX  ADVISORY  WRITE 301 103:3a:222 0 EOF\n")
+        )
+        val updated = QqProcLocksSync.syncProcLocksSnapshot(
+            targetFile = target,
+            previousContent = unchanged.content,
+            procRoot = procRoot,
+            myUid = 10217,
+            myPid = 100
+        )
+        assertTrue(updated.wroteFile)
+        assertTrue(updated.content.contains("222"))
+
+        // 稳态降频与活跃探测间隔校验
+        assertEquals(QqProcLocksSync.ACTIVE_SYNC_INTERVAL_MS, QqProcLocksSync.nextSyncDelayMs(hasLocks = false, unchangedStreak = 5))
+        assertEquals(QqProcLocksSync.ACTIVE_SYNC_INTERVAL_MS, QqProcLocksSync.nextSyncDelayMs(hasLocks = true, unchangedStreak = 2))
+        assertEquals(QqProcLocksSync.STEADY_SYNC_INTERVAL_MS, QqProcLocksSync.nextSyncDelayMs(hasLocks = true, unchangedStreak = 3))
     }
 
     private fun createProc(
