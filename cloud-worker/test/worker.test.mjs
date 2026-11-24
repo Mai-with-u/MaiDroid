@@ -1043,3 +1043,197 @@ test("Worker /admin/api/overview aggregates live online count, version migration
   assert.equal(ov.power.hotModels[0].chargingDrainCount, 1);
   assert.equal(ov.power.hotModels[1].label, "HONOR OXF-AN10");
 });
+
+test("Worker filters charging-drain noise and clears false alarm upon same-session recovery", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const adminHeaders = { Authorization: "Bearer test-secret" };
+
+  const sendTel = (body, ip) =>
+    worker.fetch(
+      new Request("https://ops.8u.nz/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+      ctx
+    );
+
+  // 1. 过滤三类噪音：未插电误报、>=95% 满电涓流误报、微弱负充率（>-2%/h）误报，均不得落库或污染负充率
+  await sendTel(
+    {
+      installId: "noise-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "K50-Noise1",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 65, batteryCharging: false, chargePlug: "none", chargingDrain: true },
+    },
+    "10.0.2.1"
+  );
+  await sendTel(
+    {
+      installId: "noise-trickle",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "K50-Noise2",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 97, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: -3.0, chargingDrain: true },
+    },
+    "10.0.2.2"
+  );
+  await sendTel(
+    {
+      installId: "noise-weak",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "K50-Noise3",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 75, batteryCharging: true, chargePlug: "usb", chargeRatePctPerHr: -1.0, chargingDrain: true },
+    },
+    "10.0.2.3"
+  );
+
+  for (const id of ["noise-unplugged", "noise-trickle", "noise-weak"]) {
+    const row = db.raw.prepare("SELECT charging_drain, last_charging_drain_at, charge_rate_pct_hr FROM device_presence WHERE install_id = ?").get(id);
+    assert.equal(row.charging_drain, 0);
+    assert.equal(row.last_charging_drain_at, null);
+    assert.equal(row.charge_rate_pct_hr, null);
+  }
+
+  // 2. 同次插电周期后续明显充上电后（正充率或电量净涨 >=2% 或充至 >=98%）自动清除先前误报
+  await sendTel(
+    {
+      installId: "recover-by-rate",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+      power: { batteryPct: 60, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: -5.0, chargingDrain: true },
+    },
+    "10.0.2.4"
+  );
+  await sendTel(
+    {
+      installId: "recover-by-gain",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "vivo",
+      model: "PA2473",
+      sdkInt: 35,
+      setupComplete: true,
+      power: { batteryPct: 70, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: -4.0, chargingDrain: true },
+    },
+    "10.0.2.5"
+  );
+
+  let ov = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx)).json();
+  assert.equal(ov.power.summary.chargingDrainCount, 2);
+
+  await sendTel(
+    {
+      installId: "recover-by-rate",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+      power: { batteryPct: 63, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: 12.0, chargingDrain: false },
+    },
+    "10.0.2.4"
+  );
+  await sendTel(
+    {
+      installId: "recover-by-gain",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "vivo",
+      model: "PA2473",
+      sdkInt: 35,
+      setupComplete: true,
+      power: { batteryPct: 72, batteryCharging: true, chargePlug: "ac", chargingDrain: false },
+    },
+    "10.0.2.5"
+  );
+
+  const recRow = db.raw.prepare("SELECT charging_drain, last_charging_drain_at, charge_rate_pct_hr FROM device_presence WHERE install_id = 'recover-by-rate'").get();
+  assert.equal(recRow.charging_drain, 0);
+  assert.equal(recRow.last_charging_drain_at, null);
+  assert.equal(recRow.charge_rate_pct_hr, 12.0);
+
+  ov = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx)).json();
+  assert.equal(ov.power.summary.chargingDrainCount, 0);
+  const honorModel = ov.power.hotModels.find((m) => m.label === "HONOR OXF-AN10");
+  assert.equal(honorModel.chargingDrainCount, 0);
+
+  // 3. 真实边充掉电后拔电、再重新插回充电：24 小时内的掉电记录仍保留，不因拔电后新充电会合清零
+  await sendTel(
+    {
+      installId: "real-drain-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 50, batteryCharging: true, chargePlug: "usb", chargeRatePctPerHr: -6.0, chargingDrain: true },
+    },
+    "10.0.2.6"
+  );
+  await sendTel(
+    {
+      installId: "real-drain-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 49, batteryCharging: false, chargePlug: "none", chargingDrain: false },
+    },
+    "10.0.2.6"
+  );
+  await sendTel(
+    {
+      installId: "real-drain-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 65, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: 25.0, chargingDrain: false },
+    },
+    "10.0.2.6"
+  );
+
+  const keptRow = db.raw.prepare("SELECT charging_drain, last_charging_drain_at FROM device_presence WHERE install_id = 'real-drain-unplugged'").get();
+  assert.equal(keptRow.charging_drain, 0);
+  assert.ok(keptRow.last_charging_drain_at != null);
+
+  ov = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx)).json();
+  assert.equal(ov.power.summary.chargingDrainCount, 1);
+  assert.equal(ov.power.hotModels[0].label, "Xiaomi Redmi K50");
+  assert.equal(ov.power.hotModels[0].chargingDrainCount, 1);
+});

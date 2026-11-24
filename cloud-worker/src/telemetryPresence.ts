@@ -8,6 +8,10 @@ export const HOURLY_EVENT_INTERVAL_SECONDS = 3600;
 export const DEVICE_PRESENCE_TTL_SECONDS = 90 * 86400;
 const DAY_SECONDS = 86400;
 const VALID_CHARGE_PLUGS = new Set(["none", "ac", "usb", "wireless", "dock", "other"]);
+const MIN_SERVER_CHARGING_DRAIN_RATE = -2.0;
+const MAX_SERVER_CHARGING_DRAIN_PCT = 94;
+const RECOVERY_CHARGE_RATE_PCT_HR = 2.0;
+const RECOVERY_BATTERY_GAIN_PCT = 2;
 
 export interface PowerTelemetryInput {
   batteryPct: number | null;
@@ -141,6 +145,18 @@ export function parsePowerTelemetry(raw: unknown): PowerTelemetryInput | null {
   return hasAnyValue ? parsed : null;
 }
 
+/** 服务端二次清洗：屏蔽未插电、>=95% 高电量涓流或负充率弱于 -2%/h 的边充掉电误报噪音。 */
+export function resolveEffectiveChargingDrain(p: PowerTelemetryInput | null): boolean | null {
+  if (p === null || p.chargingDrain === null) return null;
+  if (p.chargingDrain === false) return false;
+  if (p.batteryCharging !== true) return false;
+  if (p.batteryPct !== null && p.batteryPct > MAX_SERVER_CHARGING_DRAIN_PCT) return false;
+  if (p.chargeRatePctPerHr !== null && p.chargeRatePctPerHr > MIN_SERVER_CHARGING_DRAIN_RATE) {
+    return false;
+  }
+  return true;
+}
+
 /** 合并旧设备记录与最新遥测：即时切换最新版本、维护 24h 高温/速率快照并按需节流明细表。 */
 export function mergePresenceState(
   prev: ExistingPresenceRow | null,
@@ -163,6 +179,7 @@ export function mergePresenceState(
   }
 
   const p = incoming.power;
+  const effectiveChargingDrain = resolveEffectiveChargingDrain(p);
   // 24 小时温度峰值与独立充/放电速率：避免插电覆盖掉刚测出来的放电速率，也避免一次普通心跳冲掉当日高温峰值。
   let peakTempC: number | null =
     prev?.peak_temp_c != null && prev.peak_temp_at != null && nowSec - prev.peak_temp_at < DAY_SECONDS
@@ -195,16 +212,37 @@ export function mergePresenceState(
       ? prev.charge_rate_pct_hr
       : null;
   let chargeRateAt: number | null = chargeRatePctHr !== null ? prev!.charge_rate_at : null;
-  if (p?.chargeRatePctPerHr !== null && p?.chargeRatePctPerHr !== undefined) {
+  // 未被确认为持续边充掉电的负充率视为短时震荡噪音，不写入 charge_rate_pct_hr 污染看板最低充率。
+  if (
+    p?.chargeRatePctPerHr !== null &&
+    p?.chargeRatePctPerHr !== undefined &&
+    (p.chargeRatePctPerHr >= 0 || effectiveChargingDrain === true)
+  ) {
     chargeRatePctHr = p.chargeRatePctPerHr;
     chargeRateAt = nowSec;
   }
 
+  const hasPrevDrainWithin24h =
+    prev?.last_charging_drain_at != null && nowSec - prev.last_charging_drain_at < DAY_SECONDS;
+  // 同一连续插电周期内（插头一致）若后续明显正充上电，则将先前短暂边充掉电误报自动消警；若已拔电后再复插则保留记录。
+  const recoveredInSameChargeSession =
+    hasPrevDrainWithin24h &&
+    p !== null &&
+    p.batteryCharging === true &&
+    effectiveChargingDrain === false &&
+    prev!.battery_charging === 1 &&
+    (prev!.charge_plug == null || p.chargePlug == null || prev!.charge_plug === p.chargePlug) &&
+    ((p.chargeRatePctPerHr !== null && p.chargeRatePctPerHr >= RECOVERY_CHARGE_RATE_PCT_HR) ||
+      (p.batteryPct !== null && p.batteryPct >= 98) ||
+      (p.batteryPct !== null &&
+        prev!.battery_pct !== null &&
+        p.batteryPct - prev!.battery_pct >= RECOVERY_BATTERY_GAIN_PCT));
+
   const lastChargingDrainAt =
-    p?.chargingDrain === true
+    effectiveChargingDrain === true
       ? nowSec
-      : prev?.last_charging_drain_at != null && nowSec - prev.last_charging_drain_at < DAY_SECONDS
-        ? prev.last_charging_drain_at
+      : hasPrevDrainWithin24h && !recoveredInSameChargeSession
+        ? prev!.last_charging_drain_at
         : null;
 
   const row: ExistingPresenceRow = {
@@ -236,7 +274,7 @@ export function mergePresenceState(
     discharge_rate_at: dischargeRateAt,
     charge_rate_pct_hr: chargeRatePctHr,
     charge_rate_at: chargeRateAt,
-    charging_drain: p ? boolToSqlite(p.chargingDrain) : (prev?.charging_drain ?? null),
+    charging_drain: p ? boolToSqlite(effectiveChargingDrain) : (prev?.charging_drain ?? null),
     last_charging_drain_at: lastChargingDrainAt,
     thermal_status: p ? p.thermalStatus : (prev?.thermal_status ?? null),
     app_cpu_pct: p ? p.appCpuPct : (prev?.app_cpu_pct ?? null),

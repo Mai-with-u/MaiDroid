@@ -58,20 +58,29 @@ private data class BatterySnapshot(
     val tempC: Double?,
     val voltageMv: Int?,
     val plugged: Boolean?,
-    val plugType: String?
+    val plugType: String?,
+    val batteryFull: Boolean = false
 )
 
 /**
  * 基于同一充放电状态（插电/拔电）下 10~60 分钟滑动样本窗口估算耗电与充电净速率，
- * 并在持续插电期间识别“边充边掉电”。插拔电切换立即清空样本，避免充放电混算。
+ * 并在持续插电期间通过降幅、时长、回充基准与持续下行校验识别真正的“边充边掉电”。
+ * 插拔电切换立即清空样本并记录本轮插电初始电量，避免充放电混算或整体充上电后的小震荡误报。
  */
 internal class PowerRateWindow {
     companion object {
         const val MIN_RATE_WINDOW_MS = 10 * 60_000L
         const val MAX_RATE_WINDOW_MS = 60 * 60_000L
+        const val MIN_CHARGING_DRAIN_WINDOW_MS = 20 * 60_000L
+        const val MIN_CHARGING_DRAIN_DROP_PCT = 3
+        const val MIN_POST_CHARGE_DRAIN_DROP_PCT = 5
+        const val MIN_CHARGING_DRAIN_RATE_PCT_PER_HR = -2.0
+        const val MAX_CHARGING_DRAIN_END_PCT = 94
+        private const val MIN_SAME_PCT_SAMPLE_GAP_MS = 30_000L
     }
 
     private var currentPlugged: Boolean? = null
+    private var sessionStartPct: Int? = null
     private val samples = ArrayDeque<BatterySample>()
 
     fun record(elapsedMs: Long, pct: Int, plugged: Boolean) {
@@ -79,20 +88,24 @@ internal class PowerRateWindow {
         if (currentPlugged != plugged) {
             samples.clear()
             currentPlugged = plugged
-        }
-        // 只保留最近 60 分钟窗口内的样本；时间未推进且百分比未变化时不重复追加冗余点。
-        while (samples.size > 1 && elapsedMs - samples.first().elapsedMs > MAX_RATE_WINDOW_MS) {
-            samples.removeFirst()
+            sessionStartPct = pct
+        } else if (sessionStartPct == null) {
+            sessionStartPct = pct
         }
         val tail = samples.lastOrNull()
         if (tail != null) {
             if (elapsedMs < tail.elapsedMs) return
-            if (elapsedMs == tail.elapsedMs && pct == tail.pct) return
+            // 同电量点至少间隔 30 秒再追加，电量只要变化立即记录，避免高频广播挤爆窗口。
+            if (pct == tail.pct && elapsedMs - tail.elapsedMs < MIN_SAME_PCT_SAMPLE_GAP_MS) return
+        }
+        // 只保留最近 60 分钟窗口内的样本。
+        while (samples.size > 1 && elapsedMs - samples.first().elapsedMs > MAX_RATE_WINDOW_MS) {
+            samples.removeFirst()
         }
         samples.addLast(BatterySample(elapsedMs, pct))
     }
 
-    fun evaluate(plugged: Boolean?): PowerRateSnapshot {
+    fun evaluate(plugged: Boolean?, batteryFull: Boolean = false): PowerRateSnapshot {
         if (plugged == null || currentPlugged != plugged || samples.size < 2) {
             return PowerRateSnapshot()
         }
@@ -106,12 +119,14 @@ internal class PowerRateWindow {
         val deltaPct = last.pct - first.pct
         val ratePctPerHr = roundOneDecimal(deltaPct.toDouble() * 3_600_000.0 / spanMs.toDouble())
         return if (plugged) {
-            // 满电 100% 稳态涓流不上报净充速率，但 100% 跌到 <=98% 仍会算作边充边掉电。
-            val isTrickleFull = first.pct == 100 && last.pct == 100
-            val drain = deltaPct <= -2 || (deltaPct <= -1 && last.pct < 98)
+            // 满电或系统声明 BATTERY_STATUS_FULL 的涓流保持阶段不上报净充速率，也不判为边充掉电。
+            val isTrickleFull = batteryFull || (first.pct >= 99 && last.pct >= 99)
+            val drain = !isTrickleFull && isSustainedChargingDrain(first, last, spanMs, deltaPct, ratePctPerHr)
+            // 未达到持续掉电门槛的 1%~2% 震荡回撤不输出负充率，避免污染看板“最低充率”。
+            val reportedChargeRate = if (isTrickleFull || (deltaPct < 0 && !drain)) null else ratePctPerHr
             PowerRateSnapshot(
                 dischargeRatePctPerHr = null,
-                chargeRatePctPerHr = if (isTrickleFull) null else ratePctPerHr,
+                chargeRatePctPerHr = reportedChargeRate,
                 chargingDrain = drain
             )
         } else {
@@ -122,6 +137,56 @@ internal class PowerRateWindow {
                 chargingDrain = false
             )
         }
+    }
+
+    // 校验插电掉电是否为持续真掉电：
+    // 终值 <= 94% -> 持续 >= 20 分钟且速率 <= -2%/h -> 整体已充上电时须回撤 >= 5%（否则 >= 3%）
+    // -> 峰值后连续下行 >= 20 分钟且仍在低位继续下滑，排除量化震荡、短时突降与反弹回充。
+    private fun isSustainedChargingDrain(
+        first: BatterySample,
+        last: BatterySample,
+        spanMs: Long,
+        deltaPct: Int,
+        ratePctPerHr: Double
+    ): Boolean {
+        if (last.pct > MAX_CHARGING_DRAIN_END_PCT) return false
+        if (spanMs < MIN_CHARGING_DRAIN_WINDOW_MS) return false
+        if (ratePctPerHr > MIN_CHARGING_DRAIN_RATE_PCT_PER_HR) return false
+
+        val requiredDrop = if (sessionStartPct != null && last.pct >= sessionStartPct!!) {
+            MIN_POST_CHARGE_DRAIN_DROP_PCT
+        } else {
+            MIN_CHARGING_DRAIN_DROP_PCT
+        }
+        if (deltaPct > -requiredDrop) return false
+
+        var peakPct = first.pct
+        var peakIndex = 0
+        for (i in samples.indices) {
+            val sample = samples[i]
+            if (sample.pct >= peakPct) {
+                peakPct = sample.pct
+                peakIndex = i
+            }
+        }
+        val peakSample = samples[peakIndex]
+        val declineSpanMs = last.elapsedMs - peakSample.elapsedMs
+        if (declineSpanMs < MIN_CHARGING_DRAIN_WINDOW_MS) return false
+
+        val midDeadlineMs = peakSample.elapsedMs + declineSpanMs / 2L
+        var minAfterPeak = peakSample.pct
+        var midSample = peakSample
+        for (i in peakIndex until samples.size) {
+            val sample = samples[i]
+            if (sample.pct < minAfterPeak) {
+                minAfterPeak = sample.pct
+            }
+            if (sample.elapsedMs <= midDeadlineMs) {
+                midSample = sample
+            }
+        }
+        if (last.pct > minAfterPeak) return false
+        return last.pct < midSample.pct
     }
 }
 
@@ -293,13 +358,8 @@ internal class PowerTelemetryTracker(
 
     /** 采集一份匿名电源/温度/CPU/屏幕快照；请在 IO 线程调用（需扫本应用 /proc）。 */
     fun captureSnapshot(): PowerTelemetryPayload {
-        // 尚无电量广播缓存时（例如主界面冷启先于后台服务触发上报），主动读一次系统粘性广播。
-        val existingBattery = synchronized(lock) { lastBattery }
-        if (existingBattery == null) {
-            runCatching {
-                appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            }.getOrNull()?.let(::onBatteryChanged)
-        }
+        // 每次采集前同步一次系统粘性电量广播，确保无新变化广播时仍能刷新率窗时间跨度与满电态。
+        refreshStickyBatterySnapshot()
 
         val nowMs = elapsedMsProvider()
         val currentTicks = runCatching { readOwnTreeCpuTicks() }.getOrDefault(emptyMap())
@@ -327,7 +387,7 @@ internal class PowerTelemetryTracker(
             } else {
                 null
             }
-            val rates = rateWindow.evaluate(bat?.plugged)
+            val rates = rateWindow.evaluate(bat?.plugged, batteryFull = bat?.batteryFull == true)
             val appCpuPct = if (previousCpuElapsedMs > 0L && previousCpuTicks.isNotEmpty()) {
                 computeTreeCpuPercent(
                     previous = previousCpuTicks,
@@ -367,12 +427,7 @@ internal class PowerTelemetryTracker(
 
     /** 供手动导出的诊断报告 report.txt 附带供电、温度与绑核摘要（不重置遥测采样窗口）。 */
     fun formatDiagnosticsSummary(): List<Pair<String, String>> {
-        val existingBattery = synchronized(lock) { lastBattery }
-        if (existingBattery == null) {
-            runCatching {
-                appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            }.getOrNull()?.let(::onBatteryChanged)
-        }
+        refreshStickyBatterySnapshot()
         val cpuPinned = synchronized(lock) { cpuPinChecked to cachedCpuPinned }.let { (checked, cached) ->
             if (checked) cached else detectTopCpuClusterPinned()
         }
@@ -388,7 +443,7 @@ internal class PowerTelemetryTracker(
             } else {
                 null
             }
-            Triple(currentBat, rateWindow.evaluate(currentBat?.plugged), ma)
+            Triple(currentBat, rateWindow.evaluate(currentBat?.plugged, batteryFull = currentBat?.batteryFull == true), ma)
         }
         val batteryText = buildList {
             bat?.pct?.let { add("${it}%") }
@@ -414,6 +469,13 @@ internal class PowerTelemetryTracker(
         )
     }
 
+    // 主动读取系统粘性电量广播更新快照与滑窗样本；读取失败时沿用已缓存的 lastBattery。
+    private fun refreshStickyBatterySnapshot() {
+        runCatching {
+            appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        }.getOrNull()?.let(::onBatteryChanged)
+    }
+
     private fun parseBatteryIntent(intent: Intent): BatterySnapshot {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
@@ -428,7 +490,15 @@ internal class PowerTelemetryTracker(
         val pluggedBits = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
         val plugged = if (pluggedBits >= 0) pluggedBits != 0 else null
         val plugType = if (pluggedBits >= 0) chargePlugName(pluggedBits) else null
-        return BatterySnapshot(pct = pct, tempC = tempC, voltageMv = voltage, plugged = plugged, plugType = plugType)
+        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+        return BatterySnapshot(
+            pct = pct,
+            tempC = tempC,
+            voltageMv = voltage,
+            plugged = plugged,
+            plugType = plugType,
+            batteryFull = status == BatteryManager.BATTERY_STATUS_FULL
+        )
     }
 
     private fun readRawBatteryCurrent(): Int? = runCatching {
