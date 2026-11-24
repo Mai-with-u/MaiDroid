@@ -69,17 +69,17 @@ internal data class HomeNavTabTypography(
         get() = iconSizeDp + labelGapDp + labelLineHeightSp
 }
 
-/** 按槽位形态（竖屏 WebUI 展开窄胶囊、紧凑横屏椭圆侧栏 vs 平板横屏椭圆侧栏与宽底栏）返回内切安全排版参数。 */
+/** 按槽位形态（竖屏 WebUI 展开 56dp 窄胶囊、紧凑横屏椭圆侧栏 vs 平板横屏椭圆侧栏与宽底栏）返回内切安全排版参数。 */
 internal fun resolveHomeNavTabTypography(
     narrowVertical: Boolean,
     compact: Boolean
 ): HomeNavTabTypography = when {
-    // 竖屏 WebUI 展开窄侧边胶囊（64dp 宽、56×44 内槽）：收敛图标与字号以完整落入胶囊弧线
+    // 竖屏 WebUI 展开 56dp 窄侧边胶囊（48×38 紧凑横向药丸内槽）：17dp 图标配 8.5sp 字号，75% 饱满填充且四字不溢边
     narrowVertical -> HomeNavTabTypography(
-        iconSizeDp = 19f,
-        labelGapDp = 2f,
-        labelSizeSp = 9.5f,
-        labelLineHeightSp = 11f
+        iconSizeDp = 17f,
+        labelGapDp = 1.5f,
+        labelSizeSp = 8.5f,
+        labelLineHeightSp = 10f
     )
     // 手机紧凑横屏椭圆侧栏（72dp 宽、64×46/64×44 内槽）：保持清晰 11sp 标签不溢边
     compact -> HomeNavTabTypography(
@@ -140,15 +140,9 @@ internal enum class HomeTab(val label: String) {
 }
 
 /**
- * 竖屏 WebUI 侧边胶囊固定宽度（dp）：
- * 保留 64dp 外宽（4dp 内边距后内槽宽 56dp），避免纵向展开时四字中文窄标签被左右弧边裁切。
- */
-internal const val HomeNavSidePillWidthDp = 64f
-
-/**
- * 首页底部导航栏高度与横竖屏独立正圆终端按钮统一直径（dp）：
- * 图标与字号收敛至 36dp 总内容高后，将外框从 64dp 下调至 56dp（4dp 内边距后内槽高 48dp），
- * 使页签内容纵向填充比例回到 75%、上下各留 6dp，消除改小字号后的空旷感，同时为窄屏底栏释放额外横向槽宽。
+ * 首页导航统一基准短边（dp）：
+ * 竖屏底栏高度、竖屏 WebUI 侧边胶囊宽度（收起与展开）以及横竖屏独立正圆终端按钮直径全部对齐至 56dp，
+ * 4dp 内边距后竖屏 WebUI 收起高亮呈 48×48 同心全圆、展开高亮收敛为 48×38 紧凑药丸、底栏呈 63~75×48 椭圆，形变切换全程零粗细跳变。
  */
 internal const val HomeNavBarHeightDp = 56f
 

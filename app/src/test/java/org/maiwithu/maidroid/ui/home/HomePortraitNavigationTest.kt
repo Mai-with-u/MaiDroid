@@ -30,10 +30,10 @@ class HomePortraitNavigationTest {
     }
 
     @Test
-    fun `collapsed pill keeps unified 64dp width with expanded pill and shifts up only near bottom`() {
-        assertEquals(HomeNavSidePillWidthDp, CollapsedPillWidthDp, 0.001f)
-        assertEquals(CollapsedPillWidthDp, ExpandedPillWidthDp, 0.001f)
+    fun `collapsed pill keeps unified 56dp width with full-circle top slot and shifts up only near bottom`() {
+        assertEquals(HomeNavBarHeightDp, CollapsedPillWidthDp, 0.001f)
         assertEquals(106f, CollapsedPillHeightDp, 0.001f)
+        assertEquals(CollapsedPillWidthDp, ExpandedPillWidthDp, 0.001f)
         assertTrue(CollapsedPillHeightDp < ExpandedPillHeightDp)
 
         val upperCollapsedTop = computeDockedPillTopDp(
@@ -104,9 +104,11 @@ class HomePortraitNavigationTest {
             expandedProgress = 1f,
             bottomProgress = 0f
         )
-        // 竖屏 WebUI 展开后刷新与终端回归同一紧凑全圆胶囊内（64×266dp），不再拆成外置圆钮
-        assertEquals(64f, expandedSideFrame.capsuleWidthDp, 0.001f)
-        assertEquals(266f, expandedSideFrame.capsuleHeightDp, 0.001f)
+        // 竖屏 WebUI 展开后刷新与终端回归同一紧凑全圆胶囊内（56×234dp），内层页签高亮呈 48×38 紧凑药丸
+        assertEquals(56f, expandedSideFrame.capsuleWidthDp, 0.001f)
+        assertEquals(234f, expandedSideFrame.capsuleHeightDp, 0.001f)
+        assertEquals(48f, expandedSideFrame.tabWidthDp, 0.001f)
+        assertEquals(38f, expandedSideFrame.tabHeightDp, 0.001f)
         assertEquals(0f, expandedSideFrame.terminalAlpha, 0.001f)
 
         val bottomFrame = computePortraitNavFrame(
@@ -205,16 +207,26 @@ class HomePortraitNavigationTest {
 
     @Test
     fun `home navigation unifies Capsule bar and indicator shapes with 56dp portrait bar and 72dp oval rail`() {
-        // 竖屏底栏压矮至 56dp（内槽 48dp），竖屏 WebUI 侧边胶囊保留 64dp 宽，横屏侧栏外框使用 72dp 纯全圆药丸 + 64×48/46/44dp 内椭圆
+        // 竖屏底栏与竖屏 WebUI 侧边胶囊统一锁定 56dp 短边（收起高亮 48×48 全圆、展开高亮 48×38 紧凑药丸），横屏侧栏使用 72dp 纯全圆药丸 + 64×48/46/44dp 内椭圆
         assertEquals(Capsule(), HomeNavBarShape)
         assertEquals(Capsule(), HomeNavIndicatorShape)
         assertEquals(56.dp, PortraitBottomBarHeight)
         assertEquals(48f, HomeTabButtonHeightDp, 0.001f)
         assertEquals(72.dp, HomeNavigationRailBarWidth)
-        assertEquals(64f, CollapsedPillWidthDp, 0.001f)
-        assertEquals(64f, ExpandedPillWidthDp, 0.001f)
-        assertEquals(44f, ExpandedTabSlotHeightDp, 0.001f)
-        assertEquals(266f, ExpandedPillHeightDp, 0.001f)
+        assertEquals(56f, CollapsedPillWidthDp, 0.001f)
+        assertEquals(56f, ExpandedPillWidthDp, 0.001f)
+        assertEquals(38f, ExpandedTabSlotHeightDp, 0.001f)
+        assertEquals(234f, ExpandedPillHeightDp, 0.001f)
+
+        // 验证竖屏 WebUI 展开态 48x38 紧凑内药丸在 56dp 外全圆半圆弧内留有 1.5dp+ 斜角余量
+        val sideOuterRadiusDp = ExpandedPillWidthDp * 0.5f
+        val sideInnerRadiusDp = ExpandedTabSlotHeightDp * 0.5f
+        val sideCenterOffsetDp = sideOuterRadiusDp - (4f + sideInnerRadiusDp)
+        val sideCornerDistanceDp = sideInnerRadiusDp + hypot(sideCenterOffsetDp, sideCenterOffsetDp)
+        assertTrue(
+            "48x38 expanded pill corner ($sideCornerDistanceDp) must keep > 1.5dp clearance inside 56dp outer radius ($sideOuterRadiusDp)",
+            sideOuterRadiusDp - sideCornerDistanceDp > 1.5f
+        )
 
         // 验证三档内层横向椭圆（64x48 / 64x46 / 64x44）搭配左右 4dp、上下 6dp 内边距放入 72dp 外层全圆药丸半圆弧内时留有 1dp+ 斜角余量
         val outerRadiusDp = HomeNavigationRailBarWidthDp * 0.5f
@@ -302,8 +314,8 @@ class HomePortraitNavigationTest {
             Triple(64f, 46f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
             // 极矮分屏椭圆侧栏 64x44
             Triple(64f, 44f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
-            // 竖屏 WebUI 展开侧边胶囊 56x44
-            Triple(56f, 44f, resolveHomeNavTabTypography(narrowVertical = true, compact = true)),
+            // 竖屏 WebUI 展开侧边胶囊 48x38 紧凑药丸
+            Triple(48f, 38f, resolveHomeNavTabTypography(narrowVertical = true, compact = true)),
             // 窄屏手机底栏（359dp 屏宽 -> 62.75x48）
             Triple(narrowPhoneBottomSlotWidth, 48f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
             // 标准宽底栏（308dp 宽四等分 -> 75x48）

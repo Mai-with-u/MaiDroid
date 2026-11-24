@@ -108,28 +108,28 @@ import kotlin.math.roundToInt
 private const val PillIdleFadeDelayMs = 3_000L
 
 private const val PillInnerInsetDp = 4f
-// 竖屏 WebUI 收起态小药丸：固定 64dp 宽（外圆角 32dp），内部紧凑两格各 48dp，合计高 106dp。
+// 竖屏 WebUI 收起态小药丸：统一对齐 56dp 宽（外圆角 28dp），上格「导航」呈 48×48 同心全圆高亮，下格「刷新」48dp，合计高 106dp。
 private const val CollapsedNavButtonHeightDp = 48f
 private const val CollapsedItemGapDp = 2f
 private const val CollapsedRefreshButtonHeightDp = 48f
 private const val CollapsedRefreshTopDp =
     PillInnerInsetDp + CollapsedNavButtonHeightDp + CollapsedItemGapDp
 
-internal const val CollapsedPillWidthDp = HomeNavSidePillWidthDp
+internal const val CollapsedPillWidthDp = HomeNavBarHeightDp
 internal const val CollapsedPillHeightDp =
     CollapsedRefreshTopDp + CollapsedRefreshButtonHeightDp + PillInnerInsetDp
 
-/** 竖屏 WebUI 侧边展开态页签槽位高度（44dp）：收紧上下空隙贴合 32dp 窄版内容，把四格页签与刷新、终端收束为 64×266dp 紧凑胶囊。 */
-internal const val ExpandedTabSlotHeightDp = 44f
+/** 竖屏 WebUI 侧边展开态页签槽位高度（38dp）：48×38dp 紧凑横向药丸高亮，压低整条展开高度（234dp）避免过大臃肿。 */
+internal const val ExpandedTabSlotHeightDp = 38f
 
 private val ExpandedActionsTopDp =
     PillInnerInsetDp + ExpandedTabSlotHeightDp * HomeTab.entries.size
 private const val ExpandedDividerSlotHeightDp = 6f
-private const val ExpandedRefreshButtonHeightDp = 36f
-// 底部「终端」纯图标槽（40dp）：图标底边距外框底缘 12dp，自然落于 32dp 半圆弧心区且不挤压裁切。
-private const val ExpandedTerminalButtonHeightDp = 40f
+private const val ExpandedRefreshButtonHeightDp = 32f
+// 底部「终端」纯图标槽（36dp）：21dp 图标底边距外框底缘 11.5dp，自然落于 28dp 半圆弧内且不挤压裁切。
+private const val ExpandedTerminalButtonHeightDp = 36f
 
-internal const val ExpandedPillWidthDp = HomeNavSidePillWidthDp
+internal const val ExpandedPillWidthDp = HomeNavBarHeightDp
 internal val ExpandedPillHeightDp =
     ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedRefreshButtonHeightDp + ExpandedTerminalButtonHeightDp + PillInnerInsetDp
 
@@ -670,7 +670,7 @@ internal fun HomePortraitNavigation(
             maxHeightDp = sideMaxHeightDp,
             bottomClearanceDp = PillBottomClearance.value,
             collapsedHeightDp = CollapsedPillHeight.value,
-            // 停靠底部附近展开时按展开后单一胶囊总高（266dp）避让，防止底层刷新/终端区超出安全范围。
+            // 停靠底部附近展开时按展开后单一胶囊总高（234dp）避让，防止底层刷新/终端区超出安全范围。
             currentHeightDp = if (effectiveSideExpanded) ExpandedPillHeightDp else CollapsedPillHeightDp,
             verticalBias = verticalBias
         ).dp
@@ -749,9 +749,9 @@ internal fun HomePortraitNavigation(
             if (selectedTab == HomeTab.WebUi) 1f else HomeNavInactiveContentAlpha,
             clampedBottomProgress
         ) * foregroundIdleAlpha
-        val primaryIconGap = 2.dp
+        val primaryIconGap = lerpFloat(2f, 1.5f, compactExpandedFraction).dp
 
-        // 竖屏 WebUI 侧边胶囊（64dp 宽）与底栏（56dp 高）统一采用全圆 Capsule()，底栏 4dp 内边距后内滑块 48dp 严格同心。
+        // 竖屏 WebUI 侧边胶囊（56dp 宽）与底栏（56dp 高）统一采用全圆 Capsule()，4dp 内边距后内滑块 48dp 严格同心。
         val barShape = { HomeNavBarShape }
         val indicatorShape = { HomeNavIndicatorShape }
         val tabsBackdrop = rememberLayerBackdrop()
@@ -1030,7 +1030,7 @@ internal fun HomePortraitNavigation(
             }
         }
 
-        // ── 兄弟层 3：顶层游走液态水滴滑块（独立于底栏父裁剪外，按压可鼓出边界并实时色散折射）──
+        // ── 兄弟层 3：顶层游走液态水滴滑块（收起态呈 48×48 同心全圆，展开后收紧为 48×38 紧凑药丸，切底栏再拉宽为 63~75×48 椭圆）──
         val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
         Box(
             modifier = Modifier
@@ -1238,7 +1238,7 @@ private fun ExpandedExtraActions(
                 contentDescription = "刷新 WebUI",
                 tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(18.dp)
                     .graphicsLayer { rotationZ = spinDegrees }
             )
         }
@@ -1255,7 +1255,7 @@ private fun ExpandedExtraActions(
                 painter = painterResource(R.drawable.ic_terminal_code),
                 contentDescription = "查看终端输出",
                 tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(21.dp)
             )
         }
     }
@@ -1271,7 +1271,8 @@ private fun PillLabeledButton(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit
 ) {
-    val typography = resolveHomeNavTabTypography(narrowVertical = true, compact = false)
+    // 收起态「刷新」为两字标签，沿用与上方「导航」同档的 11sp 清晰排版，落入 48×48 全圆仍有充足弦宽。
+    val typography = resolveHomeNavTabTypography(narrowVertical = false, compact = false)
     val fontScale = LocalDensity.current.fontScale
     val labelSize = clampHomeNavLabelSp(typography.labelSizeSp, fontScale).sp
     val labelLineHeight = clampHomeNavLabelSp(typography.labelLineHeightSp, fontScale).sp
