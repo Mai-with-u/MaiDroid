@@ -108,19 +108,19 @@ import kotlin.math.roundToInt
 private const val PillIdleFadeDelayMs = 3_000L
 
 private const val PillInnerInsetDp = 4f
-// 竖屏 WebUI 收起态小药丸：固定 64dp 宽（外圆角 32dp），内部紧凑两格各 52dp，合计高 114dp。
-private const val CollapsedNavButtonHeightDp = 52f
+// 竖屏 WebUI 收起态小药丸：固定 64dp 宽（外圆角 32dp），内部紧凑两格各 48dp，合计高 106dp。
+private const val CollapsedNavButtonHeightDp = 48f
 private const val CollapsedItemGapDp = 2f
-private const val CollapsedRefreshButtonHeightDp = 52f
+private const val CollapsedRefreshButtonHeightDp = 48f
 private const val CollapsedRefreshTopDp =
     PillInnerInsetDp + CollapsedNavButtonHeightDp + CollapsedItemGapDp
 
-internal const val CollapsedPillWidthDp = HomeNavUnitSizeDp
+internal const val CollapsedPillWidthDp = HomeNavSidePillWidthDp
 internal const val CollapsedPillHeightDp =
     CollapsedRefreshTopDp + CollapsedRefreshButtonHeightDp + PillInnerInsetDp
 
-/** 竖屏 WebUI 侧边展开态页签槽位高度（48dp）：把四格页签与刷新、终端收束回单一紧凑全圆椭圆，避免长条臃肿。 */
-internal const val ExpandedTabSlotHeightDp = 48f
+/** 竖屏 WebUI 侧边展开态页签槽位高度（44dp）：收紧上下空隙贴合 32dp 窄版内容，把四格页签与刷新、终端收束为 64×266dp 紧凑胶囊。 */
+internal const val ExpandedTabSlotHeightDp = 44f
 
 private val ExpandedActionsTopDp =
     PillInnerInsetDp + ExpandedTabSlotHeightDp * HomeTab.entries.size
@@ -129,7 +129,7 @@ private const val ExpandedRefreshButtonHeightDp = 36f
 // 底部「终端」纯图标槽（40dp）：图标底边距外框底缘 12dp，自然落于 32dp 半圆弧心区且不挤压裁切。
 private const val ExpandedTerminalButtonHeightDp = 40f
 
-internal const val ExpandedPillWidthDp = HomeNavUnitSizeDp
+internal const val ExpandedPillWidthDp = HomeNavSidePillWidthDp
 internal val ExpandedPillHeightDp =
     ExpandedActionsTopDp + ExpandedDividerSlotHeightDp + ExpandedRefreshButtonHeightDp + ExpandedTerminalButtonHeightDp + PillInnerInsetDp
 
@@ -670,7 +670,7 @@ internal fun HomePortraitNavigation(
             maxHeightDp = sideMaxHeightDp,
             bottomClearanceDp = PillBottomClearance.value,
             collapsedHeightDp = CollapsedPillHeight.value,
-            // 停靠底部附近展开时按展开后单一胶囊总高（282dp）避让，防止底层刷新/终端区超出安全范围。
+            // 停靠底部附近展开时按展开后单一胶囊总高（266dp）避让，防止底层刷新/终端区超出安全范围。
             currentHeightDp = if (effectiveSideExpanded) ExpandedPillHeightDp else CollapsedPillHeightDp,
             verticalBias = verticalBias
         ).dp
@@ -749,13 +749,9 @@ internal fun HomePortraitNavigation(
             if (selectedTab == HomeTab.WebUi) 1f else HomeNavInactiveContentAlpha,
             clampedBottomProgress
         ) * foregroundIdleAlpha
-        val primaryIconGap = lerpFloat(
-            lerpFloat(2.5f, 2f, clampedExpandedProgress),
-            2.5f,
-            clampedBottomProgress
-        ).dp
+        val primaryIconGap = 2.dp
 
-        // 竖屏 WebUI 侧边胶囊与底栏统一为 64dp 短边与全圆 Capsule()（外圆角 32dp、内滑块 28dp 严格同心）。
+        // 竖屏 WebUI 侧边胶囊（64dp 宽）与底栏（56dp 高）统一采用全圆 Capsule()，底栏 4dp 内边距后内滑块 48dp 严格同心。
         val barShape = { HomeNavBarShape }
         val indicatorShape = { HomeNavIndicatorShape }
         val tabsBackdrop = rememberLayerBackdrop()
@@ -868,7 +864,7 @@ internal fun HomePortraitNavigation(
                         contentDescription = "刷新 WebUI",
                         tint = TextPrimary,
                         modifier = Modifier
-                            .size(22.dp)
+                            .size(21.dp)
                             .graphicsLayer { rotationZ = refreshSpin.value }
                     )
                 }
@@ -1095,7 +1091,7 @@ internal fun HomePortraitNavigation(
                 .then(fallbackBorder)
         )
 
-        // 切离 WebUI 进入底栏时分离出右下角 64dp 正圆终端按钮，切回 WebUI 时收拢消融回单一侧边胶囊。
+        // 切离 WebUI 进入底栏时分离出右下角 56dp 正圆终端按钮，切回 WebUI 时收拢消融回单一侧边胶囊。
         if (frame.terminalAlpha > 0.02f) {
             HomeTerminalButton(
                 backdrop = backdrop,
@@ -1290,7 +1286,7 @@ private fun PillLabeledButton(
             modifier = Modifier.graphicsLayer { alpha = contentAlpha }
         ) {
             icon()
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = label,
                 color = TextPrimary,

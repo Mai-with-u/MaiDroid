@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.sqrt
+import kotlin.math.hypot
 
 class HomePortraitNavigationTest {
 
@@ -31,8 +31,9 @@ class HomePortraitNavigationTest {
 
     @Test
     fun `collapsed pill keeps unified 64dp width with expanded pill and shifts up only near bottom`() {
-        assertEquals(HomeNavUnitSizeDp, CollapsedPillWidthDp, 0.001f)
+        assertEquals(HomeNavSidePillWidthDp, CollapsedPillWidthDp, 0.001f)
         assertEquals(CollapsedPillWidthDp, ExpandedPillWidthDp, 0.001f)
+        assertEquals(106f, CollapsedPillHeightDp, 0.001f)
         assertTrue(CollapsedPillHeightDp < ExpandedPillHeightDp)
 
         val upperCollapsedTop = computeDockedPillTopDp(
@@ -103,9 +104,9 @@ class HomePortraitNavigationTest {
             expandedProgress = 1f,
             bottomProgress = 0f
         )
-        // 竖屏 WebUI 展开后刷新与终端回归同一紧凑全圆胶囊内（64×282dp），不再拆成外置圆钮
+        // 竖屏 WebUI 展开后刷新与终端回归同一紧凑全圆胶囊内（64×266dp），不再拆成外置圆钮
         assertEquals(64f, expandedSideFrame.capsuleWidthDp, 0.001f)
-        assertEquals(282f, expandedSideFrame.capsuleHeightDp, 0.001f)
+        assertEquals(266f, expandedSideFrame.capsuleHeightDp, 0.001f)
         assertEquals(0f, expandedSideFrame.terminalAlpha, 0.001f)
 
         val bottomFrame = computePortraitNavFrame(
@@ -120,13 +121,13 @@ class HomePortraitNavigationTest {
         )
         val expectedBottomWidth = computeBottomTabBarWidthDp(maxWidth)
         assertEquals(16f, bottomFrame.capsuleLeftDp, 0.001f)
-        assertEquals(maxHeight - 80f, bottomFrame.capsuleTopDp, 0.001f)
+        assertEquals(maxHeight - 72f, bottomFrame.capsuleTopDp, 0.001f)
         assertEquals(expectedBottomWidth, bottomFrame.capsuleWidthDp, 0.001f)
-        assertEquals(64f, bottomFrame.capsuleHeightDp, 0.001f)
-        assertEquals(maxWidth - 16f - 64f, bottomFrame.terminalLeftDp, 0.001f)
-        assertEquals(maxHeight - 80f, bottomFrame.terminalTopDp, 0.001f)
+        assertEquals(56f, bottomFrame.capsuleHeightDp, 0.001f)
+        assertEquals(maxWidth - 16f - 56f, bottomFrame.terminalLeftDp, 0.001f)
+        assertEquals(maxHeight - 72f, bottomFrame.terminalTopDp, 0.001f)
         assertEquals(1f, bottomFrame.terminalAlpha, 0.001f)
-        assertTrue(bottomFrame.tabWidthDp >= 60f)
+        assertTrue(bottomFrame.tabWidthDp >= 62f)
     }
 
     @Test
@@ -175,53 +176,57 @@ class HomePortraitNavigationTest {
     }
 
     @Test
-    fun `landscape rail fits 4 oval tabs with restrained refresh circle and 64dp terminal circle`() {
+    fun `landscape rail fits 4 oval tabs with restrained refresh circle and 56dp terminal circle`() {
         val phone360 = computeHomeRailMetrics(360f)
         assertTrue(phone360.compact)
         assertTrue(phone360.minimumTotalHeightDp < 360f)
-        assertEquals(52f, phone360.tabHeightDp, 0.001f)
-        assertEquals(216f, phone360.tabRailHeightDp, 0.001f)
+        assertEquals(46f, phone360.tabHeightDp, 0.001f)
+        assertEquals(196f, phone360.tabRailHeightDp, 0.001f)
         assertEquals(40f, phone360.refreshButtonSizeDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, phone360.terminalButtonSizeDp, 0.001f)
+        assertEquals(HomeNavBarHeightDp, phone360.terminalButtonSizeDp, 0.001f)
 
         val phone320 = computeHomeRailMetrics(320f)
         assertTrue(phone320.compact)
         assertTrue(phone320.minimumTotalHeightDp < 320f)
-        assertEquals(46f, phone320.tabHeightDp, 0.001f)
+        assertEquals(44f, phone320.tabHeightDp, 0.001f)
+        assertEquals(188f, phone320.tabRailHeightDp, 0.001f)
         assertEquals(38f, phone320.refreshButtonSizeDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, phone320.terminalButtonSizeDp, 0.001f)
+        assertEquals(HomeNavBarHeightDp, phone320.terminalButtonSizeDp, 0.001f)
 
         val tablet600 = computeHomeRailMetrics(600f)
         assertFalse(tablet600.compact)
         assertTrue(tablet600.minimumTotalHeightDp < 600f)
         assertEquals(HomeTabButtonHeightDp, tablet600.tabHeightDp, 0.001f)
-        assertTrue(HomeNavigationRailBarWidth.value - 8f > tablet600.tabHeightDp)
+        assertEquals(204f, tablet600.tabRailHeightDp, 0.001f)
+        assertTrue(HomeNavigationRailBarWidth.value - HomeRailHorizontalInsetDp * 2f > tablet600.tabHeightDp)
         assertEquals(44f, tablet600.refreshButtonSizeDp, 0.001f)
-        assertEquals(HomeNavUnitSizeDp, tablet600.terminalButtonSizeDp, 0.001f)
+        assertEquals(HomeNavBarHeightDp, tablet600.terminalButtonSizeDp, 0.001f)
     }
 
     @Test
-    fun `home navigation unifies Capsule bar and indicator shapes with 64dp portrait bar and 72dp oval rail`() {
-        // 竖屏底栏、竖屏 WebUI 侧边胶囊保持 64dp 基准；横屏侧栏外框使用 72dp 纯全圆药丸，内部 64dp 槽位呈横向椭圆
+    fun `home navigation unifies Capsule bar and indicator shapes with 56dp portrait bar and 72dp oval rail`() {
+        // 竖屏底栏压矮至 56dp（内槽 48dp），竖屏 WebUI 侧边胶囊保留 64dp 宽，横屏侧栏外框使用 72dp 纯全圆药丸 + 64×48/46/44dp 内椭圆
         assertEquals(Capsule(), HomeNavBarShape)
         assertEquals(Capsule(), HomeNavIndicatorShape)
-        assertEquals(64.dp, PortraitBottomBarHeight)
+        assertEquals(56.dp, PortraitBottomBarHeight)
+        assertEquals(48f, HomeTabButtonHeightDp, 0.001f)
         assertEquals(72.dp, HomeNavigationRailBarWidth)
         assertEquals(64f, CollapsedPillWidthDp, 0.001f)
         assertEquals(64f, ExpandedPillWidthDp, 0.001f)
-        assertEquals(48f, ExpandedTabSlotHeightDp, 0.001f)
-        assertEquals(282f, ExpandedPillHeightDp, 0.001f)
+        assertEquals(44f, ExpandedTabSlotHeightDp, 0.001f)
+        assertEquals(266f, ExpandedPillHeightDp, 0.001f)
 
-        // 验证三档内层横向椭圆（64x56 / 64x52 / 64x46）放入 72dp 外层全圆药丸半圆弧内时 45° 角落不顶外弧
+        // 验证三档内层横向椭圆（64x48 / 64x46 / 64x44）搭配左右 4dp、上下 6dp 内边距放入 72dp 外层全圆药丸半圆弧内时留有 1dp+ 斜角余量
         val outerRadiusDp = HomeNavigationRailBarWidthDp * 0.5f
-        val innerInsetDp = 4f
-        listOf(56f, 52f, 46f).forEach { innerHeightDp ->
+        val innerWidthDp = HomeNavigationRailBarWidthDp - HomeRailHorizontalInsetDp * 2f
+        listOf(48f, 46f, 44f).forEach { innerHeightDp ->
             val innerRadiusDp = innerHeightDp * 0.5f
-            val centerOffsetDp = outerRadiusDp - (innerInsetDp + innerRadiusDp)
-            val cornerDistanceDp = innerRadiusDp + sqrt(2f) * centerOffsetDp
+            val centerOffsetXDp = (innerWidthDp - innerHeightDp) * 0.5f
+            val centerOffsetYDp = (outerRadiusDp - HomeRailVerticalInsetDp - innerRadiusDp).coerceAtLeast(0f)
+            val cornerDistanceDp = innerRadiusDp + hypot(centerOffsetXDp, centerOffsetYDp)
             assertTrue(
-                "64x$innerHeightDp inner oval corner ($cornerDistanceDp) must fit inside 72dp outer capsule radius ($outerRadiusDp)",
-                cornerDistanceDp < outerRadiusDp
+                "64x$innerHeightDp inner oval corner ($cornerDistanceDp) must keep > 1dp clearance inside 72dp outer capsule radius ($outerRadiusDp)",
+                outerRadiusDp - cornerDistanceDp > 1f
             )
         }
     }
@@ -288,19 +293,21 @@ class HomePortraitNavigationTest {
 
     @Test
     fun `all 6 navigation slot geometries keep four-character Chinese labels inside indicator chord`() {
+        val narrowPhoneBottomSlotWidth = (computeBottomTabBarWidthDp(359f) - 8f) / HomeTab.entries.size
+        val standardBottomSlotWidth = (computeBottomTabBarWidthDp(412f) - 8f) / HomeTab.entries.size
         val scenarios = listOf(
-            // 平板横屏椭圆侧栏 64x56
-            Triple(64f, 56f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
-            // 手机横屏椭圆侧栏 64x52
-            Triple(64f, 52f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
-            // 极矮分屏椭圆侧栏 64x46
+            // 平板横屏椭圆侧栏 64x48
+            Triple(64f, 48f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
+            // 手机横屏椭圆侧栏 64x46
             Triple(64f, 46f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
-            // 竖屏 WebUI 展开侧边胶囊 56x48
-            Triple(56f, 48f, resolveHomeNavTabTypography(narrowVertical = true, compact = true)),
-            // 最窄底栏 59x56（244dp 宽四等分减去内边距）
-            Triple(59f, 56f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
-            // 标准底栏 75x56（308dp 宽四等分减去内边距）
-            Triple(75f, 56f, resolveHomeNavTabTypography(narrowVertical = false, compact = false))
+            // 极矮分屏椭圆侧栏 64x44
+            Triple(64f, 44f, resolveHomeNavTabTypography(narrowVertical = false, compact = true)),
+            // 竖屏 WebUI 展开侧边胶囊 56x44
+            Triple(56f, 44f, resolveHomeNavTabTypography(narrowVertical = true, compact = true)),
+            // 窄屏手机底栏（359dp 屏宽 -> 62.75x48）
+            Triple(narrowPhoneBottomSlotWidth, 48f, resolveHomeNavTabTypography(narrowVertical = false, compact = false)),
+            // 标准宽底栏（308dp 宽四等分 -> 75x48）
+            Triple(standardBottomSlotWidth, 48f, resolveHomeNavTabTypography(narrowVertical = false, compact = false))
         )
         scenarios.forEach { (slotWidthDp, slotHeightDp, typography) ->
             val chordWidthDp = computeCapsuleChordWidthDp(

@@ -74,24 +74,24 @@ internal fun resolveHomeNavTabTypography(
     narrowVertical: Boolean,
     compact: Boolean
 ): HomeNavTabTypography = when {
-    // 竖屏 WebUI 展开窄侧边胶囊（64dp 宽、56×48 内槽）：收敛图标与字号以完整落入胶囊弧线
+    // 竖屏 WebUI 展开窄侧边胶囊（64dp 宽、56×44 内槽）：收敛图标与字号以完整落入胶囊弧线
     narrowVertical -> HomeNavTabTypography(
         iconSizeDp = 19f,
         labelGapDp = 2f,
         labelSizeSp = 9.5f,
         labelLineHeightSp = 11f
     )
-    // 手机紧凑横屏椭圆侧栏（72dp 宽、64×52/64×46 内槽）：保持清晰 11sp 标签不溢边
+    // 手机紧凑横屏椭圆侧栏（72dp 宽、64×46/64×44 内槽）：保持清晰 11sp 标签不溢边
     compact -> HomeNavTabTypography(
         iconSizeDp = 20f,
         labelGapDp = 2f,
         labelSizeSp = 11f,
         labelLineHeightSp = 13f
     )
-    // 平板横屏椭圆侧栏（64×56 内槽）与竖屏底栏（59~75×56 椭圆）：兼顾清晰度与窄屏 45dp+ 底边弦宽
+    // 平板横屏椭圆侧栏（64×48 内槽）与竖屏底栏（62~75×48 椭圆）：2dp 紧凑间距配 48dp 内槽，内容占比 75% 不发空
     else -> HomeNavTabTypography(
         iconSizeDp = 21f,
-        labelGapDp = 2.5f,
+        labelGapDp = 2f,
         labelSizeSp = 11f,
         labelLineHeightSp = 13f
     )
@@ -140,14 +140,20 @@ internal enum class HomeTab(val label: String) {
 }
 
 /**
- * 首页导航统一基准宽度/高度（dp）：
- * 竖屏底栏高、竖屏右下角正圆终端按钮直径、竖屏 WebUI 侧边胶囊宽、横屏左侧导航竖栏宽以及横屏下方正圆按钮直径全部对齐至 64dp，
- * 使全圆 Capsule() 的外半圆角半径在各种状态下严格保持 32dp，内滑块（4dp 内边距后 56dp）严格同心 28dp。
+ * 竖屏 WebUI 侧边胶囊固定宽度（dp）：
+ * 保留 64dp 外宽（4dp 内边距后内槽宽 56dp），避免纵向展开时四字中文窄标签被左右弧边裁切。
  */
-internal const val HomeNavUnitSizeDp = 64f
+internal const val HomeNavSidePillWidthDp = 64f
+
+/**
+ * 首页底部导航栏高度与横竖屏独立正圆终端按钮统一直径（dp）：
+ * 图标与字号收敛至 36dp 总内容高后，将外框从 64dp 下调至 56dp（4dp 内边距后内槽高 48dp），
+ * 使页签内容纵向填充比例回到 75%、上下各留 6dp，消除改小字号后的空旷感，同时为窄屏底栏释放额外横向槽宽。
+ */
+internal const val HomeNavBarHeightDp = 56f
 
 /** 竖屏底部导航栏与独立正圆终端按钮的统一高度。 */
-internal val PortraitBottomBarHeight = HomeNavUnitSizeDp.dp
+internal val PortraitBottomBarHeight = HomeNavBarHeightDp.dp
 
 /** 竖屏底部导航栏离容器底边的留白。 */
 internal val PortraitBottomBarBottomPadding = 16.dp
@@ -159,15 +165,15 @@ internal val PortraitBottomBarHorizontalPadding = 16.dp
 internal val PortraitBottomBarGap = 12.dp
 
 /** 单个标签按钮高度（dp 数值常量，同时供竖屏底栏与正常高度横屏侧栏计算复用）。 */
-internal const val HomeTabButtonHeightDp = 56f
+internal const val HomeTabButtonHeightDp = 48f
 
 /** 单个标签按钮的高度（竖屏底栏与正常高度横屏侧栏通用）。 */
 internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
 
-/** 首页导航外框统一全圆胶囊形状（短边 64dp 时严格呈 32dp 半圆弧，正方形时呈正圆）。 */
+/** 首页导航外框统一全圆胶囊形状（底栏 56dp 高时呈 28dp 半圆弧，横屏 72dp 侧栏呈 36dp 半圆弧，正方形时呈正圆）。 */
 internal val HomeNavBarShape: Shape = Capsule()
 
-/** 首页导航内部滑块与槽位统一全圆胶囊形状（56dp 宽/高时严格呈 28dp 半圆弧，与外框 4dp 内边距完美同心）。 */
+/** 首页导航内部滑块与槽位统一全圆胶囊形状（48dp 高时呈 24dp 半圆弧，与 56dp 底栏 4dp 内边距严格同心）。 */
 internal val HomeNavIndicatorShape: Shape = Capsule()
 
 /** 计算竖屏底部四栏标签胶囊的目标宽度（dp），为右下角正圆终端按钮与左右留白让出间距。 */
@@ -192,7 +198,7 @@ internal fun HomeTerminalButton(
     height: Dp = size,
     shape: () -> Shape = { HomeNavBarShape },
     enabled: Boolean = true,
-    iconSizeDp: Float = 26f
+    iconSizeDp: Float = 24f
 ) {
     LiquidGlassIconButton(
         painter = painterResource(R.drawable.ic_terminal_code),
