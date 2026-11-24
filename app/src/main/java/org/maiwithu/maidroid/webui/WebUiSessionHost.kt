@@ -88,6 +88,7 @@ internal class WebUiSessionHost(
     private var mainFrameFailed = false
     private var processGoneReported = false
     private var released = false
+    private var sessionActive = true
 
     private var desktopViewportEnabled = false
     private var layoutBasisWidthPx = 0
@@ -251,6 +252,15 @@ internal class WebUiSessionHost(
     fun goBack() {
         if (!released && canGoBack) {
             session.goBack()
+        }
+    }
+
+    /** 按前后台与当前页签可见状态冻结或恢复 GeckoSession 渲染和 JS 定时器，减少不可见耗时耗电。 */
+    fun setActive(active: Boolean) {
+        if (released || sessionActive == active) return
+        sessionActive = active
+        if (session.isOpen) {
+            runCatching { session.setActive(active) }
         }
     }
 

@@ -6,8 +6,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.PixelFormat
@@ -29,6 +31,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
@@ -85,6 +88,15 @@ class PetOverlayService : Service(), PetOverlayHost {
     private var closing = false
     private var gestureId = ""
     private val supportsTouchRegions = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    private var screenReceiverRegistered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_ON -> manager.onScreenInteractiveChanged(true)
+                Intent.ACTION_SCREEN_OFF -> manager.onScreenInteractiveChanged(false)
+            }
+        }
+    }
 
     @SuppressLint("ClickableViewAccessibility", "RtlHardcoded")
     override fun onCreate() {
@@ -150,6 +162,16 @@ class PetOverlayService : Service(), PetOverlayHost {
 
         windowManager.addView(frame, params)
         isRunning = true
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        screenReceiverRegistered = true
         boundPet.loadUrl(DesktopPetProtocol.PET_PAGE_URL)
     }
 
@@ -170,6 +192,10 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     override fun onDestroy() {
         isRunning = false
+        if (screenReceiverRegistered) {
+            screenReceiverRegistered = false
+            runCatching { unregisterReceiver(screenReceiver) }
+        }
         if (!closing) {
             closing = true
             removeOverlayFrame()

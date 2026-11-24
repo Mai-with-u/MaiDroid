@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -55,6 +56,7 @@ internal class DesktopPetManager(
     private var petReady = false
     private var currentConfigState: DesktopPetRemoteConfigState? = null
     private var launchNonce = 0
+    private var screenInteractive = true
 
     private val bridge = DesktopPetBridge(
         appContext = appContext,
@@ -86,6 +88,9 @@ internal class DesktopPetManager(
             override fun onTransportEvent(payload: JSONObject) = handleTransportEvent(payload)
             override fun onPetReady() {
                 petReady = true
+                if (!screenInteractive) {
+                    applyPetRenderVisibility()
+                }
                 startTransportIfReady()
             }
 
@@ -219,6 +224,7 @@ internal class DesktopPetManager(
         authenticated = false
         petReady = false
         currentConfigState = null
+        screenInteractive = true
         bridge.resetAndDestroyAll()
 
         overlayHost?.let { host ->
@@ -279,19 +285,42 @@ internal class DesktopPetManager(
     /** 切换悬浮窗显示/隐藏，同时通知前端页面调整动画暂停与恢复。 */
     fun toggleVisibility() {
         runOnMain {
-            val host = overlayHost ?: return@runOnMain
+            if (overlayHost == null) return@runOnMain
             val nextVisible = !_state.value.overlayVisible
-            host.setOverlayVisible(nextVisible)
             _state.update { it.copy(overlayVisible = nextVisible) }
-            bridge.petView?.let { target ->
-                bridge.dispatchPageCommand(
-                    target = target,
-                    id = "vis:" + bridge.generateHexId(),
-                    command = JSONObject().put("type", "visibility").put("visible", nextVisible),
-                    ack = false
-                )
-            }
+            applyPetRenderVisibility()
         }
+    }
+
+    /** 手机屏幕亮灭时同步冻结或恢复前景桌宠渲染；只控制 petView，绝不暂停负责 WS 传输的 authView。 */
+    fun onScreenInteractiveChanged(interactive: Boolean) {
+        runOnMain {
+            if (screenInteractive == interactive) return@runOnMain
+            screenInteractive = interactive
+            applyPetRenderVisibility()
+        }
+    }
+
+    private fun applyPetRenderVisibility() {
+        val host = overlayHost ?: return
+        val pet = bridge.petView ?: return
+        val effectiveVisible = computeEffectivePetVisibility(
+            overlayVisible = _state.value.overlayVisible,
+            screenInteractive = screenInteractive
+        )
+        host.setOverlayVisible(effectiveVisible)
+        // 严格只暂停桌宠展示层 petView，绝不能调用 WebView.pauseTimers()，避免冻结后台 authView 的 WS 心跳。
+        if (effectiveVisible) {
+            pet.onResume()
+        } else {
+            pet.onPause()
+        }
+        bridge.dispatchPageCommand(
+            target = pet,
+            id = "vis:" + bridge.generateHexId(),
+            command = JSONObject().put("type", "visibility").put("visible", effectiveVisible),
+            ack = false
+        )
     }
 
     /** 打开独立的探索记录全屏页。 */
@@ -339,7 +368,15 @@ internal class DesktopPetManager(
         val pet = bridge.createWebView(serviceContext, PetWebRole.Pet)
         bridge.petView = pet
         bridge.authView?.let { host.attachTransportView(it) }
+        val interactiveNow = runCatching {
+            appContext.getSystemService(PowerManager::class.java)?.isInteractive ?: true
+        }.getOrDefault(true)
+        screenInteractive = interactiveNow
         _state.update { it.copy(overlayActive = true, overlayVisible = true) }
+        if (!interactiveNow) {
+            host.setOverlayVisible(false)
+            pet.onPause()
+        }
         return pet
     }
 
@@ -612,9 +649,11 @@ internal class DesktopPetManager(
         }
         if (type == "hide" || type == "show") {
             val show = type == "show"
-            host.setOverlayVisible(show)
+            val effectiveVisible = computeEffectivePetVisibility(show, screenInteractive)
+            host.setOverlayVisible(effectiveVisible)
             _state.update { it.copy(overlayVisible = show) }
-            action = JSONObject().put("type", "visibility").put("visible", show)
+            if (effectiveVisible) pet.onResume() else pet.onPause()
+            action = JSONObject().put("type", "visibility").put("visible", effectiveVisible)
         }
         val target = if (type == "exploration_tasks" && action.optString("request_id").startsWith("records:")) {
             bridge.recordsView
@@ -645,3 +684,9 @@ internal class DesktopPetManager(
         }
     }
 }
+
+/** 仅当悬浮窗处于显示状态且设备屏幕处于亮屏交互状态时，才保持桌宠前景动画渲染。 */
+internal fun computeEffectivePetVisibility(
+    overlayVisible: Boolean,
+    screenInteractive: Boolean
+): Boolean = overlayVisible && screenInteractive

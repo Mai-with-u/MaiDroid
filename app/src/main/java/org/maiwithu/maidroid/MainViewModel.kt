@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.diagnostics.CrashRecord
@@ -79,6 +81,8 @@ internal class MainViewModel(
 
     // 这次打开应用已经提醒过空间不足（用户点了以后再说或去清理了），之后不再弹
     private var lowStorageWarned = false
+    private val _uiForeground = MutableStateFlow(false)
+    private var lastStorageCheckElapsedMs = 0L
 
     private val _pendingCrash = MutableStateFlow(dependencies.crashRecorder.pendingCrash())
 
@@ -122,24 +126,40 @@ internal class MainViewModel(
                     wakeMaiBot()
                     dependencies.maiBotUpdater.checkOnLaunch()
                 }
-                var lastStorageCheck = 0L
-                while (true) {
-                    // 自己的 MaiBot 在跑、端口又能连上才算在线：8001 被别的程序占着时（另一个 MaiDroid、Termux 里的 MaiBot），
-                    // 只看端口会把那个程序的页面当成麦麦打开，页面里只剩一句“Token 无效或已过期”
-                    _webUiOnline.value = maiBotStatus.value.running && MaiBotWebUi.isReachable()
-                    // 顺带每分钟看一次空间：快满了提醒一次（见 LowStorageDialog）
-                    val now = SystemClock.elapsedRealtime()
-                    if (!lowStorageWarned && now - lastStorageCheck >= STORAGE_CHECK_INTERVAL_MS) {
-                        lastStorageCheck = now
-                        val free = withContext(Dispatchers.IO) {
-                            StorageSpace.availableBytes(dependencies.runtimePaths.appFilesDir)
-                        }
-                        _lowStorageBytes.value = free.takeIf { it < LOW_STORAGE_WARNING_BYTES }
-                    }
-                    delay(if (_webUiOnline.value) WEB_UI_ONLINE_POLL_MS else WEB_UI_OFFLINE_POLL_MS)
-                }
             }
         }
+        // WebUI 探测与剩余空间检查单独按前台可见态启停：退后台或息屏立即挂起，避免无意义的 5 秒回环唤醒与磁盘读取。
+        viewModelScope.launch {
+            combine(setupComplete, _uiForeground) { complete, fg ->
+                shouldPollHomeUiStatus(complete, fg)
+            }
+                .distinctUntilChanged()
+                .collectLatest { shouldPoll ->
+                    if (!shouldPoll) return@collectLatest
+                    while (true) {
+                        // 自己的 MaiBot 在跑、端口又能连上才算在线：8001 被别的程序占着时（另一个 MaiDroid、Termux 里的 MaiBot），
+                        // 只看端口会把那个程序的页面当成麦麦打开，页面里只剩一句“Token 无效或已过期”
+                        _webUiOnline.value = maiBotStatus.value.running && MaiBotWebUi.isReachable()
+                        // 顺带每分钟看一次空间：快满了提醒一次（见 LowStorageDialog）
+                        val now = SystemClock.elapsedRealtime()
+                        if (!lowStorageWarned &&
+                            (lastStorageCheckElapsedMs == 0L || now - lastStorageCheckElapsedMs >= STORAGE_CHECK_INTERVAL_MS)
+                        ) {
+                            lastStorageCheckElapsedMs = now
+                            val free = withContext(Dispatchers.IO) {
+                                StorageSpace.availableBytes(dependencies.runtimePaths.appFilesDir)
+                            }
+                            _lowStorageBytes.value = free.takeIf { it < LOW_STORAGE_WARNING_BYTES }
+                        }
+                        delay(if (_webUiOnline.value) WEB_UI_ONLINE_POLL_MS else WEB_UI_OFFLINE_POLL_MS)
+                    }
+                }
+        }
+    }
+
+    /** 记录主界面是否处于可见前台（ON_START..ON_STOP），控制周期回环探测协程的启停。 */
+    fun onUiForegroundChanged(foreground: Boolean) {
+        _uiForeground.value = foreground
     }
 
     /** 空间不足的提醒关掉了（以后再说，或清理完关掉了清理弹窗）：这次打开应用期间不再提醒。 */
@@ -246,3 +266,7 @@ internal class MainViewModel(
     }
 
 }
+
+/** 仅当引导已完成且主界面处于前台可见状态时才维持 WebUI 回环探测与磁盘检查。 */
+internal fun shouldPollHomeUiStatus(setupComplete: Boolean, uiForeground: Boolean): Boolean =
+    setupComplete && uiForeground
