@@ -43,7 +43,15 @@ object TerminalLog {
         // 入库的行只保留 SGR 颜色；订阅方和 logcat 用纯文本，免得关键字被颜色代码打断。解析放在 update 外面，CAS 重试时不重复做。
         val parsed = AnsiText.parse(line)
         val stored = parsed.toSgrString()
-        _logs.update { (it + stored).takeLast(MAX_LOG_LINES) }
+        _logs.update { existing ->
+            // 仅截取并复制尾部 MAX_LOG_LINES - 1 条与新行进定长列表，避免每行日志产生两次全量拷贝与扩容。
+            val keepFrom = (existing.size + 1 - MAX_LOG_LINES).coerceAtLeast(0)
+            val keptCount = existing.size - keepFrom
+            ArrayList<String>(keptCount + 1).apply {
+                addAll(existing.subList(keepFrom, existing.size))
+                add(stored)
+            }
+        }
         _lines.tryEmit(parsed.text)
         Log.d(TAG, parsed.text)
     }

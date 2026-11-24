@@ -152,7 +152,7 @@ private fun HomeTabsShell(
         drawRect(PageBackground)
         drawContent()
     }
-    val webUiTabState = rememberWebUiTabState()
+    val webUiTabState = rememberWebUiTabState(isWebUiTabSelected = selectedTab == HomeTab.WebUi)
 
     BoxWithConstraints(
         modifier = modifier

@@ -1,7 +1,9 @@
-// 管理台“遥测总览”聚合：一次请求拉齐大屏所需的 KPI、30 日健康条带、7×24 活跃热力、分布与组件状态。
+// 管理台“遥测总览”聚合：一次请求拉齐大屏所需的 KPI、30 日健康条带、7×24 活跃热力、分布、耗电温控与组件状态。
 // 触发：管理员解锁控制台后打开“01 总览”页，或每 60 秒自动刷新一次。
-// 顺序：并发查询 D1 -> 按北京时间补齐 30 天空白日 -> 折叠为前端直接可画的数组。
-// 原因：前端只负责渲染，日期补零、星期换算这类易错逻辑放在服务端并有单测兜底。
+// 顺序：并发查询 device_presence 与 D1 明细表 -> 按北京时间补齐 30 天空白日 -> 折叠为前端直接可画的数组。
+// 原因：设备级去重状态统一以 device_presence 为准，解决版本升级后旧版重复计数并支持实时在线与温耗观测。
+
+import { ONLINE_WINDOW_SECONDS } from "./telemetryPresence.ts";
 
 // 北京时间相对 UTC 的偏移秒数，所有按天、按小时的分桶都按北京时间切
 export const CN_OFFSET_SECONDS = 8 * 3600;
@@ -83,12 +85,17 @@ export function componentState(lastAt: number | null | undefined, nowSec: number
 
 type Db = D1Database;
 
-async function shares(db: Db, column: string, since: number, limit = 8): Promise<LabelCount[]> {
-  // column 只来自本文件的固定白名单，不拼接任何外部输入
+function round1(val: number | null | undefined): number | null {
+  if (val === null || val === undefined || !Number.isFinite(Number(val))) return null;
+  return Math.round(Number(val) * 10) / 10;
+}
+
+async function presenceShares(db: Db, column: string, since: number, limit = 8): Promise<LabelCount[]> {
+  // column 只来自本文件白名单；按 device_presence 每设备最新一行统计，用户升级后自动从旧版本迁出。
   const res = await db
     .prepare(
-      `SELECT ${column} AS label, COUNT(DISTINCT install_id) AS count FROM telemetry_events
-       WHERE created_at >= ? AND ${column} IS NOT NULL AND ${column} != ''
+      `SELECT ${column} AS label, COUNT(*) AS count FROM device_presence
+       WHERE last_seen_at >= ? AND ${column} IS NOT NULL AND ${column} != ''
        GROUP BY ${column} ORDER BY count DESC LIMIT ${limit}`
     )
     .bind(since)
@@ -96,7 +103,20 @@ async function shares(db: Db, column: string, since: number, limit = 8): Promise
   return (res.results ?? []).map((r) => ({ label: String(r.label), count: Number(r.count) || 0 }));
 }
 
+async function onlineVersionShares(db: Db, sinceOnline: number, limit = 8): Promise<LabelCount[]> {
+  const res = await db
+    .prepare(
+      `SELECT app_version AS label, COUNT(*) AS count FROM device_presence
+       WHERE is_online = 1 AND last_online_at >= ? AND app_version IS NOT NULL AND app_version != ''
+       GROUP BY app_version ORDER BY count DESC LIMIT ${limit}`
+    )
+    .bind(sinceOnline)
+    .all<LabelCount>();
+  return (res.results ?? []).map((r) => ({ label: String(r.label), count: Number(r.count) || 0 }));
+}
+
 export async function buildAdminOverview(db: Db, nowSec: number) {
+  const sinceOnline = nowSec - ONLINE_WINDOW_SECONDS;
   const since24h = nowSec - 86400;
   const since7d = nowSec - 7 * 86400;
   const todayIndex = cnDayIndex(nowSec);
@@ -105,6 +125,7 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
   const sinceHeat = nowSec - HEATMAP_DAYS * 86400;
 
   const [
+    onlineNowRow,
     active24h,
     totals7d,
     totals30d,
@@ -114,25 +135,32 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
     issueCats,
     issueStatus,
     manifestRow,
+    lastPresence,
     lastTelemetry,
     lastDiag,
     lastIssue,
     manufacturers,
     versions,
+    onlineVersions,
     qqClients,
     oobeSteps,
     sdks,
     topErrors,
     topExits,
+    powerSummaryRow,
+    tempBucketsRow,
+    hotModelsRes,
   ] = await Promise.all([
-    db.prepare("SELECT COUNT(DISTINCT install_id) AS uniq FROM telemetry_events WHERE created_at >= ?")
+    db.prepare("SELECT COUNT(*) AS uniq FROM device_presence WHERE is_online = 1 AND last_online_at >= ?")
+      .bind(sinceOnline).first<{ uniq: number }>(),
+    db.prepare("SELECT COUNT(*) AS uniq FROM device_presence WHERE last_seen_at >= ?")
       .bind(since24h).first<{ uniq: number }>(),
     db.prepare(
-      `SELECT COUNT(DISTINCT install_id) AS uniq,
-              COUNT(DISTINCT CASE WHEN setup_complete = 1 THEN install_id END) AS done
-       FROM telemetry_events WHERE created_at >= ?`
+      `SELECT COUNT(*) AS uniq,
+              COALESCE(SUM(CASE WHEN setup_complete = 1 THEN 1 ELSE 0 END), 0) AS done
+       FROM device_presence WHERE last_seen_at >= ?`
     ).bind(since7d).first<{ uniq: number; done: number }>(),
-    db.prepare("SELECT COUNT(DISTINCT install_id) AS uniq FROM telemetry_events WHERE created_at >= ?")
+    db.prepare("SELECT COUNT(*) AS uniq FROM device_presence WHERE last_seen_at >= ?")
       .bind(since30d).first<{ uniq: number }>(),
     db.prepare("SELECT COUNT(*) AS cnt FROM diag_snapshots WHERE created_at >= ?")
       .bind(since7d).first<{ cnt: number }>(),
@@ -159,14 +187,16 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
     ).all<{ status: string; cnt: number }>(),
     db.prepare("SELECT version, updated_at, payload_json FROM manifest_config WHERE id = 1")
       .first<{ version: number; updated_at: number; payload_json: string }>(),
+    db.prepare("SELECT MAX(last_seen_at) AS at FROM device_presence").first<{ at: number | null }>(),
     db.prepare("SELECT MAX(created_at) AS at FROM telemetry_events").first<{ at: number | null }>(),
     db.prepare("SELECT MAX(created_at) AS at FROM diag_snapshots").first<{ at: number | null }>(),
     db.prepare("SELECT MAX(last_seen_at) AS at FROM error_issues").first<{ at: number | null }>(),
-    shares(db, "manufacturer", since7d),
-    shares(db, "app_version", since7d),
-    shares(db, "active_qq_client", since7d),
-    shares(db, "oobe_step", since7d),
-    shares(db, "sdk_int", since7d),
+    presenceShares(db, "manufacturer", since7d),
+    presenceShares(db, "app_version", since7d),
+    onlineVersionShares(db, sinceOnline),
+    presenceShares(db, "active_qq_client", since7d),
+    presenceShares(db, "oobe_step", since7d),
+    presenceShares(db, "sdk_int", since7d),
     db.prepare(
       `SELECT error_code AS label, COUNT(*) AS count FROM telemetry_events
        WHERE created_at >= ? AND error_code IS NOT NULL AND error_code != ''
@@ -177,7 +207,56 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
        WHERE created_at >= ? AND last_exit_reason IS NOT NULL AND last_exit_reason != ''
        GROUP BY last_exit_reason ORDER BY count DESC LIMIT 8`
     ).bind(since7d).all<LabelCount>(),
+    db.prepare(
+      `SELECT COUNT(*) AS reported24h,
+              COALESCE(SUM(CASE WHEN is_online = 1 AND last_online_at >= ? THEN 1 ELSE 0 END), 0) AS onlineReported,
+              COALESCE(SUM(CASE WHEN battery_charging = 1 THEN 1 ELSE 0 END), 0) AS chargingCount,
+              COALESCE(SUM(CASE WHEN last_charging_drain_at >= ? OR charging_drain = 1 THEN 1 ELSE 0 END), 0) AS chargingDrainCount,
+              COALESCE(SUM(CASE WHEN COALESCE(peak_temp_c, battery_temp_c) >= 40.0 THEN 1 ELSE 0 END), 0) AS hotCount,
+              AVG(battery_temp_c) AS avgTempC,
+              MAX(COALESCE(peak_temp_c, battery_temp_c)) AS maxTempC,
+              AVG(CASE WHEN discharge_rate_at >= ? THEN discharge_rate_pct_hr END) AS avgDischargePctHr,
+              AVG(app_cpu_pct) AS avgCpuPct,
+              COALESCE(SUM(CASE WHEN keep_screen_on = 1 THEN 1 ELSE 0 END), 0) AS keepScreenOnCount,
+              COALESCE(SUM(CASE WHEN cpu_affinity_pinned = 1 THEN 1 ELSE 0 END), 0) AS cpuPinnedCount,
+              COALESCE(SUM(CASE WHEN cpu_affinity_pinned IS NOT NULL THEN 1 ELSE 0 END), 0) AS cpuPinKnownCount,
+              COALESCE(SUM(CASE WHEN desktop_pet_running = 1 THEN 1 ELSE 0 END), 0) AS desktopPetCount
+       FROM device_presence WHERE power_updated_at >= ?`
+    ).bind(sinceOnline, since24h, since24h, since24h).first<Record<string, number | null>>(),
+    db.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN t < 35.0 THEN 1 ELSE 0 END), 0) AS cool,
+              COALESCE(SUM(CASE WHEN t >= 35.0 AND t < 40.0 THEN 1 ELSE 0 END), 0) AS warm,
+              COALESCE(SUM(CASE WHEN t >= 40.0 AND t < 43.0 THEN 1 ELSE 0 END), 0) AS hot,
+              COALESCE(SUM(CASE WHEN t >= 43.0 THEN 1 ELSE 0 END), 0) AS severe
+       FROM (
+         SELECT COALESCE(peak_temp_c, battery_temp_c) AS t
+         FROM device_presence
+         WHERE power_updated_at >= ? AND COALESCE(peak_temp_c, battery_temp_c) IS NOT NULL
+       )`
+    ).bind(since24h).first<Record<string, number | null>>(),
+    db.prepare(
+      `SELECT manufacturer,
+              model,
+              COUNT(*) AS devices,
+              COALESCE(SUM(CASE WHEN last_charging_drain_at >= ? OR charging_drain = 1 THEN 1 ELSE 0 END), 0) AS chargingDrainCount,
+              COALESCE(SUM(CASE WHEN COALESCE(peak_temp_c, battery_temp_c) >= 40.0 THEN 1 ELSE 0 END), 0) AS hotCount,
+              AVG(battery_temp_c) AS avgTempC,
+              MAX(COALESCE(peak_temp_c, battery_temp_c)) AS maxTempC,
+              AVG(CASE WHEN discharge_rate_at >= ? THEN discharge_rate_pct_hr END) AS avgDischargePctHr,
+              MIN(CASE WHEN charge_rate_at >= ? THEN charge_rate_pct_hr END) AS minChargeRatePctHr,
+              AVG(app_cpu_pct) AS avgCpuPct,
+              COALESCE(SUM(CASE WHEN keep_screen_on = 1 THEN 1 ELSE 0 END), 0) AS keepScreenOnCount,
+              COALESCE(SUM(CASE WHEN cpu_affinity_pinned = 1 THEN 1 ELSE 0 END), 0) AS cpuPinnedCount,
+              COALESCE(SUM(CASE WHEN cpu_affinity_pinned IS NOT NULL THEN 1 ELSE 0 END), 0) AS cpuPinKnownCount
+       FROM device_presence
+       WHERE power_updated_at >= ?
+       GROUP BY manufacturer, model
+       ORDER BY chargingDrainCount DESC, hotCount DESC, COALESCE(maxTempC, -999) DESC, COALESCE(avgCpuPct, -1) DESC
+       LIMIT 8`
+    ).bind(since24h, since24h, since24h, since24h).all<Record<string, unknown>>(),
   ]);
+
+  const latestTelemetryAt = Math.max(Number(lastPresence?.at || 0), Number(lastTelemetry?.at || 0)) || null;
 
   const openByCategory: Record<string, { issues: number; installs: number }> = {};
   let openIssues = 0;
@@ -208,6 +287,7 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
   return {
     generatedAt: nowSec,
     kpi: {
+      onlineNow: Number(onlineNowRow?.uniq) || 0,
       active24h: Number(active24h?.uniq) || 0,
       installs7d: Number(totals7d?.uniq) || 0,
       completed7d: Number(totals7d?.done) || 0,
@@ -228,11 +308,48 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
         announcements: annCount,
         failureHints: hintCount,
       },
-      telemetry: { state: componentState(lastTelemetry?.at, nowSec, 6 * 3600), lastAt: lastTelemetry?.at ?? null },
+      telemetry: { state: componentState(latestTelemetryAt, nowSec, 6 * 3600), lastAt: latestTelemetryAt },
       errorReport: { state: componentState(lastIssue?.at, nowSec, 3 * 86400), lastAt: lastIssue?.at ?? null },
       diag: { state: componentState(lastDiag?.at, nowSec, 7 * 86400), lastAt: lastDiag?.at ?? null },
     },
-    shares: { manufacturers, versions, qqClients, oobeSteps, sdks },
+    shares: { manufacturers, versions, onlineVersions, qqClients, oobeSteps, sdks },
+    power: {
+      summary: {
+        reported24h: Number(powerSummaryRow?.reported24h) || 0,
+        onlineReported: Number(powerSummaryRow?.onlineReported) || 0,
+        chargingCount: Number(powerSummaryRow?.chargingCount) || 0,
+        chargingDrainCount: Number(powerSummaryRow?.chargingDrainCount) || 0,
+        hotCount: Number(powerSummaryRow?.hotCount) || 0,
+        avgTempC: round1(powerSummaryRow?.avgTempC),
+        maxTempC: round1(powerSummaryRow?.maxTempC),
+        avgDischargePctHr: round1(powerSummaryRow?.avgDischargePctHr),
+        avgCpuPct: round1(powerSummaryRow?.avgCpuPct),
+        keepScreenOnCount: Number(powerSummaryRow?.keepScreenOnCount) || 0,
+        cpuPinnedCount: Number(powerSummaryRow?.cpuPinnedCount) || 0,
+        cpuPinKnownCount: Number(powerSummaryRow?.cpuPinKnownCount) || 0,
+        desktopPetCount: Number(powerSummaryRow?.desktopPetCount) || 0,
+      },
+      tempBuckets: [
+        { label: "<35°C", count: Number(tempBucketsRow?.cool) || 0 },
+        { label: "35-39.9°C", count: Number(tempBucketsRow?.warm) || 0 },
+        { label: "40-42.9°C", count: Number(tempBucketsRow?.hot) || 0 },
+        { label: "≥43°C", count: Number(tempBucketsRow?.severe) || 0 },
+      ],
+      hotModels: (hotModelsRes.results ?? []).map((r) => ({
+        label: `${String(r.manufacturer ?? "")} ${String(r.model ?? "")}`.trim() || "unknown",
+        devices: Number(r.devices) || 0,
+        chargingDrainCount: Number(r.chargingDrainCount) || 0,
+        hotCount: Number(r.hotCount) || 0,
+        avgTempC: round1(r.avgTempC as number | null | undefined),
+        maxTempC: round1(r.maxTempC as number | null | undefined),
+        avgDischargePctHr: round1(r.avgDischargePctHr as number | null | undefined),
+        minChargeRatePctHr: round1(r.minChargeRatePctHr as number | null | undefined),
+        avgCpuPct: round1(r.avgCpuPct as number | null | undefined),
+        keepScreenOnCount: Number(r.keepScreenOnCount) || 0,
+        cpuPinnedCount: Number(r.cpuPinnedCount) || 0,
+        cpuPinKnownCount: Number(r.cpuPinKnownCount) || 0,
+      })),
+    },
     topErrors: topErrors.results ?? [],
     topExitReasons: topExits.results ?? [],
   };

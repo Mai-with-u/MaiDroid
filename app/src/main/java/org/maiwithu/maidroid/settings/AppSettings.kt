@@ -5,6 +5,9 @@ import com.tencent.mmkv.MMKV
 import com.tencent.mmkv.MMKVHandler
 import com.tencent.mmkv.MMKVLogLevel
 import com.tencent.mmkv.MMKVRecoverStrategic
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.maiwithu.maidroid.runtime.MirrorCategory
 import org.maiwithu.maidroid.runtime.MirrorPreference
 import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
@@ -43,6 +46,9 @@ internal class AppSettings(
         const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
         const val KEY_TELEMETRY_INSTALL_ID = "telemetry_install_id"
         const val KEY_LAST_HEARTBEAT_SECONDS = "telemetry_last_heartbeat_sec"
+        const val KEY_LAST_ONLINE_HEARTBEAT_SECONDS = "telemetry_last_online_heartbeat_sec"
+        const val KEY_LAST_TELEMETRY_VERSION_CODE = "telemetry_last_version_code"
+        const val KEY_LAST_TELEMETRY_VERSION_NAME = "telemetry_last_version_name"
         const val KEY_LAST_AUTO_CRASH_MILLIS = "telemetry_last_auto_crash_ms"
         const val KEY_AUTO_ERROR_DAY = "telemetry_auto_error_day"
         const val KEY_AUTO_ERROR_DAY_COUNT = "telemetry_auto_error_day_count"
@@ -59,6 +65,8 @@ internal class AppSettings(
         const val KEY_MIRROR_PYPI_MODE = "mirror_pypi_mode"
         const val KEY_MIRROR_PYPI_PRESET = "mirror_pypi_preset"
         const val KEY_MIRROR_PYPI_CUSTOM = "mirror_pypi_custom"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_WIFI_LOCK_ENABLED = "wifi_lock_enabled"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
         const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
@@ -203,6 +211,30 @@ internal class AppSettings(
             kv.encode(KEY_TELEMETRY_ENABLED, value)
         }
 
+    // 主界面与全屏网页共用这条状态流，设置页切开关时窗口常亮标记会立即增删。
+    private val _keepScreenOn = MutableStateFlow(kv.decodeBool(KEY_KEEP_SCREEN_ON, false))
+    val keepScreenOnFlow: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    /** 前台打开界面时是否阻止系统自动息屏；默认关闭以降低高刷大屏机型亮屏挂机导致的发热与边充边掉电。 */
+    var keepScreenOn: Boolean
+        get() = _keepScreenOn.value
+        set(value) {
+            kv.encode(KEY_KEEP_SCREEN_ON, value)
+            _keepScreenOn.value = value
+        }
+
+    // 与前台服务实时联动，默认关闭低延迟 Wi-Fi 锁以免阻止 Wi-Fi 射频进入常规节能休眠。
+    private val _wifiLockEnabled = MutableStateFlow(kv.decodeBool(KEY_WIFI_LOCK_ENABLED, false))
+    val wifiLockEnabledFlow: StateFlow<Boolean> = _wifiLockEnabled.asStateFlow()
+
+    /** 后台运行期间是否持有 Wi-Fi 低延迟锁防止息屏断连；默认关闭以降低射频耗电与发热。 */
+    var wifiLockEnabled: Boolean
+        get() = _wifiLockEnabled.value
+        set(value) {
+            kv.encode(KEY_WIFI_LOCK_ENABLED, value)
+            _wifiLockEnabled.value = value
+        }
+
     /** 匿名安装随机标识：首次读取时生成 UUID，卸载重装即变，不绑定任何硬件序列号或账号。 */
     fun telemetryInstallId(): String {
         val existing = kv.decodeString(KEY_TELEMETRY_INSTALL_ID, null)?.takeIf { it.isNotBlank() }
@@ -217,6 +249,27 @@ internal class AppSettings(
         get() = kv.decodeLong(KEY_LAST_HEARTBEAT_SECONDS, 0L)
         set(value) {
             kv.encode(KEY_LAST_HEARTBEAT_SECONDS, value)
+        }
+
+    /** 上次成功发送实时在线心跳的时间戳（秒），用于 10 分钟心跳与 60 秒强制触发节流。 */
+    var lastOnlineHeartbeatSeconds: Long
+        get() = kv.decodeLong(KEY_LAST_ONLINE_HEARTBEAT_SECONDS, 0L)
+        set(value) {
+            kv.encode(KEY_LAST_ONLINE_HEARTBEAT_SECONDS, value)
+        }
+
+    /** 最近一次已成功上报给远端遥测的 MaiDroid versionCode，版本升级时立即放行新版本心跳。 */
+    var lastTelemetryReportedVersionCode: Int
+        get() = kv.decodeInt(KEY_LAST_TELEMETRY_VERSION_CODE, 0)
+        set(value) {
+            kv.encode(KEY_LAST_TELEMETRY_VERSION_CODE, value)
+        }
+
+    /** 最近一次已成功上报给远端遥测的 MaiDroid 版本名，覆盖安装热修时也会及时同步。 */
+    var lastTelemetryReportedVersionName: String
+        get() = kv.decodeString(KEY_LAST_TELEMETRY_VERSION_NAME, "") ?: ""
+        set(value) {
+            kv.encode(KEY_LAST_TELEMETRY_VERSION_NAME, value)
         }
 
     /** 上次已成功自动补报的崩溃记录时间戳（毫秒），成功上传后推进，避免跨进程重复上报同一场闪退。 */

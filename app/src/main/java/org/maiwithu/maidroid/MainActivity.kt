@@ -4,7 +4,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -31,7 +30,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val settings = appDependencies.settings
+        // 首次引导未完成时保底常亮防止中途息屏中断安装；引导完成后按设置页“屏幕常亮”开关实时控制。
+        applyKeepScreenOn(
+            window = window,
+            keepOn = shouldKeepScreenOn(viewModel.setupComplete.value, settings.keepScreenOn)
+        )
         // 状态栏、导航栏都透明并用浅色图标（深色界面）；什么时候显示、隐藏见 applySystemBars。
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -50,10 +54,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaiDroidTheme {
                 val setupComplete by viewModel.setupComplete.collectAsState()
+                val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
                 val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-                // OOBE 完成、转屏（Activity 没重建时）都重新设一遍系统栏。
+                // OOBE 完成、转屏（Activity 没重建时）都重新设一遍系统栏；设置页切换常亮开关时立即增删常亮标记。
                 LaunchedEffect(setupComplete, landscape) {
                     applySystemBars(window, landscape = landscape, hideNavigationBar = setupComplete)
+                }
+                LaunchedEffect(setupComplete, keepScreenOn) {
+                    applyKeepScreenOn(window, shouldKeepScreenOn(setupComplete, keepScreenOn))
                 }
 
                 // 把系统栏策略传给界面里的弹窗：弹窗是独立窗口，要对自己的窗口套用同一套显隐规则。
@@ -76,6 +84,22 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAnnouncementIntent(intent)
+    }
+
+    // 进入前台时恢复主界面轮询探测并通知电源遥测，已同意隐私授权后立即补报一次实时在线心跳。
+    override fun onStart() {
+        super.onStart()
+        viewModel.onUiForegroundChanged(true)
+        appDependencies.powerTelemetry.onUiForegroundChanged(true)
+        if (appDependencies.settings.authorizationAccepted) {
+            appDependencies.remoteOps.reportOnlineHeartbeat(force = true)
+        }
+    }
+
+    override fun onStop() {
+        viewModel.onUiForegroundChanged(false)
+        appDependencies.powerTelemetry.onUiForegroundChanged(false)
+        super.onStop()
     }
 
     // 从系统设置页回来时权限可能变了，重新读一遍。

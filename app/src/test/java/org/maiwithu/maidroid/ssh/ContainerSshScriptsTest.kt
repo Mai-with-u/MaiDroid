@@ -29,4 +29,11 @@ class ContainerSshScriptsTest {
         assertFalse(matcher.containsMatchIn("  14840 /bin/sh -c exec /usr/sbin/sshd -D -e -p 2222"))
         assertFalse(matcher.containsMatchIn("  14900 /usr/sbin/sshd-wrapper -p 2222"))
     }
+
+    @Test
+    fun `launch excludes top cpu cluster to reduce idle power draw`() {
+        val launchScript = ContainerSshScripts.launch(2222)
+        assertTrue(launchScript.excludeTopCpuCluster)
+        assertTrue(launchScript.body.contains("exec /usr/sbin/sshd -D -e -p 2222"))
+    }
 }

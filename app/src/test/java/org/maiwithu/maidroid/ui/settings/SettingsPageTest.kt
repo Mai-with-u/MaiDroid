@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.shouldKeepScreenOn
+import org.maiwithu.maidroid.service.shouldHoldWifiLock
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.MirrorCategory
@@ -141,5 +143,21 @@ class SettingsPageTest {
             )
         )
         assertEquals("手动：GitHub(ghfast.top) · APT(自定义) · PyPI(MaiBot 自带的源)", mirrorSettingsSummaryText(allManual))
+    }
+
+    @Test
+    fun `shouldKeepScreenOn forces keep-on during OOBE and follows setting after setup`() {
+        assertTrue(shouldKeepScreenOn(setupComplete = false, keepScreenOnEnabled = false))
+        assertTrue(shouldKeepScreenOn(setupComplete = false, keepScreenOnEnabled = true))
+        assertFalse(shouldKeepScreenOn(setupComplete = true, keepScreenOnEnabled = false))
+        assertTrue(shouldKeepScreenOn(setupComplete = true, keepScreenOnEnabled = true))
+    }
+
+    @Test
+    fun `shouldHoldWifiLock requires user opt-in and releases on low battery or safe exit`() {
+        assertFalse(shouldHoldWifiLock(wifiLockEnabled = false, lowBatteryPaused = false, safeExitRunning = false))
+        assertTrue(shouldHoldWifiLock(wifiLockEnabled = true, lowBatteryPaused = false, safeExitRunning = false))
+        assertFalse(shouldHoldWifiLock(wifiLockEnabled = true, lowBatteryPaused = true, safeExitRunning = false))
+        assertFalse(shouldHoldWifiLock(wifiLockEnabled = true, lowBatteryPaused = false, safeExitRunning = true))
     }
 }

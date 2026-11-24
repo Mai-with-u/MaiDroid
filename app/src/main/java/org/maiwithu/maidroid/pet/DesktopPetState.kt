@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.pet
 
 import java.net.URI
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** 本机 MaiBot 多实例列表中的单个机器人摘要。 */
 internal data class DesktopPetBot(
@@ -49,6 +50,14 @@ internal data class DesktopPetUiState(
     val lastError: String? = null
 )
 
+/** 拖动桌宠开始时上报给服务端的有限数值载荷（对齐 desktop_pet 远端协议校验）。 */
+internal data class DesktopPetDragStartPayload(
+    val gestureId: String,
+    val offsetX: Int,
+    val offsetY: Int,
+    val scale: Double
+)
+
 /** 悬浮桌宠 URL、Origin 与身份标识的纯 Kotlin 协议边界校验。 */
 internal object DesktopPetProtocol {
     const val LOCAL_ORIGIN = "https://appassets.androidplatform.net"
@@ -56,6 +65,7 @@ internal object DesktopPetProtocol {
     const val RECORDS_PAGE_URL = "$LOCAL_ORIGIN/pet/exploration.html"
     const val AUTH_SESSION_PATH = "/api/host/desktop-pet/session"
     const val MAX_BRIDGE_MESSAGE_CHARS = 65 * 1024 * 1024
+    const val MAX_DRAG_SCALE = 20.0
 
     private val botIdRegex = Regex("^[a-f0-9]{32}$")
     private val clientIdRegex = Regex("^[A-Za-z0-9_-]{1,64}$")
@@ -111,5 +121,31 @@ internal object DesktopPetProtocol {
         val uri = runCatching { URI(urlString.trim()) }.getOrNull() ?: return false
         val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
         return (scheme == "http" || scheme == "https") && !uri.host.isNullOrBlank()
+    }
+
+    /**
+     * 计算拖动开始事件载荷（以桌宠窗口水平中心与底边站立锚点减去按下点屏幕坐标，并夹紧屏幕密度比例），
+     * 确保 `offset_x`/`offset_y`/`scale` 均为有限数值且 `0 < scale <= 20`，防止服务端校验拒收并断连。
+     */
+    fun computeDragStartPayload(
+        gestureId: String,
+        windowX: Int,
+        windowWidth: Int,
+        windowBottom: Int,
+        pointerDownX: Float,
+        pointerDownY: Float,
+        density: Float
+    ): DesktopPetDragStartPayload {
+        val anchorX = windowX + windowWidth / 2
+        val offsetX = if (pointerDownX.isFinite()) (anchorX - pointerDownX).roundToInt() else 0
+        val offsetY = if (pointerDownY.isFinite()) (windowBottom - pointerDownY).roundToInt() else 0
+        val rawScale = density.toDouble()
+        val safeScale = if (rawScale.isFinite() && rawScale > 0.0) rawScale.coerceAtMost(MAX_DRAG_SCALE) else 1.0
+        return DesktopPetDragStartPayload(
+            gestureId = gestureId,
+            offsetX = offsetX,
+            offsetY = offsetY,
+            scale = safeScale
+        )
     }
 }

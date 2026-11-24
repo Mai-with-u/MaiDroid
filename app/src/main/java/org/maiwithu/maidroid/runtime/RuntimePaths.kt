@@ -14,7 +14,7 @@ import java.io.File
  *
  * NapCat、QQ 官方机器人等平台各自的文件位置见各自包里的 NapCatFiles、QqOfficialAdapterFiles。
  */
-internal class RuntimePaths private constructor(
+internal class RuntimePaths internal constructor(
     /** 应用私有的 files 目录；容器和 MaiDroid 自己的文件都在这个分区上，看剩余空间就看它。 */
     val appFilesDir: File,
     val nativeLibraryDir: File

@@ -1,5 +1,9 @@
 package org.maiwithu.maidroid.ui.home
 
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,6 +35,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,9 +78,26 @@ import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
 import org.maiwithu.maidroid.webui.WebUiSessionHost
 
-/** 主页退后台连续空闲这么久后销毁 WebUI 会话，释放内容进程与显存；回到前台立即按需唤醒。 */
-internal const val WEB_UI_HIBERNATE_DELAY_MS = 3 * 60_000L
+/** 主页或全屏网页退后台连续空闲这么久后销毁 WebUI 会话，释放内容进程与显存；回到前台且选中页签再按需唤醒。 */
+internal const val WEB_UI_HIBERNATE_DELAY_MS = 2 * 60_000L
 private const val WEB_UI_HIBERNATE_RETRY_MS = 60_000L
+
+/** 仅当主界面处于前台且当前正停留在 WebUI 页签时，GeckoSession 才维持活跃渲染。 */
+internal fun shouldWebUiSessionBeActive(isStarted: Boolean, isWebUiTabSelected: Boolean): Boolean =
+    isStarted && isWebUiTabSelected
+
+/**
+ * 退后台期间系统触发低内存告警时立即清理空闲 WebUI：
+ * 宿主因前台服务常驻同进程而不会进入 LRU 后台队列，实际收到的是 RUNNING_LOW / RUNNING_CRITICAL；
+ * 同时兼容无前台服务时的 >= TRIM_MEMORY_BACKGROUND 档位，并跳过每次切桌面都会派发的 TRIM_MEMORY_UI_HIDDEN。
+ */
+@Suppress("DEPRECATION")
+internal fun shouldHibernateWebUiOnTrimMemory(level: Int, isStarted: Boolean): Boolean {
+    if (isStarted) return false
+    return level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+        level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+        level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+}
 
 /**
  * WebUI 页签的 GeckoView 会话宿主及其加载状态；放在主页外壳里记住，切换标签时不销毁。
@@ -159,9 +181,11 @@ internal class WebUiTabState internal constructor(
     }
 }
 
-/** 创建 WebUI 页签的 GeckoView 会话宿主，离开主页时销毁。 */
+/** 创建 WebUI 页签的 GeckoView 会话宿主，切页或退后台时即时冻结，退后台超时或系统紧缩内存时休眠释放。 */
 @Composable
-internal fun rememberWebUiTabState(): WebUiTabState {
+internal fun rememberWebUiTabState(
+    isWebUiTabSelected: Boolean = true
+): WebUiTabState {
     val context = LocalContext.current
     val state = remember(context) {
         val fileChooser = WebUiFileChooser(context, MaiBotWebUi.LOG_TAG)
@@ -211,10 +235,7 @@ internal fun rememberWebUiTabState(): WebUiTabState {
     DisposableEffect(lifecycleOwner, state) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> {
-                    isStarted = true
-                    state.ensureAwake()
-                }
+                Lifecycle.Event.ON_START -> isStarted = true
                 Lifecycle.Event.ON_STOP -> isStarted = false
                 else -> Unit
             }
@@ -223,15 +244,51 @@ internal fun rememberWebUiTabState(): WebUiTabState {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // 退到后台持续满 3 分钟再休眠，避免用户短暂切去聊天软件或选文件时反复销毁重建会话。
-    LaunchedEffect(isStarted, state) {
+    // 切离 WebUI 页签或退后台时立即冻结渲染与页面定时器；回到 WebUI 页签才按需从休眠态懒唤醒。
+    val shouldBeActive = shouldWebUiSessionBeActive(isStarted, isWebUiTabSelected)
+    LaunchedEffect(state.sessionHost, shouldBeActive) {
+        state.sessionHost?.setActive(shouldBeActive)
+    }
+
+    // 退到后台持续满 2 分钟再休眠，避免用户短暂切去聊天软件或选文件时反复销毁重建会话；回前景且选中页签再唤醒。
+    LaunchedEffect(isStarted, isWebUiTabSelected, state) {
         if (isStarted) {
-            state.ensureAwake()
+            if (isWebUiTabSelected) {
+                state.ensureAwake()
+            }
         } else {
             delay(WEB_UI_HIBERNATE_DELAY_MS)
             while (state.sessionHost != null && !state.hibernateIfIdle()) {
                 delay(WEB_UI_HIBERNATE_RETRY_MS)
             }
+        }
+    }
+
+    // 退后台期间若收到系统内存紧张信号，立即交还渲染子进程内存，优先保全容器与前台服务不被 LMK 查杀。
+    val latestIsStarted by rememberUpdatedState(isStarted)
+    DisposableEffect(context, state) {
+        val appContext = context.applicationContext
+        val mainHandler = Handler(Looper.getMainLooper())
+        val trimCallback = object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) {
+                if (shouldHibernateWebUiOnTrimMemory(level, latestIsStarted)) {
+                    mainHandler.post { state.hibernateIfIdle() }
+                }
+            }
+
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+            @Deprecated("Deprecated in Java")
+            override fun onLowMemory() {
+                if (!latestIsStarted) {
+                    mainHandler.post { state.hibernateIfIdle() }
+                }
+            }
+        }
+        appContext.registerComponentCallbacks(trimCallback)
+        onDispose {
+            mainHandler.removeCallbacksAndMessages(null)
+            appContext.unregisterComponentCallbacks(trimCallback)
         }
     }
 

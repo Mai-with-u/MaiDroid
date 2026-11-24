@@ -112,6 +112,113 @@ internal fun resolveToggleDragOutcome(
 }
 
 /**
+ * 判定开关手势是否应锁定为横向拖拽：
+ * 只有横向净位移超过防抖阈值且大于纵向位移时才锁定，
+ * 纵向滑动主导时保持不消费移动事件，让外层 LazyColumn 正常接管上下滚动。
+ */
+internal fun shouldLockToggleHorizontalDrag(
+    netDeltaX: Float,
+    netDeltaY: Float,
+    lockSlopPx: Float
+): Boolean {
+    val minSlop = lockSlopPx.coerceAtLeast(0f)
+    return abs(netDeltaX) > minSlop && abs(netDeltaX) > abs(netDeltaY)
+}
+
+/**
+ * 液态开关专属手势监听器（按下即消费，防穿透外层 clickable 与列表误触）：
+ * - 按下第一时间 consume() 阻断外层整行点击与水波纹，父级滚动容器因使用 requireUnconsumed = false 仍可纵向起滑；
+ * - 横向位移主导后锁定并持续消费移动事件，若锁定前已被外层列表在 Main 阶段消费则立刻 cancel 回弹滑块。
+ */
+internal suspend fun PointerInputScope.detectToggleDragGestures(
+    horizontalLockSlopPx: Float = 0f,
+    onDragStart: (down: PointerInputChange) -> Unit = {},
+    onDragEnd: (change: PointerInputChange) -> Unit = {},
+    onDragCancel: () -> Unit = {},
+    onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit
+) {
+    awaitEachGesture {
+        // 先抢占当前开关自身热区的首次按下事件，防止外层行点击回调连带触发。
+        val down = awaitFirstDown(requireUnconsumed = true)
+        down.consume()
+
+        onDragStart(down)
+        onDrag(down, Offset.Zero)
+        val upEvent = dragTogglePointer(
+            pointerId = down.id,
+            horizontalLockSlopPx = horizontalLockSlopPx,
+            onDrag = onDrag
+        )
+        if (upEvent == null) {
+            onDragCancel()
+        } else {
+            onDragEnd(upEvent)
+        }
+    }
+}
+
+private suspend inline fun AwaitPointerEventScope.dragTogglePointer(
+    pointerId: PointerId,
+    horizontalLockSlopPx: Float,
+    onDrag: (PointerInputChange, Offset) -> Unit
+): PointerInputChange? {
+    val isPointerUp = currentEvent.changes.fastFirstOrNull { it.id == pointerId }?.pressed != true
+    if (isPointerUp) return null
+
+    var pointer = pointerId
+    var netDeltaX = 0f
+    var netDeltaY = 0f
+    var lockedHorizontal = false
+
+    while (true) {
+        val mainEvent = awaitPointerEvent(PointerEventPass.Main)
+        val change = mainEvent.changes.fastFirstOrNull { it.id == pointer } ?: return null
+        if (change.isConsumed) return null
+
+        if (change.changedToUpIgnoreConsumed()) {
+            val otherDown = mainEvent.changes.fastFirstOrNull { it.pressed }
+            if (otherDown == null) {
+                change.consume()
+                return change
+            }
+            pointer = otherDown.id
+            continue
+        }
+
+        val delta = change.positionChange()
+        if (delta == Offset.Zero) {
+            if (!lockedHorizontal) {
+                // 未锁定时仍须监听 Final 阶段，防止外层列表同帧接管后漏掉 cancel 通知。
+                val finalEvent = awaitPointerEvent(PointerEventPass.Final)
+                val finalChange = finalEvent.changes.fastFirstOrNull { it.id == pointer } ?: return null
+                if (finalChange.isConsumed) return null
+            }
+            continue
+        }
+
+        netDeltaX += delta.x
+        netDeltaY += delta.y
+
+        if (!lockedHorizontal) {
+            if (shouldLockToggleHorizontalDrag(netDeltaX, netDeltaY, horizontalLockSlopPx)) {
+                // 确认用户横向拨动滑块后立刻锁定并消费，把锁前微量位移一次性补给滑块保证跟手。
+                lockedHorizontal = true
+                change.consume()
+                onDrag(change, Offset(netDeltaX, netDeltaY))
+            } else {
+                // 尚未明确横划前让父级先判纵向滚动，再到 Final 阶段确认是否被列表抢走。
+                val finalEvent = awaitPointerEvent(PointerEventPass.Final)
+                val finalChange = finalEvent.changes.fastFirstOrNull { it.id == pointer } ?: return null
+                if (finalChange.isConsumed) return null
+            }
+        } else {
+            change.consume()
+            onDrag(change, delta)
+        }
+    }
+}
+
+/**
  * 液态玻璃通用的非消费式拖拽监听器：
  * 按下即同步驱动按压形变与高亮追踪，一旦手势被外层点击或滚动容器消费（如列表上下滑动）立即转入 onDragCancel，
  * 既能保留细腻的手指跟手响应，又不抢占父级点击/滚动手势。
@@ -185,6 +292,9 @@ internal class DampedDragAnimation(
     val visibilityThreshold: Float,
     val initialScale: Float,
     val pressedScale: Float,
+    val pressedScaleProvider: (() -> Float)? = null,
+    val consumeToggleGestures: Boolean = false,
+    val horizontalLockSlopPx: Float = 0f,
     val onDragStarted: DampedDragAnimation.(position: Offset) -> Unit,
     val onDragStopped: DampedDragAnimation.() -> Unit,
     val onDragCancelled: DampedDragAnimation.() -> Unit = onDragStopped,
@@ -219,21 +329,42 @@ internal class DampedDragAnimation(
     val velocity: Float get() = velocityAnimation.value
 
     val modifier: Modifier = Modifier.pointerInput(this) {
-        inspectDragGestures(
-            onDragStart = { down ->
-                onDragStarted(down.position)
-                press()
-            },
-            onDragEnd = {
-                onDragStopped()
-                release()
-            },
-            onDragCancel = {
-                onDragCancelled()
-                release()
+        if (consumeToggleGestures) {
+            // 开关场景消费按下与横向滑移事件，防止穿透外层可点击行。
+            detectToggleDragGestures(
+                horizontalLockSlopPx = horizontalLockSlopPx,
+                onDragStart = { down ->
+                    onDragStarted(down.position)
+                    press()
+                },
+                onDragEnd = {
+                    onDragStopped()
+                    release()
+                },
+                onDragCancel = {
+                    onDragCancelled()
+                    release()
+                }
+            ) { _, dragAmount ->
+                onDrag(size, dragAmount)
             }
-        ) { _, dragAmount ->
-            onDrag(size, dragAmount)
+        } else {
+            inspectDragGestures(
+                onDragStart = { down ->
+                    onDragStarted(down.position)
+                    press()
+                },
+                onDragEnd = {
+                    onDragStopped()
+                    release()
+                },
+                onDragCancel = {
+                    onDragCancelled()
+                    release()
+                }
+            ) { _, dragAmount ->
+                onDrag(size, dragAmount)
+            }
         }
     }
 
@@ -242,10 +373,11 @@ internal class DampedDragAnimation(
         releaseJob?.cancel()
         releaseJob = null
         velocityTracker.resetTracking()
+        val targetPressedScale = pressedScaleProvider?.invoke() ?: pressedScale
         animationScope.launch {
             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
-            launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
-            launch { scaleYAnimation.animateTo(pressedScale, scaleYAnimationSpec) }
+            launch { scaleXAnimation.animateTo(targetPressedScale, scaleXAnimationSpec) }
+            launch { scaleYAnimation.animateTo(targetPressedScale, scaleYAnimationSpec) }
         }
     }
 

@@ -1,6 +1,7 @@
 package org.maiwithu.maidroid
 
 import android.view.Window
+import android.view.WindowManager
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -31,5 +32,21 @@ internal fun applySystemBars(window: Window, landscape: Boolean, hideNavigationB
             controller.hide(WindowInsetsCompat.Type.navigationBars())
         }
         else -> controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+}
+
+/**
+ * 判断主界面窗口当前是否需要常亮：
+ * 首次引导安装阶段始终常亮防中断；引导完成后严格遵照设置页“屏幕常亮”开关，默认允许系统自动息屏降温。
+ */
+internal fun shouldKeepScreenOn(setupComplete: Boolean, keepScreenOnEnabled: Boolean): Boolean =
+    !setupComplete || keepScreenOnEnabled
+
+/** 根据常亮策略为窗口增删 FLAG_KEEP_SCREEN_ON，确保设置变更后即时生效。 */
+internal fun applyKeepScreenOn(window: Window, keepOn: Boolean) {
+    if (keepOn) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    } else {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,7 +51,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -499,9 +498,20 @@ private fun SettingsNavigationPane(
     val remoteOps = remember(context) { context.appDependencies.remoteOps }
     val bannerAnnouncements by remoteOps.bannerAnnouncements.collectAsState()
     var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
+    val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
+    val wifiLockEnabled by settings.wifiLockEnabledFlow.collectAsState()
+    val onKeepScreenOnChange: (Boolean) -> Unit = { enabled ->
+        settings.keepScreenOn = enabled
+    }
+    val onWifiLockChange: (Boolean) -> Unit = { enabled ->
+        settings.wifiLockEnabled = enabled
+    }
     val onTelemetryChange: (Boolean) -> Unit = { enabled ->
         settings.telemetryEnabled = enabled
         telemetryEnabled = enabled
+        if (enabled && settings.authorizationAccepted) {
+            remoteOps.reportOnlineHeartbeat(force = true)
+        }
     }
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
@@ -688,6 +698,60 @@ private fun SettingsNavigationPane(
                         }
                     }
                 )
+
+                SettingsDivider()
+
+                // 引导完成后按用户开关控制窗口是否保持常亮，避免大屏高刷机型长时间挂在前台发热掉电。
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.KeepScreenOn,
+                    iconColor = IconSunnyAmber,
+                    title = "屏幕常亮",
+                    supportingText = "前台打开界面时阻止自动息屏，关闭可降低发热与耗电",
+                    onClick = { onKeepScreenOnChange(!keepScreenOn) },
+                    trailing = if (compact) null else {
+                        {
+                            FlatSwitch(
+                                checked = keepScreenOn,
+                                onCheckedChange = onKeepScreenOnChange
+                            )
+                        }
+                    }
+                )
+                if (compact) {
+                    CompactSettingSwitchRow(
+                        label = "启用屏幕常亮",
+                        checked = keepScreenOn,
+                        enabled = true,
+                        onCheckedChange = onKeepScreenOnChange
+                    )
+                }
+
+                SettingsDivider()
+
+                // 默认关闭低延迟 Wi-Fi 锁降低息屏射频能耗，仅部分旧机型息屏断连时按需开启。
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.WifiLock,
+                    iconColor = IconTealMint,
+                    title = "Wi-Fi 低延迟保活",
+                    supportingText = "防止部分旧机型息屏后 Wi-Fi 断连；关闭可降低后台射频耗电与发热",
+                    onClick = { onWifiLockChange(!wifiLockEnabled) },
+                    trailing = if (compact) null else {
+                        {
+                            FlatSwitch(
+                                checked = wifiLockEnabled,
+                                onCheckedChange = onWifiLockChange
+                            )
+                        }
+                    }
+                )
+                if (compact) {
+                    CompactSettingSwitchRow(
+                        label = "启用 Wi-Fi 低延迟保活",
+                        checked = wifiLockEnabled,
+                        enabled = true,
+                        onCheckedChange = onWifiLockChange
+                    )
+                }
             }
         }
 
@@ -782,7 +846,7 @@ private fun SettingsNavigationPane(
                     icon = FlatFeatureIcons.Telemetry,
                     iconColor = IconIrisBlue,
                     title = "匿名运行统计",
-                    supportingText = "上报匿名版本、崩溃堆栈与脱敏的安装/启动报错以改进稳定性，绝不含聊天记录、QQ 号与密钥",
+                    supportingText = "上报匿名版本、在线状态、电池温耗与脱敏报错以改进稳定性，绝不含聊天记录、QQ 号与密钥",
                     onClick = { onTelemetryChange(!telemetryEnabled) },
                     trailing = if (compact) null else {
                         {
@@ -972,31 +1036,40 @@ private fun CompactSettingSwitchRow(
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    // 左右交互彻底分离：左侧占满剩余宽度防止窄屏挤压，右侧开关独立承接点击与液态拖拽，避免整行按压蒙层盖在开关上方。
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(
-                value = checked,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = onCheckedChange
-            )
-            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1
-        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .defaultMinSize(minHeight = 40.dp)
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onClick = { onCheckedChange(!checked) }
+                ),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = label,
+                color = TextMuted,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         FlatSwitch(
             checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            modifier = Modifier.clearAndSetSemantics {}
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
         )
     }
 }

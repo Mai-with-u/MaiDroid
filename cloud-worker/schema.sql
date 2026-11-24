@@ -44,6 +44,52 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_created ON telemetry_events (created_at);
 
+-- 设备实时在线状态、最新版本号（升级即覆写，自动迁出旧版计数）与耗电温控最新快照（每台设备严格一行）
+CREATE TABLE IF NOT EXISTS device_presence (
+    install_id TEXT PRIMARY KEY,
+    first_seen_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    last_online_at INTEGER NOT NULL,
+    is_online INTEGER NOT NULL DEFAULT 1,
+    last_hourly_event_at INTEGER NOT NULL DEFAULT 0,
+    app_version TEXT NOT NULL,
+    version_code INTEGER NOT NULL DEFAULT 0,
+    build_type TEXT NOT NULL DEFAULT 'release',
+    manufacturer TEXT NOT NULL,
+    model TEXT NOT NULL,
+    sdk_int INTEGER NOT NULL,
+    oobe_step TEXT,
+    setup_complete INTEGER NOT NULL,
+    active_qq_client TEXT,
+    last_exit_reason TEXT,
+    battery_pct INTEGER,
+    battery_temp_c REAL,
+    peak_temp_c REAL,
+    peak_temp_at INTEGER,
+    battery_voltage_mv INTEGER,
+    battery_charging INTEGER,
+    charge_plug TEXT,
+    battery_current_ma INTEGER,
+    discharge_rate_pct_hr REAL,
+    discharge_rate_at INTEGER,
+    charge_rate_pct_hr REAL,
+    charge_rate_at INTEGER,
+    charging_drain INTEGER,
+    last_charging_drain_at INTEGER,
+    thermal_status INTEGER,
+    app_cpu_pct REAL,
+    screen_on INTEGER,
+    screen_on_pct INTEGER,
+    keep_screen_on INTEGER,
+    cpu_affinity_pinned INTEGER,
+    desktop_pet_running INTEGER,
+    power_updated_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_presence_seen ON device_presence (last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_device_presence_online ON device_presence (is_online, last_online_at);
+CREATE INDEX IF NOT EXISTS idx_device_presence_power ON device_presence (power_updated_at);
+
 -- 基于加盐哈希 IP 的滑动窗口频控表（不落盘明文 IP）
 CREATE TABLE IF NOT EXISTS rate_limits (
     bucket_key TEXT PRIMARY KEY,

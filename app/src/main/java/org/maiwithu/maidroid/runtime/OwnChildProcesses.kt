@@ -5,6 +5,7 @@ import android.system.Os
 import android.system.OsConstants
 import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * 宿主机侧进程巡检与清理：直接读取同 UID 在 /proc 下的进程目录，
@@ -12,6 +13,78 @@ import java.io.File
  */
 
 private val WHITESPACE = Regex("\\s+")
+private const val MIN_CPU_SAMPLE_WINDOW_MS = 10_000L
+private const val MAX_REPORTED_TREE_CPU_PCT = 1600.0
+
+/** 单个进程的启动节拍（区分同 PID 复用）与累计用户态/内核态 CPU 节拍数。 */
+internal data class ProcessCpuTicks(
+    val startTimeTicks: Long,
+    val cpuTicks: Long
+)
+
+/**
+ * 解析 Linux `/proc/<pid>/stat` 单行里的 `utime + stime` 与 `starttime`。
+ * 进程名放在一对圆括号里且允许带空格或括号，必须以最后一个 `)` 定位后续字段偏移。
+ */
+internal fun parseProcStatCpuTicks(statLine: String): ProcessCpuTicks? {
+    val rparen = statLine.lastIndexOf(')')
+    if (rparen < 0 || rparen + 2 >= statLine.length) return null
+    val tokens = statLine.substring(rparen + 1).trim().split(WHITESPACE)
+    if (tokens.size < 20) return null
+    val utime = tokens[11].toLongOrNull() ?: return null
+    val stime = tokens[12].toLongOrNull() ?: return null
+    val startTime = tokens[19].toLongOrNull() ?: return null
+    return ProcessCpuTicks(startTimeTicks = startTime, cpuTicks = utime + stime)
+}
+
+/** 采集宿主主进程与同 UID 全部容器子进程当前的 CPU 累计节拍，供周期窗口计算整树占用率。 */
+internal fun readOwnTreeCpuTicks(
+    procRoot: File = File("/proc"),
+    myUid: Int = AndroidProcess.myUid(),
+    myPid: Int = AndroidProcess.myPid()
+): Map<Int, ProcessCpuTicks> {
+    val result = HashMap<Int, ProcessCpuTicks>()
+    readPidStatCpuTicks(File(procRoot, myPid.toString()))?.let { result[myPid] = it }
+    for ((pid, dir) in listOwnProcessDirs(procRoot, myUid, myPid)) {
+        readPidStatCpuTicks(dir)?.let { result[pid] = it }
+    }
+    return result
+}
+
+private fun readPidStatCpuTicks(procDir: File): ProcessCpuTicks? =
+    runCatching {
+        val statFile = File(procDir, "stat")
+        if (!statFile.isFile) return@runCatching null
+        parseProcStatCpuTicks(statFile.readText(Charsets.UTF_8))
+    }.getOrNull()
+
+/**
+ * 根据前后两次采样计算本应用整棵进程树（含 proot / MaiBot / QQ / Xvfb）在采样窗口内的单核等效 CPU 占用（%）。
+ * `elapsedMs` 小于 10 秒或任一侧为空快照时返回 null，避免短暂窗口或冷启基线期算虚高。
+ */
+internal fun computeTreeCpuPercent(
+    previous: Map<Int, ProcessCpuTicks>,
+    current: Map<Int, ProcessCpuTicks>,
+    elapsedMs: Long,
+    clockTicksPerSec: Long = 100L
+): Double? {
+    if (previous.isEmpty() || current.isEmpty() || elapsedMs < MIN_CPU_SAMPLE_WINDOW_MS || clockTicksPerSec <= 0L) {
+        return null
+    }
+    var deltaTicks = 0L
+    for ((pid, curr) in current) {
+        val prev = previous[pid]
+        deltaTicks += if (prev != null && prev.startTimeTicks == curr.startTimeTicks) {
+            (curr.cpuTicks - prev.cpuTicks).coerceAtLeast(0L)
+        } else {
+            curr.cpuTicks.coerceAtLeast(0L)
+        }
+    }
+    val deltaCpuSec = deltaTicks.toDouble() / clockTicksPerSec.toDouble()
+    val wallSec = elapsedMs.toDouble() / 1000.0
+    val pct = (deltaCpuSec / wallSec) * 100.0
+    return ((pct * 10.0).roundToInt() / 10.0).coerceIn(0.0, MAX_REPORTED_TREE_CPU_PCT)
+}
 
 /**
  * 统计当前应用名下（同 UID，排除主进程自身）存活的原生子进程总数，

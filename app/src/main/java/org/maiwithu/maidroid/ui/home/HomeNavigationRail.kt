@@ -75,8 +75,20 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** 侧栏竖条统一宽度：锁定 64dp 基准短边，使横竖屏全圆 Capsule() 外圆角半径一致维持 32dp，下方按钮同宽呈正圆。 */
-internal val HomeNavigationRailBarWidth = HomeNavUnitSizeDp.dp
+/** 横屏侧栏竖条固定宽度（dp）：外框保持纯正全圆药丸 Capsule()（36dp 半圆弧），内槽宽 64dp 呈舒展横向椭圆。 */
+internal const val HomeNavigationRailBarWidthDp = 72f
+
+/** 侧栏竖条统一宽度：外框 72dp 全圆药丸，4dp 左右内边距后内部滑块宽 64dp，与手机版横向椭圆同源且零溢边。 */
+internal val HomeNavigationRailBarWidth = HomeNavigationRailBarWidthDp.dp
+
+/** 横屏侧栏左右内边距（dp）：保留 4dp 使内部滑块维持 64dp 宽以容纳四字标签。 */
+internal const val HomeRailHorizontalInsetDp = 4f
+
+/**
+ * 横屏侧栏上下内边距（dp）：
+ * 内槽压矮至 48/46/44dp 后将顶底内边距略增至 6dp，使首尾页签椭圆 45° 斜角在 72dp 纯全圆药丸外弧内仍留有 1.2~2.0dp 均匀余量。
+ */
+internal const val HomeRailVerticalInsetDp = 6f
 
 /** 正常高度下的侧栏留白，用于计算页面正文左偏移与窄矮屏统一基准。 */
 private val HomeNavigationRailPadding = 12.dp
@@ -87,13 +99,13 @@ internal val HomeNavigationRailWidth = HomeNavigationRailBarWidth + HomeNavigati
 /** 矮屏（例如手机横屏约 360dp 高）下切换紧凑页签高度的分界线。 */
 private const val CompactRailMaxHeightDp = 420f
 
-/** 下方刷新与终端按钮均保持 64×64 正圆所需的最小高度；极矮分屏再压低刷新钮保零裁剪。 */
+/** 下方刷新与终端按钮均保持正圆所需的最小高度；极矮分屏再压低刷新钮保零裁剪。 */
 private const val CompactFullCircleMinHeightDp = 356f
 
 /**
  * 横屏侧栏在不同可用高度下的几何尺寸（dp）：
- * - 页签竖栏与下方正圆终端按钮统一锁定 64dp 列宽并全程采用全圆 Capsule()；
- * - 刷新按钮保持克制的小正圆尺寸（38~44dp）降低误触风险，并在主流 360dp 手机横屏上方留出充足间距。
+ * - 页签竖栏固定为 72dp 宽纯全圆药丸 `Capsule()`，左右 4dp / 上下 6dp 内边距后内槽为 64×48/46/44dp 横向椭圆 `Capsule()`；
+ * - 高度贴合收敛后的 35~36dp 页签内容以消除空旷感，同时保证三档首尾内椭圆四角均舒适落入 72dp 外圆弧内，下方刷新小圆与 56dp 终端正圆居中对齐。
  */
 internal data class HomeRailMetrics(
     val compact: Boolean,
@@ -104,13 +116,13 @@ internal data class HomeRailMetrics(
     val terminalButtonSizeDp: Float
 ) {
     val tabRailHeightDp: Float
-        get() = tabHeightDp * HomeTab.entries.size + 8f
+        get() = tabHeightDp * HomeTab.entries.size + HomeRailVerticalInsetDp * 2f
 
     val minimumTotalHeightDp: Float
         get() = railPaddingDp * 2f + tabRailHeightDp + refreshButtonSizeDp + refreshBottomGapDp + terminalButtonSizeDp
 }
 
-/** 按当前容器高度计算横屏侧栏三档尺寸：终端保持 64dp 全圆正圆，刷新钮缩小为克制小正圆防误触。 */
+/** 按当前容器高度计算横屏侧栏三档尺寸：外层全圆药丸 72dp 宽、内槽呈 64×48/46/44dp 横向椭圆，下方刷新与 56dp 终端居中对齐。 */
 internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
     when {
         maxHeightDp < CompactFullCircleMinHeightDp -> HomeRailMetrics(
@@ -119,16 +131,16 @@ internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
             tabHeightDp = 44f,
             refreshButtonSizeDp = 38f,
             refreshBottomGapDp = 8f,
-            terminalButtonSizeDp = HomeNavUnitSizeDp
+            terminalButtonSizeDp = HomeNavBarHeightDp
         )
 
         maxHeightDp < CompactRailMaxHeightDp -> HomeRailMetrics(
             compact = true,
             railPaddingDp = 6f,
-            tabHeightDp = 50f,
+            tabHeightDp = 46f,
             refreshButtonSizeDp = 40f,
             refreshBottomGapDp = 10f,
-            terminalButtonSizeDp = HomeNavUnitSizeDp
+            terminalButtonSizeDp = HomeNavBarHeightDp
         )
 
         else -> HomeRailMetrics(
@@ -137,7 +149,7 @@ internal fun computeHomeRailMetrics(maxHeightDp: Float): HomeRailMetrics =
             tabHeightDp = HomeTabButtonHeightDp,
             refreshButtonSizeDp = 44f,
             refreshBottomGapDp = 12f,
-            terminalButtonSizeDp = HomeNavUnitSizeDp
+            terminalButtonSizeDp = HomeNavBarHeightDp
         )
     }
 
@@ -220,18 +232,19 @@ private fun AnimatedHomeTabRail(
     val tabsCount = HomeTab.entries.size
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val latestOnTabSelected by rememberUpdatedState(onTabSelected)
-    // 外框与内滑块全部采用全圆 Capsule()（64dp 宽下外圆角 32dp，4dp 内边距后内滑块 28dp 严格同心）。
+    // 外框采用全圆药丸 Capsule()（72dp 宽下外半圆弧半径 36dp），内滑块（4dp 内边距后 64dp 宽）保持全圆 Capsule() 横向椭圆。
     val barShape = { HomeNavBarShape }
     val indicatorShape = { HomeNavIndicatorShape }
     val tabsBackdrop = rememberLayerBackdrop()
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     BoxWithConstraints(modifier = modifier) {
-        val innerPadding = 4.dp
-        val tabHeight = (maxHeight - innerPadding * 2) / tabsCount
+        val horizontalInset = HomeRailHorizontalInsetDp.dp
+        val verticalInset = HomeRailVerticalInsetDp.dp
+        val tabHeight = (maxHeight - verticalInset * 2) / tabsCount
         val railHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
         val tabHeightPx by rememberUpdatedState(with(density) { tabHeight.toPx() })
-        val innerPaddingPx = with(density) { innerPadding.toPx() }
+        val verticalInsetPx = with(density) { verticalInset.toPx() }
         val maxPanelOffsetPx = with(density) { 4f.dp.toPx() }
 
         val panelOffsetAnim = remember { Animatable(0f) }
@@ -329,8 +342,8 @@ private fun AnimatedHomeTabRail(
             InteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, _ ->
-                    val slotH = (size.height / tabsCount).coerceAtLeast(1f)
-                    Offset(size.width * 0.5f, (railDragAnimation.value + 0.5f) * slotH + panelOffsetPx)
+                    val slotH = tabHeightPx.coerceAtLeast(1f)
+                    Offset(size.width * 0.5f, verticalInsetPx + (railDragAnimation.value + 0.5f) * slotH + panelOffsetPx)
                 }
             )
         }
@@ -359,9 +372,10 @@ private fun AnimatedHomeTabRail(
                     }
                 )
                 .then(railHighlight.modifier)
-                .padding(innerPadding)
+                .padding(horizontal = horizontalInset, vertical = verticalInset)
         ) {
             HomeTab.entries.forEach { tab ->
+                // 横屏 72dp 宽药丸侧栏（内槽 64dp 宽横向椭圆）保留清晰 11sp 字号与零字距，由 HomeTabButton 自适应紧凑态高度。
                 HomeTabButton(
                     tab = tab,
                     selected = selectedTab == tab,
@@ -374,10 +388,10 @@ private fun AnimatedHomeTabRail(
             }
         }
 
-        // 兄弟层 2：隐身品牌橙 1.18x 放大高亮层，供上方纵移水滴折射采样
+        // 兄弟层 2：隐身品牌橙放大高亮层，供上方纵移水滴折射采样
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.18f, railDragAnimation.pressProgress)
+                lerp(1f, HomeNavVerticalAccentScale, railDragAnimation.pressProgress)
             }
         ) {
             Column(
@@ -409,9 +423,10 @@ private fun AnimatedHomeTabRail(
                         }
                     )
                     .then(railHighlight.modifier)
-                    .padding(innerPadding)
+                    .padding(horizontal = horizontalInset, vertical = verticalInset)
             ) {
                 HomeTab.entries.forEach { tab ->
+                    // 折射高亮层与底层严格同排版尺寸，保证水滴拖过时品牌橙放大字全部落入椭圆指示器内。
                     HomeTabButton(
                         tab = tab,
                         selected = true,
@@ -431,9 +446,9 @@ private fun AnimatedHomeTabRail(
         val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
         Box(
             modifier = Modifier
-                .padding(horizontal = innerPadding)
+                .padding(horizontal = horizontalInset)
                 .graphicsLayer {
-                    translationY = innerPaddingPx + railDragAnimation.value * tabHeightPx + panelOffsetPx
+                    translationY = verticalInsetPx + railDragAnimation.value * tabHeightPx + panelOffsetPx
                 }
                 .then(railHighlight.gestureModifier)
                 .then(railDragAnimation.modifier)

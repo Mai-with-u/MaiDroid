@@ -255,6 +255,55 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** 屏幕常亮图标：柔白外圈光芒环绕纯白高亮圆盘，对应常亮阻止息屏状态。 */
+    val KeepScreenOn: ImageVector by lazy {
+        flatVector("FlatKeepScreenOn") {
+            strokeLayer(IconSecondary, width = 2.2f) {
+                moveTo(12.0f, 3.0f)
+                lineTo(12.0f, 5.2f)
+                moveTo(12.0f, 18.8f)
+                lineTo(12.0f, 21.0f)
+                moveTo(3.0f, 12.0f)
+                lineTo(5.2f, 12.0f)
+                moveTo(18.8f, 12.0f)
+                lineTo(21.0f, 12.0f)
+                moveTo(5.6f, 5.6f)
+                lineTo(7.2f, 7.2f)
+                moveTo(16.8f, 16.8f)
+                lineTo(18.4f, 18.4f)
+                moveTo(18.4f, 5.6f)
+                lineTo(16.8f, 7.2f)
+                moveTo(7.2f, 16.8f)
+                lineTo(5.6f, 18.4f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(12.0f, 12.0f, 4.6f)
+            }
+        }
+    }
+
+    /** Wi-Fi 低延迟保活图标：柔白双弧信号配前景信号圆点与右下小锁点缀。 */
+    val WifiLock: ImageVector by lazy {
+        flatVector("FlatWifiLock") {
+            strokeLayer(IconSecondary, width = 2.2f) {
+                moveTo(3.8f, 9.4f)
+                quadTo(11.6f, 3.2f, 19.4f, 9.4f)
+                moveTo(6.9f, 12.6f)
+                quadTo(11.6f, 8.6f, 16.3f, 12.6f)
+            }
+            fillLayer(IconForeground) {
+                circlePath(11.6f, 16.5f, 1.85f)
+                roundedRectPath(15.0f, 15.6f, 20.6f, 20.4f, 1.4f)
+            }
+            strokeLayer(IconForeground, width = 1.6f) {
+                moveTo(16.2f, 15.6f)
+                lineTo(16.2f, 14.1f)
+                arcTo(1.6f, 1.6f, 0f, false, true, 19.4f, 14.1f)
+                lineTo(19.4f, 15.6f)
+            }
+        }
+    }
+
     val Cleanup: ImageVector by lazy {
         flatVector("FlatCleanup") {
             // 斜置小扫帚手柄与闪烁星点用柔白层，前景圆头束腰和扇形扫头用纯白层

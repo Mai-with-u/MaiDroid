@@ -76,4 +76,23 @@ class LiquidGlassPhysicsTest {
         assertFalse(resolveToggleDragOutcome(wasDragged = true, cancelled = true, targetFraction = 0.9f, currentlyChecked = false))
         assertTrue(resolveToggleDragOutcome(wasDragged = true, cancelled = true, targetFraction = 0.1f, currentlyChecked = true))
     }
+
+    @Test
+    fun `toggle horizontal drag lock ignores jitter and vertical scroll while locking clear horizontal swipes`() {
+        // 未超过防抖阈值的微抖不锁定横向拖拽，防止轻点开关被误判成拖动
+        assertFalse(shouldLockToggleHorizontalDrag(netDeltaX = 4f, netDeltaY = 1f, lockSlopPx = 6f))
+        assertFalse(shouldLockToggleHorizontalDrag(netDeltaX = 6f, netDeltaY = 0f, lockSlopPx = 6f))
+
+        // 正负两个方向的清晰横划且横向位移严格大于纵向位移时锁定开关拖拽
+        assertTrue(shouldLockToggleHorizontalDrag(netDeltaX = 8f, netDeltaY = 2f, lockSlopPx = 6f))
+        assertTrue(shouldLockToggleHorizontalDrag(netDeltaX = -9f, netDeltaY = -3f, lockSlopPx = 6f))
+
+        // 纵向滚动主导或 45 度斜滑保持不锁定，把垂直滑动权让给外层列表
+        assertFalse(shouldLockToggleHorizontalDrag(netDeltaX = 10f, netDeltaY = 14f, lockSlopPx = 6f))
+        assertFalse(shouldLockToggleHorizontalDrag(netDeltaX = 10f, netDeltaY = -10f, lockSlopPx = 6f))
+
+        // 零或负阈值兜底不越界，只有真实横向主导位移才返回 true
+        assertFalse(shouldLockToggleHorizontalDrag(netDeltaX = 0f, netDeltaY = 0f, lockSlopPx = -2f))
+        assertTrue(shouldLockToggleHorizontalDrag(netDeltaX = 2f, netDeltaY = 1f, lockSlopPx = -2f))
+    }
 }

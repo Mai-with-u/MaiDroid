@@ -21,13 +21,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,10 +40,96 @@ import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
-import org.maiwithu.maidroid.ui.theme.TextSizes
+import kotlin.math.abs
+import kotlin.math.sqrt
 
-/** 向隐身高亮层中的页签提供实时缩放因子：拖拽水滴滑块时底层激活内容放大到 1.2x 以配合凸镜折射。 */
+/** 向隐身高亮层中的页签提供实时缩放因子：拖拽水滴滑块时底层激活内容轻度放大以配合凸镜折射。 */
 internal val LocalLiquidBottomTabScale = staticCompositionLocalOf { { 1f } }
+
+/** 横向四栏底栏拖拽高亮时的凸镜放大上限：兼顾透镜折射感与四字标签完整防裁切。 */
+internal const val HomeNavHorizontalAccentScale = 1.14f
+
+/** 纵向窄胶囊（64dp 宽横屏侧栏与竖屏 WebUI 展开胶囊）拖拽高亮时的凸镜放大上限。 */
+internal const val HomeNavVerticalAccentScale = 1.10f
+
+/** 导航标签允许跟随系统字号放大的上限，防止大字号模式下四字标签溢出圆形/椭圆选中指示器。 */
+internal const val HomeNavMaxFontScale = 1.03f
+
+/**
+ * 导航栏单个标签页的图标与字号排版参数：
+ * 结合胶囊内切弦宽收敛高度与字号，保证四字中文标签左右边角完整落入选中指示器水滴之内。
+ */
+internal data class HomeNavTabTypography(
+    val iconSizeDp: Float,
+    val labelGapDp: Float,
+    val labelSizeSp: Float,
+    val labelLineHeightSp: Float
+) {
+    val totalContentHeightDp: Float
+        get() = iconSizeDp + labelGapDp + labelLineHeightSp
+}
+
+/** 按槽位形态（竖屏 WebUI 展开 56dp 窄胶囊、紧凑横屏椭圆侧栏 vs 平板横屏椭圆侧栏与宽底栏）返回内切安全排版参数。 */
+internal fun resolveHomeNavTabTypography(
+    narrowVertical: Boolean,
+    compact: Boolean
+): HomeNavTabTypography = when {
+    // 竖屏 WebUI 展开 56dp 窄侧边胶囊（48×38 紧凑横向药丸内槽）：17dp 图标配 8.5sp 字号，75% 饱满填充且四字不溢边
+    narrowVertical -> HomeNavTabTypography(
+        iconSizeDp = 17f,
+        labelGapDp = 1.5f,
+        labelSizeSp = 8.5f,
+        labelLineHeightSp = 10f
+    )
+    // 手机紧凑横屏椭圆侧栏（72dp 宽、64×46/64×44 内槽）：保持清晰 11sp 标签不溢边
+    compact -> HomeNavTabTypography(
+        iconSizeDp = 20f,
+        labelGapDp = 2f,
+        labelSizeSp = 11f,
+        labelLineHeightSp = 13f
+    )
+    // 平板横屏椭圆侧栏（64×48 内槽）与竖屏底栏（62~75×48 椭圆）：2dp 紧凑间距配 48dp 内槽，内容占比 75% 不发空
+    else -> HomeNavTabTypography(
+        iconSizeDp = 21f,
+        labelGapDp = 2f,
+        labelSizeSp = 11f,
+        labelLineHeightSp = 13f
+    )
+}
+
+/**
+ * 将导航标签实际渲染字号倍率钳位在 0.85..HomeNavMaxFontScale 内：
+ * 系统调大字体后抵消多余缩放，避免圆形水滴内外出现“一半白一半橙”的溢字分层。
+ */
+internal fun clampHomeNavLabelSp(baseSp: Float, systemFontScale: Float): Float {
+    if (systemFontScale <= 0f) return baseSp
+    val effectiveScale = systemFontScale.coerceIn(0.85f, HomeNavMaxFontScale)
+    return baseSp * effectiveScale / systemFontScale
+}
+
+/** 计算全圆 Capsule() 槽位在距垂直中心 [offsetFromCenterYDp] 处的水平内切弦宽（dp）。 */
+internal fun computeCapsuleChordWidthDp(
+    widthDp: Float,
+    heightDp: Float,
+    offsetFromCenterYDp: Float
+): Float {
+    if (widthDp <= 0f || heightDp <= 0f) return 0f
+    val y = abs(offsetFromCenterYDp)
+    if (y >= heightDp * 0.5f) return 0f
+    val r = minOf(widthDp, heightDp) * 0.5f
+    return if (heightDp <= widthDp) {
+        val chord = 2f * sqrt((r * r - y * y).coerceAtLeast(0f))
+        (widthDp - heightDp) + chord
+    } else {
+        val capCenterY = heightDp * 0.5f - r
+        if (y <= capCenterY) {
+            widthDp
+        } else {
+            val dy = y - capCenterY
+            2f * sqrt((r * r - dy * dy).coerceAtLeast(0f))
+        }
+    }
+}
 
 /** 主页导航的四个标签，顺序即底栏从左到右、横屏侧栏从上到下的顺序（也决定切换动画的方向）。 */
 internal enum class HomeTab(val label: String) {
@@ -53,14 +140,14 @@ internal enum class HomeTab(val label: String) {
 }
 
 /**
- * 首页导航统一基准宽度/高度（dp）：
- * 竖屏底栏高、竖屏右下角正圆终端按钮直径、竖屏 WebUI 侧边胶囊宽、横屏左侧导航竖栏宽以及横屏下方正圆按钮直径全部对齐至 64dp，
- * 使全圆 Capsule() 的外半圆角半径在各种状态下严格保持 32dp，内滑块（4dp 内边距后 56dp）严格同心 28dp。
+ * 首页导航统一基准短边（dp）：
+ * 竖屏底栏高度、竖屏 WebUI 侧边胶囊宽度（收起与展开）以及横竖屏独立正圆终端按钮直径全部对齐至 56dp，
+ * 4dp 内边距后竖屏 WebUI 收起高亮呈 48×48 同心全圆、展开高亮收敛为 48×38 紧凑药丸、底栏呈 63~75×48 椭圆，形变切换全程零粗细跳变。
  */
-internal const val HomeNavUnitSizeDp = 64f
+internal const val HomeNavBarHeightDp = 56f
 
 /** 竖屏底部导航栏与独立正圆终端按钮的统一高度。 */
-internal val PortraitBottomBarHeight = HomeNavUnitSizeDp.dp
+internal val PortraitBottomBarHeight = HomeNavBarHeightDp.dp
 
 /** 竖屏底部导航栏离容器底边的留白。 */
 internal val PortraitBottomBarBottomPadding = 16.dp
@@ -72,15 +159,15 @@ internal val PortraitBottomBarHorizontalPadding = 16.dp
 internal val PortraitBottomBarGap = 12.dp
 
 /** 单个标签按钮高度（dp 数值常量，同时供竖屏底栏与正常高度横屏侧栏计算复用）。 */
-internal const val HomeTabButtonHeightDp = 56f
+internal const val HomeTabButtonHeightDp = 48f
 
 /** 单个标签按钮的高度（竖屏底栏与正常高度横屏侧栏通用）。 */
 internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
 
-/** 首页导航外框统一全圆胶囊形状（短边 64dp 时严格呈 32dp 半圆弧，正方形时呈正圆）。 */
+/** 首页导航外框统一全圆胶囊形状（底栏 56dp 高时呈 28dp 半圆弧，横屏 72dp 侧栏呈 36dp 半圆弧，正方形时呈正圆）。 */
 internal val HomeNavBarShape: Shape = Capsule()
 
-/** 首页导航内部滑块与槽位统一全圆胶囊形状（56dp 宽/高时严格呈 28dp 半圆弧，与外框 4dp 内边距完美同心）。 */
+/** 首页导航内部滑块与槽位统一全圆胶囊形状（48dp 高时呈 24dp 半圆弧，与 56dp 底栏 4dp 内边距严格同心）。 */
 internal val HomeNavIndicatorShape: Shape = Capsule()
 
 /** 计算竖屏底部四栏标签胶囊的目标宽度（dp），为右下角正圆终端按钮与左右留白让出间距。 */
@@ -105,7 +192,7 @@ internal fun HomeTerminalButton(
     height: Dp = size,
     shape: () -> Shape = { HomeNavBarShape },
     enabled: Boolean = true,
-    iconSizeDp: Float = 26f
+    iconSizeDp: Float = 24f
 ) {
     LiquidGlassIconButton(
         painter = painterResource(R.drawable.ic_terminal_code),
@@ -139,6 +226,7 @@ internal fun HomeTabButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     compact: Boolean = false,
+    narrowVertical: Boolean = false,
     accentHighlighted: Boolean = false,
     clickableEnabled: Boolean = true
 ) {
@@ -155,9 +243,12 @@ internal fun HomeTabButton(
         animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         label = "HomeTabLabelColor"
     )
-    val iconSize = if (compact) 21.dp else 24.dp
-    val labelGap = if (compact) 2.dp else 4.dp
-    val labelSize = if (compact) 11.sp else TextSizes.Caption
+    val typography = resolveHomeNavTabTypography(narrowVertical = narrowVertical, compact = compact)
+    val fontScale = LocalDensity.current.fontScale
+    val iconSize = typography.iconSizeDp.dp
+    val labelGap = typography.labelGapDp.dp
+    val labelSize = clampHomeNavLabelSp(typography.labelSizeSp, fontScale).sp
+    val labelLineHeight = clampHomeNavLabelSp(typography.labelLineHeightSp, fontScale).sp
     val accentScale = LocalLiquidBottomTabScale.current
 
     val clickModifier = if (clickableEnabled) {
@@ -172,10 +263,9 @@ internal fun HomeTabButton(
         Modifier
     }
 
+    // 槽位自身不做 Capsule 裁剪，避免隐身高亮层放大 1.1x+ 时底部四字标签被近圆弧角削去首尾字角。
     Box(
-        modifier = modifier
-            .clip(HomeNavIndicatorShape)
-            .then(clickModifier),
+        modifier = modifier.then(clickModifier),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -197,14 +287,17 @@ internal fun HomeTabButton(
 
             Spacer(modifier = Modifier.height(labelGap))
 
+            // 显式置零字距覆盖 bodyLarge 默认 0.5sp 字距，防止“消息平台”四字横向撑破圆形高亮泡边界。
             Text(
                 text = tab.label,
                 color = labelColor,
                 fontSize = labelSize,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 12.sp,
+                lineHeight = labelLineHeight,
+                letterSpacing = 0.sp,
                 maxLines = 1,
-                softWrap = false
+                softWrap = false,
+                overflow = TextOverflow.Visible
             )
         }
     }

@@ -714,6 +714,41 @@ private fun MaiDialogFooterBar(
 }
 
 /**
+ * 弹窗滚动条的垂直几何参数（像素）：[thumbTopPx] 为滑块顶边位置，[thumbHeightPx] 为滑块高度。
+ */
+internal data class MaiDialogScrollbarMetrics(
+    val thumbTopPx: Float,
+    val thumbHeightPx: Float
+)
+
+/**
+ * 计算弹窗滚动条滑块的顶边与高度；当内容未溢出或可用轨道高度不足时返回 null 以跳过绘制。
+ * 先把最短滑块长度钳制到不超过当前轨道长度，再对滑块高度做 coerceIn，避免窄高视口下出现空区间异常。
+ */
+internal fun computeMaiDialogScrollbarMetrics(
+    viewportHeightPx: Float,
+    scrollValuePx: Int,
+    scrollMaxValuePx: Int,
+    trackInsetPx: Float,
+    minThumbHeightPx: Float
+): MaiDialogScrollbarMetrics? {
+    if (scrollMaxValuePx <= 0 || viewportHeightPx <= trackInsetPx * 2f) return null
+    val trackHeight = viewportHeightPx - trackInsetPx * 2f
+    if (trackHeight <= 1f) return null
+    val totalContentHeight = viewportHeightPx + scrollMaxValuePx
+    if (totalContentHeight <= 0f) return null
+    val clampedMinThumb = minThumbHeightPx.coerceIn(1f, trackHeight)
+    val thumbHeight = (trackHeight * (viewportHeightPx / totalContentHeight))
+        .coerceIn(clampedMinThumb, trackHeight)
+    val scrollFraction = (scrollValuePx.toFloat() / scrollMaxValuePx.toFloat()).coerceIn(0f, 1f)
+    val thumbTop = trackInsetPx + (trackHeight - thumbHeight) * scrollFraction
+    return MaiDialogScrollbarMetrics(
+        thumbTopPx = thumbTop,
+        thumbHeightPx = thumbHeight
+    )
+}
+
+/**
  * 弹窗内部可滚动列容器：
  * 改用 DstIn Alpha 渐隐羽化底边替代不透明底色盖块，确保液态玻璃底透光时滚动区边缘自然消隐。
  */
@@ -756,24 +791,23 @@ private fun MaiDialogScrollColumn(
                         blendMode = BlendMode.DstIn
                     )
                 }
-                if (showScrollbar && scrollState.maxValue > 0 && size.height > 16.dp.toPx()) {
-                    val trackTop = 8.dp.toPx()
-                    val trackBottom = size.height - 8.dp.toPx()
-                    val trackHeight = (trackBottom - trackTop).coerceAtLeast(1f)
-                    val totalContentHeight = size.height + scrollState.maxValue
-                    val thumbHeight = (trackHeight * (size.height / totalContentHeight))
-                        .coerceIn(18.dp.toPx(), trackHeight)
-                    val scrollFraction = (scrollState.value.toFloat() / scrollState.maxValue.toFloat())
-                        .coerceIn(0f, 1f)
-                    val thumbTop = trackTop + (trackHeight - thumbHeight) * scrollFraction
-                    val barWidth = 2.5.dp.toPx()
-                    val barLeft = size.width - barWidth - 3.dp.toPx()
-                    drawRoundRect(
-                        color = scrollbarColor,
-                        topLeft = Offset(barLeft, thumbTop),
-                        size = Size(barWidth, thumbHeight),
-                        cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
-                    )
+                if (showScrollbar) {
+                    computeMaiDialogScrollbarMetrics(
+                        viewportHeightPx = size.height,
+                        scrollValuePx = scrollState.value,
+                        scrollMaxValuePx = scrollState.maxValue,
+                        trackInsetPx = 8.dp.toPx(),
+                        minThumbHeightPx = 18.dp.toPx()
+                    )?.let { metrics ->
+                        val barWidth = 2.5.dp.toPx()
+                        val barLeft = size.width - barWidth - 3.dp.toPx()
+                        drawRoundRect(
+                            color = scrollbarColor,
+                            topLeft = Offset(barLeft, metrics.thumbTopPx),
+                            size = Size(barWidth, metrics.thumbHeightPx),
+                            cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
+                        )
+                    }
                 }
             }
             .then(scrollMod)

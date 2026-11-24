@@ -31,6 +31,7 @@ import org.maiwithu.maidroid.platform.qq.SnowLumaAdapterInstaller
 import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformManager
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformManager
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaProcessSupervisor
+import org.maiwithu.maidroid.remote.PowerTelemetryTracker
 import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.MirrorManager
@@ -132,7 +133,14 @@ internal class AppDependencies(context: Context) {
     // “反馈问题”：收集版本、设备、容器和进程状态，打码后生成诊断包；只读文件，不创建平台管理器。
     val diagnostics: DiagnosticsManager by lazy {
         DiagnosticsManager(
-            appContext, settings, runtimePaths, runtimeReadiness, diagnosticsFiles, terminalLogRecorder, maiBotProcess
+            appContext,
+            settings,
+            runtimePaths,
+            runtimeReadiness,
+            diagnosticsFiles,
+            terminalLogRecorder,
+            maiBotProcess,
+            powerTelemetry
         )
     }
     // 本机悬浮桌宠管理：挂载在扩展组件页，不随容器默认开机自启。
@@ -194,11 +202,21 @@ internal class AppDependencies(context: Context) {
     }
 
     // ── MaiDroid 应用本体的在线更新与远程公告诊断（与容器无关） ────────────────
+    val powerTelemetry: PowerTelemetryTracker by lazy {
+        PowerTelemetryTracker(appContext, settings)
+    }
     val appUpdater: AppUpdateManager by lazy {
         AppUpdateManager(appContext, BuildConfig.VERSION_NAME, BuildConfig.APP_UPDATE_API_URL, mirrorManager)
     }
     val remoteOps: RemoteOpsManager by lazy {
-        RemoteOpsManager(appContext, settings, runtimePaths, crashRecorder, mirrorManager) { diagnostics }
+        RemoteOpsManager(
+            appContext,
+            settings,
+            runtimePaths,
+            crashRecorder,
+            mirrorManager,
+            powerTelemetry
+        ) { diagnostics }
     }
 }
 

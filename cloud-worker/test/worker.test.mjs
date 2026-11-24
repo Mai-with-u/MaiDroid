@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ADMIN_CONSOLE_MARKUP, ADMIN_CONSOLE_SCRIPT, buildConsoleBundle } from "../src/adminConsole.ts";
 import { ADMIN_MANIFEST_EDITOR_SCRIPT } from "../src/adminManifestEditor.ts";
@@ -24,6 +25,7 @@ import {
   summarizeSampleDistribution,
   validateErrorReportPayload,
 } from "../src/errorAggregation.ts";
+import { createSqliteD1 } from "./sqliteD1.mjs";
 import worker from "../src/index.ts";
 
 test("ECDSA P-256 signs payload into ASN.1 DER and verifies cleanly", async () => {
@@ -412,6 +414,34 @@ function createMockD1() {
     if (q.includes("FROM telemetry_events")) {
       return { first: { uniq: 0, done: 0 }, results: [] };
     }
+    if (q.includes("FROM device_presence")) {
+      return {
+        first: {
+          uniq: 0,
+          done: 0,
+          cnt: 0,
+          at: null,
+          reported24h: 0,
+          onlineReported: 0,
+          chargingCount: 0,
+          chargingDrainCount: 0,
+          hotCount: 0,
+          avgTempC: null,
+          maxTempC: null,
+          avgDischargePctHr: null,
+          avgCpuPct: null,
+          keepScreenOnCount: 0,
+          cpuPinnedCount: 0,
+          cpuPinKnownCount: 0,
+          desktopPetCount: 0,
+          cool: 0,
+          warm: 0,
+          hot: 0,
+          severe: 0,
+        },
+        results: [],
+      };
+    }
     if (q.includes("FROM diag_snapshots")) {
       return { first: { cnt: 0 } };
     }
@@ -724,4 +754,486 @@ test("manifest preview logic mirrors the Android client matching rules", () => {
   assert.equal(P.validateHint({ id: "x", title: "t", advice: "a", containsAny: [] }).some((e) => e[0] === "err"), true);
   assert.equal(P.validateAnn({ ...base, filter: { minAppVersion: "0.3", maxAppVersion: "0.2" } }, 0).some((e) => e[0] === "err"), true);
   assert.match(P.renderBanner({ ...base, title: "<b>x</b>" }), /&lt;b&gt;x/);
+});
+
+test("Worker /v1/telemetry tracks live online state, deduplicates upgraded versions, and handles legacy heartbeats", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const headers = { Authorization: "Bearer test-secret" };
+
+  const postTelemetry = (body, ip = "10.0.0.1") =>
+    worker.fetch(
+      new Request("https://ops.8u.nz/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+      ctx
+    );
+
+  // 1. 设备 A 首次以 0.4.0 上报在线心跳并附带功耗指标 -> 在线 1、明细 1 条
+  const r1 = await postTelemetry({
+    installId: "dev-k50",
+    event: "online_heartbeat",
+    buildType: "release",
+    appVersion: "0.4.0",
+    versionCode: 12,
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+    activeQqClient: "snowluma",
+    power: {
+      batteryPct: 62,
+      batteryTempC: 42.5,
+      batteryCharging: true,
+      chargePlug: "usb",
+      chargingDrain: true,
+      appCpuPct: 168.4,
+      keepScreenOn: true,
+      cpuAffinityPinned: false,
+    },
+  });
+  assert.equal(r1.status, 200);
+
+  // 2. 同版本 1 小时内再次心跳不膨胀 telemetry_events，但更新最新时间
+  const r2 = await postTelemetry({
+    installId: "dev-k50",
+    event: "online_heartbeat",
+    buildType: "release",
+    appVersion: "0.4.0",
+    versionCode: 12,
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+  });
+  assert.equal(r2.status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS c FROM telemetry_events").get().c, 1);
+
+  // 3. 设备 A 升级到 0.4.1 后再上报：device_presence 覆写为 0.4.1，0.4.0 不再残留在现网版本里
+  const r3 = await postTelemetry({
+    installId: "dev-k50",
+    event: "online_heartbeat",
+    buildType: "release",
+    appVersion: "0.4.1",
+    versionCode: 13,
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+  });
+  assert.equal(r3.status, 200);
+  const versionsAfterUpgrade = db.raw
+    .prepare("SELECT app_version, COUNT(*) AS c FROM device_presence GROUP BY app_version")
+    .all()
+    .map((r) => ({ ...r }));
+  assert.deepEqual(versionsAfterUpgrade, [{ app_version: "0.4.1", c: 1 }]);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS c FROM telemetry_events").get().c, 2);
+
+  // 4. 老版本客户端发送无 power/buildType 字段的 daily_heartbeat 也必须兼容
+  const rLegacy = await postTelemetry(
+    {
+      installId: "dev-legacy",
+      event: "daily_heartbeat",
+      appVersion: "0.3.9",
+      versionCode: 11,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+    },
+    "10.0.0.2"
+  );
+  assert.equal(rLegacy.status, 200);
+
+  let stats = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/stats", { headers }), env, ctx)).json();
+  assert.equal(stats.onlineNow, 2);
+  assert.equal(stats.uniqueInstalls, 2);
+
+  // 5. 设备 A 发送 offline 立即从实时在线减一，但保留原有 0.4.1 版本号及当日高温记录
+  const rOff = await postTelemetry({
+    installId: "dev-k50",
+    event: "offline",
+    appVersion: "0.4.1",
+    manufacturer: "Xiaomi",
+    model: "Redmi K50",
+    sdkInt: 34,
+    setupComplete: true,
+  });
+  assert.equal(rOff.status, 200);
+
+  stats = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/stats", { headers }), env, ctx)).json();
+  assert.equal(stats.onlineNow, 1);
+  assert.equal(stats.uniqueInstalls, 2);
+
+  const rowK50 = db.raw.prepare("SELECT * FROM device_presence WHERE install_id = 'dev-k50'").get();
+  assert.equal(rowK50.app_version, "0.4.1");
+  assert.equal(rowK50.peak_temp_c, 42.5);
+  assert.equal(rowK50.is_online, 0);
+});
+
+test("migration 001 cleanly backfills deduplicated latest device versions from telemetry_events", () => {
+  const db = createSqliteD1();
+  const insertStmt = db.raw.prepare(
+    `INSERT INTO telemetry_events
+     (created_at, install_id, event_type, app_version, manufacturer, model, sdk_int, oobe_step, setup_complete)
+     VALUES (?, ?, 'daily_heartbeat', ?, ?, ?, ?, 'Install', 1)`
+  );
+  // 设备 1 曾报过 0.3.9 和 0.4.0，设备 2 仅报过 0.3.8
+  insertStmt.run(1000, "old-1", "0.3.9", "Xiaomi", "Redmi K50", 34);
+  insertStmt.run(2000, "old-1", "0.4.0", "Xiaomi", "Redmi K50", 34);
+  insertStmt.run(1500, "old-2", "0.3.8", "HONOR", "OXF-AN10", 31);
+
+  const migrationSql = readFileSync(new URL("../migrations/001_presence_and_power.sql", import.meta.url), "utf8");
+  db.raw.exec(migrationSql);
+  // 重复执行必须严格幂等
+  db.raw.exec(migrationSql);
+
+  const rows = db.raw
+    .prepare("SELECT install_id, app_version, first_seen_at, last_seen_at, is_online FROM device_presence ORDER BY install_id")
+    .all()
+    .map((r) => ({ ...r }));
+  assert.deepEqual(rows, [
+    { install_id: "old-1", app_version: "0.4.0", first_seen_at: 1000, last_seen_at: 2000, is_online: 0 },
+    { install_id: "old-2", app_version: "0.3.8", first_seen_at: 1500, last_seen_at: 1500, is_online: 0 },
+  ]);
+});
+
+test("Worker /admin/api/overview aggregates live online count, version migration, and power telemetry", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const adminHeaders = { Authorization: "Bearer test-secret" };
+
+  const sendTel = (body, ip) =>
+    worker.fetch(
+      new Request("https://ops.8u.nz/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+      ctx
+    );
+
+  // 红米 K50：先报 0.4.0，随后升级至 0.4.1（开启常亮、未绑核、43.2°C、边充边掉电）
+  await sendTel(
+    {
+      installId: "k50-1",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+    },
+    "10.0.1.1"
+  );
+  await sendTel(
+    {
+      installId: "k50-1",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      activeQqClient: "snowluma",
+      power: {
+        batteryPct: 58,
+        batteryTempC: 43.2,
+        batteryCharging: true,
+        chargePlug: "usb",
+        chargeRatePctPerHr: -6.5,
+        chargingDrain: true,
+        appCpuPct: 182.5,
+        keepScreenOn: true,
+        cpuAffinityPinned: false,
+      },
+    },
+    "10.0.1.1"
+  );
+
+  // 荣耀 V30 Pro：0.4.1 在线且正常（默认关闭常亮、绑核生效、31.0°C）
+  await sendTel(
+    {
+      installId: "v30-1",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+      activeQqClient: "napcat",
+      power: {
+        batteryPct: 80,
+        batteryTempC: 31.0,
+        batteryCharging: false,
+        chargePlug: "none",
+        dischargeRatePctPerHr: 4.5,
+        chargingDrain: false,
+        appCpuPct: 24.0,
+        keepScreenOn: false,
+        cpuAffinityPinned: true,
+      },
+    },
+    "10.0.1.2"
+  );
+
+  // 第三台旧版设备先在线后离线，验证 onlineVersions 只保留真正在线的 0.4.1
+  await sendTel(
+    {
+      installId: "old-3",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "OPPO",
+      model: "Find",
+      sdkInt: 33,
+      setupComplete: true,
+    },
+    "10.0.1.3"
+  );
+  await sendTel(
+    {
+      installId: "old-3",
+      event: "offline",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "OPPO",
+      model: "Find",
+      sdkInt: 33,
+      setupComplete: true,
+    },
+    "10.0.1.3"
+  );
+
+  const resp = await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx);
+  assert.equal(resp.status, 200);
+  const ov = await resp.json();
+
+  assert.equal(ov.kpi.onlineNow, 2);
+  assert.equal(ov.kpi.installs7d, 3);
+  assert.deepEqual(ov.shares.versions, [
+    { label: "0.4.1", count: 2 },
+    { label: "0.4.0", count: 1 },
+  ]);
+  assert.deepEqual(ov.shares.onlineVersions, [{ label: "0.4.1", count: 2 }]);
+
+  assert.equal(ov.power.summary.reported24h, 2);
+  assert.equal(ov.power.summary.chargingDrainCount, 1);
+  assert.equal(ov.power.summary.hotCount, 1);
+  assert.equal(ov.power.summary.maxTempC, 43.2);
+  assert.equal(ov.power.summary.keepScreenOnCount, 1);
+  assert.equal(ov.power.summary.cpuPinnedCount, 1);
+  assert.equal(ov.power.summary.cpuPinKnownCount, 2);
+  assert.deepEqual(ov.power.tempBuckets, [
+    { label: "<35°C", count: 1 },
+    { label: "35-39.9°C", count: 0 },
+    { label: "40-42.9°C", count: 0 },
+    { label: "≥43°C", count: 1 },
+  ]);
+  assert.equal(ov.power.hotModels[0].label, "Xiaomi Redmi K50");
+  assert.equal(ov.power.hotModels[0].chargingDrainCount, 1);
+  assert.equal(ov.power.hotModels[1].label, "HONOR OXF-AN10");
+});
+
+test("Worker filters charging-drain noise and clears false alarm upon same-session recovery", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
+  const adminHeaders = { Authorization: "Bearer test-secret" };
+
+  const sendTel = (body, ip) =>
+    worker.fetch(
+      new Request("https://ops.8u.nz/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify(body),
+      }),
+      env,
+      ctx
+    );
+
+  // 1. 过滤三类噪音：未插电误报、>=95% 满电涓流误报、微弱负充率（>-2%/h）误报，均不得落库或污染负充率
+  await sendTel(
+    {
+      installId: "noise-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "K50-Noise1",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 65, batteryCharging: false, chargePlug: "none", chargingDrain: true },
+    },
+    "10.0.2.1"
+  );
+  await sendTel(
+    {
+      installId: "noise-trickle",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "K50-Noise2",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 97, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: -3.0, chargingDrain: true },
+    },
+    "10.0.2.2"
+  );
+  await sendTel(
+    {
+      installId: "noise-weak",
+      event: "online_heartbeat",
+      appVersion: "0.4.0",
+      versionCode: 12,
+      manufacturer: "Xiaomi",
+      model: "K50-Noise3",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 75, batteryCharging: true, chargePlug: "usb", chargeRatePctPerHr: -1.0, chargingDrain: true },
+    },
+    "10.0.2.3"
+  );
+
+  for (const id of ["noise-unplugged", "noise-trickle", "noise-weak"]) {
+    const row = db.raw.prepare("SELECT charging_drain, last_charging_drain_at, charge_rate_pct_hr FROM device_presence WHERE install_id = ?").get(id);
+    assert.equal(row.charging_drain, 0);
+    assert.equal(row.last_charging_drain_at, null);
+    assert.equal(row.charge_rate_pct_hr, null);
+  }
+
+  // 2. 同次插电周期后续明显充上电后（正充率或电量净涨 >=2% 或充至 >=98%）自动清除先前误报
+  await sendTel(
+    {
+      installId: "recover-by-rate",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+      power: { batteryPct: 60, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: -5.0, chargingDrain: true },
+    },
+    "10.0.2.4"
+  );
+  await sendTel(
+    {
+      installId: "recover-by-gain",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "vivo",
+      model: "PA2473",
+      sdkInt: 35,
+      setupComplete: true,
+      power: { batteryPct: 70, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: -4.0, chargingDrain: true },
+    },
+    "10.0.2.5"
+  );
+
+  let ov = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx)).json();
+  assert.equal(ov.power.summary.chargingDrainCount, 2);
+
+  await sendTel(
+    {
+      installId: "recover-by-rate",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "HONOR",
+      model: "OXF-AN10",
+      sdkInt: 31,
+      setupComplete: true,
+      power: { batteryPct: 63, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: 12.0, chargingDrain: false },
+    },
+    "10.0.2.4"
+  );
+  await sendTel(
+    {
+      installId: "recover-by-gain",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "vivo",
+      model: "PA2473",
+      sdkInt: 35,
+      setupComplete: true,
+      power: { batteryPct: 72, batteryCharging: true, chargePlug: "ac", chargingDrain: false },
+    },
+    "10.0.2.5"
+  );
+
+  const recRow = db.raw.prepare("SELECT charging_drain, last_charging_drain_at, charge_rate_pct_hr FROM device_presence WHERE install_id = 'recover-by-rate'").get();
+  assert.equal(recRow.charging_drain, 0);
+  assert.equal(recRow.last_charging_drain_at, null);
+  assert.equal(recRow.charge_rate_pct_hr, 12.0);
+
+  ov = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx)).json();
+  assert.equal(ov.power.summary.chargingDrainCount, 0);
+  const honorModel = ov.power.hotModels.find((m) => m.label === "HONOR OXF-AN10");
+  assert.equal(honorModel.chargingDrainCount, 0);
+
+  // 3. 真实边充掉电后拔电、再重新插回充电：24 小时内的掉电记录仍保留，不因拔电后新充电会合清零
+  await sendTel(
+    {
+      installId: "real-drain-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 50, batteryCharging: true, chargePlug: "usb", chargeRatePctPerHr: -6.0, chargingDrain: true },
+    },
+    "10.0.2.6"
+  );
+  await sendTel(
+    {
+      installId: "real-drain-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 49, batteryCharging: false, chargePlug: "none", chargingDrain: false },
+    },
+    "10.0.2.6"
+  );
+  await sendTel(
+    {
+      installId: "real-drain-unplugged",
+      event: "online_heartbeat",
+      appVersion: "0.4.1",
+      versionCode: 13,
+      manufacturer: "Xiaomi",
+      model: "Redmi K50",
+      sdkInt: 34,
+      setupComplete: true,
+      power: { batteryPct: 65, batteryCharging: true, chargePlug: "ac", chargeRatePctPerHr: 25.0, chargingDrain: false },
+    },
+    "10.0.2.6"
+  );
+
+  const keptRow = db.raw.prepare("SELECT charging_drain, last_charging_drain_at FROM device_presence WHERE install_id = 'real-drain-unplugged'").get();
+  assert.equal(keptRow.charging_drain, 0);
+  assert.ok(keptRow.last_charging_drain_at != null);
+
+  ov = await (await worker.fetch(new Request("https://ops.8u.nz/admin/api/overview", { headers: adminHeaders }), env, ctx)).json();
+  assert.equal(ov.power.summary.chargingDrainCount, 1);
+  assert.equal(ov.power.hotModels[0].label, "Xiaomi Redmi K50");
+  assert.equal(ov.power.hotModels[0].chargingDrainCount, 1);
 });
