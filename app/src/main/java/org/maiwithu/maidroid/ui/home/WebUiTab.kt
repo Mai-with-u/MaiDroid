@@ -86,9 +86,18 @@ private const val WEB_UI_HIBERNATE_RETRY_MS = 60_000L
 internal fun shouldWebUiSessionBeActive(isStarted: Boolean, isWebUiTabSelected: Boolean): Boolean =
     isStarted && isWebUiTabSelected
 
-/** 仅在应用已退后台且系统内存级别进入后台回收档位（>= TRIM_MEMORY_BACKGROUND）时立即清理空闲 WebUI。 */
-internal fun shouldHibernateWebUiOnTrimMemory(level: Int, isStarted: Boolean): Boolean =
-    !isStarted && level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+/**
+ * 退后台期间系统触发低内存告警时立即清理空闲 WebUI：
+ * 宿主因前台服务常驻同进程而不会进入 LRU 后台队列，实际收到的是 RUNNING_LOW / RUNNING_CRITICAL；
+ * 同时兼容无前台服务时的 >= TRIM_MEMORY_BACKGROUND 档位，并跳过每次切桌面都会派发的 TRIM_MEMORY_UI_HIDDEN。
+ */
+@Suppress("DEPRECATION")
+internal fun shouldHibernateWebUiOnTrimMemory(level: Int, isStarted: Boolean): Boolean {
+    if (isStarted) return false
+    return level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+        level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+        level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+}
 
 /**
  * WebUI 页签的 GeckoView 会话宿主及其加载状态；放在主页外壳里记住，切换标签时不销毁。

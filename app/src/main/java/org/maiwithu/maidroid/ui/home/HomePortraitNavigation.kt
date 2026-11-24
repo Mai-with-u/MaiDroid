@@ -972,6 +972,7 @@ internal fun HomePortraitNavigation(
                     ExpandedExtraActions(
                         spinDegrees = refreshSpin.value,
                         enabled = false,
+                        clickableEnabled = false,
                         onRefresh = {},
                         onOpenTerminal = {},
                         modifier = Modifier
@@ -1202,10 +1203,23 @@ private fun WebUiPrimaryTabSlot(
 private fun ExpandedExtraActions(
     spinDegrees: Float,
     enabled: Boolean,
+    clickableEnabled: Boolean = true,
     onRefresh: () -> Unit,
     onOpenTerminal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 隐身折射克隆层严禁挂 clickable(enabled = false) 拦截底层点击：仅交互层挂入点击语义。
+    val refreshClickMod = if (clickableEnabled) {
+        Modifier.clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onRefresh)
+    } else {
+        Modifier
+    }
+    val terminalClickMod = if (clickableEnabled) {
+        Modifier.clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onOpenTerminal)
+    } else {
+        Modifier
+    }
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1230,7 +1244,7 @@ private fun ExpandedExtraActions(
                 .fillMaxWidth()
                 .height(ExpandedRefreshButtonHeight)
                 .clip(HomeNavIndicatorShape)
-                .clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onRefresh),
+                .then(refreshClickMod),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -1248,7 +1262,7 @@ private fun ExpandedExtraActions(
                 .fillMaxWidth()
                 .height(ExpandedTerminalButtonHeight)
                 .clip(HomeNavIndicatorShape)
-                .clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onOpenTerminal),
+                .then(terminalClickMod),
             contentAlignment = Alignment.Center
         ) {
             Icon(

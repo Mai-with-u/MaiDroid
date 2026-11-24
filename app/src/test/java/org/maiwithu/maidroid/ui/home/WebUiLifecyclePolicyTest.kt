@@ -20,11 +20,15 @@ class WebUiLifecyclePolicyTest {
 
     @Suppress("DEPRECATION")
     @Test
-    fun `shouldHibernateWebUiOnTrimMemory triggers only when backgrounded at or above TRIM_MEMORY_BACKGROUND`() {
+    fun `shouldHibernateWebUiOnTrimMemory triggers in background for FGS low-memory and cached trim levels`() {
         assertEquals(2 * 60_000L, WEB_UI_HIBERNATE_DELAY_MS)
+        assertFalse(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL, isStarted = true))
         assertFalse(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND, isStarted = true))
         assertFalse(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE, isStarted = true))
+        assertFalse(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE, isStarted = false))
         assertFalse(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN, isStarted = false))
+        assertTrue(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, isStarted = false))
+        assertTrue(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL, isStarted = false))
         assertTrue(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND, isStarted = false))
         assertTrue(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_MODERATE, isStarted = false))
         assertTrue(shouldHibernateWebUiOnTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE, isStarted = false))
