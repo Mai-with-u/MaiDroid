@@ -27,7 +27,6 @@ import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.CrashRecord
 import org.maiwithu.maidroid.oobe.OobeStep
 import org.maiwithu.maidroid.permission.SystemPermissionController
-import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.cleanup.LowStorageDialog
 import org.maiwithu.maidroid.ui.component.LiquidModalHostOverlay
 import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
@@ -80,7 +79,6 @@ internal fun MaiDroidApp(
     val webUiOnline by viewModel.webUiOnline.collectAsState()
     val maiBotStatus by viewModel.maiBotStatus.collectAsState()
     val setupState by viewModel.setupManager.state.collectAsState()
-    val terminalLogs by TerminalLog.logs.collectAsState()
     var showAuthorizationDialog by rememberSaveable { mutableStateOf(false) }
     val appUpdater = remember(context) { context.appDependencies.appUpdater }
     val appUpdatePrompt by appUpdater.launchPrompt.collectAsState()
@@ -155,7 +153,6 @@ internal fun MaiDroidApp(
                             maiBotStatus = maiBotStatus,
                             // MaiDroid 更新后首次启动：唤醒页上显示 MaiBot 自动升级的进度
                             maiBotUpdate = if (viewModel.autoUpdatingMaiBot) maiBotUpdateState else null,
-                            terminalLogs = terminalLogs,
                             permissionState = permissions.state,
                             permissionActions = permissions.settingsActions,
                             onWakeMai = { showToast ->

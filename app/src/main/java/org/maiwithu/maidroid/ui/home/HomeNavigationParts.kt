@@ -181,6 +181,12 @@ internal fun computeBottomTabBarWidthDp(maxWidthDp: Float): Float {
 /** 首页导航未选中页签与工具按钮图标文字统一使用的半透明前景不透明度（78%），与 Tab 栏视觉权重对齐。 */
 internal const val HomeNavInactiveContentAlpha = 0.78f
 
+/** 仅在导航水滴被按压、拖拽或回弹过渡期间开启隐身折射层与双源透镜，静止态零额外离屏着色器开销。 */
+internal fun shouldRenderLiquidTabRefraction(
+    pressProgress: Float,
+    isDragging: Boolean
+): Boolean = isDragging || pressProgress > 0.001f
+
 /** 全圆液态玻璃终端按钮：沿用与 Tab 栏一致的 LiquidBarSurface 暗玻璃、灰边高光和 78% 灰白前景，降低视觉膨胀感。 */
 @Composable
 internal fun HomeTerminalButton(

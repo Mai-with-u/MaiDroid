@@ -334,4 +334,13 @@ class HomePortraitNavigationTest {
             )
         }
     }
+
+    @Test
+    fun `liquid tab refraction stays off while idle and turns on during press or drag`() {
+        assertFalse(shouldRenderLiquidTabRefraction(pressProgress = 0f, isDragging = false))
+        assertFalse(shouldRenderLiquidTabRefraction(pressProgress = 0.0005f, isDragging = false))
+        assertTrue(shouldRenderLiquidTabRefraction(pressProgress = 0f, isDragging = true))
+        assertTrue(shouldRenderLiquidTabRefraction(pressProgress = 0.05f, isDragging = false))
+        assertTrue(shouldRenderLiquidTabRefraction(pressProgress = 1f, isDragging = true))
+    }
 }

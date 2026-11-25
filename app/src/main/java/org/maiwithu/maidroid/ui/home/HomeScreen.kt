@@ -14,6 +14,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
@@ -30,6 +32,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.extension.ExtensionsPage
 import org.maiwithu.maidroid.ui.platform.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
@@ -166,12 +169,12 @@ private fun HomeTabsShell(
         val safeLeft = with(density) { WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp() }
         val safeRight = with(density) { WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp() }
 
-        val selectTab: (HomeTab) -> Unit = { tab ->
-            onTabSelected(tab)
-        }
-        val openTerminal = {
-            onTerminalClick()
-        }
+        val selectTab = remember(onTabSelected) { onTabSelected }
+        val openTerminal = remember(onTerminalClick) { onTerminalClick }
+        // WebUI 页签使用硬件直出的 SurfaceView，关闭整屏 layerBackdrop 双遍录制；改用网页底色给悬浮导航做零拷贝采样。
+        val recordHomeBackdrop = selectedTab != HomeTab.WebUi
+        val webUiNavBackdrop = rememberSurfaceBackdrop(webUiTabState.pageBackground ?: PageBackground)
+        val navBackdrop: Backdrop = if (recordHomeBackdrop) homeBackdrop else webUiNavBackdrop
 
         // 横屏时页面内容左边让出侧栏的宽度；让出的那一条留在页面里，跟着页面一起滑动。
         val pageStartClearance = if (useRail) HomeNavigationRailWidth else 0.dp
@@ -183,13 +186,13 @@ private fun HomeTabsShell(
                 .fillMaxSize()
                 .absolutePadding(left = safeLeft, right = safeRight)
         ) {
-            // 四个页面铺满整块，横竖屏共用同一处组合（转向不重建 WebView）；导航悬浮在它上面，实时采样底层像素。
+            // 四个页面铺满整块，横竖屏共用同一处组合（转向不重建 WebView）；非 WebUI 页签才实时录制底层像素供导航折射。
             CompositionLocalProvider(LocalBottomNavigationClearance provides bottomClearance) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PageBackground)
-                        .layerBackdrop(homeBackdrop)
+                        .then(if (recordHomeBackdrop) Modifier.layerBackdrop(homeBackdrop) else Modifier)
                 ) {
                     AnimatedContent(
                         targetState = selectedTab,
@@ -243,7 +246,7 @@ private fun HomeTabsShell(
                 // 横屏：侧栏悬浮在页面左侧 -> 切换标签时页面整页滑动，从侧栏的液态玻璃底下滑过。
                 HomeNavigationRail(
                     selectedTab = selectedTab,
-                    backdrop = homeBackdrop,
+                    backdrop = navBackdrop,
                     onTabSelected = selectTab,
                     onTerminalClick = openTerminal,
                     onRefreshWebUi = if (selectedTab == HomeTab.WebUi) webUiTabState::reload else null,
@@ -253,7 +256,7 @@ private fun HomeTabsShell(
                 // 竖屏一体化导航：在 WebUI 页签展示侧边可拖拽/传感器换边的灵动胶囊，切向其他页签时直接形变飞入底部四栏（终端按钮同步分离就位），切回时原路飞回离开前所在侧。
                 HomePortraitNavigation(
                     selectedTab = selectedTab,
-                    backdrop = homeBackdrop,
+                    backdrop = navBackdrop,
                     onRefreshWebUi = webUiTabState::reload,
                     onTabSelected = selectTab,
                     onTerminalClick = openTerminal,
@@ -262,10 +265,10 @@ private fun HomeTabsShell(
             }
         }
 
-        // 终端输出页盖在整个外壳最上层（含导航），自己让开系统栏和挖孔。
+        // 终端输出页盖在整个外壳最上层（含导航），内部仅在可见时按需订阅日志流。
         TerminalOutputScreen(
             visible = showTerminalOutput,
-            logs = terminalLogs,
+            logs = null,
             onDismiss = onTerminalDismiss
         )
     }

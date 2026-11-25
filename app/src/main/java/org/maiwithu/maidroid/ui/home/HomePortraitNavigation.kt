@@ -755,6 +755,12 @@ internal fun HomePortraitNavigation(
         val barShape = { HomeNavBarShape }
         val indicatorShape = { HomeNavIndicatorShape }
         val tabsBackdrop = rememberLayerBackdrop()
+        val combinedIndicatorBackdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop)
+        val refractionActive by remember(tabDragAnimation) {
+            derivedStateOf {
+                shouldRenderLiquidTabRefraction(tabDragAnimation.pressProgress, isTabDragging)
+            }
+        }
         val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         val activeTabGestures = dragAxis != PortraitTabDragAxis.None
         val activeScaleFactor = maxOf(clampedBottomProgress, verticalSideFactor)
@@ -927,112 +933,158 @@ internal fun HomePortraitNavigation(
             )
         }
 
-        // ── 兄弟层 2：隐身品牌橙放大高亮层（录入 tabsBackdrop，供滑块光学折射采样）───────
-        val targetAccentScale = lerpFloat(HomeNavVerticalAccentScale, HomeNavHorizontalAccentScale, clampedBottomProgress)
-        CompositionLocalProvider(
-            LocalLiquidBottomTabScale provides {
-                lerp(1f, targetAccentScale, tabDragAnimation.pressProgress)
-            }
-        ) {
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(frame.capsuleLeftDp.dp.roundToPx(), frame.capsuleTopDp.dp.roundToPx()) }
-                    .size(width = frame.capsuleWidthDp.dp, height = frame.capsuleHeightDp.dp)
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
-                    .graphicsLayer {
-                        translationX = barPanelShiftXPx
-                        translationY = barPanelShiftYPx
-                    }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = barShape,
-                        effects = {
-                            val progress = tabDragAnimation.pressProgress
-                            vibrancy()
-                            blur(10f.dp.toPx())
-                            lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
-                        },
-                        highlight = {
-                            Highlight.Default.copy(alpha = tabDragAnimation.pressProgress)
-                        },
-                        shadow = null,
-                        layerBlock = {
-                            scaleX = barPressScale
-                            scaleY = barPressScale
-                        },
-                        onDrawSurface = {
-                            drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
-                        }
-                    )
-                    .then(barHighlight.modifier)
+        // ── 兄弟层 2：隐身品牌橙放大高亮层（仅按压或拖拽滑块时按需挂载，静止态零离屏着色器开销）───────
+        if (refractionActive) {
+            val targetAccentScale = lerpFloat(HomeNavVerticalAccentScale, HomeNavHorizontalAccentScale, clampedBottomProgress)
+            CompositionLocalProvider(
+                LocalLiquidBottomTabScale provides {
+                    lerp(1f, targetAccentScale, tabDragAnimation.pressProgress)
+                }
             ) {
-                if (expandedExtraAlpha > 0.01f) {
-                    ExpandedExtraActions(
-                        spinDegrees = refreshSpin.value,
-                        enabled = false,
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(frame.capsuleLeftDp.dp.roundToPx(), frame.capsuleTopDp.dp.roundToPx()) }
+                        .size(width = frame.capsuleWidthDp.dp, height = frame.capsuleHeightDp.dp)
+                        .clearAndSetSemantics {}
+                        .alpha(0f)
+                        .layerBackdrop(tabsBackdrop)
+                        .graphicsLayer {
+                            translationX = barPanelShiftXPx
+                            translationY = barPanelShiftYPx
+                        }
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = barShape,
+                            effects = {
+                                val progress = tabDragAnimation.pressProgress
+                                vibrancy()
+                                blur(10f.dp.toPx())
+                                lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
+                            },
+                            highlight = {
+                                Highlight.Default.copy(alpha = tabDragAnimation.pressProgress)
+                            },
+                            shadow = null,
+                            layerBlock = {
+                                scaleX = barPressScale
+                                scaleY = barPressScale
+                            },
+                            onDrawSurface = {
+                                drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
+                            }
+                        )
+                        .then(barHighlight.modifier)
+                ) {
+                    if (expandedExtraAlpha > 0.01f) {
+                        ExpandedExtraActions(
+                            spinDegrees = refreshSpin.value,
+                            enabled = false,
+                            clickableEnabled = false,
+                            onRefresh = {},
+                            onOpenTerminal = {},
+                            modifier = Modifier
+                                .offset { IntOffset(PillOuterPadding.roundToPx(), ExpandedActionsTopDp.dp.roundToPx()) }
+                                .wrapContentSize(align = Alignment.TopStart, unbounded = true)
+                                .size(
+                                    width = ExpandedPillWidth - PillOuterPadding * 2,
+                                    height = ExpandedDividerSlotHeight + ExpandedRefreshButtonHeight + ExpandedTerminalButtonHeight
+                                )
+                                .graphicsLayer { alpha = expandedExtraAlpha * foregroundIdleAlpha }
+                        )
+                    }
+
+                    if (secondaryTabsAlpha > 0.01f) {
+                        HomeTab.entries
+                            .filter { it != HomeTab.WebUi }
+                            .forEach { tab ->
+                                val pos = frame.tabPositionsDp[tab.ordinal]
+                                Box(
+                                    modifier = Modifier
+                                        .offset { IntOffset(pos.first.dp.roundToPx(), pos.second.dp.roundToPx()) }
+                                        .size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
+                                        .graphicsLayer { alpha = secondaryTabsAlpha * foregroundIdleAlpha },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    HomeTabButton(
+                                        tab = tab,
+                                        selected = true,
+                                        compact = clampedBottomProgress < 0.5f,
+                                        narrowVertical = clampedBottomProgress < 0.5f,
+                                        enabled = false,
+                                        accentHighlighted = true,
+                                        clickableEnabled = false,
+                                        onClick = {},
+                                        modifier = Modifier.size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
+                                    )
+                                }
+                            }
+                    }
+
+                    val primaryPos = frame.tabPositionsDp[HomeTab.WebUi.ordinal]
+                    WebUiPrimaryTabSlot(
+                        isWebUi = isWebUi,
+                        expanded = expanded,
+                        navLabelAlpha = navLabelAlpha,
+                        primaryContentAlpha = foregroundIdleAlpha,
+                        primaryIconGap = primaryIconGap,
+                        compactExpandedFraction = compactExpandedFraction,
+                        accentHighlighted = true,
                         clickableEnabled = false,
-                        onRefresh = {},
-                        onOpenTerminal = {},
+                        onClick = {},
                         modifier = Modifier
-                            .offset { IntOffset(PillOuterPadding.roundToPx(), ExpandedActionsTopDp.dp.roundToPx()) }
-                            .wrapContentSize(align = Alignment.TopStart, unbounded = true)
-                            .size(
-                                width = ExpandedPillWidth - PillOuterPadding * 2,
-                                height = ExpandedDividerSlotHeight + ExpandedRefreshButtonHeight + ExpandedTerminalButtonHeight
-                            )
-                            .graphicsLayer { alpha = expandedExtraAlpha * foregroundIdleAlpha }
+                            .offset { IntOffset(primaryPos.first.dp.roundToPx(), primaryPos.second.dp.roundToPx()) }
+                            .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
                     )
                 }
-
-                if (secondaryTabsAlpha > 0.01f) {
-                    HomeTab.entries
-                        .filter { it != HomeTab.WebUi }
-                        .forEach { tab ->
-                            val pos = frame.tabPositionsDp[tab.ordinal]
-                            Box(
-                                modifier = Modifier
-                                    .offset { IntOffset(pos.first.dp.roundToPx(), pos.second.dp.roundToPx()) }
-                                    .size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
-                                    .graphicsLayer { alpha = secondaryTabsAlpha * foregroundIdleAlpha },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                HomeTabButton(
-                                    tab = tab,
-                                    selected = true,
-                                    compact = clampedBottomProgress < 0.5f,
-                                    narrowVertical = clampedBottomProgress < 0.5f,
-                                    enabled = false,
-                                    accentHighlighted = true,
-                                    clickableEnabled = false,
-                                    onClick = {},
-                                    modifier = Modifier.size(width = frame.tabWidthDp.dp, height = frame.tabHeightDp.dp)
-                                )
-                            }
-                        }
-                }
-
-                val primaryPos = frame.tabPositionsDp[HomeTab.WebUi.ordinal]
-                WebUiPrimaryTabSlot(
-                    isWebUi = isWebUi,
-                    expanded = expanded,
-                    navLabelAlpha = navLabelAlpha,
-                    primaryContentAlpha = foregroundIdleAlpha,
-                    primaryIconGap = primaryIconGap,
-                    compactExpandedFraction = compactExpandedFraction,
-                    accentHighlighted = true,
-                    clickableEnabled = false,
-                    onClick = {},
-                    modifier = Modifier
-                        .offset { IntOffset(primaryPos.first.dp.roundToPx(), primaryPos.second.dp.roundToPx()) }
-                        .size(width = frame.tabWidthDp.dp, height = indicatorHeight.dp)
-                )
             }
         }
 
-        // ── 兄弟层 3：顶层游走液态水滴滑块（收起态呈 48×48 同心全圆，展开后收紧为 48×38 紧凑药丸，切底栏再拉宽为 63~75×48 椭圆）──
+        // ── 兄弟层 3：顶层游走液态水滴滑块（静止态仅绘轻量底色圆角，按压拖拽期间切换实时双源透镜折射）──
         val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
+        val indicatorSurfaceModifier = if (refractionActive) {
+            Modifier.drawBackdrop(
+                backdrop = combinedIndicatorBackdrop,
+                shape = indicatorShape,
+                effects = {
+                    val progress = tabDragAnimation.pressProgress
+                    lens(
+                        refractionHeight = 10f.dp.toPx() * progress,
+                        refractionAmount = 14f.dp.toPx() * progress,
+                        chromaticAberration = true
+                    )
+                },
+                highlight = {
+                    Highlight.Default.copy(alpha = tabDragAnimation.pressProgress)
+                },
+                shadow = {
+                    Shadow(alpha = tabDragAnimation.pressProgress)
+                },
+                innerShadow = {
+                    val progress = tabDragAnimation.pressProgress
+                    InnerShadow(radius = 8f.dp * progress, alpha = progress)
+                },
+                layerBlock = {
+                    scaleX = tabDragAnimation.scaleX
+                    scaleY = tabDragAnimation.scaleY
+                    val velocity = tabDragAnimation.velocity / 10f
+                    if (latestClampedBottomProgress < 0.5f) {
+                        // 竖屏 WebUI 展开胶囊内纵向拖拽水滴时，沿移动轴（Y 轴）拉伸并在 X 轴微收腰。
+                        scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    } else {
+                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    }
+                },
+                onDrawSurface = {
+                    val progress = tabDragAnimation.pressProgress
+                    drawRect(GlassSelectedIndicator, alpha = 1f - progress)
+                    drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                }
+            )
+        } else {
+            Modifier.background(GlassSelectedIndicator, HomeNavIndicatorShape)
+        }
         Box(
             modifier = Modifier
                 .offset {
@@ -1049,46 +1101,7 @@ internal fun HomePortraitNavigation(
                 }
                 .then(if (activeTabGestures) barHighlight.gestureModifier else Modifier)
                 .then(if (activeTabGestures) tabDragAnimation.modifier else Modifier)
-                .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                    shape = indicatorShape,
-                    effects = {
-                        val progress = tabDragAnimation.pressProgress
-                        lens(
-                            refractionHeight = 10f.dp.toPx() * progress,
-                            refractionAmount = 14f.dp.toPx() * progress,
-                            chromaticAberration = true
-                        )
-                    },
-                    highlight = {
-                        Highlight.Default.copy(alpha = tabDragAnimation.pressProgress)
-                    },
-                    shadow = {
-                        Shadow(alpha = tabDragAnimation.pressProgress)
-                    },
-                    innerShadow = {
-                        val progress = tabDragAnimation.pressProgress
-                        InnerShadow(radius = 8f.dp * progress, alpha = progress)
-                    },
-                    layerBlock = {
-                        scaleX = tabDragAnimation.scaleX
-                        scaleY = tabDragAnimation.scaleY
-                        val velocity = tabDragAnimation.velocity / 10f
-                        if (latestClampedBottomProgress < 0.5f) {
-                            // 竖屏 WebUI 展开胶囊内纵向拖拽水滴时，沿移动轴（Y 轴）拉伸并在 X 轴微收腰。
-                            scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                            scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                        } else {
-                            scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                            scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                        }
-                    },
-                    onDrawSurface = {
-                        val progress = tabDragAnimation.pressProgress
-                        drawRect(GlassSelectedIndicator, alpha = 1f - progress)
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
-                    }
-                )
+                .then(indicatorSurfaceModifier)
                 .then(fallbackBorder)
         )
 
