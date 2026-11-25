@@ -6,7 +6,6 @@ import android.app.DatePickerDialog
 import android.app.Dialog
 import android.app.TimePickerDialog
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.DialogInterface
 import android.graphics.Color
 import android.os.Handler
@@ -19,6 +18,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
+import org.maiwithu.maidroid.applyPreferredHighRefreshRate
+import org.maiwithu.maidroid.requestHighFrameRateOnView
+import org.maiwithu.maidroid.resolveActivity
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -56,7 +58,7 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * 单个 WebUI 页面的 GeckoView 会话宿主：主页 WebUI 页签与全屏 WebUiActivity 共用。
  *
- * 统一封装 GeckoView（强制使用 TextureView 后端以支持毛玻璃模糊层合成）、GeckoSession、
+ * 统一封装 GeckoView（采用硬件直出的 SurfaceView 后端并请求高刷新率）、GeckoSession、
  * 内置 WebExtension 原生消息端口、两指外层滚动、横屏桌面视口计算、文件上传、JS 原生弹窗、
  * 下载响应转发以及内容进程崩溃/被杀恢复回调。
  */
@@ -118,9 +120,11 @@ internal class WebUiSessionHost(
     /** 供宿主嵌入 Compose AndroidView 或 Activity FrameLayout 的 GeckoView 视图实例。 */
     @SuppressLint("ClickableViewAccessibility")
     val view: GeckoView = GeckoView(context).apply {
-        // 竖屏灵动胶囊与横屏侧栏通过 AndroidLiquidGlass 的 LayerBackdrop 实时采样网页画面做液态玻璃折射：
-        // SurfaceView 会独立穿透宿主图层导致模糊变黑/穿洞，必须使用 TextureView 后端。
-        setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
+        // 使用 SurfaceView 硬件合成直出，避免 TextureView 每帧经主线程与 Skia 离屏 FBO 二次拷贝导致高刷掉帧。
+        setViewBackend(GeckoView.BACKEND_SURFACE_VIEW)
+        // 为内嵌网页渲染视图显式投票高刷新率，防止被自适应刷新率调度锁定在 60Hz。
+        val preferredHz = resolveActivity(context)?.let(::applyPreferredHighRefreshRate)
+        requestHighFrameRateOnView(this, preferredHz)
         coverUntilFirstPaint(Color.BLACK)
         setBackgroundColor(Color.BLACK)
         layoutParams = ViewGroup.LayoutParams(
@@ -937,17 +941,8 @@ internal class WebUiSessionHost(
 
     private fun usableActivity(): Activity? {
         if (released) return null
-        val activity = findActivity(hostContext) ?: return null
+        val activity = resolveActivity(hostContext) ?: return null
         return activity.takeUnless { it.isFinishing || it.isDestroyed }
-    }
-
-    private fun findActivity(context: Context): Activity? {
-        var current: Context? = context
-        while (current is ContextWrapper) {
-            if (current is Activity) return current
-            current = current.baseContext
-        }
-        return null
     }
 
     private inline fun runOnMain(crossinline block: () -> Unit) {

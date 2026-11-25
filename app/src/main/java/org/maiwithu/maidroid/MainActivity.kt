@@ -36,6 +36,8 @@ class MainActivity : ComponentActivity() {
             window = window,
             keepOn = shouldKeepScreenOn(viewModel.setupComplete.value, settings.keepScreenOn)
         )
+        // 在首帧合成前向窗口声明同分辨率最高刷新率，避免高刷屏幕上的网页被默认限帧在 60Hz。
+        applyPreferredHighRefreshRate(this)
         // 状态栏、导航栏都透明并用浅色图标（深色界面）；什么时候显示、隐藏见 applySystemBars。
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -102,9 +104,10 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    // 从系统设置页回来时权限可能变了，重新读一遍。
+    // 从系统设置页回来时权限可能变了，重新读一遍，并同步窗口高刷率偏好。
     override fun onResume() {
         super.onResume()
+        applyPreferredHighRefreshRate(this)
         permissions.refresh()
         appDependencies.remoteOps.refreshOnForeground()
     }

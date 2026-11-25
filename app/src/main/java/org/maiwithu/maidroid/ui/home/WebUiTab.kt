@@ -42,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -54,7 +53,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +65,7 @@ import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
@@ -364,20 +363,12 @@ internal fun WebUiTabPage(
             resolvedLaunch = requestToken to computed
         }
 
-        val showBanner = state.webUiError != null || !webUiOnline
-        val bannerContentBackdrop = rememberLayerBackdrop {
-            drawRect(PageBackground)
-            drawContent()
-        }
+        // 离线或加载失败横幅改用基于网页底色的零开销采样背景，避免对 SurfaceView 套用 layerBackdrop 或离屏 alpha 层。
+        val bannerContentBackdrop = rememberSurfaceBackdrop(state.pageBackground ?: PageBackground)
 
         if (activeHost != null) {
             val activePrompt by activeHost.activePrompt.collectAsState()
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // 仅当顶部需要展示离线或失败液态玻璃条时按需录制网页视图，正常浏览零开销
-                    .then(if (showBanner) Modifier.layerBackdrop(bannerContentBackdrop) else Modifier)
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 key(activeHost) {
                     AndroidView(
                         factory = {
@@ -414,8 +405,6 @@ internal fun WebUiTabPage(
                             .padding(top = statusBarTop)
                             .windowInsetsPadding(imeClearance)
                             .fillMaxSize()
-                            // 配合 AndroidLiquidGlass：让内嵌 TextureView(GeckoView) 走稳定的离屏图层合成，防止毛玻璃采样闪烁或黑块
-                            .graphicsLayer { alpha = 0.999f }
                             .onSizeChanged { size ->
                                 state.viewHasSize = size.width > 0 && size.height > 0
                             }

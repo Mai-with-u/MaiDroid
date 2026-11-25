@@ -35,19 +35,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.Backdrop
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidModalHostOverlay
 import org.maiwithu.maidroid.ui.component.LiquidModalHostState
 import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
 import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.rememberLiquidModalHostState
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.home.WEB_UI_HIBERNATE_DELAY_MS
 import org.maiwithu.maidroid.ui.home.shouldHibernateWebUiOnTrimMemory
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
@@ -109,8 +107,9 @@ class WebUiActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 全屏网页同样遵循设置页的“屏幕常亮”开关，默认允许自动息屏。
+        // 全屏网页同样遵循设置页的“屏幕常亮”开关，默认允许自动息屏，并在首帧前声明高刷新率。
         applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
+        applyPreferredHighRefreshRate(this)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
@@ -156,10 +155,8 @@ class WebUiActivity : ComponentActivity() {
                 }
 
                 val modalHost = rememberLiquidModalHostState()
-                val webBackdrop = rememberLayerBackdrop {
-                    drawRect(Color.Black)
-                    drawContent()
-                }
+                // GeckoView 使用 SurfaceView 硬件直出，液态弹窗改用零离屏拷贝纯黑背景源
+                val webBackdrop = rememberSurfaceBackdrop(Color.Black)
                 val activeHost = sessionHostState
                 val activePrompt = if (activeHost != null) {
                     activeHost.activePrompt.collectAsState().value
@@ -199,6 +196,7 @@ class WebUiActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyPreferredHighRefreshRate(this)
         applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
     }
 
@@ -266,7 +264,7 @@ private fun WebUiActivityScreen(
     activeHost: WebUiSessionHost?,
     activePrompt: WebUiPromptRequest?,
     modalHost: LiquidModalHostState,
-    webBackdrop: LayerBackdrop,
+    webBackdrop: Backdrop,
     initialLaunchUrl: String,
     isMaiBotWebUi: Boolean
 ) {
@@ -279,12 +277,7 @@ private fun WebUiActivityScreen(
             .background(Color.Black)
     ) {
         if (activeHost != null) {
-            // 仅在活动弹窗存在时按需录制页面纹理给液态玻璃卡片采样，常规浏览保持零额外离屏层消耗。
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (modalHost.hasModals) Modifier.layerBackdrop(webBackdrop) else Modifier)
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 key(activeHost) {
                     var viewHasSize by remember(activeHost) { mutableStateOf(false) }
                     AndroidView(
@@ -304,8 +297,6 @@ private fun WebUiActivityScreen(
                             .windowInsetsPadding(safeInsets)
                             .windowInsetsPadding(imeClearance)
                             .fillMaxSize()
-                            // 让 TextureView 走稳定离屏层合成，避免弹出液态玻璃弹窗时出现采样黑块。
-                            .graphicsLayer { alpha = 0.999f }
                             .onSizeChanged { size ->
                                 viewHasSize = size.width > 0 && size.height > 0
                             }
