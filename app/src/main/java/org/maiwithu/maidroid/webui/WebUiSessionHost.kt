@@ -58,8 +58,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * 单个 WebUI 页面的 GeckoView 会话宿主：主页 WebUI 页签与全屏 WebUiActivity 共用。
  *
- * 统一封装 GeckoView（采用硬件直出的 SurfaceView 后端并请求高刷新率）、GeckoSession、
- * 内置 WebExtension 原生消息端口、两指外层滚动、横屏桌面视口计算、文件上传、JS 原生弹窗、
+ * 统一封装 GeckoView（使用 TextureView 后端以兼容 Compose AnimatedContent 与深色容器合成并请求高刷新率）、
+ * GeckoSession、内置 WebExtension 原生消息端口、两指外层滚动、横屏桌面视口计算、文件上传、JS 原生弹窗、
  * 下载响应转发以及内容进程崩溃/被杀恢复回调。
  */
 internal class WebUiSessionHost(
@@ -120,11 +120,14 @@ internal class WebUiSessionHost(
     /** 供宿主嵌入 Compose AndroidView 或 Activity FrameLayout 的 GeckoView 视图实例。 */
     @SuppressLint("ClickableViewAccessibility")
     val view: GeckoView = GeckoView(context).apply {
-        // 使用 SurfaceView 硬件合成直出，避免 TextureView 每帧经主线程与 Skia 离屏 FBO 二次拷贝导致高刷掉帧。
-        setViewBackend(GeckoView.BACKEND_SURFACE_VIEW)
-        // 为内嵌网页渲染视图显式投票高刷新率，防止被自适应刷新率调度锁定在 60Hz。
+        // 在 Compose AnimatedContent 与深色容器内必须使用 TextureView，避免 SurfaceView 打洞被 RenderNode 遮挡造成黑屏；
+        // 常规浏览通过关闭整屏 layerBackdrop 与离屏 alpha 层保障流畅度，并同步为内层 TextureView 投票最高刷新率。
+        setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
         val preferredHz = resolveActivity(context)?.let(::applyPreferredHighRefreshRate)
         requestHighFrameRateOnView(this, preferredHz)
+        for (index in 0 until childCount) {
+            requestHighFrameRateOnView(getChildAt(index), preferredHz)
+        }
         coverUntilFirstPaint(Color.BLACK)
         setBackgroundColor(Color.BLACK)
         layoutParams = ViewGroup.LayoutParams(

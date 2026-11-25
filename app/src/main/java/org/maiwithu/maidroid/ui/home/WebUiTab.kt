@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +64,7 @@ import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
 import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
@@ -363,8 +365,9 @@ internal fun WebUiTabPage(
             resolvedLaunch = requestToken to computed
         }
 
-        // 离线或加载失败横幅改用基于网页底色的零开销采样背景，避免对 SurfaceView 套用 layerBackdrop 或离屏 alpha 层。
+        // 离线或加载失败横幅改用基于网页底色的零开销采样背景；常规浏览不挂载离屏层，仅在弹窗打开采样网页时临时启用。
         val bannerContentBackdrop = rememberSurfaceBackdrop(state.pageBackground ?: PageBackground)
+        val hasActiveModal = LocalLiquidModalHost.current?.hasModals == true
 
         if (activeHost != null) {
             val activePrompt by activeHost.activePrompt.collectAsState()
@@ -405,6 +408,8 @@ internal fun WebUiTabPage(
                             .padding(top = statusBarTop)
                             .windowInsetsPadding(imeClearance)
                             .fillMaxSize()
+                            // 仅在弹出液态玻璃模态卡片需要录制整页采样时开启离屏合成，防止常规浏览每帧分配全屏 FBO 拖慢帧率。
+                            .then(if (hasActiveModal) Modifier.graphicsLayer { alpha = 0.999f } else Modifier)
                             .onSizeChanged { size ->
                                 state.viewHasSize = size.width > 0 && size.height > 0
                             }
