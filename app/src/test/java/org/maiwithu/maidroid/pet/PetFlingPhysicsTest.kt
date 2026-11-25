@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.pet
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.exp
@@ -147,5 +148,126 @@ class PetFlingPhysicsTest {
         assertFalse(engine.step(0.016f, density = 1f, bounds = zeroSpanBounds))
         assertEquals(120f, engine.x, 0.001f)
         assertEquals(600f, engine.bottom, 0.001f)
+    }
+
+    @Test
+    fun `stepWithImpact reports wall edges and predictRestingPosition matches frame simulation`() {
+        val engine = PetFlingEngine()
+        val density = 3f
+
+        // 校验左/右/上/下四壁碰撞方向与法向速度记录
+        assertTrue(engine.start(10f, 1000f, -1500f, 200f, density, defaultBounds))
+        val leftImpact = engine.stepWithImpact(0.02f, density, defaultBounds).impact!!
+        assertEquals(-1, leftImpact.horizontalEdge)
+        assertEquals(0, leftImpact.verticalEdge)
+        assertEquals(1500f, leftImpact.impactSpeedPxPerSec, 1f)
+
+        assertTrue(engine.start(790f, 1990f, 1200f, 1800f, density, defaultBounds))
+        val cornerImpact = engine.stepWithImpact(0.02f, density, defaultBounds).impact!!
+        assertEquals(1, cornerImpact.horizontalEdge)
+        assertEquals(1, cornerImpact.verticalEdge)
+        assertEquals(1800f, cornerImpact.impactSpeedPxPerSec, 1f)
+
+        // 校验确定性终点预测与 60fps 逐帧推进终点误差 < 1px
+        val predicted = engine.predictRestingPosition(
+            startX = 240f,
+            startBottom = 900f,
+            initialVx = 2400f,
+            initialVy = -1900f,
+            density = density,
+            bounds = defaultBounds
+        )
+        assertTrue(engine.start(240f, 900f, 2400f, -1900f, density, defaultBounds))
+        while (engine.step(1f / 60f, density, defaultBounds)) {
+            // 持续推演直到停止
+        }
+        assertEquals(engine.x, predicted.x, 0.5f)
+        assertEquals(engine.bottom, predicted.bottom, 0.5f)
+    }
+
+    @Test
+    fun `bounce squash spring squashes along collided axis, clamps bounds and settles to identity`() {
+        val spring = PetBounceSquashSpring()
+        val density = 3f
+
+        // 撞右墙：水平压扁、竖直拉长，X 支点贴右边
+        spring.onImpact(PetWallImpact(horizontalEdge = 1, verticalEdge = 0, impactSpeedPxPerSec = 6000f), density)
+        assertTrue(spring.isActive)
+        assertTrue(spring.scaleX < 1f)
+        assertTrue(spring.scaleY > 1f)
+        assertEquals(1f, spring.pivotXFraction, 0.001f)
+        assertEquals(0.5f, spring.pivotYFraction, 0.001f)
+
+        // 撞底墙：竖直压扁、水平拉长，Y 支点贴底边
+        spring.reset()
+        spring.onImpact(PetWallImpact(horizontalEdge = 0, verticalEdge = 1, impactSpeedPxPerSec = 5000f), density)
+        assertTrue(spring.isActive)
+        assertTrue(spring.scaleY < 1f)
+        assertTrue(spring.scaleX > 1f)
+        assertEquals(0.5f, spring.pivotXFraction, 0.001f)
+        assertEquals(1f, spring.pivotYFraction, 0.001f)
+
+        var ticks = 0
+        while (spring.step(1f / 60f) && ticks < 240) {
+            assertTrue(spring.scaleX in PetBounceSquashSpring.MIN_SCALE..PetBounceSquashSpring.MAX_SCALE)
+            assertTrue(spring.scaleY in PetBounceSquashSpring.MIN_SCALE..PetBounceSquashSpring.MAX_SCALE)
+            ticks++
+        }
+        assertFalse(spring.isActive)
+        assertEquals(1f, spring.scaleX, 0.001f)
+        assertEquals(1f, spring.scaleY, 0.001f)
+        assertTrue(ticks in 5..120)
+    }
+
+    @Test
+    fun `resolveStableClipTop ignores tiny breathing jitter and reacts to menu expand and collapse`() {
+        val fullHeight = 2000
+        val minVisible = 3
+        val headroom = 48
+        val deadband = 72
+        val baseline = 1352
+
+        // 呼吸动画在 [1388, 1412] 范围内微小上下晃动，clipTop 必须保持纹丝不动
+        assertEquals(baseline, resolveStableClipTop(baseline, 1388, fullHeight, minVisible, headroom, deadband))
+        assertEquals(baseline, resolveStableClipTop(baseline, 1412, fullHeight, minVisible, headroom, deadband))
+
+        // 弹出菜单/气泡导致内容顶边突破当前 clipTop，立即向上扩张预留 headroom
+        assertEquals(852, resolveStableClipTop(baseline, 900, fullHeight, minVisible, headroom, deadband))
+
+        // 关闭菜单内容回落出明显空白，立即向下收缩
+        assertEquals(1352, resolveStableClipTop(852, 1400, fullHeight, minVisible, headroom, deadband))
+    }
+
+    @Test
+    fun `parseCapturedCanvasPayload handles visible, builtin hidden, quoted and invalid payloads`() {
+        assertNull(parseCapturedCanvasPayload(null))
+        assertNull(parseCapturedCanvasPayload("null"))
+        assertNull(parseCapturedCanvasPayload("not-json"))
+
+        val hidden = parseCapturedCanvasPayload("""{"canvasVisible":false}""")
+        assertFalse(hidden!!.canvasVisible)
+        assertNull(hidden.pngBase64)
+
+        val visibleJson = """{"canvasVisible":true,"left":20,"top":528.5,"width":220,"height":240,"dpr":3,"png":"DATA:IMAGE/PNG;BASE64, iVBORw0KGgo= "}"""
+        val visible = parseCapturedCanvasPayload(visibleJson)!!
+        assertTrue(visible.canvasVisible)
+        assertEquals(20f, visible.leftCss, 0.001f)
+        assertEquals(528.5f, visible.topCss, 0.001f)
+        assertEquals(220f, visible.widthCss, 0.001f)
+        assertEquals(240f, visible.heightCss, 0.001f)
+        assertEquals(3f, visible.dpr, 0.001f)
+        assertEquals("iVBORw0KGgo=", visible.pngBase64)
+
+        // 兼容外层带 JSON 字符串转义的 evaluateJavascript 返回形态
+        val wrapped = parseCapturedCanvasPayload(
+            """"{\"canvasVisible\":true,\"left\":10,\"top\":20,\"width\":100,\"height\":120,\"dpr\":2,\"png\":\"data:image/png;base64,QUJD\"}""""
+        )!!
+        assertTrue(wrapped.canvasVisible)
+        assertEquals("QUJD", wrapped.pngBase64)
+
+        // 缺前缀或非正尺寸一律拒绝，避免舞台误当空画布隐藏真身
+        assertNull(parseCapturedCanvasPayload("""{"canvasVisible":true,"left":0,"top":0,"width":220,"height":240,"dpr":3,"png":"invalid-url"}"""))
+        assertNull(parseCapturedCanvasPayload("""{"canvasVisible":true,"left":0,"top":0,"width":0,"height":240,"dpr":3,"png":"data:image/png;base64,QUJD"}"""))
+        assertNull(parseCapturedCanvasPayload("""{"canvasVisible":true,"left":0,"top":0,"width":220,"height":240,"dpr":3}"""))
     }
 }
