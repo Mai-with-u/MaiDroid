@@ -5,6 +5,70 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
+/** 展平 `<select>` 菜单模式：单选、多选或上下文菜单。 */
+internal enum class WebUiChoiceMode {
+    Single,
+    Multiple,
+    Menu
+}
+
+/**
+ * 网页原生 `<select>` / alert / confirm / prompt / color 弹窗的纯状态请求模型，
+ * 供 [WebUiSessionHost] 发射给 Compose 液态玻璃弹窗宿主展示并结算用户选择。
+ */
+internal sealed interface WebUiPromptRequest {
+    val id: Long
+    val onDismiss: () -> Unit
+
+    data class Choice(
+        override val id: Long,
+        val title: String,
+        val message: String,
+        val mode: WebUiChoiceMode,
+        val rows: List<WebUiChoiceRow>,
+        val initialSelectedIds: Set<String>,
+        val onConfirmSingle: (String) -> Unit,
+        val onConfirmMultiple: (Array<String>) -> Unit,
+        override val onDismiss: () -> Unit
+    ) : WebUiPromptRequest
+
+    data class Alert(
+        override val id: Long,
+        val title: String,
+        val message: String,
+        override val onDismiss: () -> Unit
+    ) : WebUiPromptRequest
+
+    data class Confirm(
+        override val id: Long,
+        val title: String,
+        val message: String,
+        val onConfirm: () -> Unit,
+        val onCancel: () -> Unit,
+        override val onDismiss: () -> Unit
+    ) : WebUiPromptRequest
+
+    data class TextInput(
+        override val id: Long,
+        val title: String,
+        val message: String,
+        val defaultValue: String,
+        val placeholder: String,
+        val allowClear: Boolean,
+        val onConfirm: (String) -> Unit,
+        override val onDismiss: () -> Unit
+    ) : WebUiPromptRequest
+
+    data class ColorPicker(
+        override val id: Long,
+        val title: String,
+        val initialHex: String,
+        val paletteHexes: List<String>,
+        val onConfirm: (String) -> Unit,
+        override val onDismiss: () -> Unit
+    ) : WebUiPromptRequest
+}
+
 /**
  * 网页原生表单选项树的简化节点，剥离 GeckoView 依赖以便在 JVM 单测中直接校验展平与多选顺序逻辑。
  */
@@ -80,6 +144,47 @@ internal fun flattenChoiceItems(
     }
     appendNodes(nodes, parentDisabled, depth)
     return rows
+}
+
+/**
+ * 按关键字过滤 `<select>` 展平列表：大小写不敏感匹配选项文案，仅保留包含命中项的祖先分组标题，
+ * 并在搜索非空时隐藏纯粹的 `<hr>` 分隔线以保持检索结果紧凑清晰。
+ */
+internal fun filterChoiceRows(rows: List<WebUiChoiceRow>, query: String): List<WebUiChoiceRow> {
+    val needle = query.trim()
+    if (needle.isEmpty() || rows.isEmpty()) return rows
+
+    val filtered = ArrayList<WebUiChoiceRow>(rows.size)
+    // 记录当前活跃祖先分组及该分组是否已输出过，避免同组多条命中重复追加标题。
+    val activeHeaders = ArrayList<Pair<WebUiChoiceRow.GroupHeader, Boolean>>()
+
+    for (row in rows) {
+        when (row) {
+            is WebUiChoiceRow.Separator -> continue
+            is WebUiChoiceRow.GroupHeader -> {
+                while (activeHeaders.isNotEmpty() && activeHeaders.last().first.depth >= row.depth) {
+                    activeHeaders.removeAt(activeHeaders.lastIndex)
+                }
+                activeHeaders.add(row to false)
+            }
+            is WebUiChoiceRow.Option -> {
+                while (activeHeaders.isNotEmpty() && activeHeaders.last().first.depth >= row.depth) {
+                    activeHeaders.removeAt(activeHeaders.lastIndex)
+                }
+                if (row.label.contains(needle, ignoreCase = true)) {
+                    for (index in activeHeaders.indices) {
+                        val (header, emitted) = activeHeaders[index]
+                        if (!emitted) {
+                            filtered.add(header)
+                            activeHeaders[index] = header to true
+                        }
+                    }
+                    filtered.add(row)
+                }
+            }
+        }
+    }
+    return filtered
 }
 
 /**

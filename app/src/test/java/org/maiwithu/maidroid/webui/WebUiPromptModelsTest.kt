@@ -104,6 +104,53 @@ class WebUiPromptModelsTest {
     }
 
     @Test
+    fun filterChoiceRowsMatchesCaseInsensitivelyAndKeepsMatchingGroupHeaders() {
+        val rows = flattenChoiceItems(
+            listOf(
+                WebUiChoiceNode(
+                    id = "official",
+                    label = "官方预设",
+                    items = listOf(
+                        WebUiChoiceNode(id = "builtin", label = "麦麦（内置）"),
+                        WebUiChoiceNode(id = "sep", label = "---", separator = true),
+                        WebUiChoiceNode(
+                            id = "seasonal",
+                            label = "限定款",
+                            items = listOf(
+                                WebUiChoiceNode(id = "orange-sprout", label = "Orange Sprout 橙芽")
+                            )
+                        )
+                    )
+                ),
+                WebUiChoiceNode(
+                    id = "empty-group",
+                    label = "第三方皮肤",
+                    items = listOf(
+                        WebUiChoiceNode(id = "pixel", label = "像素风")
+                    )
+                ),
+                WebUiChoiceNode(id = "raw-orange", label = "orange 测试版")
+            )
+        )
+
+        // 空白搜索词原样返回所有行（含分隔线）。
+        assertEquals(rows, filterChoiceRows(rows, "   "))
+
+        // 仅保留命中项及其祖先分组标题；无命中分组与分隔线被剔除。
+        val matched = filterChoiceRows(rows, "ORANGE")
+        assertEquals(
+            listOf(
+                WebUiChoiceRow.GroupHeader("官方预设", disabled = false, depth = 0),
+                WebUiChoiceRow.GroupHeader("限定款", disabled = false, depth = 1),
+                WebUiChoiceRow.Option("orange-sprout", "Orange Sprout 橙芽", disabled = false, selected = false, depth = 2),
+                WebUiChoiceRow.Option("raw-orange", "orange 测试版", disabled = false, selected = false, depth = 0)
+            ),
+            matched
+        )
+        assertTrue(filterChoiceRows(rows, "不存在的皮肤").isEmpty())
+    }
+
+    @Test
     fun parseAndFormatDateValues() {
         val parsed = parseDateValue(" 2024-02-29 ")
         assertEquals(WebUiDateValue(2024, 2, 29), parsed)
