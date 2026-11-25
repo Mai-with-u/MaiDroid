@@ -12,8 +12,8 @@ private val fatal4915Regex = Regex("""\b4915\b""")
 private val sessionTimeout4009Regex = Regex("""code\s*=\s*4009(?!\d)""")
 
 internal const val QqOfficialFrequentTimeoutHint =
-    "近 10 分钟内多次出现 4009 会话超时掉线：建议在设置页开启「Wi-Fi 低延迟保活」、" +
-        "将 MaiDroid 设为不受电池优化限制并允许后台联网，同时确认同一 AppID 未在其他设备同时登录。"
+    "近 10 分钟内多次出现连接超时（4009），插件会自动重连。请确认同一 AppID 未在其他设备同时登录，" +
+        "并检查网络稳定性与系统省电限制；若仅在息屏后容易掉线，也可在设置页开启「Wi-Fi 低延迟保活」。"
 
 /** 从适配器日志解析出的连接失败：persistent 为 true 表示适配器已永久停止重试，不应按 60 秒自动清零。 */
 internal data class QqOfficialConnectionFailure(

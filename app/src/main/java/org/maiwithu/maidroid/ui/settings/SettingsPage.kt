@@ -728,12 +728,12 @@ private fun SettingsNavigationPane(
 
                 SettingsDivider()
 
-                // 默认关闭低延迟 Wi-Fi 锁降低息屏射频能耗，仅部分旧机型息屏断连或 QQBot 频繁 4009 时按需开启。
+                // 默认关闭低延迟 Wi-Fi 锁降低息屏射频能耗，仅息屏后容易断网的机型按需开启。
                 SettingsNavigationRow(
                     icon = FlatFeatureIcons.WifiLock,
                     iconColor = IconTealMint,
                     title = "Wi-Fi 低延迟保活",
-                    supportingText = "防止息屏后 Wi-Fi 休眠导致 QQ 官方机器人 4009 掉线或断连；关闭可降低后台射频耗电与发热",
+                    supportingText = "息屏后尽量保持 Wi-Fi 连接不断开，关闭可降低发热与耗电",
                     onClick = { onWifiLockChange(!wifiLockEnabled) },
                     trailing = if (compact) null else {
                         {
