@@ -1,6 +1,12 @@
 package org.maiwithu.maidroid.ui.extension
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +62,7 @@ import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeScrollHeaderCollapseProgress
+import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
@@ -85,6 +92,16 @@ internal fun extensionsLayout(widthDp: Float, heightDp: Float): ExtensionsLayout
         widthDp >= HomeTwoPaneSpec.CompactTwoPaneMinWidthDp -> ExtensionsLayout.TwoPane
     widthDp < HomeTwoPaneSpec.SingleColumnMaxWidthDp -> ExtensionsLayout.Compact
     else -> ExtensionsLayout.Wide
+}
+
+/** 决定当前激活的子页面标识：竖屏单列支持钻入与退回列表，双栏/宽屏始终常驻展示悬浮桌宠配置。 */
+internal fun resolveActiveExtensionDetail(
+    selectedDetail: ExtensionId?,
+    layout: ExtensionsLayout
+): ExtensionId? = when {
+    layout == ExtensionsLayout.Compact -> selectedDetail
+    selectedDetail != null -> selectedDetail
+    else -> ExtensionId.DesktopPet
 }
 
 /** 顶部大标题下方的实时状态副标题：一眼掌握当前桌宠运行状态与本机服务衔接情况。 */
@@ -130,6 +147,7 @@ internal fun ExtensionsPage(
     var showOverlayPermissionDialog by rememberSaveable { mutableStateOf(false) }
     var pendingStartAfterOverlay by rememberSaveable { mutableStateOf(false) }
     var showLoginDialog by rememberSaveable { mutableStateOf(false) }
+    var selectedDetail by rememberSaveable { mutableStateOf<ExtensionId?>(null) }
 
     // 进入页面与系统返回前台时重新检查容器前端目录，确保本机 MaiBot 升级后状态指示立即同步。
     LaunchedEffect(desktopPet) {
@@ -199,6 +217,14 @@ internal fun ExtensionsPage(
         val bottomClearance = LocalBottomNavigationClearance.current
         val density = LocalDensity.current
         val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
+        val layout = extensionsLayout(maxWidth.value, maxHeight.value)
+        val compactTwoPane = maxHeight.value < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp
+        val activeDetail = resolveActiveExtensionDetail(selectedDetail = selectedDetail, layout = layout)
+
+        // 手机竖屏钻入悬浮桌宠子页面时，拦截系统返回键平滑退回扩展组件总览列表。
+        BackHandler(enabled = layout == ExtensionsLayout.Compact && selectedDetail != null) {
+            selectedDetail = null
+        }
 
         val headerSubtitle: @Composable (Boolean, Float) -> Unit = { compact, subtitleAlpha ->
             Column {
@@ -217,23 +243,16 @@ internal fun ExtensionsPage(
             }
         }
 
-        val petSection: @Composable (Boolean) -> Unit = { compact ->
+        val petSummarySection: @Composable (Boolean, Boolean, Boolean) -> Unit = { compact, selected, exposesSelection ->
             ExtensionSection(title = "已集成组件") {
-                FloatingPetExtensionCard(
+                FloatingPetSummaryCard(
                     entry = ExtensionCatalog.primaryEntry,
                     petState = petState,
-                    webUiOnline = webUiOnline,
-                    overlayGranted = permissionState.overlayGranted,
+                    selected = selected,
+                    exposesSelection = exposesSelection,
                     compact = compact,
-                    onToggle = handleStartOrToggle,
-                    onRequestPermission = { showOverlayPermissionDialog = true },
-                    onOpenLogin = { showLoginDialog = true },
-                    onEnableRemoteMode = desktopPet::enableRemoteModeAndStart,
-                    onSelectBot = desktopPet::selectBot,
-                    onToggleVisibility = desktopPet::toggleVisibility,
-                    onOpenRecords = desktopPet::openRecords,
-                    onReconnect = handleReconnect,
-                    onPetScaleChange = desktopPet::setPetScale
+                    onClick = { selectedDetail = ExtensionId.DesktopPet },
+                    onToggle = handleStartOrToggle
                 )
             }
         }
@@ -276,72 +295,114 @@ internal fun ExtensionsPage(
             }
         }
 
-        when (extensionsLayout(maxWidth.value, maxHeight.value)) {
-            ExtensionsLayout.Compact -> {
-                val scrollState = rememberScrollState()
-                val overscroll = rememberSplitHeaderOverscrollEffect()
-                val collapseDistancePx = with(density) { 48.dp.toPx() }
-                val collapseProgress = computeScrollHeaderCollapseProgress(
-                    scrollOffsetPx = scrollState.value,
-                    collapseDistancePx = collapseDistancePx
-                )
-                val subtitleAlpha = computeHeaderSubtitleAlpha(collapseProgress)
+        val petDetailPage: @Composable (Boolean, Boolean, Modifier) -> Unit = { showBack, compactDetail, detailModifier ->
+            DesktopPetSettingsPage(
+                petState = petState,
+                webUiOnline = webUiOnline,
+                overlayGranted = permissionState.overlayGranted,
+                showBackButton = showBack,
+                compact = compactDetail,
+                expandedTopOffset = topSpacing,
+                onBack = { selectedDetail = null },
+                onToggle = handleStartOrToggle,
+                onRequestPermission = { showOverlayPermissionDialog = true },
+                onOpenLogin = { showLoginDialog = true },
+                onEnableRemoteMode = desktopPet::enableRemoteModeAndStart,
+                onSelectBot = desktopPet::selectBot,
+                onToggleVisibility = desktopPet::toggleVisibility,
+                onOpenRecords = desktopPet::openRecords,
+                onReconnect = handleReconnect,
+                onPetScaleChange = desktopPet::setPetScale,
+                modifier = detailModifier
+            )
+        }
 
-                CollapsingGlassHeaderContainer(
-                    title = "扩展组件",
-                    collapseProgress = collapseProgress,
-                    statusBarTop = statusBarTop,
-                    horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
-                    expandedTopOffset = topSpacing,
-                    expandedFontSize = TextSizes.Display,
-                    collapsedFontSize = 19.sp,
-                    topBarHeight = 52.dp,
-                    headerOverscrollPx = overscroll.headerOverscrollPx,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scrollState, overscrollEffect = overscroll)
-                            .padding(horizontal = HomeTwoPaneSpec.OuterHorizontalPadding)
-                            .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
-                    ) {
-                        Box(modifier = Modifier.overscrollHeader(overscroll)) {
-                            headerSubtitle(false, subtitleAlpha)
-                        }
-                        Column(
-                            modifier = Modifier.overscrollBody(overscroll),
-                            verticalArrangement = Arrangement.spacedBy(20.dp)
+        when (layout) {
+            ExtensionsLayout.Compact -> {
+                AnimatedContent(
+                    targetState = activeDetail,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(PageBackground),
+                    transitionSpec = { horizontalSlideTransition(forward = targetState != null, dampingRatio = 0.82f) },
+                    label = "ExtensionsCompactDetailTransition"
+                ) { detail ->
+                    if (detail == ExtensionId.DesktopPet) {
+                        petDetailPage(true, false, Modifier.fillMaxSize())
+                    } else {
+                        val scrollState = rememberScrollState()
+                        val overscroll = rememberSplitHeaderOverscrollEffect()
+                        val collapseDistancePx = with(density) { 48.dp.toPx() }
+                        val collapseProgress = computeScrollHeaderCollapseProgress(
+                            scrollOffsetPx = scrollState.value,
+                            collapseDistancePx = collapseDistancePx
+                        )
+                        val subtitleAlpha = computeHeaderSubtitleAlpha(collapseProgress)
+
+                        CollapsingGlassHeaderContainer(
+                            title = "扩展组件",
+                            collapseProgress = collapseProgress,
+                            statusBarTop = statusBarTop,
+                            horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
+                            expandedTopOffset = topSpacing,
+                            expandedFontSize = TextSizes.Display,
+                            collapsedFontSize = 19.sp,
+                            topBarHeight = 52.dp,
+                            headerOverscrollPx = overscroll.headerOverscrollPx,
+                            modifier = Modifier.fillMaxSize()
                         ) {
-                            petSection(false)
-                            ecosystemSection(false, false)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(scrollState, overscrollEffect = overscroll)
+                                    .padding(horizontal = HomeTwoPaneSpec.OuterHorizontalPadding)
+                                    .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
+                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                Box(modifier = Modifier.overscrollHeader(overscroll)) {
+                                    headerSubtitle(false, subtitleAlpha)
+                                }
+                                Column(
+                                    modifier = Modifier.overscrollBody(overscroll),
+                                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                                ) {
+                                    petSummarySection(false, false, false)
+                                    ecosystemSection(false, false)
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            ExtensionsLayout.TwoPane -> {
-                // 手机横屏按全站统一 38% : 62% 分栏：左 38% 放标题与生态扩展清单，右 62% 放交互丰富的悬浮桌宠主控卡，各自独立滚动。
+            ExtensionsLayout.TwoPane, ExtensionsLayout.Wide -> {
+                // 横屏与宽屏对齐设置页统一 38% : 62% 主从分栏：左栏放精简目录与生态扩展，右栏常驻展示悬浮桌宠子页面。
                 val leftScrollState = rememberScrollState()
                 val leftOverscroll = rememberSplitHeaderOverscrollEffect()
-                val leftCollapseDistancePx = with(density) { 40.dp.toPx() }
+                val isWide = layout == ExtensionsLayout.Wide
+                val leftPaddingStart = if (isWide) HomeTwoPaneSpec.WideOuterHorizontalPadding else HomeTwoPaneSpec.OuterHorizontalPadding
+                val leftPaddingEnd = if (isWide) HomeTwoPaneSpec.WidePaneGap / 2 else 12.dp
+                val leftCollapseDistancePx = with(density) { (if (compactTwoPane) 40.dp else 52.dp).toPx() }
                 val leftCollapseProgress = computeScrollHeaderCollapseProgress(
                     scrollOffsetPx = leftScrollState.value,
                     collapseDistancePx = leftCollapseDistancePx
                 )
                 val leftSubtitleAlpha = computeHeaderSubtitleAlpha(leftCollapseProgress)
 
-                Row(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(PageBackground)
+                ) {
                     CollapsingGlassHeaderContainer(
                         title = "扩展组件",
                         collapseProgress = leftCollapseProgress,
                         statusBarTop = statusBarTop,
-                        horizontalPadding = HomeTwoPaneSpec.OuterHorizontalPadding,
+                        horizontalPadding = leftPaddingStart,
                         expandedTopOffset = topSpacing,
-                        expandedFontSize = TextSizes.DisplayCompact,
-                        collapsedFontSize = 18.sp,
-                        topBarHeight = 46.dp,
+                        expandedFontSize = if (compactTwoPane) TextSizes.DisplayCompact else TextSizes.Display,
+                        collapsedFontSize = if (compactTwoPane) 18.sp else 19.sp,
+                        topBarHeight = if (compactTwoPane) 46.dp else 52.dp,
                         headerOverscrollPx = leftOverscroll.headerOverscrollPx,
                         modifier = Modifier
                             .weight(HomeTwoPaneSpec.LeftPaneWeight)
@@ -351,84 +412,49 @@ internal fun ExtensionsPage(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(leftScrollState, overscrollEffect = leftOverscroll)
-                                .padding(
-                                    start = HomeTwoPaneSpec.OuterHorizontalPadding,
-                                    end = HomeTwoPaneSpec.PaneHalfGap
-                                )
+                                .padding(start = leftPaddingStart, end = leftPaddingEnd)
                                 .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                            verticalArrangement = Arrangement.spacedBy(if (compactTwoPane) 14.dp else 18.dp)
                         ) {
                             Box(modifier = Modifier.overscrollHeader(leftOverscroll)) {
                                 headerSubtitle(true, leftSubtitleAlpha)
                             }
-                            Box(modifier = Modifier.overscrollBody(leftOverscroll)) {
+                            Column(
+                                modifier = Modifier.overscrollBody(leftOverscroll),
+                                verticalArrangement = Arrangement.spacedBy(if (compactTwoPane) 14.dp else 18.dp)
+                            ) {
+                                petSummarySection(true, activeDetail == ExtensionId.DesktopPet, true)
                                 ecosystemSection(true, true)
                             }
                         }
                     }
 
-                    Column(
+                    Box(
+                        modifier = Modifier
+                            .width(HomeTwoPaneSpec.MasterDetailDividerThickness)
+                            .fillMaxHeight()
+                            .background(CardDivider)
+                    )
+
+                    Box(
                         modifier = Modifier
                             .weight(HomeTwoPaneSpec.RightPaneWeight)
                             .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
-                            .padding(
-                                start = HomeTwoPaneSpec.PaneHalfGap,
-                                end = HomeTwoPaneSpec.OuterHorizontalPadding
-                            )
-                            .padding(top = statusBarTop + topSpacing, bottom = bottomClearance)
+                            .background(PageBackground)
                     ) {
-                        petSection(true)
-                    }
-                }
-            }
-
-            ExtensionsLayout.Wide -> {
-                // 平板或折叠屏大屏：顶部统一吸顶渐进玻璃标题，下方保持左 38% 生态扩展与右 62% 桌宠主控栏，统一中轴比例。
-                val wideScrollState = rememberScrollState()
-                val wideOverscroll = rememberSplitHeaderOverscrollEffect()
-                val collapseDistancePx = with(density) { 52.dp.toPx() }
-                val collapseProgress = computeScrollHeaderCollapseProgress(
-                    scrollOffsetPx = wideScrollState.value,
-                    collapseDistancePx = collapseDistancePx
-                )
-                val subtitleAlpha = computeHeaderSubtitleAlpha(collapseProgress)
-
-                CollapsingGlassHeaderContainer(
-                    title = "扩展组件",
-                    collapseProgress = collapseProgress,
-                    statusBarTop = statusBarTop,
-                    horizontalPadding = HomeTwoPaneSpec.WideOuterHorizontalPadding,
-                    expandedTopOffset = topSpacing,
-                    expandedFontSize = TextSizes.Display,
-                    collapsedFontSize = 19.sp,
-                    topBarHeight = 52.dp,
-                    headerOverscrollPx = wideOverscroll.headerOverscrollPx,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(wideScrollState, overscrollEffect = wideOverscroll)
-                            .padding(horizontal = HomeTwoPaneSpec.WideOuterHorizontalPadding)
-                            .padding(top = statusBarTop + topSpacing, bottom = bottomClearance),
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
-                    ) {
-                        Box(modifier = Modifier.overscrollHeader(wideOverscroll)) {
-                            headerSubtitle(false, subtitleAlpha)
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .overscrollBody(wideOverscroll),
-                            horizontalArrangement = Arrangement.spacedBy(HomeTwoPaneSpec.WidePaneGap),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Box(modifier = Modifier.weight(HomeTwoPaneSpec.LeftPaneWeight)) {
-                                ecosystemSection(false, true)
-                            }
-                            Box(modifier = Modifier.weight(HomeTwoPaneSpec.RightPaneWeight)) {
-                                petSection(false)
+                        AnimatedContent(
+                            targetState = activeDetail,
+                            modifier = Modifier.fillMaxSize(),
+                            transitionSpec = {
+                                fadeIn(tween(durationMillis = 220)) togetherWith
+                                    fadeOut(tween(durationMillis = 180))
+                            },
+                            label = "ExtensionsTwoPaneDetail"
+                        ) { detail ->
+                            when (detail) {
+                                ExtensionId.DesktopPet, null -> petDetailPage(false, compactTwoPane, Modifier.fillMaxSize())
+                                ExtensionId.TtsAutoDeploy, ExtensionId.AmaidesuBridge ->
+                                    petDetailPage(false, compactTwoPane, Modifier.fillMaxSize())
                             }
                         }
                     }

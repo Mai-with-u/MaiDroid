@@ -76,6 +76,23 @@ class ExtensionsPageTest {
     }
 
     @Test
+    fun `resolve active extension detail keeps compact drill-down optional and anchors master-detail panes`() {
+        assertEquals(null, resolveActiveExtensionDetail(selectedDetail = null, layout = ExtensionsLayout.Compact))
+        assertEquals(
+            ExtensionId.DesktopPet,
+            resolveActiveExtensionDetail(selectedDetail = ExtensionId.DesktopPet, layout = ExtensionsLayout.Compact)
+        )
+        assertEquals(
+            ExtensionId.DesktopPet,
+            resolveActiveExtensionDetail(selectedDetail = null, layout = ExtensionsLayout.TwoPane)
+        )
+        assertEquals(
+            ExtensionId.DesktopPet,
+            resolveActiveExtensionDetail(selectedDetail = null, layout = ExtensionsLayout.Wide)
+        )
+    }
+
+    @Test
     fun `extension catalog keeps desktop pet primary and user facing copy concise`() {
         assertTrue(ExtensionCatalog.primaryEntry.available)
         assertEquals(ExtensionId.DesktopPet, ExtensionCatalog.primaryEntry.id)
