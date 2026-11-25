@@ -95,4 +95,62 @@
   } else {
     syncRecordsBodyClass();
   }
+
+  // 将皮肤精灵图的异步解码改为串行执行；若仅因系统 WebView 解码缓存预算不足报错，
+  // 且图片本身已成功加载出有效尺寸，则退回绘制阶段按帧按需解码，避免误判整套皮肤失效。
+  if (
+    typeof HTMLImageElement !== 'undefined' &&
+    HTMLImageElement.prototype &&
+    typeof HTMLImageElement.prototype.decode === 'function' &&
+    !HTMLImageElement.prototype.decode.__maidroidPatched
+  ) {
+    var nativeDecode = HTMLImageElement.prototype.decode;
+    var decodeQueue = Promise.resolve();
+
+    function waitImageReady(img) {
+      if (!img) return Promise.resolve(false);
+      if (img.complete) {
+        return Promise.resolve(Boolean(img.naturalWidth > 0 && img.naturalHeight > 0));
+      }
+      return new Promise(function (resolve) {
+        var done = false;
+        function finish() {
+          if (done) return;
+          done = true;
+          img.removeEventListener('load', finish);
+          img.removeEventListener('error', finish);
+          resolve(Boolean(img.complete && img.naturalWidth > 0 && img.naturalHeight > 0));
+        }
+        img.addEventListener('load', finish);
+        img.addEventListener('error', finish);
+        if (img.complete) finish();
+      });
+    }
+
+    function runSingleDecode(img) {
+      var pending;
+      try {
+        pending = Promise.resolve(nativeDecode.call(img));
+      } catch (syncError) {
+        pending = Promise.reject(syncError);
+      }
+      return pending.catch(function (err) {
+        return waitImageReady(img).then(function (ready) {
+          if (ready) return;
+          throw err;
+        });
+      });
+    }
+
+    var safeDecode = function () {
+      var img = this;
+      var task = decodeQueue.then(function () {
+        return runSingleDecode(img);
+      });
+      decodeQueue = task.catch(function () {});
+      return task;
+    };
+    safeDecode.__maidroidPatched = true;
+    HTMLImageElement.prototype.decode = safeDecode;
+  }
 })();
