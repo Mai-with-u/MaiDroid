@@ -265,9 +265,40 @@ class PetFlingPhysicsTest {
         assertTrue(wrapped.canvasVisible)
         assertEquals("QUJD", wrapped.pngBase64)
 
+        // 校验带可见气泡 say 矩形与 say: null/非法字段的兼容解析
+        val withSay = parseCapturedCanvasPayload(
+            """{"canvasVisible":true,"left":20,"top":536,"width":220,"height":240,"dpr":3,"say":{"left":10,"top":400,"width":240,"height":88},"png":"data:image/png;base64,QUJD"}"""
+        )!!
+        assertEquals(CssRect(10f, 400f, 240f, 88f), withSay.sayRectCss)
+
+        val withNullSay = parseCapturedCanvasPayload(
+            """{"canvasVisible":true,"left":20,"top":536,"width":220,"height":240,"dpr":3,"say":null,"png":"data:image/png;base64,QUJD"}"""
+        )!!
+        assertNull(withNullSay.sayRectCss)
+
+        val withInvalidSay = parseCapturedCanvasPayload(
+            """{"canvasVisible":true,"left":20,"top":536,"width":220,"height":240,"dpr":3,"say":{"left":10,"top":400,"width":0,"height":88},"png":"data:image/png;base64,QUJD"}"""
+        )!!
+        assertNull(withInvalidSay.sayRectCss)
+
         // 缺前缀或非正尺寸一律拒绝，避免舞台误当空画布隐藏真身
         assertNull(parseCapturedCanvasPayload("""{"canvasVisible":true,"left":0,"top":0,"width":220,"height":240,"dpr":3,"png":"invalid-url"}"""))
         assertNull(parseCapturedCanvasPayload("""{"canvasVisible":true,"left":0,"top":0,"width":0,"height":240,"dpr":3,"png":"data:image/png;base64,QUJD"}"""))
         assertNull(parseCapturedCanvasPayload("""{"canvasVisible":true,"left":0,"top":0,"width":220,"height":240,"dpr":3}"""))
+    }
+
+    @Test
+    fun `computeDraggingSnapshotRefreshDelayMs waits for web transition and returns zero once settled`() {
+        // 网页尚未回调 dragMove() 前继续等待，避免按进入舞台时间过早截下交叉过渡双影帧
+        assertNull(computeDraggingSnapshotRefreshDelayMs(draggingStartedUptimeMs = 0L, nowUptimeMs = 1500L, settleDelayMs = 220L))
+
+        // 刚进入网页拖动态时保留完整 220ms 过渡等待
+        assertEquals(220L, computeDraggingSnapshotRefreshDelayMs(1000L, 1000L, 220L))
+
+        // 抓帧延迟进舞台时仅等待剩余窗口
+        assertEquals(140L, computeDraggingSnapshotRefreshDelayMs(1000L, 1080L, 220L))
+
+        // 超过过渡收敛窗口后立即刷新，不返回负延迟
+        assertEquals(0L, computeDraggingSnapshotRefreshDelayMs(1000L, 1300L, 220L))
     }
 }

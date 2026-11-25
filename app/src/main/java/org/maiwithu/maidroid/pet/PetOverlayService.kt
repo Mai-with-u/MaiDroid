@@ -15,8 +15,11 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Region
@@ -72,13 +75,15 @@ class PetOverlayService : Service(), PetOverlayHost {
 
         // 系统 MoveAnimation 通常持续 ~400ms，轻放或极短滑行时留足缓冲再切回主小窗可完全隐藏系统窗口跳变。
         private const val MOVE_ANIMATION_SETTLE_MS = 420L
-        private const val SNAPSHOT_REFRESH_DELAY_MS = 50L
+        // 前端 skin.js 存在 160ms 状态交叉淡入淡出过渡，需等过渡完全结束再补抓拖动贴图，避免将双影混合帧冻结在舞台上。
+        private const val SNAPSHOT_REFRESH_DELAY_MS = 220L
         private const val CLIP_HEADROOM_DP = 16.0
         private const val CLIP_SHRINK_DEADBAND_DP = 24.0
         private const val BASE_PET_WIDTH_DP = 260.0
         private const val BASE_MIN_VISIBLE_HEIGHT_DP = 180.0
 
-        // 读取皮肤动画画布的视口矩形与透明 PNG，弥补 Android WebView 软件 draw() 跳过硬件加速 <canvas> 的缺陷。
+        // 读取皮肤动画画布（及当前可见气泡区域）的视口矩形与透明 PNG，
+        // 弥补 WebView 软件 draw() 与硬件画布之间的绘制差异，同时防止双影叠加。
         private const val CAPTURE_SKIN_CANVAS_JS =
             "(() => {" +
                 "const c = document.getElementById('skin-canvas');" +
@@ -89,6 +94,14 @@ class PetOverlayService : Service(), PetOverlayHost {
                 "if (!r || r.width <= 0 || r.height <= 0) {" +
                     "return { canvasVisible: false };" +
                 "}" +
+                "const sayEl = document.getElementById('say');" +
+                "let say = null;" +
+                "if (sayEl && sayEl.classList.contains('show')) {" +
+                    "const sr = sayEl.getBoundingClientRect();" +
+                    "if (sr && sr.width > 0 && sr.height > 0) {" +
+                        "say = { left: sr.left, top: sr.top, width: sr.width, height: sr.height };" +
+                    "}" +
+                "}" +
                 "return {" +
                     "canvasVisible: true," +
                     "left: r.left," +
@@ -96,6 +109,7 @@ class PetOverlayService : Service(), PetOverlayHost {
                     "width: r.width," +
                     "height: r.height," +
                     "dpr: window.devicePixelRatio || 1," +
+                    "say: say," +
                     "png: c.toDataURL('image/png')" +
                 "};" +
             "})();"
@@ -108,7 +122,8 @@ class PetOverlayService : Service(), PetOverlayHost {
             val topCss: Float,
             val widthCss: Float,
             val heightCss: Float,
-            val dpr: Float
+            val dpr: Float,
+            val sayRectCss: CssRect? = null
         )
 
         /** 悬浮桌宠服务当前是否存活，供遥测统计耗时热点而不触发管理器的懒加载初始化。 */
@@ -143,7 +158,11 @@ class PetOverlayService : Service(), PetOverlayHost {
     private var stageEntryPending = false
     private var gestureCaptureGeneration = 0
     private var gestureCanvasFrame: CapturedCanvasFrame? = null
-    private val stageBitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private var webDraggingStartedUptimeMs = 0L
+    private var draggingRefreshScheduled = false
+    private val stageDstOverPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OVER)
+    }
     private val snapshotExecutor = Executors.newSingleThreadExecutor()
     private var legacyWindowOriginX = 0
     private var legacyWindowOriginY = 0
@@ -437,6 +456,11 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     override fun dragMove() {
         if (!dragging || !pointerActive || flingEngine.isRunning) return
+        if (!supportsTouchRegions && webDraggingStartedUptimeMs == 0L) {
+            // 网页在 stage.classList.add('dragging') 后立即回调 drag_move()，以此同步 160ms 交叉淡入淡出过渡起点。
+            webDraggingStartedUptimeMs = SystemClock.uptimeMillis()
+            maybeScheduleDraggingSnapshotRefresh()
+        }
         advanceDragPosition()
     }
 
@@ -491,6 +515,8 @@ class PetOverlayService : Service(), PetOverlayHost {
                     if (!supportsTouchRegions) {
                         gestureCaptureGeneration += 1
                         stageEntryPending = false
+                        webDraggingStartedUptimeMs = 0L
+                        draggingRefreshScheduled = false
                         clearGestureCanvasFrame()
                         requestSkinCanvasCapture(gestureCaptureGeneration, isRefresh = false)
                     }
@@ -506,6 +532,8 @@ class PetOverlayService : Service(), PetOverlayHost {
                 MotionEvent.ACTION_UP -> {
                     velocityTracker.addSample(rawX, rawY, event.eventTime)
                     val wasMoved = dragging && moved
+                    webDraggingStartedUptimeMs = 0L
+                    draggingRefreshScheduled = false
                     if (wasMoved) {
                         val velocity = velocityTracker.computeVelocity(event.eventTime, density)
                         finishDragWithVelocity(velocity.vx, velocity.vy)
@@ -529,6 +557,8 @@ class PetOverlayService : Service(), PetOverlayHost {
 
                 MotionEvent.ACTION_CANCEL -> {
                     stageEntryPending = false
+                    webDraggingStartedUptimeMs = 0L
+                    draggingRefreshScheduled = false
                     moved = false
                     dragging = false
                     pointerActive = false
@@ -717,6 +747,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         mainHandler.removeCallbacks(refreshSnapshotRunnable)
         mainHandler.removeCallbacks(settleStageRunnable)
         stageEntryPending = false
+        webDraggingStartedUptimeMs = 0L
+        draggingRefreshScheduled = false
         val wasStageVisible = usingMotionStage
         val activeFlingOrSquash = isMotionActive()
         flingEngine.stop()
@@ -741,6 +773,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         mainHandler.removeCallbacks(refreshSnapshotRunnable)
         mainHandler.removeCallbacks(settleStageRunnable)
         stageEntryPending = false
+        webDraggingStartedUptimeMs = 0L
+        draggingRefreshScheduled = false
         flingEngine.stop()
         bounceSquash.reset()
         lastMotionFrameNanos = 0L
@@ -760,7 +794,11 @@ class PetOverlayService : Service(), PetOverlayHost {
         val pet = petView ?: return
         pet.evaluateJavascript(CAPTURE_SKIN_CANVAS_JS) { rawResult ->
             if (closing || generation != gestureCaptureGeneration) return@evaluateJavascript
-            val payload = parseCapturedCanvasPayload(rawResult) ?: return@evaluateJavascript
+            val payload = parseCapturedCanvasPayload(rawResult)
+            if (payload == null) {
+                onSkinCanvasCaptureFailed(generation, isRefresh)
+                return@evaluateJavascript
+            }
             if (!payload.canvasVisible) {
                 onSkinCanvasCaptureReady(
                     captured = CapturedCanvasFrame(
@@ -778,14 +816,21 @@ class PetOverlayService : Service(), PetOverlayHost {
                 return@evaluateJavascript
             }
 
-            val encoded = payload.pngBase64 ?: return@evaluateJavascript
-            runCatching {
+            val encoded = payload.pngBase64
+            if (encoded == null) {
+                onSkinCanvasCaptureFailed(generation, isRefresh)
+                return@evaluateJavascript
+            }
+            val submitted = runCatching {
                 snapshotExecutor.execute {
                     val decoded = runCatching {
                         val bytes = Base64.decode(encoded, Base64.DEFAULT)
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     }.getOrNull()
-                    if (decoded == null) return@execute
+                    if (decoded == null) {
+                        mainHandler.post { onSkinCanvasCaptureFailed(generation, isRefresh) }
+                        return@execute
+                    }
                     mainHandler.post {
                         if (closing || generation != gestureCaptureGeneration) {
                             decoded.recycle()
@@ -800,13 +845,25 @@ class PetOverlayService : Service(), PetOverlayHost {
                                 topCss = payload.topCss,
                                 widthCss = payload.widthCss,
                                 heightCss = payload.heightCss,
-                                dpr = payload.dpr
+                                dpr = payload.dpr,
+                                sayRectCss = payload.sayRectCss
                             ),
                             isRefresh = isRefresh
                         )
                     }
                 }
             }
+            if (submitted.isFailure) {
+                onSkinCanvasCaptureFailed(generation, isRefresh)
+            }
+        }
+    }
+
+    private fun onSkinCanvasCaptureFailed(generation: Int, isRefresh: Boolean) {
+        if (closing || generation != gestureCaptureGeneration) return
+        if (!isRefresh) {
+            // 解码或脚本返回异常时及时退出挂起态，防止当次手势卡在待进入舞台状态。
+            stageEntryPending = false
         }
     }
 
@@ -915,9 +972,25 @@ class PetOverlayService : Service(), PetOverlayHost {
         stageRoot.post { if (usingMotionStage) applyLegacyMotionStageTransform() }
         petView?.alpha = 0f
 
-        // 前端收到 drag_begin/drag_started 后会收起菜单并切换拖动表情，50ms 后静默补抓刷新一次舞台贴图。
+        // 前端在拖动启动并收到 dragMove() 后，skin.js 会播放 160ms 的 idle->dragging 交叉淡入淡出；
+        // 等到该过渡完全收敛（220ms）再补抓稳定拖动贴图，避免在过渡正中央截下两帧叠加的双影。
+        maybeScheduleDraggingSnapshotRefresh()
+    }
+
+    private fun maybeScheduleDraggingSnapshotRefresh() {
+        if (supportsTouchRegions || !usingMotionStage || !moved || draggingRefreshScheduled) return
+        val delayMs = computeDraggingSnapshotRefreshDelayMs(
+            draggingStartedUptimeMs = webDraggingStartedUptimeMs,
+            nowUptimeMs = SystemClock.uptimeMillis(),
+            settleDelayMs = SNAPSHOT_REFRESH_DELAY_MS
+        ) ?: return
+        draggingRefreshScheduled = true
         mainHandler.removeCallbacks(refreshSnapshotRunnable)
-        mainHandler.postDelayed(refreshSnapshotRunnable, SNAPSHOT_REFRESH_DELAY_MS)
+        if (delayMs == 0L) {
+            mainHandler.post(refreshSnapshotRunnable)
+        } else {
+            mainHandler.postDelayed(refreshSnapshotRunnable, delayMs)
+        }
     }
 
     private fun refreshMotionStageSnapshot() {
@@ -952,7 +1025,27 @@ class PetOverlayService : Service(), PetOverlayHost {
                     (canvasFrame.leftCss + canvasFrame.widthCss) * scale,
                     (canvasFrame.topCss + canvasFrame.heightCss) * scale - clipTop
                 )
-                canvas.drawBitmap(skinBitmap, null, dst, stageBitmapPaint)
+                val sayRect = canvasFrame.sayRectCss
+                val sayDst = if (sayRect != null) {
+                    RectF(
+                        sayRect.left * scale,
+                        sayRect.top * scale - clipTop,
+                        (sayRect.left + sayRect.width) * scale,
+                        (sayRect.top + sayRect.height) * scale - clipTop
+                    )
+                } else {
+                    null
+                }
+                // Chromium 多次回读后可能将 <canvas> 降级为软件绘制：先清空画布区域（若发言气泡可见则抠出气泡防裁切），
+                // 再以 DST_OVER 将抓取的皮肤帧铺在气泡后方，彻底避免 pet.draw() 与 skinBitmap 叠加出双影。
+                canvas.save()
+                canvas.clipRect(dst)
+                if (sayDst != null) {
+                    canvas.clipOutRect(sayDst)
+                }
+                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                canvas.restore()
+                canvas.drawBitmap(skinBitmap, null, dst, stageDstOverPaint)
             }
             bitmap
         }.getOrNull() ?: return null
@@ -1020,6 +1113,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         mainHandler.removeCallbacks(refreshSnapshotRunnable)
         mainHandler.removeCallbacks(settleStageRunnable)
         stageEntryPending = false
+        webDraggingStartedUptimeMs = 0L
+        draggingRefreshScheduled = false
         petView?.alpha = 1f
         usingMotionStage = false
         val stageRoot = motionStageFrame

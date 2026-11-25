@@ -499,7 +499,15 @@ internal fun resolveStableClipTop(
     }
 }
 
-/** 从 `#skin-canvas` JS 抓帧回调解析出的有效画布负载。 */
+/** 网页 DOM/Canvas 在 CSS 坐标系下的矩形区域。 */
+internal data class CssRect(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float
+)
+
+/** 从 `#skin-canvas` JS 抓帧回调解析出的有效画布负载（可选附带当前可见气泡区域，防清屏误伤）。 */
 internal data class CapturedCanvasPayload(
     val canvasVisible: Boolean,
     val pngBase64: String? = null,
@@ -507,8 +515,24 @@ internal data class CapturedCanvasPayload(
     val topCss: Float = 0f,
     val widthCss: Float = 0f,
     val heightCss: Float = 0f,
-    val dpr: Float = 1f
+    val dpr: Float = 1f,
+    val sayRectCss: CssRect? = null
 )
+
+/**
+ * 计算等待前端皮肤 `idle -> dragging` 交叉淡入淡出过渡（160ms）结束再补抓拖动贴图的剩余延迟；
+ * 若网页尚未回调 `dragMove()`（即 [draggingStartedUptimeMs] <= 0），返回 null 表示继续等待。
+ */
+internal fun computeDraggingSnapshotRefreshDelayMs(
+    draggingStartedUptimeMs: Long,
+    nowUptimeMs: Long,
+    settleDelayMs: Long
+): Long? {
+    if (draggingStartedUptimeMs <= 0L) return null
+    val safeSettle = settleDelayMs.coerceAtLeast(0L)
+    val elapsed = (nowUptimeMs - draggingStartedUptimeMs).coerceAtLeast(0L)
+    return (safeSettle - elapsed).coerceAtLeast(0L)
+}
 
 /** 从 `data:image/png;base64,...` 中提取纯 Base64 数据；格式不合法时返回 null。 */
 internal fun extractPngBase64Payload(dataUrl: String?): String? {
@@ -518,6 +542,21 @@ internal fun extractPngBase64Payload(dataUrl: String?): String? {
     if (!trimmed.startsWith(prefix, ignoreCase = true)) return null
     val payload = trimmed.substring(prefix.length).trim()
     return payload.takeIf { it.isNotEmpty() }
+}
+
+private fun parseOptionalCssRect(element: Any?): CssRect? {
+    val obj = element as? JsonObject ?: return null
+    val left = (obj["left"] as? JsonPrimitive)?.floatOrNull ?: return null
+    val top = (obj["top"] as? JsonPrimitive)?.floatOrNull ?: return null
+    val width = (obj["width"] as? JsonPrimitive)?.floatOrNull ?: return null
+    val height = (obj["height"] as? JsonPrimitive)?.floatOrNull ?: return null
+    if (!left.isFinite() || !top.isFinite() ||
+        !width.isFinite() || !height.isFinite() ||
+        width <= 0f || height <= 0f
+    ) {
+        return null
+    }
+    return CssRect(left = left, top = top, width = width, height = height)
 }
 
 /**
@@ -558,6 +597,7 @@ internal fun parseCapturedCanvasPayload(rawEvalResult: String?): CapturedCanvasP
 
     val rawPng = (jsonObject["png"] as? JsonPrimitive)?.contentOrNull
     val pngBase64 = extractPngBase64Payload(rawPng) ?: return null
+    val sayRect = parseOptionalCssRect(jsonObject["say"])
     return CapturedCanvasPayload(
         canvasVisible = true,
         pngBase64 = pngBase64,
@@ -565,6 +605,7 @@ internal fun parseCapturedCanvasPayload(rawEvalResult: String?): CapturedCanvasP
         topCss = top,
         widthCss = width,
         heightCss = height,
-        dpr = dpr
+        dpr = dpr,
+        sayRectCss = sayRect
     )
 }
