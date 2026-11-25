@@ -1,18 +1,37 @@
 package org.maiwithu.maidroid.webui
 
+import android.R as AndroidR
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
+import android.app.Dialog
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.DialogInterface
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AbsListView
+import android.widget.BaseAdapter
+import android.widget.CheckedTextView
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.ScrollView
+import android.widget.TextView
 import org.json.JSONObject
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.mozilla.geckoview.AllowOrDeny
@@ -27,6 +46,10 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.AlertPrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.BasePrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.ButtonPrompt
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt.Choice
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.ColorPrompt
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.DateTimePrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.FilePrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptInstanceDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
@@ -40,6 +63,7 @@ import org.mozilla.geckoview.WebExtension.Port
 import org.mozilla.geckoview.WebExtension.PortDelegate
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
+import java.util.Calendar
 
 /**
  * 单个 WebUI 页面的 GeckoView 会话宿主：主页 WebUI 页签与全屏 WebUiActivity 共用。
@@ -93,7 +117,7 @@ internal class WebUiSessionHost(
     private var desktopViewportEnabled = false
     private var layoutBasisWidthPx = 0
     private var configureEverSent = false
-    private var activeDialog: AlertDialog? = null
+    private var activeDialog: Dialog? = null
 
     private val twoFingerScroll: WebUiTwoFingerScroll
 
@@ -410,6 +434,21 @@ internal class WebUiSessionHost(
                 targetSession: GeckoSession,
                 prompt: TextPrompt
             ): GeckoResult<PromptResponse> = showTextPrompt(prompt)
+
+            override fun onChoicePrompt(
+                targetSession: GeckoSession,
+                prompt: ChoicePrompt
+            ): GeckoResult<PromptResponse> = showChoicePrompt(prompt)
+
+            override fun onDateTimePrompt(
+                targetSession: GeckoSession,
+                prompt: DateTimePrompt
+            ): GeckoResult<PromptResponse> = showDateTimePrompt(prompt)
+
+            override fun onColorPrompt(
+                targetSession: GeckoSession,
+                prompt: ColorPrompt
+            ): GeckoResult<PromptResponse> = showColorPrompt(prompt)
         }
     }
 
@@ -473,24 +512,24 @@ internal class WebUiSessionHost(
     }
 
     private fun showAlertPrompt(prompt: AlertPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, prompt.message) { builder, complete ->
+        showPromptDialog(prompt, prompt.message) { builder, complete, _ ->
             builder.setPositiveButton("确定") { _, _ -> complete { prompt.dismiss() } }
         }
 
     private fun showButtonPrompt(prompt: ButtonPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, prompt.message) { builder, complete ->
+        showPromptDialog(prompt, prompt.message) { builder, complete, _ ->
             builder.setPositiveButton("确定") { _, _ -> complete { prompt.confirm(ButtonPrompt.Type.POSITIVE) } }
             builder.setNegativeButton("取消") { _, _ -> complete { prompt.confirm(ButtonPrompt.Type.NEGATIVE) } }
         }
 
     private fun showTextPrompt(prompt: TextPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, prompt.message) { builder, complete ->
+        showPromptDialog(prompt, prompt.message) { builder, complete, _ ->
             val dialogContext = builder.context
             val input = EditText(dialogContext).apply {
                 setText(prompt.defaultValue.orEmpty())
                 setSelection(text?.length ?: 0)
             }
-            val horizontalMargin = (DIALOG_INPUT_MARGIN_DP * dialogContext.resources.displayMetrics.density).toInt()
+            val horizontalMargin = dp(dialogContext, DIALOG_INPUT_MARGIN_DP)
             val container = FrameLayout(dialogContext).apply {
                 setPadding(horizontalMargin, horizontalMargin / 2, horizontalMargin, 0)
                 addView(input)
@@ -500,10 +539,321 @@ internal class WebUiSessionHost(
             builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
         }
 
+    private fun showChoicePrompt(prompt: ChoicePrompt): GeckoResult<PromptResponse> {
+        val rows = flattenChoiceItems(toChoiceNodes(prompt.choices))
+        if (rows.none { it is WebUiChoiceRow.Option }) {
+            return if (prompt.isComplete) GeckoResult() else GeckoResult.fromValue(prompt.dismiss())
+        }
+        val isMultiple = prompt.type == ChoicePrompt.Type.MULTIPLE
+        val selectedIds = initialSelectedChoiceIds(rows)
+        return showPromptDialog(prompt, prompt.message) { builder, complete, dismissDialog ->
+            val dialogContext = builder.context
+            val adapter = ChoiceListAdapter(
+                context = dialogContext,
+                promptType = prompt.type,
+                rows = rows,
+                selectedIds = selectedIds
+            )
+            val listView = ListView(dialogContext).apply {
+                this.adapter = adapter
+                isVerticalScrollBarEnabled = true
+                val initialIndex = initialSelectedOptionIndex(rows)
+                if (initialIndex >= 0) {
+                    setSelection(initialIndex)
+                }
+                setOnItemClickListener { _, _, position, _ ->
+                    val option = rows.getOrNull(position) as? WebUiChoiceRow.Option ?: return@setOnItemClickListener
+                    if (option.disabled) return@setOnItemClickListener
+                    if (isMultiple) {
+                        if (!selectedIds.add(option.id)) {
+                            selectedIds.remove(option.id)
+                        }
+                        adapter.notifyDataSetChanged()
+                    } else {
+                        // 单选/菜单模式选中后必须立即传单字符串确认，避免 GeckoView 对非多选调用数组重载抛错。
+                        selectedIds.clear()
+                        selectedIds.add(option.id)
+                        adapter.notifyDataSetChanged()
+                        complete { prompt.confirm(option.id) }
+                        dismissDialog()
+                    }
+                }
+            }
+            builder.setView(listView)
+            if (isMultiple) {
+                builder.setPositiveButton("确定") { _, _ ->
+                    complete { prompt.confirm(selectedChoiceIdsInOrder(rows, selectedIds)) }
+                }
+            }
+            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
+        }
+    }
+
+    private fun showDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
+        if (prompt.isComplete) return GeckoResult()
+        if (usableActivity() == null) return GeckoResult.fromValue(prompt.dismiss())
+        return when (prompt.type) {
+            DateTimePrompt.Type.DATE -> showDatePickerPrompt(prompt)
+            DateTimePrompt.Type.TIME -> showTimePickerPrompt(prompt)
+            DateTimePrompt.Type.DATETIME_LOCAL -> showDateTimeLocalPrompt(prompt)
+            DateTimePrompt.Type.MONTH,
+            DateTimePrompt.Type.WEEK -> showTextDateTimePrompt(prompt)
+            else -> showTextDateTimePrompt(prompt)
+        }
+    }
+
+    private fun showDatePickerPrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
+        val initial = parseDateValue(prompt.defaultValue) ?: currentDateValue()
+        return showStandalonePromptDialog(prompt, "date picker prompt") { activity, complete ->
+            createDatePickerDialog(
+                activity = activity,
+                prompt = prompt,
+                initial = initial,
+                complete = complete
+            ) { picked ->
+                complete { prompt.confirm(formatDateValue(picked.year, picked.month, picked.day)) }
+            }
+        }
+    }
+
+    private fun showTimePickerPrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
+        val initial = parseTimeValue(prompt.defaultValue) ?: currentTimeValue()
+        return showStandalonePromptDialog(prompt, "time picker prompt") { activity, complete ->
+            createTimePickerDialog(
+                activity = activity,
+                prompt = prompt,
+                initial = initial,
+                complete = complete
+            ) { picked ->
+                complete { prompt.confirm(formatTimeValue(picked.hour, picked.minute)) }
+            }
+        }
+    }
+
+    private fun showDateTimeLocalPrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
+        if (prompt.isComplete) return GeckoResult()
+        val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
+        val initial = parseDateTimeLocalValue(prompt.defaultValue)
+            ?: WebUiDateTimeValue(currentDateValue(), currentTimeValue())
+        val result = GeckoResult<PromptResponse>()
+        var currentDialog: Dialog? = null
+        var movingToTimePicker = false
+        val guard = PromptSettlementGuard<PromptResponse>(
+            isAlreadyComplete = { prompt.isComplete }
+        ) { response ->
+            if (activeDialog === currentDialog) {
+                activeDialog = null
+            }
+            result.complete(response)
+        }
+        val complete: (() -> PromptResponse) -> Unit = { produce -> guard.settleOnce(produce) }
+
+        val dateDialog = createDatePickerDialog(
+            activity = activity,
+            prompt = prompt,
+            initial = initial.date,
+            complete = complete
+        ) { pickedDate ->
+            if (movingToTimePicker || prompt.isComplete) return@createDatePickerDialog
+            val stepActivity = usableActivity() ?: return@createDatePickerDialog
+            // 切换到第二步时间选择器期间阻止第一步对话框关闭监听把本次选择误判为取消。
+            movingToTimePicker = true
+            val timeDialog = createTimePickerDialog(
+                activity = stepActivity,
+                prompt = prompt,
+                initial = initial.time,
+                complete = complete
+            ) { pickedTime ->
+                complete { prompt.confirm(formatDateTimeLocalValue(pickedDate, pickedTime)) }
+            }
+            timeDialog.setOnDismissListener {
+                if (activeDialog === timeDialog) {
+                    activeDialog = null
+                }
+                guard.settleOnce { prompt.dismiss() }
+            }
+            currentDialog = timeDialog
+            attachActiveDialog(
+                prompt = prompt,
+                dialog = timeDialog,
+                dismissTarget = { currentDialog },
+                logLabel = "datetime-local time picker"
+            ) {
+                guard.settleOnce { prompt.dismiss() }
+            }
+        }
+        dateDialog.setOnDismissListener {
+            if (activeDialog === dateDialog) {
+                activeDialog = null
+            }
+            if (!movingToTimePicker) {
+                guard.settleOnce { prompt.dismiss() }
+            }
+        }
+        currentDialog = dateDialog
+        attachActiveDialog(
+            prompt = prompt,
+            dialog = dateDialog,
+            dismissTarget = { currentDialog },
+            logLabel = "datetime-local date picker"
+        ) {
+            guard.settleOnce { prompt.dismiss() }
+        }
+        return result
+    }
+
+    private fun showTextDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> =
+        showPromptDialog(prompt, null) { builder, complete, _ ->
+            val dialogContext = builder.context
+            if (prompt.title.isNullOrBlank()) {
+                builder.setTitle(
+                    when (prompt.type) {
+                        DateTimePrompt.Type.MONTH -> "选择月份"
+                        DateTimePrompt.Type.WEEK -> "选择星期"
+                        else -> "输入日期时间"
+                    }
+                )
+            }
+            val input = EditText(dialogContext).apply {
+                setSingleLine(true)
+                hint = when (prompt.type) {
+                    DateTimePrompt.Type.MONTH -> "格式：YYYY-MM（例如 2026-11）"
+                    DateTimePrompt.Type.WEEK -> "格式：YYYY-Www（例如 2026-W48）"
+                    else -> "输入日期或时间"
+                }
+                setText(prompt.defaultValue.orEmpty())
+                setSelection(text?.length ?: 0)
+            }
+            val horizontalMargin = dp(dialogContext, DIALOG_INPUT_MARGIN_DP)
+            val container = FrameLayout(dialogContext).apply {
+                setPadding(horizontalMargin, horizontalMargin / 2, horizontalMargin, 0)
+                addView(input)
+            }
+            builder.setView(container)
+            builder.setPositiveButton("确定") { _, _ ->
+                complete { prompt.confirm(input.text?.toString()?.trim().orEmpty()) }
+            }
+            builder.setNeutralButton("清除") { _, _ -> complete { prompt.confirm("") } }
+            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
+        }
+
+    private fun showColorPrompt(prompt: ColorPrompt): GeckoResult<PromptResponse> =
+        showPromptDialog(prompt, null) { builder, complete, _ ->
+            val dialogContext = builder.context
+            if (prompt.title.isNullOrBlank()) {
+                builder.setTitle("选择颜色")
+            }
+            val initialColor = normalizeHexColor(prompt.defaultValue) ?: "#000000"
+            var lastValidColor = initialColor
+            val horizontalMargin = dp(dialogContext, DIALOG_INPUT_MARGIN_DP)
+
+            val previewDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(dialogContext, 8).toFloat()
+                setColor(Color.parseColor(initialColor))
+                setStroke(dp(dialogContext, 1), Color.argb(110, 255, 255, 255))
+            }
+            val previewView = View(dialogContext).apply {
+                background = previewDrawable
+                layoutParams = LinearLayout.LayoutParams(dp(dialogContext, 44), dp(dialogContext, 44)).apply {
+                    marginEnd = dp(dialogContext, 12)
+                }
+            }
+            val input = EditText(dialogContext).apply {
+                setSingleLine(true)
+                hint = "#rrggbb"
+                setText(initialColor)
+                setSelection(text?.length ?: 0)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            input.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(s: Editable?) {
+                    normalizeHexColor(s?.toString())?.let { valid ->
+                        lastValidColor = valid
+                        previewDrawable.setColor(Color.parseColor(valid))
+                    }
+                }
+            })
+
+            val headerRow = LinearLayout(dialogContext).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(previewView)
+                addView(input)
+            }
+
+            val paletteColors = buildList {
+                prompt.predefinedValues.orEmpty().forEach { candidate ->
+                    normalizeHexColor(candidate)?.let(::add)
+                }
+                addAll(DEFAULT_WEB_UI_COLOR_PALETTE)
+            }.distinct()
+
+            val rootColumn = LinearLayout(dialogContext).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(horizontalMargin, dp(dialogContext, 12), horizontalMargin, dp(dialogContext, 4))
+                addView(headerRow)
+            }
+            val swatchSpacing = dp(dialogContext, 4)
+            paletteColors.chunked(COLOR_SWATCH_COLUMNS).forEachIndexed { rowIndex, rowColors ->
+                val rowLayout = LinearLayout(dialogContext).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        topMargin = if (rowIndex == 0) dp(dialogContext, 12) else dp(dialogContext, 6)
+                    }
+                }
+                for (colIndex in 0 until COLOR_SWATCH_COLUMNS) {
+                    val hex = rowColors.getOrNull(colIndex)
+                    val cell = View(dialogContext).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, dp(dialogContext, 36), 1f).apply {
+                            marginStart = if (colIndex == 0) 0 else swatchSpacing
+                            marginEnd = if (colIndex == COLOR_SWATCH_COLUMNS - 1) 0 else swatchSpacing
+                        }
+                        if (hex != null) {
+                            background = GradientDrawable().apply {
+                                shape = GradientDrawable.RECTANGLE
+                                cornerRadius = dp(dialogContext, 6).toFloat()
+                                setColor(Color.parseColor(hex))
+                                setStroke(dp(dialogContext, 1), Color.argb(96, 255, 255, 255))
+                            }
+                            contentDescription = hex
+                            isClickable = true
+                            isFocusable = true
+                            setOnClickListener {
+                                lastValidColor = hex
+                                previewDrawable.setColor(Color.parseColor(hex))
+                                input.setText(hex)
+                                input.setSelection(hex.length)
+                            }
+                        } else {
+                            visibility = View.INVISIBLE
+                        }
+                    }
+                    rowLayout.addView(cell)
+                }
+                rootColumn.addView(rowLayout)
+            }
+
+            val scrollContainer = ScrollView(dialogContext).apply {
+                addView(rootColumn)
+            }
+            builder.setView(scrollContainer)
+            builder.setPositiveButton("确定") { _, _ ->
+                val chosen = normalizeHexColor(input.text?.toString()) ?: lastValidColor
+                complete { prompt.confirm(chosen) }
+            }
+            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
+        }
+
     private fun showPromptDialog(
         prompt: BasePrompt,
         message: String?,
-        configure: (AlertDialog.Builder, (() -> PromptResponse) -> Unit) -> Unit
+        configure: (AlertDialog.Builder, (() -> PromptResponse) -> Unit, () -> Unit) -> Unit
     ): GeckoResult<PromptResponse> {
         if (prompt.isComplete) return GeckoResult()
         val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
@@ -521,7 +871,7 @@ internal class WebUiSessionHost(
             prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
             message?.takeIf { it.isNotBlank() }?.let(::setMessage)
         }
-        configure(builder) { produce -> guard.settleOnce(produce) }
+        configure(builder, { produce -> guard.settleOnce(produce) }) { dialog?.dismiss() }
         // 统一监听 dismiss，用惰性闭包确保已通过按钮完成弹窗时不会在 Dialog 关闭阶段重复调用 prompt.dismiss()。
         builder.setOnDismissListener {
             if (activeDialog === dialog) {
@@ -531,23 +881,165 @@ internal class WebUiSessionHost(
         }
         val created = builder.create()
         dialog = created
-        // 网页主动撤销或关闭标签页时同步关掉原生弹窗，防止界面残留。
-        prompt.delegate = object : PromptInstanceDelegate {
-            override fun onPromptDismiss(targetPrompt: BasePrompt) {
-                runOnMain { created.dismiss() }
-            }
+        attachActiveDialog(
+            prompt = prompt,
+            dialog = created,
+            logLabel = "prompt dialog"
+        ) {
+            guard.settleOnce { prompt.dismiss() }
         }
-        activeDialog?.dismiss()
-        activeDialog = created
-        runCatching { created.show() }.onFailure { error ->
-            Log.w(logTag, "Failed to show prompt dialog: ${error.message}")
+        return result
+    }
+
+    private fun showStandalonePromptDialog(
+        prompt: BasePrompt,
+        logLabel: String,
+        createDialog: (Activity, (() -> PromptResponse) -> Unit) -> Dialog
+    ): GeckoResult<PromptResponse> {
+        if (prompt.isComplete) return GeckoResult()
+        val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
+        val result = GeckoResult<PromptResponse>()
+        var dialog: Dialog? = null
+        val guard = PromptSettlementGuard<PromptResponse>(
+            isAlreadyComplete = { prompt.isComplete }
+        ) { response ->
+            if (activeDialog === dialog) {
+                activeDialog = null
+            }
+            result.complete(response)
+        }
+        val created = createDialog(activity) { produce -> guard.settleOnce(produce) }
+        dialog = created
+        created.setOnDismissListener {
             if (activeDialog === created) {
                 activeDialog = null
             }
             guard.settleOnce { prompt.dismiss() }
         }
+        attachActiveDialog(
+            prompt = prompt,
+            dialog = created,
+            logLabel = logLabel
+        ) {
+            guard.settleOnce { prompt.dismiss() }
+        }
         return result
     }
+
+    private fun attachActiveDialog(
+        prompt: BasePrompt,
+        dialog: Dialog,
+        dismissTarget: () -> Dialog? = { dialog },
+        logLabel: String,
+        onShowFailed: () -> Unit
+    ) {
+        // 网页主动撤销或关闭标签页时同步关掉当前原生弹窗，防止界面残留。
+        prompt.delegate = object : PromptInstanceDelegate {
+            override fun onPromptDismiss(targetPrompt: BasePrompt) {
+                runOnMain { dismissTarget()?.dismiss() }
+            }
+        }
+        if (activeDialog !== dialog) {
+            activeDialog?.dismiss()
+        }
+        activeDialog = dialog
+        runCatching { dialog.show() }.onFailure { error ->
+            Log.w(logTag, "Failed to show $logLabel: ${error.message}")
+            if (activeDialog === dialog) {
+                activeDialog = null
+            }
+            onShowFailed()
+        }
+    }
+
+    private fun createDatePickerDialog(
+        activity: Activity,
+        prompt: DateTimePrompt,
+        initial: WebUiDateValue,
+        complete: (() -> PromptResponse) -> Unit,
+        onPicked: (WebUiDateValue) -> Unit
+    ): DatePickerDialog =
+        DatePickerDialog(
+            activity,
+            { _, year, monthZeroBased, dayOfMonth ->
+                onPicked(WebUiDateValue(year = year, month = monthZeroBased + 1, day = dayOfMonth))
+            },
+            initial.year,
+            initial.month - 1,
+            initial.day
+        ).apply {
+            prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
+            applyDateBounds(this, prompt.minValue, prompt.maxValue)
+            setButton(DialogInterface.BUTTON_NEUTRAL, "清除") { _, _ ->
+                complete { prompt.confirm("") }
+            }
+        }
+
+    private fun createTimePickerDialog(
+        activity: Activity,
+        prompt: DateTimePrompt,
+        initial: WebUiTimeValue,
+        complete: (() -> PromptResponse) -> Unit,
+        onPicked: (WebUiTimeValue) -> Unit
+    ): TimePickerDialog =
+        TimePickerDialog(
+            activity,
+            { _, hourOfDay, minute ->
+                onPicked(WebUiTimeValue(hour = hourOfDay, minute = minute))
+            },
+            initial.hour,
+            initial.minute,
+            true
+        ).apply {
+            prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
+            setButton(DialogInterface.BUTTON_NEUTRAL, "清除") { _, _ ->
+                complete { prompt.confirm("") }
+            }
+        }
+
+    private fun applyDateBounds(picker: DatePickerDialog, minValue: String?, maxValue: String?) {
+        val minMillis = parseDateEpochMillis(minValue)
+        val maxMillis = parseDateEpochMillis(maxValue)
+        if (minMillis != null && maxMillis != null && minMillis > maxMillis) return
+        runCatching {
+            minMillis?.let { picker.datePicker.minDate = it }
+            maxMillis?.let { picker.datePicker.maxDate = it }
+        }.onFailure { error ->
+            Log.w(logTag, "Ignored invalid date bounds: ${error.message}")
+        }
+    }
+
+    private fun currentDateValue(): WebUiDateValue =
+        Calendar.getInstance().let { cal ->
+            WebUiDateValue(
+                year = cal.get(Calendar.YEAR),
+                month = cal.get(Calendar.MONTH) + 1,
+                day = cal.get(Calendar.DAY_OF_MONTH)
+            )
+        }
+
+    private fun currentTimeValue(): WebUiTimeValue =
+        Calendar.getInstance().let { cal ->
+            WebUiTimeValue(
+                hour = cal.get(Calendar.HOUR_OF_DAY),
+                minute = cal.get(Calendar.MINUTE)
+            )
+        }
+
+    private fun toChoiceNodes(choices: Array<Choice>?): List<WebUiChoiceNode> =
+        choices.orEmpty().map { choice ->
+            WebUiChoiceNode(
+                id = choice.id.orEmpty(),
+                label = choice.label.orEmpty(),
+                disabled = choice.disabled,
+                selected = choice.selected,
+                separator = choice.separator,
+                items = toChoiceNodes(choice.items)
+            )
+        }
+
+    private fun dp(context: Context, dpValue: Int): Int =
+        (dpValue * context.resources.displayMetrics.density).toInt()
 
     private fun usableActivity(): Activity? {
         if (released) return null
@@ -592,6 +1084,153 @@ internal class WebUiSessionHost(
 
     private companion object {
         const val DIALOG_INPUT_MARGIN_DP = 20
+        const val COLOR_SWATCH_COLUMNS = 4
+    }
+}
+
+/**
+ * 原生 `<select>` 选项弹窗适配器：统一渲染普通/单选/多选行、`<optgroup>` 分组标题与 `<hr>` 分隔线。
+ */
+private class ChoiceListAdapter(
+    private val context: Context,
+    private val promptType: Int,
+    private val rows: List<WebUiChoiceRow>,
+    private val selectedIds: Set<String>
+) : BaseAdapter() {
+    private val inflater = LayoutInflater.from(context)
+    private val groupTitleColor = resolveThemeColor(context, AndroidR.attr.textColorSecondary, Color.LTGRAY)
+    private val optionLayoutRes = when (promptType) {
+        ChoicePrompt.Type.MULTIPLE -> AndroidR.layout.simple_list_item_multiple_choice
+        ChoicePrompt.Type.SINGLE -> AndroidR.layout.simple_list_item_single_choice
+        else -> AndroidR.layout.simple_list_item_1
+    }
+
+    private class OptionViewHolder(
+        val textView: TextView,
+        val basePaddingStart: Int
+    )
+
+    override fun getCount(): Int = rows.size
+
+    override fun getItem(position: Int): WebUiChoiceRow = rows[position]
+
+    override fun getItemId(position: Int): Long = position.toLong()
+
+    override fun getViewTypeCount(): Int = VIEW_TYPE_COUNT
+
+    override fun getItemViewType(position: Int): Int = when (rows[position]) {
+        is WebUiChoiceRow.Option -> VIEW_TYPE_OPTION
+        is WebUiChoiceRow.GroupHeader -> VIEW_TYPE_GROUP_HEADER
+        is WebUiChoiceRow.Separator -> VIEW_TYPE_SEPARATOR
+    }
+
+    override fun areAllItemsEnabled(): Boolean = false
+
+    override fun isEnabled(position: Int): Boolean {
+        val row = rows.getOrNull(position) as? WebUiChoiceRow.Option ?: return false
+        return !row.disabled
+    }
+
+    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+        when (val row = rows[position]) {
+            is WebUiChoiceRow.Option -> bindOptionView(row, convertView, parent)
+            is WebUiChoiceRow.GroupHeader -> bindGroupHeaderView(row, convertView)
+            is WebUiChoiceRow.Separator -> bindSeparatorView(convertView)
+        }
+
+    private fun bindOptionView(row: WebUiChoiceRow.Option, convertView: View?, parent: ViewGroup): View {
+        val existingHolder = convertView?.tag as? OptionViewHolder
+        val view: View
+        val holder: OptionViewHolder
+        if (convertView != null && existingHolder != null) {
+            view = convertView
+            holder = existingHolder
+        } else {
+            view = inflater.inflate(optionLayoutRes, parent, false)
+            val textView = view.findViewById<TextView>(AndroidR.id.text1)
+            holder = OptionViewHolder(textView = textView, basePaddingStart = textView.paddingStart)
+            view.tag = holder
+        }
+
+        val textView = holder.textView
+        val indentPx = (row.depth * CHOICE_INDENT_DP * context.resources.displayMetrics.density).toInt()
+        textView.text = row.label
+        textView.isEnabled = !row.disabled
+        textView.alpha = if (row.disabled) DISABLED_ALPHA else 1f
+        textView.setPaddingRelative(
+            holder.basePaddingStart + indentPx,
+            textView.paddingTop,
+            textView.paddingEnd,
+            textView.paddingBottom
+        )
+        val selected = row.id in selectedIds
+        if (textView is CheckedTextView) {
+            textView.isChecked = selected
+        } else if (promptType == ChoicePrompt.Type.MENU) {
+            textView.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+        }
+        view.isEnabled = !row.disabled
+        return view
+    }
+
+    private fun bindGroupHeaderView(row: WebUiChoiceRow.GroupHeader, convertView: View?): View {
+        val density = context.resources.displayMetrics.density
+        val textView = (convertView as? TextView) ?: TextView(context).apply {
+            layoutParams = AbsListView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(groupTitleColor)
+        }
+        val startPx = ((16 + row.depth * CHOICE_INDENT_DP) * density).toInt()
+        val endPx = (16 * density).toInt()
+        textView.setPaddingRelative(startPx, (10 * density).toInt(), endPx, (4 * density).toInt())
+        textView.alpha = if (row.disabled) DISABLED_ALPHA else 1f
+        textView.text = row.label
+        return textView
+    }
+
+    private fun bindSeparatorView(convertView: View?): View {
+        if (convertView != null) return convertView
+        val density = context.resources.displayMetrics.density
+        val verticalMargin = (4 * density).toInt()
+        val lineHeight = maxOf(1, density.toInt())
+        val line = View(context).apply {
+            setBackgroundColor(Color.argb(48, 255, 255, 255))
+            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, lineHeight).apply {
+                topMargin = verticalMargin
+                bottomMargin = verticalMargin
+            }
+        }
+        return FrameLayout(context).apply {
+            layoutParams = AbsListView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            addView(line)
+        }
+    }
+
+    private fun resolveThemeColor(context: Context, attrRes: Int, fallback: Int): Int {
+        val out = TypedValue()
+        if (!context.theme.resolveAttribute(attrRes, out, true)) return fallback
+        return when {
+            out.type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT -> out.data
+            out.resourceId != 0 -> runCatching { context.getColorStateList(out.resourceId).defaultColor }
+                .getOrDefault(fallback)
+            else -> fallback
+        }
+    }
+
+    private companion object {
+        const val VIEW_TYPE_OPTION = 0
+        const val VIEW_TYPE_GROUP_HEADER = 1
+        const val VIEW_TYPE_SEPARATOR = 2
+        const val VIEW_TYPE_COUNT = 3
+        const val CHOICE_INDENT_DP = 16
+        const val DISABLED_ALPHA = 0.45f
     }
 }
 
