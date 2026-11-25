@@ -50,8 +50,10 @@ internal class QqOfficialPlatformManager(
     private val adapterFiles = QqOfficialAdapterFiles(paths)
     private val scope = backgroundScope("QQ 官方机器人", Dispatchers.Main.immediate)
     private var installJob: Job? = null
-    // 最近一次连接报错的时间（开机时钟），只在主线程读写。
+    // 最近一次连接报错的时间（开机时钟）及是否属于永久停连（4914/4915/缺凭据），只在主线程读写。
     private var connectionErrorAt = 0L
+    private var connectionErrorPersistent = false
+    private val timeoutWindow = QqOfficialTimeoutWindow()
 
     private val _state = MutableStateFlow(
         QqOfficialPlatformState(
@@ -64,9 +66,10 @@ internal class QqOfficialPlatformManager(
     init {
         // 先翻一遍已有日志：页面打开前适配器可能已经在报错，不必等下一次重试才显示出来。
         // 历史行还带着颜色序列，转成纯文本再判断；lines 广播的本来就是纯文本。
-        TerminalLog.logs.value.forEach { line -> onLogLine(AnsiText.plain(line)) }
+        // 历史行无原始时间戳，跳过 4009 实时滑动窗口统计以免将数小时前的正常轮换误判成近期高频掉线。
+        TerminalLog.logs.value.forEach { line -> onLogLine(AnsiText.plain(line), isLive = false) }
         scope.launch {
-            TerminalLog.lines.collect(::onLogLine)
+            TerminalLog.lines.collect { line -> onLogLine(line, isLive = true) }
         }
         scope.launch {
             maiBotProcess.status.map { it.running }.distinctUntilChanged().collect { running ->
@@ -219,28 +222,42 @@ internal class QqOfficialPlatformManager(
         MaiBotRuntimeService.start(appContext, MaiBotRuntimeService.ACTION_RESTART_RUNTIME)
     }
 
-    // MaiBot 重启或刚写过新凭据：之前的连接报错属于旧配置，不再显示。
+    // MaiBot 重启或刚写过新凭据：之前的连接报错与 4009 超时计数属于上一轮会话，不再显示。
     private fun clearConnectionError() {
         connectionErrorAt = 0L
-        _state.update { it.copy(connectionError = null) }
+        connectionErrorPersistent = false
+        timeoutWindow.clear()
+        _state.update { it.copy(connectionError = null, frequentTimeoutHint = null) }
     }
 
-    private fun onLogLine(line: String) {
+    private fun onLogLine(line: String, isLive: Boolean) {
         if (isMaiBotStartLine(line)) {
             clearConnectionError()
             return
         }
-        val error = qqOfficialConnectionError(line) ?: return
-        connectionErrorAt = SystemClock.elapsedRealtime()
-        _state.update { it.copy(connectionError = error) }
+        val failure = parseQqOfficialConnectionError(line)
+        if (failure != null) {
+            connectionErrorAt = SystemClock.elapsedRealtime()
+            connectionErrorPersistent = failure.persistent
+            _state.update { it.copy(connectionError = failure.message) }
+            return
+        }
+        if (isLive && isQqOfficialSessionTimeoutDisconnect(line)) {
+            if (timeoutWindow.record(SystemClock.elapsedRealtime())) {
+                _state.update { it.copy(frequentTimeoutHint = QqOfficialFrequentTimeoutHint) }
+            }
+        }
     }
 
     private suspend fun refreshFileState() {
         val installed = withContext(Dispatchers.IO) { adapterFiles.isInstalled() }
         val credentials = withContext(Dispatchers.IO) { readCredentials() }
-        val errorExpired = connectionErrorAt > 0L &&
-            SystemClock.elapsedRealtime() - connectionErrorAt > QqOfficialErrorStaleMs
+        val now = SystemClock.elapsedRealtime()
+        val errorExpired = !connectionErrorPersistent &&
+            connectionErrorAt > 0L &&
+            now - connectionErrorAt > QqOfficialErrorStaleMs
         if (errorExpired) connectionErrorAt = 0L
+        val nextTimeoutHint = if (timeoutWindow.isFrequent(now)) QqOfficialFrequentTimeoutHint else null
         _state.update { current ->
             current.copy(
                 phase = when {
@@ -252,7 +269,8 @@ internal class QqOfficialPlatformManager(
                 installed = installed,
                 progress = if (installed && !current.isInstalling) 1f else current.progress,
                 credentials = credentials,
-                connectionError = if (errorExpired) null else current.connectionError
+                connectionError = if (errorExpired) null else current.connectionError,
+                frequentTimeoutHint = nextTimeoutHint
             )
         }
     }

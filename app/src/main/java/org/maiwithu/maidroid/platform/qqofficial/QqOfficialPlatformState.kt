@@ -23,8 +23,10 @@ internal data class QqOfficialPlatformState(
     val failure: Failure? = null,
     val credentials: QqOfficialCredentials = QqOfficialCredentials(),
     val maiBotRunning: Boolean = false,
-    // 最近一段时间内适配器报的连接错误，过期或 MaiBot 重启后清空。
-    val connectionError: String? = null
+    // 最近一段时间内适配器报的连接错误，可恢复错误过期或 MaiBot 重启后清空，永久停连持续保留。
+    val connectionError: String? = null,
+    // 短时间内连续触发 4009 会话超时掉线时给出保活与网络排查建议，不影响在线绿色标记。
+    val frequentTimeoutHint: String? = null
 ) {
     val isInstalling: Boolean = phase == QqOfficialInstallPhase.Installing
     val errorMessage: String? get() = failure?.message
@@ -54,3 +56,7 @@ internal sealed interface QqOfficialSaveResult {
 
 // 适配器连接失败时每隔 5 秒重试，单次请求最长 20 秒，所以一分钟内没有新报错就当作已经连上。
 internal const val QqOfficialErrorStaleMs = 60_000L
+
+// 仅当 10 分钟内累计出现至少 3 次 4009 才提示高频会话超时，避开官方约 30 分钟一次的正常轮换。
+internal const val QqOfficialTimeoutWindowMs = 10 * 60_000L
+internal const val QqOfficialFrequentTimeoutThreshold = 3
