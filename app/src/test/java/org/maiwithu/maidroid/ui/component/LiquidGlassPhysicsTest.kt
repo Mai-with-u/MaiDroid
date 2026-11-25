@@ -130,4 +130,16 @@ class LiquidGlassPhysicsTest {
         assertEquals(13, resolveLiquidSliderHapticTick(9, 1.25f, range, step))
         assertEquals(0, resolveLiquidSliderHapticTick(0, 1.00f, range, tickStep = 0f))
     }
+
+    @Test
+    fun `liquid slider haptic tick supports dense 2 percent steps cleanly`() {
+        val range = 0.60f..1.30f
+        val denseStep = 0.02f
+        // 60%..130% 共 35 档，默认 1.00f 恰好在第 20 档
+        val tick100 = resolveLiquidSliderHapticTick(-1, 1.00f, range, denseStep)
+        assertEquals(20, tick100)
+        // 跨过半格 + 滞回死区即触发第 21 档（约 +0.0112f 以上）
+        assertEquals(20, resolveLiquidSliderHapticTick(tick100, 1.010f, range, denseStep))
+        assertEquals(21, resolveLiquidSliderHapticTick(tick100, 1.013f, range, denseStep))
+    }
 }

@@ -489,7 +489,7 @@ private fun PetStatusMetricItem(
     }
 }
 
-/** 桌宠缩放比例控制面板：采用连续无顿挫液态玻璃滑块（每 5% 清晰刻度震感）与液态玻璃快捷档位，拖动时以桌宠脚底居中实时生效。 */
+/** 桌宠缩放比例控制面板：采用连续无顿挫液态玻璃滑块（每 2% 清晰刻度震感）与液态玻璃快捷档位，拖动时以桌宠脚底居中实时生效。 */
 @Composable
 internal fun PetScaleControlPanel(
     scale: Float,

@@ -15,8 +15,9 @@ class ColorPaletteTest {
     @Test
     fun deepestBackgroundTokensUsePureOledBlack() {
         val pureBlack = Color(0xFF000000)
-        // 验证主页、终端、唤醒页最深底色均为纯黑 #000000，确保 OLED 像素可关闭发光
+        // 验证主页、首次引导、终端、唤醒页最深底色均为纯黑 #000000，确保 OLED 像素可关闭发光
         assertEquals(pureBlack, PageBackground)
+        assertEquals(pureBlack, OobeBackground)
         assertEquals(pureBlack, TerminalBackground)
         assertEquals(pureBlack, BootInk)
     }
@@ -34,5 +35,6 @@ class ColorPaletteTest {
     fun cardSurfacePreservesContrastAgainstPureBlackBackground() {
         // 卡片层维持原有深灰，保证与纯黑底层背景的视觉边界清晰
         assertNotEquals(PageBackground, CardSurface)
+        assertNotEquals(OobeBackground, OobeSurface)
     }
 }

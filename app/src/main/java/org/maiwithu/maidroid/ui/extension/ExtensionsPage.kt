@@ -67,6 +67,7 @@ import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.settings.SettingsEmptyDetailPane
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -94,15 +95,12 @@ internal fun extensionsLayout(widthDp: Float, heightDp: Float): ExtensionsLayout
     else -> ExtensionsLayout.Wide
 }
 
-/** 决定当前激活的子页面标识：竖屏单列支持钻入与退回列表，双栏/宽屏始终常驻展示悬浮桌宠配置。 */
-internal fun resolveActiveExtensionDetail(
-    selectedDetail: ExtensionId?,
-    layout: ExtensionsLayout
-): ExtensionId? = when {
-    layout == ExtensionsLayout.Compact -> selectedDetail
-    selectedDetail != null -> selectedDetail
-    else -> ExtensionId.DesktopPet
-}
+/** 决定点击扩展组件入口后的详情页选中态：双栏下再点一次当前项收起回到居中液态图标，竖屏单列始终推入详情页。 */
+internal fun resolveExtensionDetailSelection(
+    currentDetail: ExtensionId?,
+    targetDetail: ExtensionId,
+    useTwoPane: Boolean
+): ExtensionId? = if (useTwoPane && currentDetail == targetDetail) null else targetDetail
 
 /** 顶部大标题下方的实时状态副标题：一眼掌握当前桌宠运行状态与本机服务衔接情况。 */
 internal fun extensionsHeaderSubtitle(
@@ -218,11 +216,11 @@ internal fun ExtensionsPage(
         val density = LocalDensity.current
         val topSpacing = HomeTwoPaneSpec.headerTopSpacing(maxHeight.value)
         val layout = extensionsLayout(maxWidth.value, maxHeight.value)
+        val useTwoPane = layout != ExtensionsLayout.Compact
         val compactTwoPane = maxHeight.value < HomeTwoPaneSpec.CompactTwoPaneMaxHeightDp
-        val activeDetail = resolveActiveExtensionDetail(selectedDetail = selectedDetail, layout = layout)
 
-        // 手机竖屏钻入悬浮桌宠子页面时，拦截系统返回键平滑退回扩展组件总览列表。
-        BackHandler(enabled = layout == ExtensionsLayout.Compact && selectedDetail != null) {
+        // 竖屏退回列表，横屏/宽屏从详情退回右栏居中液态玻璃图标空态，与设置页行为一致。
+        BackHandler(enabled = selectedDetail != null) {
             selectedDetail = null
         }
 
@@ -251,7 +249,13 @@ internal fun ExtensionsPage(
                     selected = selected,
                     exposesSelection = exposesSelection,
                     compact = compact,
-                    onClick = { selectedDetail = ExtensionId.DesktopPet },
+                    onClick = {
+                        selectedDetail = resolveExtensionDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = ExtensionId.DesktopPet,
+                            useTwoPane = useTwoPane
+                        )
+                    },
                     onToggle = handleStartOrToggle
                 )
             }
@@ -320,7 +324,7 @@ internal fun ExtensionsPage(
         when (layout) {
             ExtensionsLayout.Compact -> {
                 AnimatedContent(
-                    targetState = activeDetail,
+                    targetState = selectedDetail,
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PageBackground),
@@ -376,7 +380,7 @@ internal fun ExtensionsPage(
             }
 
             ExtensionsLayout.TwoPane, ExtensionsLayout.Wide -> {
-                // 横屏与宽屏对齐设置页统一 38% : 62% 主从分栏：左栏放精简目录与生态扩展，右栏常驻展示悬浮桌宠子页面。
+                // 横屏与宽屏对齐设置页统一 38% : 62% 主从分栏：左栏放精简目录与生态扩展，右栏默认只居中展示液态玻璃应用图标，点选后再展开子页面。
                 val leftScrollState = rememberScrollState()
                 val leftOverscroll = rememberSplitHeaderOverscrollEffect()
                 val isWide = layout == ExtensionsLayout.Wide
@@ -423,7 +427,7 @@ internal fun ExtensionsPage(
                                 modifier = Modifier.overscrollBody(leftOverscroll),
                                 verticalArrangement = Arrangement.spacedBy(if (compactTwoPane) 14.dp else 18.dp)
                             ) {
-                                petSummarySection(true, activeDetail == ExtensionId.DesktopPet, true)
+                                petSummarySection(true, selectedDetail == ExtensionId.DesktopPet, true)
                                 ecosystemSection(true, true)
                             }
                         }
@@ -443,7 +447,7 @@ internal fun ExtensionsPage(
                             .background(PageBackground)
                     ) {
                         AnimatedContent(
-                            targetState = activeDetail,
+                            targetState = selectedDetail,
                             modifier = Modifier.fillMaxSize(),
                             transitionSpec = {
                                 fadeIn(tween(durationMillis = 220)) togetherWith
@@ -452,9 +456,11 @@ internal fun ExtensionsPage(
                             label = "ExtensionsTwoPaneDetail"
                         ) { detail ->
                             when (detail) {
-                                ExtensionId.DesktopPet, null -> petDetailPage(false, compactTwoPane, Modifier.fillMaxSize())
-                                ExtensionId.TtsAutoDeploy, ExtensionId.AmaidesuBridge ->
-                                    petDetailPage(false, compactTwoPane, Modifier.fillMaxSize())
+                                ExtensionId.DesktopPet -> petDetailPage(false, compactTwoPane, Modifier.fillMaxSize())
+                                else -> SettingsEmptyDetailPane(
+                                    compact = compactTwoPane,
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
                     }

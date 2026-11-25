@@ -11,7 +11,7 @@ internal object DesktopPetScaleSpec {
     const val MAX = 1.30f
     const val DEFAULT = 1.00f
     const val STEP = 0.01f
-    const val HAPTIC_STEP = 0.05f
+    const val HAPTIC_STEP = 0.02f
     const val MIN_ADAPTIVE = 0.40f
     val PRESETS = listOf(0.75f to "小", 1.00f to "标准", 1.20f to "大")
 }

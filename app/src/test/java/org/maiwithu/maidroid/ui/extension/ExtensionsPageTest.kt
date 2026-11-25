@@ -76,19 +76,38 @@ class ExtensionsPageTest {
     }
 
     @Test
-    fun `resolve active extension detail keeps compact drill-down optional and anchors master-detail panes`() {
-        assertEquals(null, resolveActiveExtensionDetail(selectedDetail = null, layout = ExtensionsLayout.Compact))
+    fun `resolve extension detail selection toggles back to empty icon in two pane and pushes in compact`() {
         assertEquals(
             ExtensionId.DesktopPet,
-            resolveActiveExtensionDetail(selectedDetail = ExtensionId.DesktopPet, layout = ExtensionsLayout.Compact)
+            resolveExtensionDetailSelection(
+                currentDetail = null,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = false
+            )
         )
         assertEquals(
             ExtensionId.DesktopPet,
-            resolveActiveExtensionDetail(selectedDetail = null, layout = ExtensionsLayout.TwoPane)
+            resolveExtensionDetailSelection(
+                currentDetail = ExtensionId.DesktopPet,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = false
+            )
         )
         assertEquals(
             ExtensionId.DesktopPet,
-            resolveActiveExtensionDetail(selectedDetail = null, layout = ExtensionsLayout.Wide)
+            resolveExtensionDetailSelection(
+                currentDetail = null,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = true
+            )
+        )
+        assertEquals(
+            null,
+            resolveExtensionDetailSelection(
+                currentDetail = ExtensionId.DesktopPet,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = true
+            )
         )
     }
 
