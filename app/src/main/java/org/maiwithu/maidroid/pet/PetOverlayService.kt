@@ -56,6 +56,11 @@ class PetOverlayService : Service(), PetOverlayHost {
         private const val NOTIFICATION_ID = 1002
         private const val ACTION_STOP = "org.maiwithu.maidroid.action.STOP_DESKTOP_PET"
 
+        private const val CLIP_HEADROOM_DP = 16.0
+        private const val CLIP_SHRINK_DEADBAND_DP = 24.0
+        private const val BASE_PET_WIDTH_DP = 260.0
+        private const val BASE_MIN_VISIBLE_HEIGHT_DP = 180.0
+
         /** 悬浮桌宠服务当前是否存活，供遥测统计耗时热点而不触发管理器的懒加载初始化。 */
         @Volatile
         var isRunning: Boolean = false
@@ -72,6 +77,14 @@ class PetOverlayService : Service(), PetOverlayHost {
     private lateinit var frame: FrameLayout
     private lateinit var params: WindowManager.LayoutParams
 
+    // Android 13+ 常驻全屏窗口内部的子舞台容器，直接通过 translation/scale 驱动 GPU 渲染与物理反弹。
+    private var petContainer: FrameLayout? = null
+    private var localHitRects: List<Rect> = emptyList()
+    private var topHitCss: Double = 0.0
+    private var hasReportedHitRects = false
+    private var regionUpdateFrameCounter = 0
+    private var pendingClipRawTopPx: Int? = null
+
     private var petView: PetWebView? = null
     private var density = 1f
     private var rawX = 0f
@@ -80,22 +93,25 @@ class PetOverlayService : Service(), PetOverlayHost {
     private var downY = 0f
     private var fullHeight = 0
     private var clipTop = 0
-    private var bottom = 0
-    private var dragX = 0
-    private var dragBottom = 0
+    private var petX = 0f
+    private var petBottom = 0f
+    private var dragStartX = 0f
+    private var dragStartBottom = 0f
     private var keyboardTop = Int.MAX_VALUE
     private var dragging = false
     private var moved = false
     private var pointerActive = false
     private var closing = false
     private var gestureId = ""
+    private var pendingDragEndGestureId: String? = null
     private val velocityTracker = PetVelocityTracker()
     private val flingEngine = PetFlingEngine()
+    private val bounceSquash = PetBounceSquashSpring()
     private lateinit var choreographer: Choreographer
-    private var flingFrameScheduled = false
-    private var lastFlingFrameNanos = 0L
-    private val flingFrameCallback = Choreographer.FrameCallback { frameTimeNanos ->
-        onFlingFrame(frameTimeNanos)
+    private var motionFrameScheduled = false
+    private var lastMotionFrameNanos = 0L
+    private val motionFrameCallback = Choreographer.FrameCallback { frameTimeNanos ->
+        onMotionFrame(frameTimeNanos)
     }
     private val supportsTouchRegions = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     private var screenReceiverRegistered = false
@@ -127,32 +143,45 @@ class PetOverlayService : Service(), PetOverlayHost {
         val displayWidth = resources.displayMetrics.widthPixels
 
         fullHeight = min(dp(900.0), displayHeight)
-        bottom = max(dp(180.0), displayHeight - dp(80.0))
+        val petWidthPx = dp(BASE_PET_WIDTH_DP)
+        petX = max(0, displayWidth - petWidthPx).toFloat()
+        petBottom = max(dp(BASE_MIN_VISIBLE_HEIGHT_DP), displayHeight - dp(80.0)).toFloat()
 
         frame = FrameLayout(this).apply { clipChildren = true }
-        params = WindowManager.LayoutParams(
-            dp(260.0),
-            dp(180.0),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-            PixelFormat.TRANSLUCENT
-        )
+        val baseFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
 
         if (supportsTouchRegions) {
-            params.height = fullHeight
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val inputManager = getSystemService(InputManager::class.java)
-                params.alpha = inputManager.maximumObscuringOpacityForTouch
+            // Android 13+ 外层悬浮窗永久固定满屏且坐标锁死 (0,0)，仅靠内部子视图平移和热区裁剪零 IPC 跑满刷新率。
+            params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                baseFlags or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.LEFT
+                x = 0
+                y = 0
+                applyOverlayWindowChrome(this)
             }
-            params.flags = params.flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        } else {
+            params = WindowManager.LayoutParams(
+                petWidthPx,
+                dp(BASE_MIN_VISIBLE_HEIGHT_DP),
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                baseFlags,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                // 前端上报坐标按屏幕左上角基准对齐，必须显式使用 Gravity.LEFT 避免 RTL 镜像；紧凑小窗保持 1.0 不透明。
+                gravity = Gravity.TOP or Gravity.LEFT
+                x = petX.roundToInt()
+                y = max(0, petBottom.roundToInt() - height)
+            }
         }
-
-        // 前端上报坐标按屏幕左上角基准对齐，必须显式使用 Gravity.LEFT 避免 RTL 镜像。
-        params.gravity = Gravity.TOP or Gravity.LEFT
-        params.x = max(0, displayWidth - params.width)
-        params.y = if (supportsTouchRegions) bottom - params.height else max(0, bottom - params.height)
         @Suppress("DEPRECATION")
         params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
 
@@ -163,15 +192,30 @@ class PetOverlayService : Service(), PetOverlayHost {
         }
         petView = boundPet
 
-        val pageLayout = FrameLayout.LayoutParams(dp(260.0), fullHeight)
-        clipTop = fullHeight - params.height
-        pageLayout.topMargin = -clipTop
-        frame.addView(boundPet, pageLayout)
+        if (supportsTouchRegions) {
+            val container = FrameLayout(this).apply { clipChildren = true }
+            val containerParams = FrameLayout.LayoutParams(petWidthPx, fullHeight).apply {
+                gravity = Gravity.TOP or Gravity.LEFT
+            }
+            val pageLayout = FrameLayout.LayoutParams(petWidthPx, fullHeight)
+            container.addView(boundPet, pageLayout)
+            frame.addView(container, containerParams)
+            petContainer = container
+            clipTop = 0
+        } else {
+            val pageLayout = FrameLayout.LayoutParams(petWidthPx, fullHeight)
+            clipTop = max(0, fullHeight - params.height)
+            pageLayout.topMargin = -clipTop
+            frame.addView(boundPet, pageLayout)
+        }
 
         setupImeAvoidance()
         setupTouchAndKeyListeners(boundPet)
 
         windowManager.addView(frame, params)
+        if (supportsTouchRegions) {
+            frame.post { applyFullScreenContainerTransform(updateRegionNow = true) }
+        }
         isRunning = true
         ContextCompat.registerReceiver(
             this,
@@ -196,13 +240,20 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (::frame.isInitialized) place()
+        if (!::frame.isInitialized) return
+        stopMotionNow()
+        clampLogicalCoordinates(currentMotionBounds())
+        if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = true)
+        } else {
+            place(forceLayout = true)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        stopFling()
+        stopMotionNow()
         isRunning = false
         if (screenReceiverRegistered) {
             screenReceiverRegistered = false
@@ -229,18 +280,28 @@ class PetOverlayService : Service(), PetOverlayHost {
         if (!cssHeight.isFinite() || cssHeight < 1.0 || cssHeight > 2000.0) return
         val pet = petView ?: return
         fullHeight = dp(max(460.0, min(900.0, cssHeight)))
-        if (supportsTouchRegions) params.height = fullHeight
-        val layout = pet.layoutParams as FrameLayout.LayoutParams
-        layout.height = fullHeight
+        val pageLayout = pet.layoutParams as FrameLayout.LayoutParams
+        pageLayout.height = fullHeight
+        if (supportsTouchRegions) {
+            clipTop = 0
+            pageLayout.topMargin = 0
+            pet.layoutParams = pageLayout
+            petContainer?.let { container ->
+                val containerLayout = container.layoutParams as FrameLayout.LayoutParams
+                containerLayout.height = fullHeight
+                container.layoutParams = containerLayout
+            }
+            applyFullScreenContainerTransform(updateRegionNow = true)
+            return
+        }
         clipTop = max(0, fullHeight - params.height)
-        layout.topMargin = -clipTop
-        pet.layoutParams = layout
-        if (supportsTouchRegions) place()
+        pageLayout.topMargin = -clipTop
+        pet.layoutParams = pageLayout
     }
 
     override fun updateTouchableRegion(rects: JSONArray) {
         if (rects.length() > 256) return
-        val touchable = Region()
+        val parsedRects = ArrayList<Rect>(rects.length())
         var topCss = fullHeight / density.toDouble()
         for (i in 0 until rects.length()) {
             val rect = rects.optJSONArray(i) ?: continue
@@ -252,24 +313,25 @@ class PetOverlayService : Service(), PetOverlayHost {
             if (!x.isFinite() || !y.isFinite() || !w.isFinite() || !h.isFinite()) continue
             if (w > 0.0 && h > 0.0) {
                 topCss = min(topCss, y)
-                touchable.op(dp(x), dp(y), dp(x + w), dp(y + h), Region.Op.UNION)
+                parsedRects.add(Rect(dp(x), dp(y), dp(x + w), dp(y + h)))
             }
         }
 
-        if (supportsTouchRegions && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            frame.rootSurfaceControl?.setTouchableRegion(touchable)
+        localHitRects = parsedRects
+        topHitCss = topCss
+        hasReportedHitRects = parsedRects.isNotEmpty()
+
+        if (supportsTouchRegions) {
+            applyCurrentTouchableRegion()
             return
         }
 
-        val nextClipTop = max(0, min(fullHeight - dp(1.0), dp(topCss)))
-        if (nextClipTop == clipTop) return
-        val pet = petView ?: return
-        clipTop = nextClipTop
-        params.height = fullHeight - clipTop
-        val layout = pet.layoutParams as FrameLayout.LayoutParams
-        layout.topMargin = -clipTop
-        pet.layoutParams = layout
-        place()
+        val rawTopPx = max(0, min(fullHeight - dp(1.0), dp(topCss)))
+        if (dragging || moved || isMotionActive()) {
+            pendingClipRawTopPx = rawTopPx
+            return
+        }
+        applyStableLegacyClipTop(rawTopPx)
     }
 
     override fun updateInputFocus(editing: Boolean) {
@@ -284,11 +346,12 @@ class PetOverlayService : Service(), PetOverlayHost {
     }
 
     override fun dragBegin() {
-        if (dragging && moved) {
-            manager.sendDragEnded(gestureId)
+        pendingDragEndGestureId?.let { previousId ->
+            pendingDragEndGestureId = null
+            manager.sendDragEnded(previousId)
         }
-        // 新手势开始或中途按住滑行中的桌宠时，立即停掉上一轮惯性动画。
-        stopFling()
+        // 新手势开始或中途按住滑行中的桌宠时，立即停掉上一轮滑行动画。
+        stopMotionNow()
         if (!pointerActive) {
             dragging = false
             moved = false
@@ -296,8 +359,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         }
         dragging = true
         moved = false
-        dragX = params.x
-        dragBottom = bottom
+        dragStartX = petX
+        dragStartBottom = petBottom
         gestureId = UUID.randomUUID().toString().replace("-", "")
     }
 
@@ -307,15 +370,16 @@ class PetOverlayService : Service(), PetOverlayHost {
     }
 
     override fun dragEnd() {
-        if (dragging && moved) {
-            manager.sendDragEnded(gestureId)
+        pendingDragEndGestureId?.let { activeId ->
+            pendingDragEndGestureId = null
+            manager.sendDragEnded(activeId)
         }
         dragging = false
     }
 
     override fun setOverlayVisible(visible: Boolean) {
         if (!visible) {
-            stopFling()
+            stopMotionNow()
         }
         if (::frame.isInitialized) {
             frame.visibility = if (visible) View.VISIBLE else View.GONE
@@ -328,7 +392,7 @@ class PetOverlayService : Service(), PetOverlayHost {
     }
 
     override fun shutdownFromManager() {
-        stopFling()
+        stopMotionNow()
         closing = true
         removeOverlayFrame()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -349,7 +413,7 @@ class PetOverlayService : Service(), PetOverlayHost {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     pointerActive = true
-                    stopFling()
+                    stopMotionNow()
                     downX = rawX
                     downY = rawY
                     velocityTracker.reset(rawX, rawY, event.eventTime)
@@ -364,19 +428,27 @@ class PetOverlayService : Service(), PetOverlayHost {
 
                 MotionEvent.ACTION_UP -> {
                     velocityTracker.addSample(rawX, rawY, event.eventTime)
-                    // dragEnd() 由前端经 JS 异步送达，必须在抬手瞬间就结算速度并启动滑行，不能在 dragEnd 里停滑。
+                    // dragEnd() 由前端经 JS 异步送达，必须在抬手瞬间就结算速度并启动滑行。
                     if (dragging && moved) {
                         val velocity = velocityTracker.computeVelocity(event.eventTime, density)
                         startFling(velocity.vx, velocity.vy)
                     }
+                    moved = false
+                    dragging = false
                     pointerActive = false
                     velocityTracker.clear()
                     manager.onOverlayInputEditingCheck()
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+                    moved = false
+                    dragging = false
                     pointerActive = false
                     velocityTracker.clear()
+                    pendingDragEndGestureId?.let { activeId ->
+                        pendingDragEndGestureId = null
+                        manager.sendDragEnded(activeId)
+                    }
                     manager.onOverlayInputEditingCheck()
                 }
             }
@@ -396,12 +468,13 @@ class PetOverlayService : Service(), PetOverlayHost {
         if (!dragging) return
         if (!moved && hypot((rawX - downX).toDouble(), (rawY - downY).toDouble()) >= dp(4.0)) {
             moved = true
+            pendingDragEndGestureId = gestureId
             manager.sendDragStarted(
                 DesktopPetProtocol.computeDragStartPayload(
                     gestureId = gestureId,
-                    windowX = dragX,
-                    windowWidth = params.width,
-                    windowBottom = dragBottom,
+                    windowX = dragStartX.roundToInt(),
+                    windowWidth = dp(BASE_PET_WIDTH_DP),
+                    windowBottom = dragStartBottom.roundToInt(),
                     pointerDownX = downX,
                     pointerDownY = downY,
                     density = density
@@ -409,66 +482,180 @@ class PetOverlayService : Service(), PetOverlayHost {
             )
         }
         if (moved) {
-            params.x = dragX + (rawX - downX).roundToInt()
-            bottom = dragBottom + (rawY - downY).roundToInt()
-            place(forceLayout = false)
+            val bounds = currentMotionBounds()
+            petX = clampToAxis(dragStartX + (rawX - downX), bounds.minX, bounds.maxX)
+            petBottom = clampToAxis(dragStartBottom + (rawY - downY), bounds.minBottom, bounds.maxBottom)
+            if (supportsTouchRegions) {
+                applyFullScreenContainerTransform(updateRegionNow = false)
+            } else {
+                params.x = petX.roundToInt()
+                place(forceLayout = false)
+            }
         }
     }
 
     private fun startFling(vx: Float, vy: Float) {
         if (closing || !::frame.isInitialized || frame.visibility != View.VISIBLE) return
+        bounceSquash.reset()
         val started = flingEngine.start(
-            startX = params.x.toFloat(),
-            startBottom = bottom.toFloat(),
+            startX = petX,
+            startBottom = petBottom,
             initialVx = vx,
             initialVy = vy,
             density = density,
             bounds = currentMotionBounds()
         )
         if (started) {
-            lastFlingFrameNanos = 0L
-            scheduleNextFlingFrame()
+            lastMotionFrameNanos = 0L
+            scheduleNextMotionFrame()
+        } else if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = true)
+        } else {
+            flushPendingClipTop()
         }
     }
 
-    private fun stopFling() {
+    private fun stopMotionNow() {
         flingEngine.stop()
-        lastFlingFrameNanos = 0L
-        if (flingFrameScheduled && ::choreographer.isInitialized) {
-            choreographer.removeFrameCallback(flingFrameCallback)
-            flingFrameScheduled = false
+        bounceSquash.reset()
+        lastMotionFrameNanos = 0L
+        if (motionFrameScheduled && ::choreographer.isInitialized) {
+            choreographer.removeFrameCallback(motionFrameCallback)
+            motionFrameScheduled = false
+        }
+        if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = true)
         }
     }
 
-    private fun scheduleNextFlingFrame() {
-        if (flingFrameScheduled || closing || !::choreographer.isInitialized) return
-        flingFrameScheduled = true
-        choreographer.postFrameCallback(flingFrameCallback)
+    private fun scheduleNextMotionFrame() {
+        if (motionFrameScheduled || closing || !::choreographer.isInitialized) return
+        motionFrameScheduled = true
+        choreographer.postFrameCallback(motionFrameCallback)
     }
 
-    private fun onFlingFrame(frameTimeNanos: Long) {
-        flingFrameScheduled = false
-        if (!flingEngine.isRunning || closing || !::frame.isInitialized || frame.visibility != View.VISIBLE) {
-            stopFling()
+    private fun isMotionActive(): Boolean = flingEngine.isRunning || bounceSquash.isActive
+
+    private fun onMotionFrame(frameTimeNanos: Long) {
+        motionFrameScheduled = false
+        if (!isMotionActive() || closing || !::frame.isInitialized || frame.visibility != View.VISIBLE) {
+            stopMotionNow()
+            flushPendingClipTop()
             return
         }
-        val dtSeconds = if (lastFlingFrameNanos == 0L) {
+        val dtSeconds = if (lastMotionFrameNanos == 0L) {
             1f / 60f
         } else {
-            ((frameTimeNanos - lastFlingFrameNanos) / 1_000_000_000f).coerceAtLeast(0f)
+            ((frameTimeNanos - lastMotionFrameNanos) / 1_000_000_000f).coerceAtLeast(0f)
         }
-        lastFlingFrameNanos = frameTimeNanos
+        lastMotionFrameNanos = frameTimeNanos
 
-        val keepGoing = flingEngine.step(dtSeconds, density, currentMotionBounds())
-        params.x = flingEngine.x.roundToInt()
-        bottom = flingEngine.bottom.roundToInt()
-        place(forceLayout = false)
+        var flingRunning = flingEngine.isRunning
+        if (flingRunning) {
+            val stepResult = flingEngine.stepWithImpact(dtSeconds, density, currentMotionBounds())
+            petX = flingEngine.x
+            petBottom = flingEngine.bottom
+            stepResult.impact?.let { bounceSquash.onImpact(it, density) }
+            flingRunning = stepResult.running
+        }
+        val squashActive = bounceSquash.step(dtSeconds)
 
-        if (keepGoing) {
-            scheduleNextFlingFrame()
+        if (supportsTouchRegions) {
+            regionUpdateFrameCounter = (regionUpdateFrameCounter + 1) and 1
+            applyFullScreenContainerTransform(updateRegionNow = regionUpdateFrameCounter == 0)
         } else {
-            stopFling()
+            params.x = petX.roundToInt()
+            place(forceLayout = false)
         }
+
+        if (flingRunning || squashActive) {
+            scheduleNextMotionFrame()
+        } else {
+            stopMotionNow()
+            flushPendingClipTop()
+        }
+    }
+
+    private fun applyFullScreenContainerTransform(updateRegionNow: Boolean) {
+        val container = petContainer ?: return
+        val effectiveBottom = min(petBottom, keyboardTop.toFloat())
+        val containerTop = effectiveBottom - fullHeight.toFloat()
+        val topVisible = if (hasReportedHitRects) {
+            dp(topHitCss).coerceIn(0, max(0, fullHeight - dp(BASE_MIN_VISIBLE_HEIGHT_DP))).toFloat()
+        } else {
+            max(0f, fullHeight - dp(BASE_MIN_VISIBLE_HEIGHT_DP).toFloat())
+        }
+        val visibleHeight = (fullHeight.toFloat() - topVisible).coerceAtLeast(1f)
+        applySquashTransform(
+            target = container,
+            translationX = petX,
+            translationY = containerTop,
+            width = container.width.takeIf { it > 0 }?.toFloat() ?: dp(BASE_PET_WIDTH_DP).toFloat(),
+            visibleTop = topVisible,
+            visibleHeight = visibleHeight
+        )
+        if (updateRegionNow) {
+            applyCurrentTouchableRegion()
+        }
+    }
+
+    private fun applySquashTransform(
+        target: View,
+        translationX: Float,
+        translationY: Float,
+        width: Float,
+        visibleTop: Float,
+        visibleHeight: Float
+    ) {
+        target.translationX = translationX
+        target.translationY = translationY
+        target.pivotX = width * bounceSquash.pivotXFraction
+        target.pivotY = visibleTop + visibleHeight * bounceSquash.pivotYFraction
+        target.scaleX = bounceSquash.scaleX
+        target.scaleY = bounceSquash.scaleY
+    }
+
+    private fun applyCurrentTouchableRegion() {
+        if (!supportsTouchRegions || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val offsetX = petX.roundToInt()
+        val offsetY = (min(petBottom, keyboardTop.toFloat()) - fullHeight).roundToInt()
+        val touchable = Region()
+        for (rect in localHitRects) {
+            touchable.op(
+                rect.left + offsetX,
+                rect.top + offsetY,
+                rect.right + offsetX,
+                rect.bottom + offsetY,
+                Region.Op.UNION
+            )
+        }
+        frame.rootSurfaceControl?.setTouchableRegion(touchable)
+    }
+
+    private fun applyStableLegacyClipTop(rawTopPx: Int) {
+        val pet = petView ?: return
+        val nextClipTop = resolveStableClipTop(
+            currentClipTop = clipTop,
+            rawTopPx = rawTopPx,
+            fullHeight = fullHeight,
+            minVisiblePx = dp(1.0),
+            headroomPx = dp(CLIP_HEADROOM_DP),
+            shrinkDeadbandPx = dp(CLIP_SHRINK_DEADBAND_DP)
+        )
+        if (nextClipTop == clipTop) return
+        clipTop = nextClipTop
+        params.height = fullHeight - clipTop
+        val layout = pet.layoutParams as FrameLayout.LayoutParams
+        layout.topMargin = -clipTop
+        pet.layoutParams = layout
+        place(forceLayout = true)
+    }
+
+    private fun flushPendingClipTop() {
+        if (supportsTouchRegions) return
+        val pending = pendingClipRawTopPx ?: return
+        pendingClipRawTopPx = null
+        applyStableLegacyClipTop(pending)
     }
 
     private fun setupImeAvoidance() {
@@ -478,12 +665,12 @@ class PetOverlayService : Service(), PetOverlayHost {
                 val overlap = insets.getInsets(WindowInsets.Type.ime()).bottom
                 val nextTop = when {
                     !visible -> Int.MAX_VALUE
-                    overlap > 0 -> params.y + params.height - overlap
+                    overlap > 0 -> imeLimitTopFromOverlap(overlap)
                     else -> keyboardTop
                 }
                 if (keyboardTop != nextTop) {
                     keyboardTop = nextTop
-                    place()
+                    onMotionBoundsChanged()
                 }
                 insets
             }
@@ -503,18 +690,64 @@ class PetOverlayService : Service(), PetOverlayHost {
                 }
                 if (keyboardTop != nextTop) {
                     keyboardTop = nextTop
-                    place()
+                    onMotionBoundsChanged()
                 }
             }
         }
     }
 
+    private fun imeLimitTopFromOverlap(overlapPx: Int): Int {
+        if (supportsTouchRegions) {
+            return max(dp(BASE_MIN_VISIBLE_HEIGHT_DP), currentDisplayHeightPx() - overlapPx)
+        }
+        return params.y + params.height - overlapPx
+    }
+
+    private fun onMotionBoundsChanged() {
+        clampLogicalCoordinates(currentMotionBounds())
+        if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = true)
+        } else {
+            place(forceLayout = true)
+        }
+    }
+
+    private fun currentDisplayWidthPx(): Int {
+        if (supportsTouchRegions) {
+            if (::frame.isInitialized && frame.width > 0) return frame.width
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return windowManager.currentWindowMetrics.bounds.width()
+            }
+        }
+        return resources.displayMetrics.widthPixels
+    }
+
+    private fun currentDisplayHeightPx(): Int {
+        if (supportsTouchRegions) {
+            if (::frame.isInitialized && frame.height > 0) return frame.height
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return windowManager.currentWindowMetrics.bounds.height()
+            }
+        }
+        return resources.displayMetrics.heightPixels
+    }
+
     private fun currentMotionBounds(): PetMotionBounds {
-        val displayWidth = resources.displayMetrics.widthPixels
-        val displayHeight = resources.displayMetrics.heightPixels
-        val maxX = max(0, displayWidth - params.width)
+        val displayWidth = currentDisplayWidthPx()
+        val displayHeight = currentDisplayHeightPx()
+        val petWidthPx = dp(BASE_PET_WIDTH_DP)
+        val maxX = max(0, displayWidth - petWidthPx)
         val effectiveMaxBottom = min(displayHeight, keyboardTop)
-        val rawMinBottom = if (supportsTouchRegions) dp(180.0) else params.height
+        val rawMinBottom = if (supportsTouchRegions) {
+            val contentHeight = if (hasReportedHitRects) {
+                max(dp(BASE_MIN_VISIBLE_HEIGHT_DP), fullHeight - dp(topHitCss).coerceAtLeast(0))
+            } else {
+                dp(BASE_MIN_VISIBLE_HEIGHT_DP)
+            }
+            contentHeight
+        } else {
+            params.height
+        }
         val effectiveMinBottom = min(rawMinBottom, effectiveMaxBottom)
         return PetMotionBounds(
             minX = 0f,
@@ -524,20 +757,47 @@ class PetOverlayService : Service(), PetOverlayHost {
         )
     }
 
+    private fun clampLogicalCoordinates(bounds: PetMotionBounds) {
+        petX = clampToAxis(petX, bounds.minX, bounds.maxX)
+        petBottom = clampToAxis(petBottom, bounds.minBottom, bounds.maxBottom)
+    }
+
+    private fun clampToAxis(value: Float, minBound: Float, maxBound: Float): Float =
+        if (!value.isFinite() || minBound >= maxBound) minBound else value.coerceIn(minBound, maxBound)
+
     private fun place(forceLayout: Boolean = true) {
+        if (supportsTouchRegions) {
+            clampLogicalCoordinates(currentMotionBounds())
+            applyFullScreenContainerTransform(updateRegionNow = true)
+            return
+        }
         val bounds = currentMotionBounds()
         val prevX = params.x
         val prevY = params.y
-        params.x = max(bounds.minX.roundToInt(), min(params.x, bounds.maxX.roundToInt()))
-        bottom = max(bounds.minBottom.roundToInt(), min(bottom, bounds.maxBottom.roundToInt()))
-        params.y = min(bottom, keyboardTop) - params.height
-        if (!supportsTouchRegions) {
-            params.y = max(0, params.y)
-        }
+        clampLogicalCoordinates(bounds)
+        params.x = petX.roundToInt()
+        params.y = max(0, min(petBottom.roundToInt(), keyboardTop) - params.height)
         if (::frame.isInitialized && frame.isAttachedToWindow &&
             (forceLayout || params.x != prevX || params.y != prevY)
         ) {
             windowManager.updateViewLayout(frame, params)
+        }
+    }
+
+    private fun applyOverlayWindowChrome(targetParams: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            targetParams.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            targetParams.fitInsetsTypes = 0
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            targetParams.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            targetParams.alpha = getSystemService(InputManager::class.java).maximumObscuringOpacityForTouch
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            targetParams.setCanPlayMoveAnimation(false)
         }
     }
 
