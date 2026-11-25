@@ -1,33 +1,68 @@
 package org.maiwithu.maidroid
 
 import android.content.res.Configuration
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.doOnLayout
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.viewinterop.AndroidView
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.ui.component.LiquidModalHostOverlay
+import org.maiwithu.maidroid.ui.component.LiquidModalHostState
+import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
+import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
+import org.maiwithu.maidroid.ui.component.rememberLiquidModalHostState
 import org.maiwithu.maidroid.ui.home.WEB_UI_HIBERNATE_DELAY_MS
 import org.maiwithu.maidroid.ui.home.shouldHibernateWebUiOnTrimMemory
+import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
+import org.maiwithu.maidroid.webui.WebUiPromptRequest
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
 import org.maiwithu.maidroid.webui.WebUiSessionHost
+import android.graphics.Color as AndroidColor
 
 /**
  * 全屏打开一个 WebUI 页面：主页唤醒按钮打开 MaiBot WebUI，NapCat / SnowLuma 设置按钮打开对应管理页。
- * MaiBot WebUI 会换成带访问令牌的自动登录地址；返回键先在网页内后退，退到底再关闭页面；
- * 网页里的上传按钮经 WebUiFileChooser 打开系统选文件页，导出、下载按钮经 WebUiDownloads 弹“另存为”。
- * 网页内容进程没了（系统回收内存、网页崩溃）时整页重建一次重新打开，反复崩溃就关掉这一页回到主页。
+ * 外壳采用 Compose + 液态玻璃模态宿主以承接网页原生表单弹窗的实时玻璃折射，
+ * 并继续保留令牌自动登录、上传/导出桥接、2 分钟后台休眠与进程崩溃恢复逻辑。
  */
 class WebUiActivity : ComponentActivity() {
     companion object {
@@ -39,9 +74,8 @@ class WebUiActivity : ComponentActivity() {
         private const val HIBERNATE_RETRY_DELAY_MS = 60_000L
     }
 
-    private var sessionHost: WebUiSessionHost? = null
+    private var sessionHostState by mutableStateOf<WebUiSessionHost?>(null)
     private lateinit var fileChooser: WebUiFileChooser
-    private lateinit var container: FrameLayout
     private var isMaiBotWebUi = true
     private var initialLaunchUrl = MaiBotWebUi.URL
     private var activityStarted = false
@@ -77,6 +111,10 @@ class WebUiActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // 全屏网页同样遵循设置页的“屏幕常亮”开关，默认允许自动息屏。
         applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        )
         // 横屏时和主界面一样隐藏状态栏和导航栏（从边缘滑动临时呼出），竖屏保持系统栏常显。
         applySystemBars(
             window = window,
@@ -87,26 +125,11 @@ class WebUiActivity : ComponentActivity() {
         fileChooser = WebUiFileChooser(this, MaiBotWebUi.LOG_TAG).apply { launcher = fileChooserLauncher }
         downloads = WebUiDownloads(this, MaiBotWebUi.LOG_TAG).apply { launcher = downloadLauncher }
 
-        // 网页放进一层容器，容器按系统栏、挖孔和键盘留内边距，避免 Android 15 全面屏下被状态栏、挖孔或键盘遮挡。
-        container = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
-            val safe = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or
-                    WindowInsetsCompat.Type.displayCutout() or
-                    WindowInsetsCompat.Type.ime()
-            )
-            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
-            WindowInsetsCompat.CONSUMED
-        }
-        setContentView(container)
-
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    val host = sessionHost
+                    val host = sessionHostState
                     if (host != null && host.canGoBack) {
                         host.goBack()
                     } else {
@@ -124,16 +147,52 @@ class WebUiActivity : ComponentActivity() {
             url
         }
         attachAndLoadSessionHost()
+
+        setContent {
+            MaiDroidTheme {
+                val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                LaunchedEffect(landscape) {
+                    applySystemBars(window, landscape = landscape, hideNavigationBar = false)
+                }
+
+                val modalHost = rememberLiquidModalHostState()
+                val webBackdrop = rememberLayerBackdrop {
+                    drawRect(Color.Black)
+                    drawContent()
+                }
+                val activeHost = sessionHostState
+                val activePrompt = if (activeHost != null) {
+                    activeHost.activePrompt.collectAsState().value
+                } else {
+                    null
+                }
+
+                CompositionLocalProvider(
+                    LocalHideNavigationBar provides false,
+                    LocalLiquidModalHost provides modalHost
+                ) {
+                    WebUiActivityScreen(
+                        activeHost = activeHost,
+                        activePrompt = activePrompt,
+                        modalHost = modalHost,
+                        webBackdrop = webBackdrop,
+                        initialLaunchUrl = initialLaunchUrl,
+                        isMaiBotWebUi = isMaiBotWebUi
+                    )
+                }
+            }
+        }
     }
 
     override fun onStart() {
         super.onStart()
         activityStarted = true
         mainHandler.removeCallbacks(hibernateRunnable)
-        if (sessionHost == null) {
+        val current = sessionHostState
+        if (current == null) {
             attachAndLoadSessionHost()
         } else {
-            sessionHost?.setActive(true)
+            current.setActive(true)
         }
         appDependencies.powerTelemetry.onUiForegroundChanged(true)
     }
@@ -145,7 +204,7 @@ class WebUiActivity : ComponentActivity() {
 
     override fun onStop() {
         activityStarted = false
-        sessionHost?.setActive(false)
+        sessionHostState?.setActive(false)
         mainHandler.removeCallbacks(hibernateRunnable)
         mainHandler.postDelayed(hibernateRunnable, WEB_UI_HIBERNATE_DELAY_MS)
         appDependencies.powerTelemetry.onUiForegroundChanged(false)
@@ -165,15 +224,15 @@ class WebUiActivity : ComponentActivity() {
         mainHandler.removeCallbacksAndMessages(null)
         fileChooser.cancelPending()
         downloads.release()
-        sessionHost?.release()
-        sessionHost = null
+        sessionHostState?.release()
+        sessionHostState = null
         super.onDestroy()
     }
 
-    // 创建或从休眠恢复全屏 GeckoView 会话并等布局就绪后加载地址。
+    // 创建或从休眠恢复全屏 GeckoView 会话；拿到非零布局尺寸后再在 Compose update 中触发加载。
     private fun attachAndLoadSessionHost() {
-        if (sessionHost != null) return
-        val host = WebUiSessionHost(
+        if (sessionHostState != null) return
+        sessionHostState = WebUiSessionHost(
             context = this,
             logTag = MaiBotWebUi.LOG_TAG,
             fileChooser = fileChooser,
@@ -181,7 +240,7 @@ class WebUiActivity : ComponentActivity() {
             onContentProcessGone = { dead ->
                 (dead.view.parent as? ViewGroup)?.removeView(dead.view)
                 dead.release()
-                if (sessionHost === dead) sessionHost = null
+                if (sessionHostState === dead) sessionHostState = null
                 if (renderCrashGuard.shouldAutoReopen()) {
                     recreate()
                 } else {
@@ -190,21 +249,75 @@ class WebUiActivity : ComponentActivity() {
                 }
             }
         )
-        sessionHost = host
-        container.removeAllViews()
-        container.addView(host.view, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        host.view.doOnLayout {
-            host.applyDesktopViewport(enabled = isMaiBotWebUi)
-            host.loadUrl(initialLaunchUrl)
-        }
     }
 
     private fun hibernateSessionIfIdle(): Boolean {
-        val current = sessionHost ?: return true
+        val current = sessionHostState ?: return true
         if (fileChooser.hasPending || downloads.hasPending) return false
-        container.removeAllViews()
         current.release()
-        sessionHost = null
+        sessionHostState = null
         return true
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WebUiActivityScreen(
+    activeHost: WebUiSessionHost?,
+    activePrompt: WebUiPromptRequest?,
+    modalHost: LiquidModalHostState,
+    webBackdrop: LayerBackdrop,
+    initialLaunchUrl: String,
+    isMaiBotWebUi: Boolean
+) {
+    val safeInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+    val imeClearance = WindowInsets.imeAnimationTarget.only(WindowInsetsSides.Bottom)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        if (activeHost != null) {
+            // 仅在活动弹窗存在时按需录制页面纹理给液态玻璃卡片采样，常规浏览保持零额外离屏层消耗。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (modalHost.hasModals) Modifier.layerBackdrop(webBackdrop) else Modifier)
+            ) {
+                key(activeHost) {
+                    var viewHasSize by remember(activeHost) { mutableStateOf(false) }
+                    AndroidView(
+                        factory = {
+                            val hostView = activeHost.view
+                            (hostView.parent as? ViewGroup)?.removeView(hostView)
+                            hostView
+                        },
+                        update = { geckoView ->
+                            if (viewHasSize && geckoView.tag != initialLaunchUrl) {
+                                geckoView.tag = initialLaunchUrl
+                                activeHost.applyDesktopViewport(enabled = isMaiBotWebUi)
+                                activeHost.loadUrl(initialLaunchUrl)
+                            }
+                        },
+                        modifier = Modifier
+                            .windowInsetsPadding(safeInsets)
+                            .windowInsetsPadding(imeClearance)
+                            .fillMaxSize()
+                            // 让 TextureView 走稳定离屏层合成，避免弹出液态玻璃弹窗时出现采样黑块。
+                            .graphicsLayer { alpha = 0.999f }
+                            .onSizeChanged { size ->
+                                viewHasSize = size.width > 0 && size.height > 0
+                            }
+                    )
+                }
+            }
+            WebUiPromptDialogHost(prompt = activePrompt)
+        }
+
+        LiquidModalHostOverlay(
+            host = modalHost,
+            backdrop = webBackdrop
+        )
     }
 }
