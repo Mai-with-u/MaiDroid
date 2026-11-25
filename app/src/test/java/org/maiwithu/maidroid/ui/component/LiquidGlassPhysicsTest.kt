@@ -95,4 +95,39 @@ class LiquidGlassPhysicsTest {
         assertFalse(shouldLockToggleHorizontalDrag(netDeltaX = 0f, netDeltaY = 0f, lockSlopPx = -2f))
         assertTrue(shouldLockToggleHorizontalDrag(netDeltaX = 2f, netDeltaY = 1f, lockSlopPx = -2f))
     }
+
+    @Test
+    fun `liquid slider thumb offset and position mapping align cleanly across range and direction`() {
+        // 滑块在 0%、50%、100% 处严丝合缝停留在 [0, trackWidth - thumbWidth]，不会冲出两端
+        assertEquals(0f, computeLiquidSliderThumbOffsetPx(0f, trackWidthPx = 300f, thumbWidthPx = 40f), 0.001f)
+        assertEquals(130f, computeLiquidSliderThumbOffsetPx(0.5f, trackWidthPx = 300f, thumbWidthPx = 40f), 0.001f)
+        assertEquals(260f, computeLiquidSliderThumbOffsetPx(1f, trackWidthPx = 300f, thumbWidthPx = 40f), 0.001f)
+        assertEquals(-260f, computeLiquidSliderThumbOffsetPx(1f, trackWidthPx = 300f, thumbWidthPx = 40f, isLtr = false), 0.001f)
+
+        val range = 0.60f..1.30f
+        // 按中心行程映射点击位置，并夹紧越界坐标与倒序方向
+        assertEquals(0.60f, computeLiquidSliderValueForPosition(0f, 300f, 40f, range), 0.0001f)
+        assertEquals(0.60f, computeLiquidSliderValueForPosition(20f, 300f, 40f, range), 0.0001f)
+        assertEquals(0.95f, computeLiquidSliderValueForPosition(150f, 300f, 40f, range), 0.0001f)
+        assertEquals(1.30f, computeLiquidSliderValueForPosition(280f, 300f, 40f, range), 0.0001f)
+        assertEquals(1.30f, computeLiquidSliderValueForPosition(350f, 300f, 40f, range), 0.0001f)
+        assertEquals(0.95f, computeLiquidSliderValueForPosition(150f, 300f, 40f, range, isLtr = false), 0.0001f)
+    }
+
+    @Test
+    fun `liquid slider haptic tick triggers on 5 percent crossings while resisting jitter`() {
+        val range = 0.60f..1.30f
+        val step = 0.05f
+        // 初始位于 1.00f（第 8 个 5% 刻度）
+        val startTick = resolveLiquidSliderHapticTick(-1, 1.00f, range, step)
+        assertEquals(8, startTick)
+
+        // 中点附近微幅抖动（1.026f）不触发跳格震动，跨越中点 + 滞回死区后才进第 9 格
+        assertEquals(8, resolveLiquidSliderHapticTick(startTick, 1.026f, range, step))
+        assertEquals(9, resolveLiquidSliderHapticTick(startTick, 1.030f, range, step))
+
+        // 快速跨过多格到 1.25f（第 13 格）一步落位
+        assertEquals(13, resolveLiquidSliderHapticTick(9, 1.25f, range, step))
+        assertEquals(0, resolveLiquidSliderHapticTick(0, 1.00f, range, tickStep = 0f))
+    }
 }
