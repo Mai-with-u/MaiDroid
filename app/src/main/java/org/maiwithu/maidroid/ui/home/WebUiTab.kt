@@ -69,6 +69,7 @@ import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
@@ -365,8 +366,8 @@ internal fun WebUiTabPage(
             resolvedLaunch = requestToken to computed
         }
 
-        // 离线或加载失败横幅改用基于网页底色的零开销采样背景；常规浏览不挂载离屏层，仅在弹窗打开采样网页时临时启用。
-        val bannerContentBackdrop = rememberSurfaceBackdrop(state.pageBackground ?: PageBackground)
+        // 离线或加载失败横幅改用基于网页底色（冷启动未上报时兜底 CardSurface）的零开销采样背景；仅弹窗打开时临时启用离屏层。
+        val bannerContentBackdrop = rememberSurfaceBackdrop(state.pageBackground ?: CardSurface)
         val hasActiveModal = LocalLiquidModalHost.current?.hasModals == true
 
         if (activeHost != null) {

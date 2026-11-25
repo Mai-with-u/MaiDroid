@@ -3,6 +3,8 @@ package org.maiwithu.maidroid.ui.component
 import android.os.Build
 import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,8 +40,12 @@ internal val LocalLiquidBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /** 创建纯色画布采样背景：供不处于透明浮层之上（如实心卡片内部）的开关与按钮做零自采样依赖的液态玻璃绘制。 */
 @Composable
-internal fun rememberSurfaceBackdrop(color: Color = CardSurface): Backdrop =
-    rememberCanvasBackdrop { drawRect(color) }
+internal fun rememberSurfaceBackdrop(color: Color = CardSurface): Backdrop {
+    val latestColor = remember { mutableStateOf(color) }
+    latestColor.value = color
+    // 在绘制快照作用域内读取颜色状态：底色更新时自动触发 DrawBackdropNode 重绘并复用同一 Backdrop 实例。
+    return rememberCanvasBackdrop { drawRect(latestColor.value) }
+}
 
 /** 优先读取外层传递的动态玻璃采样源；未挂载采样源时自动回退至卡片实心背景画布。 */
 @Composable

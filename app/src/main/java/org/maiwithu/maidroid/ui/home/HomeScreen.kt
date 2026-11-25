@@ -37,6 +37,7 @@ import org.maiwithu.maidroid.ui.extension.ExtensionsPage
 import org.maiwithu.maidroid.ui.platform.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputScreen
+import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 
 // 唤醒页还在时（WebUI 离线），每隔这么久自动唤醒一次 MaiBot。
@@ -171,9 +172,9 @@ private fun HomeTabsShell(
 
         val selectTab = remember(onTabSelected) { onTabSelected }
         val openTerminal = remember(onTerminalClick) { onTerminalClick }
-        // WebUI 页签使用硬件直出的 SurfaceView，关闭整屏 layerBackdrop 双遍录制；改用网页底色给悬浮导航做零拷贝采样。
+        // WebUI 页签使用独立关闭的整屏录制，改用网页底色（冷启动尚未上报时兜底柔暗 CardSurface）给悬浮导航做零拷贝采样。
         val recordHomeBackdrop = selectedTab != HomeTab.WebUi
-        val webUiNavBackdrop = rememberSurfaceBackdrop(webUiTabState.pageBackground ?: PageBackground)
+        val webUiNavBackdrop = rememberSurfaceBackdrop(webUiTabState.pageBackground ?: CardSurface)
         val navBackdrop: Backdrop = if (recordHomeBackdrop) homeBackdrop else webUiNavBackdrop
 
         // 横屏时页面内容左边让出侧栏的宽度；让出的那一条留在页面里，跟着页面一起滑动。
