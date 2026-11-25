@@ -89,7 +89,9 @@ internal class PetWebView(
 
         webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                if (BuildConfig.DEBUG) {
+                if (consoleMessage.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    Log.w(LOG_TAG, "${role.tagName}: ${consoleMessage.message()}")
+                } else if (BuildConfig.DEBUG) {
                     Log.d(LOG_TAG, "${role.tagName}: ${consoleMessage.message()}")
                 }
                 return true
@@ -110,20 +112,70 @@ internal class PetWebView(
                 if (asset.source != PetAssetSource.AndroidBridge && request.url.path == "/pet/index.html") {
                     mainHandler.post { onAssetSourceResolved(asset.source) }
                 }
-                val headers = buildMap {
-                    put("Cache-Control", "no-store")
-                    if (asset.injectCsp) {
-                        put("Content-Security-Policy", PET_CSP)
+                val rangeHeader = request.requestHeaders.entries
+                    .firstOrNull { it.key.equals("Range", ignoreCase = true) }
+                    ?.value
+                return when (val rangeResult = parseHttpByteRange(rangeHeader, asset.bytes.size)) {
+                    PetRangeResult.Unsatisfiable -> {
+                        val headers = mapOf(
+                            "Cache-Control" to "no-store",
+                            "Accept-Ranges" to "bytes",
+                            "Content-Range" to "bytes */${asset.bytes.size}",
+                            "Content-Length" to "0"
+                        )
+                        WebResourceResponse(
+                            "text/plain",
+                            "UTF-8",
+                            416,
+                            "Range Not Satisfiable",
+                            headers,
+                            ByteArrayInputStream(ByteArray(0))
+                        )
+                    }
+
+                    is PetRangeResult.Partial -> {
+                        val range = rangeResult.range
+                        val headers = buildMap {
+                            put("Cache-Control", "no-store")
+                            put("Accept-Ranges", "bytes")
+                            put(
+                                "Content-Range",
+                                "bytes ${range.start}-${range.endInclusive}/${asset.bytes.size}"
+                            )
+                            put("Content-Length", range.length.toString())
+                            if (asset.injectCsp) {
+                                put("Content-Security-Policy", PET_CSP)
+                            }
+                        }
+                        WebResourceResponse(
+                            asset.mimeType,
+                            asset.encoding,
+                            206,
+                            "Partial Content",
+                            headers,
+                            ByteArrayInputStream(asset.bytes, range.start, range.length)
+                        )
+                    }
+
+                    PetRangeResult.NoRange -> {
+                        val headers = buildMap {
+                            put("Cache-Control", "no-store")
+                            put("Accept-Ranges", "bytes")
+                            put("Content-Length", asset.bytes.size.toString())
+                            if (asset.injectCsp) {
+                                put("Content-Security-Policy", PET_CSP)
+                            }
+                        }
+                        WebResourceResponse(
+                            asset.mimeType,
+                            asset.encoding,
+                            200,
+                            "OK",
+                            headers,
+                            ByteArrayInputStream(asset.bytes)
+                        )
                     }
                 }
-                return WebResourceResponse(
-                    asset.mimeType,
-                    asset.encoding,
-                    200,
-                    "OK",
-                    headers,
-                    ByteArrayInputStream(asset.bytes)
-                )
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

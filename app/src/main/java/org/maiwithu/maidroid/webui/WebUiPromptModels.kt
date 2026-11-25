@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.webui
 
+import java.net.URI
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
@@ -238,3 +239,16 @@ internal val DEFAULT_WEB_UI_COLOR_PALETTE: List<String> = listOf(
     "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6",
     "#6366f1", "#8b5cf6", "#d946ef", "#ec4899"
 )
+
+/**
+ * 判断网页请求权限的来源 URI 是否属于本机回环 HTTP/HTTPS 地址（`127.0.0.1`、`localhost` 或 `::1`），
+ * 仅对本机 WebUI 自动放行声音/静音自动播放权限，防止远端任意站点静默出声。
+ */
+internal fun isLocalLoopbackUri(uriString: String?): Boolean {
+    if (uriString.isNullOrBlank()) return false
+    val uri = runCatching { URI(uriString.trim()) }.getOrNull() ?: return false
+    val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
+    if (scheme != "http" && scheme != "https") return false
+    val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+    return host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "[::1]"
+}

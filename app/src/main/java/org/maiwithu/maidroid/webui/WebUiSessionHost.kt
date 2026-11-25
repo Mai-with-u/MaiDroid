@@ -40,6 +40,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.ContentDelegate
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
@@ -321,6 +322,7 @@ internal class WebUiSessionHost(
 
         session.contentDelegate = null
         session.navigationDelegate = null
+        session.permissionDelegate = null
         session.progressDelegate = null
         session.promptDelegate = null
         if (session.isOpen) {
@@ -449,6 +451,22 @@ internal class WebUiSessionHost(
                 targetSession: GeckoSession,
                 prompt: ColorPrompt
             ): GeckoResult<PromptResponse> = showColorPrompt(prompt)
+        }
+
+        session.permissionDelegate = object : PermissionDelegate {
+            override fun onContentPermissionRequest(
+                targetSession: GeckoSession,
+                perm: ContentPermission
+            ): GeckoResult<Int> {
+                val isAutoplay = perm.permission == PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE ||
+                    perm.permission == PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE
+                val decision = if (isAutoplay && isLocalLoopbackUri(perm.uri)) {
+                    ContentPermission.VALUE_ALLOW
+                } else {
+                    ContentPermission.VALUE_DENY
+                }
+                return GeckoResult.fromValue(decision)
+            }
         }
     }
 

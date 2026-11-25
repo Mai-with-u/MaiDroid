@@ -2,6 +2,7 @@ package org.maiwithu.maidroid.webui
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -165,5 +166,18 @@ class WebUiPromptModelsTest {
         assertNull(normalizeHexColor("#12345"))
         assertNull(normalizeHexColor("#11223344"))
         assertNull(normalizeHexColor("#zzzzzz"))
+    }
+
+    @Test
+    fun isLocalLoopbackUriAllowsOnlyLoopbackHttpOrigins() {
+        assertTrue(isLocalLoopbackUri("http://127.0.0.1:8001/"))
+        assertTrue(isLocalLoopbackUri("http://localhost:8001/desktop-pet"))
+        assertTrue(isLocalLoopbackUri("https://[::1]:8443/"))
+
+        assertFalse(isLocalLoopbackUri("https://example.com/"))
+        assertFalse(isLocalLoopbackUri("http://192.168.1.2:8001/"))
+        assertFalse(isLocalLoopbackUri("file:///tmp/a.html"))
+        assertFalse(isLocalLoopbackUri(""))
+        assertFalse(isLocalLoopbackUri(null))
     }
 }

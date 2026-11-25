@@ -20,6 +20,70 @@ internal enum class PetAssetSource(val label: String) {
     AndroidBridge("Android 适配层")
 }
 
+/** 桌宠拦截资源上的闭区间字节分片 `[start, endInclusive]`。 */
+internal data class PetByteRange(
+    val start: Int,
+    val endInclusive: Int
+) {
+    val length: Int get() = endInclusive - start + 1
+}
+
+/** HTTP `Range` 请求头解析结果：未带分段请求、有效字节分片、或越界/语法非法（需返回 416）。 */
+internal sealed interface PetRangeResult {
+    data object NoRange : PetRangeResult
+    data class Partial(val range: PetByteRange) : PetRangeResult
+    data object Unsatisfiable : PetRangeResult
+}
+
+/**
+ * 解析 WebView 音频/媒体请求携带的 `Range: bytes=...` 请求头，确保 `.wav` 等媒体可获 206 分段响应。
+ * 多段逗号分隔仅取首段，兼容 `bytes=start-`、`bytes=start-end` 与 `bytes=-suffix` 三种标准写法。
+ */
+internal fun parseHttpByteRange(rangeHeader: String?, totalLength: Int): PetRangeResult {
+    if (rangeHeader.isNullOrBlank()) return PetRangeResult.NoRange
+    val trimmed = rangeHeader.trim()
+    if (!trimmed.startsWith("bytes=", ignoreCase = true)) {
+        return PetRangeResult.Unsatisfiable
+    }
+    if (totalLength <= 0) return PetRangeResult.Unsatisfiable
+
+    val firstSpec = trimmed.substring("bytes=".length).substringBefore(',').trim()
+    val dashIndex = firstSpec.indexOf('-')
+    if (dashIndex < 0 || firstSpec.indexOf('-', dashIndex + 1) >= 0) {
+        return PetRangeResult.Unsatisfiable
+    }
+
+    val startPart = firstSpec.substring(0, dashIndex).trim()
+    val endPart = firstSpec.substring(dashIndex + 1).trim()
+    if (startPart.isNotEmpty() && !startPart.all { it in '0'..'9' }) {
+        return PetRangeResult.Unsatisfiable
+    }
+    if (endPart.isNotEmpty() && !endPart.all { it in '0'..'9' }) {
+        return PetRangeResult.Unsatisfiable
+    }
+
+    val lastIndex = totalLength - 1
+    if (startPart.isEmpty()) {
+        if (endPart.isEmpty()) return PetRangeResult.Unsatisfiable
+        val suffixLength = endPart.toLongOrNull() ?: return PetRangeResult.Unsatisfiable
+        if (suffixLength <= 0L) return PetRangeResult.Unsatisfiable
+        val start = maxOf(0L, totalLength.toLong() - suffixLength).toInt()
+        return PetRangeResult.Partial(PetByteRange(start = start, endInclusive = lastIndex))
+    }
+
+    val startLong = startPart.toLongOrNull() ?: return PetRangeResult.Unsatisfiable
+    if (startLong >= totalLength.toLong()) return PetRangeResult.Unsatisfiable
+
+    val endInt = if (endPart.isEmpty()) {
+        lastIndex
+    } else {
+        val rawEndLong = endPart.toLongOrNull() ?: return PetRangeResult.Unsatisfiable
+        if (rawEndLong < startLong) return PetRangeResult.Unsatisfiable
+        minOf(rawEndLong, lastIndex.toLong()).toInt()
+    }
+    return PetRangeResult.Partial(PetByteRange(start = startLong.toInt(), endInclusive = endInt))
+}
+
 /** 拦截本机请求后返回给系统 WebView 的完整响应实体。 */
 internal class PetWebAsset(
     val mimeType: String,
