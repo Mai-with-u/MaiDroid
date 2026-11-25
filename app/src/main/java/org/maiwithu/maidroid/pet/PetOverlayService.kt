@@ -12,13 +12,22 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Region
 import android.hardware.input.InputManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
+import android.util.Base64
 import android.util.DisplayMetrics
 import android.view.Choreographer
 import android.view.Gravity
@@ -30,6 +39,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -38,6 +48,8 @@ import org.maiwithu.maidroid.MainActivity
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.appDependencies
 import java.util.UUID
+import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -45,9 +57,11 @@ import kotlin.math.roundToInt
 
 /**
  * 承载本机悬浮桌宠的独立前景服务（TYPE_APPLICATION_OVERLAY + specialUse）：
- * - Android 13+（API 33+）：固定透明全高画布，按页面上报热区实时设置 `setTouchableRegion` 实现精确点击穿透；
- * - Android 8–12（API 26–32）：使用动态上裁剪高度保证上方空白不拦触摸；
- * - 默认置入 `FLAG_NOT_FOCUSABLE` 不抢底层焦点，仅在前端文本框获焦时短暂接管键盘并自动上移避让输入法。
+ * - Android 13+（API 33+）：常驻透明全屏窗口 + 内部 `petContainer` 纯 GPU 平移/缩放，
+ *   按页面上报热区实时更新 `setTouchableRegion`，彻底避免拖动与滑行调用 `updateViewLayout`；
+ * - Android 8–12（API 26–32）：平时采用紧凑小窗 + 裁剪迟滞防抖避免待机呼吸重排；
+ *   拖动/滑行/反弹期间切换至固定全屏 `FLAG_NOT_TOUCHABLE` GPU 舞台以 60fps 推进位移与撞墙果冻回弹，
+ *   并提前在后台完成小窗一次性落位，彻底屏蔽系统 `WindowManager` 400ms 位移动画导致的粘滞与掉帧。
  */
 class PetOverlayService : Service(), PetOverlayHost {
 
@@ -56,10 +70,46 @@ class PetOverlayService : Service(), PetOverlayHost {
         private const val NOTIFICATION_ID = 1002
         private const val ACTION_STOP = "org.maiwithu.maidroid.action.STOP_DESKTOP_PET"
 
+        // 系统 MoveAnimation 通常持续 ~400ms，轻放或极短滑行时留足缓冲再切回主小窗可完全隐藏系统窗口跳变。
+        private const val MOVE_ANIMATION_SETTLE_MS = 420L
+        private const val SNAPSHOT_REFRESH_DELAY_MS = 50L
         private const val CLIP_HEADROOM_DP = 16.0
         private const val CLIP_SHRINK_DEADBAND_DP = 24.0
         private const val BASE_PET_WIDTH_DP = 260.0
         private const val BASE_MIN_VISIBLE_HEIGHT_DP = 180.0
+
+        // 读取皮肤动画画布的视口矩形与透明 PNG，弥补 Android WebView 软件 draw() 跳过硬件加速 <canvas> 的缺陷。
+        private const val CAPTURE_SKIN_CANVAS_JS =
+            "(() => {" +
+                "const c = document.getElementById('skin-canvas');" +
+                "if (!c || getComputedStyle(c).display === 'none' || !c.width || !c.height) {" +
+                    "return { canvasVisible: false };" +
+                "}" +
+                "const r = c.getBoundingClientRect();" +
+                "if (!r || r.width <= 0 || r.height <= 0) {" +
+                    "return { canvasVisible: false };" +
+                "}" +
+                "return {" +
+                    "canvasVisible: true," +
+                    "left: r.left," +
+                    "top: r.top," +
+                    "width: r.width," +
+                    "height: r.height," +
+                    "dpr: window.devicePixelRatio || 1," +
+                    "png: c.toDataURL('image/png')" +
+                "};" +
+            "})();"
+
+        private class CapturedCanvasFrame(
+            val generation: Int,
+            val canvasVisible: Boolean,
+            val bitmap: Bitmap?,
+            val leftCss: Float,
+            val topCss: Float,
+            val widthCss: Float,
+            val heightCss: Float,
+            val dpr: Float
+        )
 
         /** 悬浮桌宠服务当前是否存活，供遥测统计耗时热点而不触发管理器的懒加载初始化。 */
         @Volatile
@@ -83,9 +133,25 @@ class PetOverlayService : Service(), PetOverlayHost {
     private var topHitCss: Double = 0.0
     private var hasReportedHitRects = false
     private var regionUpdateFrameCounter = 0
+
+    // Android 8–12 在拖动与滑行期间启用的固定全屏无触控 GPU 舞台及帧快照。
+    private var motionStageFrame: FrameLayout? = null
+    private var motionStageParams: WindowManager.LayoutParams? = null
+    private var motionStageImageView: ImageView? = null
+    private var stageBitmap: Bitmap? = null
+    private var usingMotionStage = false
+    private var stageEntryPending = false
+    private var gestureCaptureGeneration = 0
+    private var gestureCanvasFrame: CapturedCanvasFrame? = null
+    private val stageBitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val snapshotExecutor = Executors.newSingleThreadExecutor()
+    private var legacyWindowOriginX = 0
+    private var legacyWindowOriginY = 0
     private var pendingClipRawTopPx: Int? = null
+    private var lastHiddenWindowMoveUptimeMs = 0L
 
     private var petView: PetWebView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var density = 1f
     private var rawX = 0f
     private var rawY = 0f
@@ -113,6 +179,8 @@ class PetOverlayService : Service(), PetOverlayHost {
     private val motionFrameCallback = Choreographer.FrameCallback { frameTimeNanos ->
         onMotionFrame(frameTimeNanos)
     }
+    private val refreshSnapshotRunnable = Runnable { refreshMotionStageSnapshot() }
+    private val settleStageRunnable = Runnable { finalizeLegacyMotionStage() }
     private val supportsTouchRegions = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
@@ -241,7 +309,7 @@ class PetOverlayService : Service(), PetOverlayHost {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!::frame.isInitialized) return
-        stopMotionNow()
+        stopMotionAndStageNow()
         clampLogicalCoordinates(currentMotionBounds())
         if (supportsTouchRegions) {
             applyFullScreenContainerTransform(updateRegionNow = true)
@@ -253,14 +321,16 @@ class PetOverlayService : Service(), PetOverlayHost {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        stopMotionNow()
+        val alreadyClosing = closing
+        closing = true
+        stopMotionAndStageNow()
+        snapshotExecutor.shutdownNow()
         isRunning = false
         if (screenReceiverRegistered) {
             screenReceiverRegistered = false
             runCatching { unregisterReceiver(screenReceiver) }
         }
-        if (!closing) {
-            closing = true
+        if (!alreadyClosing) {
             removeOverlayFrame()
             manager.onServiceDestroyed(this)
         }
@@ -327,7 +397,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         }
 
         val rawTopPx = max(0, min(fullHeight - dp(1.0), dp(topCss)))
-        if (dragging || moved || isMotionActive()) {
+        // 拖动、滑行或等待舞台退场期间暂存最新顶边，不触碰窗口尺寸，停稳后再一次结算。
+        if (dragging || moved || usingMotionStage || isMotionActive()) {
             pendingClipRawTopPx = rawTopPx
             return
         }
@@ -350,8 +421,8 @@ class PetOverlayService : Service(), PetOverlayHost {
             pendingDragEndGestureId = null
             manager.sendDragEnded(previousId)
         }
-        // 新手势开始或中途按住滑行中的桌宠时，立即停掉上一轮滑行动画。
-        stopMotionNow()
+        // 新手势开始或中途按住滑行中的桌宠时，立即停掉上一轮滑行与舞台缓冲并锁定当前所见位置。
+        interruptActiveMotionForTouch()
         if (!pointerActive) {
             dragging = false
             moved = false
@@ -379,7 +450,7 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     override fun setOverlayVisible(visible: Boolean) {
         if (!visible) {
-            stopMotionNow()
+            stopMotionAndStageNow()
         }
         if (::frame.isInitialized) {
             frame.visibility = if (visible) View.VISIBLE else View.GONE
@@ -392,7 +463,7 @@ class PetOverlayService : Service(), PetOverlayHost {
     }
 
     override fun shutdownFromManager() {
-        stopMotionNow()
+        stopMotionAndStageNow()
         closing = true
         removeOverlayFrame()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -413,10 +484,16 @@ class PetOverlayService : Service(), PetOverlayHost {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     pointerActive = true
-                    stopMotionNow()
+                    interruptActiveMotionForTouch()
                     downX = rawX
                     downY = rawY
                     velocityTracker.reset(rawX, rawY, event.eventTime)
+                    if (!supportsTouchRegions) {
+                        gestureCaptureGeneration += 1
+                        stageEntryPending = false
+                        clearGestureCanvasFrame()
+                        requestSkinCanvasCapture(gestureCaptureGeneration, isRefresh = false)
+                    }
                 }
 
                 MotionEvent.ACTION_MOVE -> {
@@ -428,10 +505,20 @@ class PetOverlayService : Service(), PetOverlayHost {
 
                 MotionEvent.ACTION_UP -> {
                     velocityTracker.addSample(rawX, rawY, event.eventTime)
-                    // dragEnd() 由前端经 JS 异步送达，必须在抬手瞬间就结算速度并启动滑行。
-                    if (dragging && moved) {
+                    val wasMoved = dragging && moved
+                    if (wasMoved) {
                         val velocity = velocityTracker.computeVelocity(event.eventTime, density)
-                        startFling(velocity.vx, velocity.vy)
+                        finishDragWithVelocity(velocity.vx, velocity.vy)
+                    } else {
+                        // 即使 JS 侧先一步触发 dragEnd 导致 dragging 置 false，若已进入舞台仍须推进停稳退场。
+                        stageEntryPending = false
+                        if (usingMotionStage) {
+                            commitLegacyWindowCoordinates(petX.roundToInt(), petBottom.roundToInt())
+                            applyLegacyMotionStageTransform()
+                            scheduleLegacyStageSettleAfterHiddenMove()
+                        } else if (!isMotionActive()) {
+                            clearGestureCanvasFrame()
+                        }
                     }
                     moved = false
                     dragging = false
@@ -441,6 +528,7 @@ class PetOverlayService : Service(), PetOverlayHost {
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+                    stageEntryPending = false
                     moved = false
                     dragging = false
                     pointerActive = false
@@ -448,6 +536,12 @@ class PetOverlayService : Service(), PetOverlayHost {
                     pendingDragEndGestureId?.let { activeId ->
                         pendingDragEndGestureId = null
                         manager.sendDragEnded(activeId)
+                    }
+                    if (usingMotionStage) {
+                        commitLegacyWindowCoordinates(petX.roundToInt(), petBottom.roundToInt())
+                        stopMotionAndStageNow()
+                    } else if (!isMotionActive()) {
+                        clearGestureCanvasFrame()
                     }
                     manager.onOverlayInputEditingCheck()
                 }
@@ -480,6 +574,9 @@ class PetOverlayService : Service(), PetOverlayHost {
                     density = density
                 )
             )
+            if (!supportsTouchRegions) {
+                tryEnterLegacyMotionStage()
+            }
         }
         if (moved) {
             val bounds = currentMotionBounds()
@@ -487,6 +584,8 @@ class PetOverlayService : Service(), PetOverlayHost {
             petBottom = clampToAxis(dragStartBottom + (rawY - downY), bounds.minBottom, bounds.maxBottom)
             if (supportsTouchRegions) {
                 applyFullScreenContainerTransform(updateRegionNow = false)
+            } else if (usingMotionStage) {
+                applyLegacyMotionStageTransform()
             } else {
                 params.x = petX.roundToInt()
                 place(forceLayout = false)
@@ -494,37 +593,60 @@ class PetOverlayService : Service(), PetOverlayHost {
         }
     }
 
-    private fun startFling(vx: Float, vy: Float) {
-        if (closing || !::frame.isInitialized || frame.visibility != View.VISIBLE) return
+    private fun finishDragWithVelocity(vx: Float, vy: Float) {
+        if (closing || !::frame.isInitialized || frame.visibility != View.VISIBLE) {
+            stopMotionAndStageNow()
+            return
+        }
+        mainHandler.removeCallbacks(refreshSnapshotRunnable)
+        val bounds = currentMotionBounds()
         bounceSquash.reset()
-        val started = flingEngine.start(
+
+        val flingStarted = flingEngine.start(
             startX = petX,
             startBottom = petBottom,
             initialVx = vx,
             initialVy = vy,
             density = density,
-            bounds = currentMotionBounds()
+            bounds = bounds
         )
-        if (started) {
+        if (!flingStarted) {
+            stageEntryPending = false
+        }
+
+        if (!supportsTouchRegions && usingMotionStage) {
+            if (flingStarted) {
+                // 确定性物理积分允许第 0 毫秒预知最终落点：趁 GPU 舞台在屏幕上丝滑飞行反弹时，
+                // 让隐身中的主小窗一次性静默落位到终点，等待 400ms 系统 MoveAnimation 在后台走完。
+                val resting = flingEngine.predictRestingPosition(
+                    startX = petX,
+                    startBottom = petBottom,
+                    initialVx = vx,
+                    initialVy = vy,
+                    density = density,
+                    bounds = bounds
+                )
+                commitLegacyWindowCoordinates(resting.x.roundToInt(), resting.bottom.roundToInt())
+                lastMotionFrameNanos = 0L
+                scheduleNextMotionFrame()
+            } else {
+                // 慢速轻放同样在舞台掩护下迁移隐身主窗，待系统 400ms 位移动画跑完再恢复主窗可见。
+                commitLegacyWindowCoordinates(petX.roundToInt(), petBottom.roundToInt())
+                applyLegacyMotionStageTransform()
+                scheduleLegacyStageSettleAfterHiddenMove()
+            }
+            return
+        }
+
+        if (flingStarted) {
             lastMotionFrameNanos = 0L
             scheduleNextMotionFrame()
         } else if (supportsTouchRegions) {
             applyFullScreenContainerTransform(updateRegionNow = true)
         } else {
+            params.x = petX.roundToInt()
+            place(forceLayout = false)
             flushPendingClipTop()
-        }
-    }
-
-    private fun stopMotionNow() {
-        flingEngine.stop()
-        bounceSquash.reset()
-        lastMotionFrameNanos = 0L
-        if (motionFrameScheduled && ::choreographer.isInitialized) {
-            choreographer.removeFrameCallback(motionFrameCallback)
-            motionFrameScheduled = false
-        }
-        if (supportsTouchRegions) {
-            applyFullScreenContainerTransform(updateRegionNow = true)
         }
     }
 
@@ -534,13 +656,10 @@ class PetOverlayService : Service(), PetOverlayHost {
         choreographer.postFrameCallback(motionFrameCallback)
     }
 
-    private fun isMotionActive(): Boolean = flingEngine.isRunning || bounceSquash.isActive
-
     private fun onMotionFrame(frameTimeNanos: Long) {
         motionFrameScheduled = false
         if (!isMotionActive() || closing || !::frame.isInitialized || frame.visibility != View.VISIBLE) {
-            stopMotionNow()
-            flushPendingClipTop()
+            onMotionSequenceSettled()
             return
         }
         val dtSeconds = if (lastMotionFrameNanos == 0L) {
@@ -563,6 +682,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         if (supportsTouchRegions) {
             regionUpdateFrameCounter = (regionUpdateFrameCounter + 1) and 1
             applyFullScreenContainerTransform(updateRegionNow = regionUpdateFrameCounter == 0)
+        } else if (usingMotionStage) {
+            applyLegacyMotionStageTransform()
         } else {
             params.x = petX.roundToInt()
             place(forceLayout = false)
@@ -571,9 +692,372 @@ class PetOverlayService : Service(), PetOverlayHost {
         if (flingRunning || squashActive) {
             scheduleNextMotionFrame()
         } else {
-            stopMotionNow()
+            onMotionSequenceSettled()
+        }
+    }
+
+    private fun onMotionSequenceSettled() {
+        flingEngine.stop()
+        bounceSquash.reset()
+        lastMotionFrameNanos = 0L
+        if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = true)
+        } else if (usingMotionStage) {
+            scheduleLegacyStageSettleAfterHiddenMove()
+        } else {
+            params.x = petX.roundToInt()
+            place(forceLayout = false)
             flushPendingClipTop()
         }
+    }
+
+    private fun isMotionActive(): Boolean = flingEngine.isRunning || bounceSquash.isActive
+
+    private fun interruptActiveMotionForTouch() {
+        mainHandler.removeCallbacks(refreshSnapshotRunnable)
+        mainHandler.removeCallbacks(settleStageRunnable)
+        stageEntryPending = false
+        val wasStageVisible = usingMotionStage
+        val activeFlingOrSquash = isMotionActive()
+        flingEngine.stop()
+        bounceSquash.reset()
+        lastMotionFrameNanos = 0L
+        if (motionFrameScheduled && ::choreographer.isInitialized) {
+            choreographer.removeFrameCallback(motionFrameCallback)
+            motionFrameScheduled = false
+        }
+        if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = true)
+        } else if (wasStageVisible) {
+            // 若在 420ms 退场缓冲期内再次按下，立即校准并显现主小窗，保证原地直接可拖。
+            if (activeFlingOrSquash) {
+                commitLegacyWindowCoordinates(petX.roundToInt(), petBottom.roundToInt())
+            }
+            finalizeLegacyMotionStage()
+        }
+    }
+
+    private fun stopMotionAndStageNow() {
+        mainHandler.removeCallbacks(refreshSnapshotRunnable)
+        mainHandler.removeCallbacks(settleStageRunnable)
+        stageEntryPending = false
+        flingEngine.stop()
+        bounceSquash.reset()
+        lastMotionFrameNanos = 0L
+        if (motionFrameScheduled && ::choreographer.isInitialized) {
+            choreographer.removeFrameCallback(motionFrameCallback)
+            motionFrameScheduled = false
+        }
+        if (supportsTouchRegions) {
+            applyFullScreenContainerTransform(updateRegionNow = false)
+        } else {
+            finalizeLegacyMotionStage()
+        }
+    }
+
+    private fun requestSkinCanvasCapture(generation: Int, isRefresh: Boolean) {
+        if (supportsTouchRegions || closing) return
+        val pet = petView ?: return
+        pet.evaluateJavascript(CAPTURE_SKIN_CANVAS_JS) { rawResult ->
+            if (closing || generation != gestureCaptureGeneration) return@evaluateJavascript
+            val payload = parseCapturedCanvasPayload(rawResult) ?: return@evaluateJavascript
+            if (!payload.canvasVisible) {
+                onSkinCanvasCaptureReady(
+                    captured = CapturedCanvasFrame(
+                        generation = generation,
+                        canvasVisible = false,
+                        bitmap = null,
+                        leftCss = 0f,
+                        topCss = 0f,
+                        widthCss = 0f,
+                        heightCss = 0f,
+                        dpr = density
+                    ),
+                    isRefresh = isRefresh
+                )
+                return@evaluateJavascript
+            }
+
+            val encoded = payload.pngBase64 ?: return@evaluateJavascript
+            runCatching {
+                snapshotExecutor.execute {
+                    val decoded = runCatching {
+                        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    }.getOrNull()
+                    if (decoded == null) return@execute
+                    mainHandler.post {
+                        if (closing || generation != gestureCaptureGeneration) {
+                            decoded.recycle()
+                            return@post
+                        }
+                        onSkinCanvasCaptureReady(
+                            captured = CapturedCanvasFrame(
+                                generation = generation,
+                                canvasVisible = true,
+                                bitmap = decoded,
+                                leftCss = payload.leftCss,
+                                topCss = payload.topCss,
+                                widthCss = payload.widthCss,
+                                heightCss = payload.heightCss,
+                                dpr = payload.dpr
+                            ),
+                            isRefresh = isRefresh
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun onSkinCanvasCaptureReady(captured: CapturedCanvasFrame, isRefresh: Boolean) {
+        if (closing || captured.generation != gestureCaptureGeneration) {
+            captured.bitmap?.recycle()
+            return
+        }
+        val previous = gestureCanvasFrame
+        gestureCanvasFrame = captured
+        if (previous != null && previous.bitmap !== captured.bitmap) {
+            previous.bitmap?.recycle()
+        }
+
+        if (isRefresh && usingMotionStage) {
+            val imageView = motionStageImageView ?: return
+            val refreshedBitmap = composeLegacyStageBitmap(captured) ?: return
+            val oldStageBitmap = stageBitmap
+            stageBitmap = refreshedBitmap
+            imageView.setImageBitmap(refreshedBitmap)
+            if (oldStageBitmap != null && oldStageBitmap !== refreshedBitmap) {
+                oldStageBitmap.recycle()
+            }
+            return
+        }
+
+        if (!isRefresh && stageEntryPending && !usingMotionStage && (moved || isMotionActive())) {
+            stageEntryPending = false
+            tryEnterLegacyMotionStage()
+            // 极快甩手在抓帧完成前已抬手进入滑行时，此刻刚隐身小窗需按剩余滑行曲线提前送往终点。
+            if (usingMotionStage && !pointerActive && flingEngine.isRunning) {
+                val resting = flingEngine.predictRestingPosition(
+                    startX = petX,
+                    startBottom = petBottom,
+                    initialVx = flingEngine.vx,
+                    initialVy = flingEngine.vy,
+                    density = density,
+                    bounds = currentMotionBounds()
+                )
+                commitLegacyWindowCoordinates(resting.x.roundToInt(), resting.bottom.roundToInt())
+            }
+        }
+    }
+
+    private fun tryEnterLegacyMotionStage() {
+        if (usingMotionStage || !::frame.isInitialized) return
+        val canvasFrame = gestureCanvasFrame
+        if (canvasFrame == null || canvasFrame.generation != gestureCaptureGeneration) {
+            // 抓帧解码尚未回来前绝不隐藏真身，先保持原生控件移动并在就绪瞬间无缝切入 GPU 舞台。
+            stageEntryPending = true
+            return
+        }
+        stageEntryPending = false
+        val snapshot = composeLegacyStageBitmap(canvasFrame) ?: return
+
+        val stageRoot = motionStageFrame ?: FrameLayout(this).apply {
+            clipChildren = false
+        }.also { motionStageFrame = it }
+        val imageView = motionStageImageView ?: ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_XY
+        }.also {
+            motionStageImageView = it
+            stageRoot.addView(it, FrameLayout.LayoutParams(snapshot.width, snapshot.height))
+        }
+
+        val previousStageBitmap = stageBitmap
+        stageBitmap = snapshot
+        imageView.setImageBitmap(snapshot)
+        if (previousStageBitmap != null && previousStageBitmap !== snapshot) {
+            previousStageBitmap.recycle()
+        }
+        val imageParams = imageView.layoutParams as FrameLayout.LayoutParams
+        imageParams.width = snapshot.width
+        imageParams.height = snapshot.height
+        imageParams.gravity = Gravity.TOP or Gravity.LEFT
+        imageView.layoutParams = imageParams
+
+        val stageParams = motionStageParams ?: WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = 0
+            y = 0
+            applyOverlayWindowChrome(this)
+        }.also { motionStageParams = it }
+
+        if (!stageRoot.isAttachedToWindow) {
+            windowManager.addView(stageRoot, stageParams)
+        }
+        // 趁隐身小窗尚未触发任何移动之前先锁存其系统安全区原点偏移，防止后续 relayout 异步窗口延迟引起位移跳变。
+        val windowLoc = IntArray(2)
+        frame.getLocationOnScreen(windowLoc)
+        legacyWindowOriginX = windowLoc[0] - params.x
+        legacyWindowOriginY = windowLoc[1] - params.y
+
+        stageRoot.visibility = View.VISIBLE
+        usingMotionStage = true
+        applyLegacyMotionStageTransform()
+        stageRoot.post { if (usingMotionStage) applyLegacyMotionStageTransform() }
+        petView?.alpha = 0f
+
+        // 前端收到 drag_begin/drag_started 后会收起菜单并切换拖动表情，50ms 后静默补抓刷新一次舞台贴图。
+        mainHandler.removeCallbacks(refreshSnapshotRunnable)
+        mainHandler.postDelayed(refreshSnapshotRunnable, SNAPSHOT_REFRESH_DELAY_MS)
+    }
+
+    private fun refreshMotionStageSnapshot() {
+        if (!usingMotionStage || !moved) return
+        requestSkinCanvasCapture(gestureCaptureGeneration, isRefresh = true)
+    }
+
+    private fun composeLegacyStageBitmap(canvasFrame: CapturedCanvasFrame): Bitmap? {
+        val pet = petView ?: return null
+        if (canvasFrame.canvasVisible && canvasFrame.bitmap == null) return null
+        val w = frame.width
+        val h = frame.height
+        if (w <= 0 || h <= 0) return null
+        val snapshot = runCatching {
+            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.save()
+            canvas.translate(0f, -clipTop.toFloat())
+            pet.draw(canvas)
+            canvas.restore()
+
+            val skinBitmap = canvasFrame.bitmap
+            if (canvasFrame.canvasVisible && skinBitmap != null && !skinBitmap.isRecycled) {
+                val scale = if (canvasFrame.dpr.isFinite() && canvasFrame.dpr > 0f) {
+                    canvasFrame.dpr
+                } else {
+                    density
+                }
+                val dst = RectF(
+                    canvasFrame.leftCss * scale,
+                    canvasFrame.topCss * scale - clipTop,
+                    (canvasFrame.leftCss + canvasFrame.widthCss) * scale,
+                    (canvasFrame.topCss + canvasFrame.heightCss) * scale - clipTop
+                )
+                canvas.drawBitmap(skinBitmap, null, dst, stageBitmapPaint)
+            }
+            bitmap
+        }.getOrNull() ?: return null
+
+        if (!hasVisiblePixels(snapshot)) {
+            snapshot.recycle()
+            return null
+        }
+        return snapshot
+    }
+
+    private fun clearGestureCanvasFrame() {
+        val current = gestureCanvasFrame
+        gestureCanvasFrame = null
+        current?.bitmap?.recycle()
+    }
+
+    private fun hasVisiblePixels(bitmap: Bitmap): Boolean {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width <= 0 || height <= 0) return false
+        val step = max(1, min(width, height) / 36)
+        var y = 0
+        while (y < height) {
+            var x = 0
+            while (x < width) {
+                if ((bitmap.getPixel(x, y) ushr 24) > 8) {
+                    return true
+                }
+                x += step
+            }
+            y += step
+        }
+        return false
+    }
+
+    private fun commitLegacyWindowCoordinates(targetX: Int, targetBottom: Int) {
+        val bounds = currentMotionBounds()
+        val clampedX = clampToAxis(targetX.toFloat(), bounds.minX, bounds.maxX).roundToInt()
+        val clampedBottom = clampToAxis(targetBottom.toFloat(), bounds.minBottom, bounds.maxBottom).roundToInt()
+        val nextY = max(0, min(clampedBottom, keyboardTop) - params.height)
+        val changed = params.x != clampedX || params.y != nextY
+        params.x = clampedX
+        params.y = nextY
+        if (::frame.isInitialized && frame.isAttachedToWindow) {
+            windowManager.updateViewLayout(frame, params)
+        }
+        if (changed) {
+            lastHiddenWindowMoveUptimeMs = SystemClock.uptimeMillis()
+        }
+    }
+
+    private fun scheduleLegacyStageSettleAfterHiddenMove() {
+        mainHandler.removeCallbacks(settleStageRunnable)
+        val elapsed = SystemClock.uptimeMillis() - lastHiddenWindowMoveUptimeMs
+        val remaining = (MOVE_ANIMATION_SETTLE_MS - elapsed).coerceAtLeast(0L)
+        if (remaining == 0L) {
+            finalizeLegacyMotionStage()
+        } else {
+            mainHandler.postDelayed(settleStageRunnable, remaining)
+        }
+    }
+
+    private fun finalizeLegacyMotionStage() {
+        mainHandler.removeCallbacks(refreshSnapshotRunnable)
+        mainHandler.removeCallbacks(settleStageRunnable)
+        stageEntryPending = false
+        petView?.alpha = 1f
+        usingMotionStage = false
+        val stageRoot = motionStageFrame
+        if (stageRoot != null && stageRoot.isAttachedToWindow) {
+            runCatching { windowManager.removeView(stageRoot) }
+        }
+        motionStageImageView?.setImageDrawable(null)
+        stageBitmap?.recycle()
+        stageBitmap = null
+        clearGestureCanvasFrame()
+        flushPendingClipTop()
+    }
+
+    private fun applyLegacyMotionStageTransform() {
+        val imageView = motionStageImageView ?: return
+        val stageRoot = motionStageFrame ?: return
+        val stageLoc = IntArray(2)
+        val (stageOriginX, stageOriginY) = if (stageRoot.isAttachedToWindow && stageRoot.width > 0) {
+            stageRoot.getLocationOnScreen(stageLoc)
+            stageLoc[0] to stageLoc[1]
+        } else {
+            0 to 0
+        }
+
+        val currentTopInWindow = min(petBottom, keyboardTop.toFloat()) - params.height.toFloat()
+        val clampedTopInWindow = max(0f, currentTopInWindow)
+        val tx = petX + (legacyWindowOriginX - stageOriginX)
+        val ty = clampedTopInWindow + (legacyWindowOriginY - stageOriginY)
+        val w = (imageView.layoutParams?.width ?: params.width).toFloat()
+        val h = (imageView.layoutParams?.height ?: params.height).toFloat()
+        applySquashTransform(
+            target = imageView,
+            translationX = tx,
+            translationY = ty,
+            width = w,
+            visibleTop = 0f,
+            visibleHeight = h
+        )
     }
 
     private fun applyFullScreenContainerTransform(updateRegionNow: Boolean) {
