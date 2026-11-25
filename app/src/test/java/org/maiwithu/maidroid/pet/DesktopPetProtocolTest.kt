@@ -113,16 +113,16 @@ class DesktopPetProtocolTest {
     }
 
     @Test
-    fun `normalizeDesktopPetScale snaps to 5 percent steps, clamps bounds and handles non-finite inputs`() {
+    fun `normalizeDesktopPetScale preserves 1 percent continuous precision, clamps bounds and handles non-finite inputs`() {
         assertEquals(DesktopPetScaleSpec.DEFAULT, normalizeDesktopPetScale(Float.NaN), 0.0001f)
         assertEquals(DesktopPetScaleSpec.DEFAULT, normalizeDesktopPetScale(Float.POSITIVE_INFINITY), 0.0001f)
         assertEquals(DesktopPetScaleSpec.DEFAULT, normalizeDesktopPetScale(Float.NEGATIVE_INFINITY), 0.0001f)
         assertEquals(DesktopPetScaleSpec.MIN, normalizeDesktopPetScale(0.20f), 0.0001f)
         assertEquals(DesktopPetScaleSpec.MAX, normalizeDesktopPetScale(2.00f), 0.0001f)
-        assertEquals(0.75f, normalizeDesktopPetScale(0.73f), 0.0001f)
-        assertEquals(0.75f, normalizeDesktopPetScale(0.77f), 0.0001f)
+        assertEquals(0.73f, normalizeDesktopPetScale(0.734f), 0.0001f)
+        assertEquals(0.74f, normalizeDesktopPetScale(0.736f), 0.0001f)
         assertEquals(1.00f, normalizeDesktopPetScale(1.00f), 0.0001f)
-        assertEquals(1.20f, normalizeDesktopPetScale(1.22f), 0.0001f)
+        assertEquals(1.22f, normalizeDesktopPetScale(1.224f), 0.0001f)
     }
 
     @Test
@@ -134,7 +134,7 @@ class DesktopPetProtocolTest {
         assertEquals(900f / 780f, narrow, 0.0001f)
         assertTrue(780f * narrow <= 900.1f)
         // 非法或零宽度回退规范化后的请求值
-        assertEquals(0.85f, resolveEffectivePetScale(0.84f, displayWidthPx = 0, baseWidthPx = 780), 0.0001f)
-        assertEquals(0.85f, resolveEffectivePetScale(0.84f, displayWidthPx = 1080, baseWidthPx = 0), 0.0001f)
+        assertEquals(0.84f, resolveEffectivePetScale(0.84f, displayWidthPx = 0, baseWidthPx = 780), 0.0001f)
+        assertEquals(0.84f, resolveEffectivePetScale(0.84f, displayWidthPx = 1080, baseWidthPx = 0), 0.0001f)
     }
 }
