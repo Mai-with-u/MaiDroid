@@ -86,6 +86,7 @@ import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -128,7 +129,7 @@ internal fun TerminalOutputScreen(
             embedded = false,
             modifier = Modifier
                 .fillMaxSize()
-                .background(TerminalBackground)
+                .appPageBackground(TerminalBackground)
                 // 只登记命中、不消费事件：落在终端页上的点按和滑动不会漏到下面的网页和导航栏，子控件照常处理。
                 .pointerInput(Unit) {
                     awaitPointerEventScope {

@@ -60,6 +60,7 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeScrollHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -209,7 +210,7 @@ internal fun ExtensionsPage(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         val statusBarTop = statusBarTopInset()
         val bottomClearance = LocalBottomNavigationClearance.current
@@ -327,7 +328,7 @@ internal fun ExtensionsPage(
                     targetState = selectedDetail,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(PageBackground),
+                        .appPageBackground(PageBackground),
                     transitionSpec = { horizontalSlideTransition(forward = targetState != null, dampingRatio = 0.82f) },
                     label = "ExtensionsCompactDetailTransition"
                 ) { detail ->
@@ -396,7 +397,7 @@ internal fun ExtensionsPage(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(PageBackground)
+                        .appPageBackground(PageBackground)
                 ) {
                     CollapsingGlassHeaderContainer(
                         title = "扩展组件",
@@ -444,7 +445,7 @@ internal fun ExtensionsPage(
                         modifier = Modifier
                             .weight(HomeTwoPaneSpec.RightPaneWeight)
                             .fillMaxHeight()
-                            .background(PageBackground)
+                            .appPageBackground(PageBackground)
                     ) {
                         AnimatedContent(
                             targetState = selectedDetail,

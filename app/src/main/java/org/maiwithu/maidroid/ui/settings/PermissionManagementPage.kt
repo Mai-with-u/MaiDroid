@@ -47,6 +47,7 @@ import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
@@ -119,7 +120,7 @@ internal fun PermissionManagementPage(
         },
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         LazyColumn(
             state = listState,

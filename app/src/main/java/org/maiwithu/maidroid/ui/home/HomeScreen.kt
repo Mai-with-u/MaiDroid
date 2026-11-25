@@ -1,7 +1,6 @@
 package org.maiwithu.maidroid.ui.home
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,6 +30,7 @@ import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.extension.ExtensionsPage
@@ -87,7 +87,7 @@ internal fun HomeScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         if (shellComposed || tabsVisible) {
             HomeTabsShell(
@@ -161,7 +161,7 @@ private fun HomeTabsShell(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         val useRail = homeUsesNavigationRail(maxWidth.value, maxHeight.value)
 
@@ -192,14 +192,14 @@ private fun HomeTabsShell(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(PageBackground)
+                        .appPageBackground(PageBackground)
                         .then(if (recordHomeBackdrop) Modifier.layerBackdrop(homeBackdrop) else Modifier)
                 ) {
                     AnimatedContent(
                         targetState = selectedTab,
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(PageBackground),
+                            .appPageBackground(PageBackground),
                         transitionSpec = { horizontalSlideTransition(forward = targetState >= initialState, dampingRatio = 0.82f) },
                         label = "HomeTabTransition"
                     ) { tab ->

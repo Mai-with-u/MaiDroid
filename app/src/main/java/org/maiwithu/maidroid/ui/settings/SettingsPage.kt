@@ -73,6 +73,7 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -189,7 +190,7 @@ internal fun SettingsPage(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         // 横屏挖孔的左右安全区由主页外壳统一让开，这里拿到的宽度已经是安全区内的宽度。
         val useTwoPane = settingsUseTwoPane(
@@ -233,7 +234,7 @@ internal fun SettingsPage(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(PageBackground)
+                    .appPageBackground(PageBackground)
             ) {
                 SettingsNavigationPane(
                     webUiOnline = webUiOnline,
@@ -287,7 +288,7 @@ internal fun SettingsPage(
                     modifier = Modifier
                         .weight(HomeTwoPaneSpec.RightPaneWeight)
                         .fillMaxHeight()
-                        .background(PageBackground)
+                        .appPageBackground(PageBackground)
                 ) {
                     AnimatedContent(
                         targetState = selectedDetail,
@@ -333,7 +334,7 @@ internal fun SettingsPage(
                 targetState = selectedDetail,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(PageBackground),
+                    .appPageBackground(PageBackground),
                 transitionSpec = { horizontalSlideTransition(forward = targetState != null, dampingRatio = 0.82f) },
                 label = "SettingsPermissionTransition"
             ) { detail ->
@@ -537,7 +538,7 @@ private fun SettingsNavigationPane(
         collapsedFontSize = if (compact) 18.sp else 19.sp,
         topBarHeight = if (compact) 46.dp else 52.dp,
         headerOverscrollPx = overscroll.headerOverscrollPx,
-        modifier = modifier.background(PageBackground)
+        modifier = modifier.appPageBackground(PageBackground)
     ) {
         LazyColumn(
             state = listState,

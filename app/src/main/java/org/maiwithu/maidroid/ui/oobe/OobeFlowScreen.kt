@@ -53,6 +53,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.settings.MirrorSettingsDialog
@@ -139,7 +140,7 @@ internal fun OobeFlowScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(OobeBackground)
+            .appPageBackground(OobeBackground)
     ) {
         val density = LocalDensity.current
         val layoutDirection = LocalLayoutDirection.current
@@ -345,7 +346,7 @@ private fun BoxScope.CompactOobeLayout(
             .fillMaxWidth()
             .height(maxHeight - contentTop)
             .clip(RoundedCornerShape(topStart = contentCornerRadius, topEnd = contentCornerRadius))
-            .background(OobeBackground)
+            .appPageBackground(OobeBackground)
             .padding(horizontal = 24.dp)
     ) {
         Spacer(modifier = Modifier.height(32.dp))
@@ -501,7 +502,7 @@ private fun AdaptiveOobeLayout(
                 .weight(OOBE_WORK_PANE_WEIGHT)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(topStart = 36.dp, bottomStart = 36.dp))
-                .background(OobeBackground)
+                .appPageBackground(OobeBackground)
         ) {
             Column(
                 modifier = Modifier

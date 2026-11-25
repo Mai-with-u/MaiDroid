@@ -74,6 +74,7 @@ import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeScrollHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -286,7 +287,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         val statusBarTop = statusBarTopInset()
         val bottomClearance = LocalBottomNavigationClearance.current
@@ -515,7 +516,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(PageBackground)
+                        .appPageBackground(PageBackground)
                         .padding(top = statusBarTop)
                 ) {
                     Spacer(modifier = Modifier.height(topSpacing))
@@ -547,7 +548,7 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .background(PageBackground),
+                            .appPageBackground(PageBackground),
                         transitionSpec = {
                             val forward = categories.indexOf(targetState) >= categories.indexOf(initialState)
                             horizontalSlideTransition(forward = forward, dampingRatio = 0.82f)
@@ -800,7 +801,7 @@ private fun PlatformGrid(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(PageBackground),
+            .appPageBackground(PageBackground),
         contentAlignment = Alignment.TopCenter
     ) {
         val availableWidth = (maxWidth - PlatformGridHorizontalPadding * 2f)
