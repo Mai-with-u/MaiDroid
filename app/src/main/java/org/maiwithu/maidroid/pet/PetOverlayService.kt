@@ -171,6 +171,8 @@ class PetOverlayService : Service(), PetOverlayHost {
     private var legacyWindowOriginY = 0
     private var pendingClipRawTopPx: Int? = null
     private var lastHiddenWindowMoveUptimeMs = 0L
+    private var lastViewportWidthPx = 0
+    private var lastViewportHeightPx = 0
 
     private var petView: PetWebView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -229,10 +231,11 @@ class PetOverlayService : Service(), PetOverlayHost {
         windowManager = getSystemService(WindowManager::class.java)
         choreographer = Choreographer.getInstance()
         density = resources.displayMetrics.density
+        val (displayWidth, displayHeight) = readWindowMetricsSize()
+        lastViewportWidthPx = displayWidth
+        lastViewportHeightPx = displayHeight
         requestedScale = manager.currentPetScale()
-        effectiveScale = computeEffectiveScale()
-        val displayHeight = resources.displayMetrics.heightPixels
-        val displayWidth = resources.displayMetrics.widthPixels
+        effectiveScale = computeEffectiveScale(displayWidth = displayWidth)
 
         fullHeight = min(dp(900.0), displayHeight)
         val baseWidthPx = basePetWidthPx()
@@ -312,6 +315,26 @@ class PetOverlayService : Service(), PetOverlayHost {
 
         windowManager.addView(frame, params)
         if (supportsTouchRegions) {
+            // onConfigurationChanged 常早于悬浮窗完成旋转重排：监听满屏容器真实尺寸变化以二次校准坐标与热区。
+            frame.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                if (closing) return@addOnLayoutChangeListener
+                val newW = right - left
+                val newH = bottom - top
+                val oldW = oldRight - oldLeft
+                val oldH = oldBottom - oldTop
+                if (newW > 0 && newH > 0) {
+                    if (newW != lastViewportWidthPx || newH != lastViewportHeightPx) {
+                        lastViewportWidthPx = newW
+                        lastViewportHeightPx = newH
+                        density = resources.displayMetrics.density
+                        onViewportDimensionsChanged(newW, newH)
+                    } else if (newW != oldW || newH != oldH) {
+                        frame.post {
+                            if (!closing) applyCurrentTouchableRegion(newW, newH)
+                        }
+                    }
+                }
+            }
             frame.post { applyFullScreenContainerTransform(updateRegionNow = true) }
         }
         isRunning = true
@@ -338,10 +361,39 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (!::frame.isInitialized) return
+        if (!::frame.isInitialized || closing) return
+        density = resources.displayMetrics.density
+        val (metricsW, metricsH) = readWindowMetricsSize()
+        if (metricsW > 0 && metricsH > 0) {
+            lastViewportWidthPx = metricsW
+            lastViewportHeightPx = metricsH
+            onViewportDimensionsChanged(metricsW, metricsH)
+        } else {
+            stopMotionAndStageNow()
+            applyEffectiveScaleChange(preserveAnchorCenter = false)
+        }
+    }
+
+    private fun onViewportDimensionsChanged(viewportWidthPx: Int, viewportHeightPx: Int) {
+        // 视口切换横竖屏或分屏尺寸突变时，立即终止旧坐标系下的拖拽/滑行状态再按新尺寸重新夹紧坐标。
+        dragging = false
+        moved = false
+        pointerActive = false
+        pendingDragEndGestureId?.let { activeId ->
+            pendingDragEndGestureId = null
+            manager.sendDragEnded(activeId)
+        }
         stopMotionAndStageNow()
-        // 横竖屏切换后按新屏宽重新约束有效缩放比并夹紧坐标，避免窄屏超宽或出界。
-        applyEffectiveScaleChange(preserveAnchorCenter = false)
+        applyEffectiveScaleChange(
+            preserveAnchorCenter = false,
+            viewportWidthPx = viewportWidthPx,
+            viewportHeightPx = viewportHeightPx
+        )
+        if (supportsTouchRegions) {
+            frame.post {
+                if (!closing) applyCurrentTouchableRegion(viewportWidthPx, viewportHeightPx)
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -1220,33 +1272,49 @@ class PetOverlayService : Service(), PetOverlayHost {
         target.scaleY = bounceSquash.scaleY
     }
 
-    private fun applyCurrentTouchableRegion() {
+    private fun applyCurrentTouchableRegion(
+        viewportWidthPx: Int = effectiveViewportWidthPx(),
+        viewportHeightPx: Int = effectiveViewportHeightPx()
+    ) {
         if (!supportsTouchRegions || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val offsetX = petX.roundToInt()
         val offsetY = (min(petBottom, keyboardTop.toFloat()) - scaledFullHeightPx()).roundToInt()
         val touchable = Region()
         for (rect in localHitRects) {
+            val clipped = clipHitRectToViewport(
+                left = rect.left + offsetX,
+                top = rect.top + offsetY,
+                right = rect.right + offsetX,
+                bottom = rect.bottom + offsetY,
+                viewportWidth = viewportWidthPx,
+                viewportHeight = viewportHeightPx
+            ) ?: continue
             touchable.op(
-                rect.left + offsetX,
-                rect.top + offsetY,
-                rect.right + offsetX,
-                rect.bottom + offsetY,
+                clipped.left,
+                clipped.top,
+                clipped.right,
+                clipped.bottom,
                 Region.Op.UNION
             )
         }
         frame.rootSurfaceControl?.setTouchableRegion(touchable)
     }
 
-    private fun applyEffectiveScaleChange(preserveAnchorCenter: Boolean) {
+    private fun applyEffectiveScaleChange(
+        preserveAnchorCenter: Boolean,
+        viewportWidthPx: Int = currentDisplayWidthPx(),
+        viewportHeightPx: Int = currentDisplayHeightPx()
+    ) {
         stopMotionAndStageNow()
         val oldWidth = scaledPetWidthPx()
-        effectiveScale = computeEffectiveScale()
+        effectiveScale = computeEffectiveScale(displayWidth = viewportWidthPx)
         val newWidth = scaledPetWidthPx()
         if (preserveAnchorCenter) {
             // 调节桌宠大小时保持水平中心与脚底原地缩放，防止左右跳偏。
             petX += (oldWidth - newWidth) / 2f
         }
         val pet = petView
+        val bounds = currentMotionBounds(displayWidth = viewportWidthPx, displayHeight = viewportHeightPx)
         if (supportsTouchRegions) {
             pet?.let {
                 it.pivotX = 0f
@@ -1261,18 +1329,18 @@ class PetOverlayService : Service(), PetOverlayHost {
                 container.layoutParams = containerLayout
             }
             rebuildScaledHitRects()
-            clampLogicalCoordinates(currentMotionBounds())
+            clampLogicalCoordinates(bounds)
             applyFullScreenContainerTransform(updateRegionNow = true)
         } else {
             params.width = newWidth
-            params.height = computeLegacyVisibleHeightPx()
+            params.height = computeLegacyVisibleHeightPx(displayHeightPx = viewportHeightPx)
             pet?.let {
                 val layout = it.layoutParams as FrameLayout.LayoutParams
                 layout.topMargin = 0
                 it.layoutParams = layout
             }
             syncLegacyPetViewTransform()
-            place(forceLayout = true)
+            place(forceLayout = true, boundsOverride = bounds)
         }
     }
 
@@ -1297,13 +1365,13 @@ class PetOverlayService : Service(), PetOverlayHost {
         pet.translationY = params.height - fullHeight * effectiveScale
     }
 
-    private fun computeLegacyVisibleHeightPx(): Int {
+    private fun computeLegacyVisibleHeightPx(displayHeightPx: Int = currentDisplayHeightPx()): Int {
         val unscaledVisible = (fullHeight - clipTop).coerceAtLeast(dp(1.0))
-        return min(currentDisplayHeightPx(), (unscaledVisible * effectiveScale).roundToInt().coerceAtLeast(1))
+        return min(displayHeightPx, (unscaledVisible * effectiveScale).roundToInt().coerceAtLeast(1))
     }
 
-    private fun computeEffectiveScale(): Float =
-        resolveEffectivePetScale(requestedScale, currentDisplayWidthPx(), basePetWidthPx())
+    private fun computeEffectiveScale(displayWidth: Int = currentDisplayWidthPx()): Float =
+        resolveEffectivePetScale(requestedScale, displayWidth, basePetWidthPx())
 
     private fun basePetWidthPx(): Int = dp(BASE_PET_WIDTH_DP)
 
@@ -1395,29 +1463,40 @@ class PetOverlayService : Service(), PetOverlayHost {
         }
     }
 
-    private fun currentDisplayWidthPx(): Int {
-        if (supportsTouchRegions) {
-            if (::frame.isInitialized && frame.width > 0) return frame.width
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                return windowManager.currentWindowMetrics.bounds.width()
+    private fun readWindowMetricsSize(): Pair<Int, Int> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.currentWindowMetrics.bounds
+            if (bounds.width() > 0 && bounds.height() > 0) {
+                return bounds.width() to bounds.height()
             }
         }
-        return resources.displayMetrics.widthPixels
+        return resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
+    }
+
+    private fun effectiveViewportWidthPx(): Int =
+        if (lastViewportWidthPx > 0) lastViewportWidthPx else currentDisplayWidthPx()
+
+    private fun effectiveViewportHeightPx(): Int =
+        if (lastViewportHeightPx > 0) lastViewportHeightPx else currentDisplayHeightPx()
+
+    private fun currentDisplayWidthPx(): Int {
+        if (supportsTouchRegions && ::frame.isInitialized && frame.width > 0) {
+            return frame.width
+        }
+        return readWindowMetricsSize().first
     }
 
     private fun currentDisplayHeightPx(): Int {
-        if (supportsTouchRegions) {
-            if (::frame.isInitialized && frame.height > 0) return frame.height
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                return windowManager.currentWindowMetrics.bounds.height()
-            }
+        if (supportsTouchRegions && ::frame.isInitialized && frame.height > 0) {
+            return frame.height
         }
-        return resources.displayMetrics.heightPixels
+        return readWindowMetricsSize().second
     }
 
-    private fun currentMotionBounds(): PetMotionBounds {
-        val displayWidth = currentDisplayWidthPx()
-        val displayHeight = currentDisplayHeightPx()
+    private fun currentMotionBounds(
+        displayWidth: Int = currentDisplayWidthPx(),
+        displayHeight: Int = currentDisplayHeightPx()
+    ): PetMotionBounds {
         val petWidthPx = scaledPetWidthPx()
         val maxX = max(0, displayWidth - petWidthPx)
         val effectiveMaxBottom = min(displayHeight, keyboardTop)
@@ -1442,20 +1521,21 @@ class PetOverlayService : Service(), PetOverlayHost {
     }
 
     private fun clampLogicalCoordinates(bounds: PetMotionBounds) {
-        petX = clampToAxis(petX, bounds.minX, bounds.maxX)
-        petBottom = clampToAxis(petBottom, bounds.minBottom, bounds.maxBottom)
+        val clamped = remapPetPositionForBounds(petX, petBottom, bounds)
+        petX = clamped.x
+        petBottom = clamped.bottom
     }
 
     private fun clampToAxis(value: Float, minBound: Float, maxBound: Float): Float =
         if (!value.isFinite() || minBound >= maxBound) minBound else value.coerceIn(minBound, maxBound)
 
-    private fun place(forceLayout: Boolean = true) {
+    private fun place(forceLayout: Boolean = true, boundsOverride: PetMotionBounds? = null) {
+        val bounds = boundsOverride ?: currentMotionBounds()
         if (supportsTouchRegions) {
-            clampLogicalCoordinates(currentMotionBounds())
+            clampLogicalCoordinates(bounds)
             applyFullScreenContainerTransform(updateRegionNow = true)
             return
         }
-        val bounds = currentMotionBounds()
         val prevX = params.x
         val prevY = params.y
         clampLogicalCoordinates(bounds)

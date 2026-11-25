@@ -301,4 +301,55 @@ class PetFlingPhysicsTest {
         // 超过过渡收敛窗口后立即刷新，不返回负延迟
         assertEquals(0L, computeDraggingSnapshotRefreshDelayMs(1000L, 1300L, 220L))
     }
+
+    @Test
+    fun `remapPetPositionForBounds keeps bottom-docked pet inside screen after portrait to landscape rotation`() {
+        val landscapeBounds = PetMotionBounds(minX = 0f, maxX = 2300f, minBottom = 360f, maxBottom = 1256f)
+        // 竖屏拖至底部（petBottom = 2700）切换横屏后，底边坐标必须被夹紧到横屏底边 1256 以内
+        val remapped = remapPetPositionForBounds(
+            currentX = 720f,
+            currentBottom = 2700f,
+            bounds = landscapeBounds
+        )
+        assertEquals(720f, remapped.x, 0.001f)
+        assertEquals(1256f, remapped.bottom, 0.001f)
+    }
+
+    @Test
+    fun `remapPetPositionForBounds clamps horizontal coordinate from landscape back to portrait and guards invalid bounds`() {
+        val portraitBounds = PetMotionBounds(minX = 0f, maxX = 756f, minBottom = 360f, maxBottom = 2808f)
+        // 横屏拖至右侧（petX = 2200）切回竖屏后，X 坐标必须被夹紧到竖屏右边 756 以内
+        val remapped = remapPetPositionForBounds(
+            currentX = 2200f,
+            currentBottom = 1100f,
+            bounds = portraitBounds
+        )
+        assertEquals(756f, remapped.x, 0.001f)
+        assertEquals(1100f, remapped.bottom, 0.001f)
+
+        // 非法浮点与极矮视口边界倒挂兜底
+        val collapsedBounds = PetMotionBounds(minX = 0f, maxX = 0f, minBottom = 400f, maxBottom = 400f)
+        val fallback = remapPetPositionForBounds(
+            currentX = Float.NaN,
+            currentBottom = Float.POSITIVE_INFINITY,
+            bounds = collapsedBounds
+        )
+        assertEquals(0f, fallback.x, 0.001f)
+        assertEquals(400f, fallback.bottom, 0.001f)
+    }
+
+    @Test
+    fun `clipHitRectToViewport clips edge overlap and drops completely offscreen rects`() {
+        assertEquals(
+            PixelRect(left = 100, top = 0, right = 400, bottom = 180),
+            clipHitRectToViewport(left = 100, top = -40, right = 400, bottom = 180, viewportWidth = 2808, viewportHeight = 1256)
+        )
+        assertEquals(
+            PixelRect(left = 200, top = 800, right = 500, bottom = 1100),
+            clipHitRectToViewport(left = 200, top = 800, right = 500, bottom = 1100, viewportWidth = 2808, viewportHeight = 1256)
+        )
+        assertNull(
+            clipHitRectToViewport(left = 100, top = 1300, right = 400, bottom = 1500, viewportWidth = 2808, viewportHeight = 1256)
+        )
+    }
 }

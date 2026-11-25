@@ -473,6 +473,62 @@ internal class PetBounceSquashSpring {
     }
 }
 
+/** 整数像素矩形，供纯粹的热区可视范围裁剪单测直接断言。 */
+internal data class PixelRect(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int
+)
+
+/**
+ * 屏幕旋转或视口尺寸变化时，将逻辑坐标 `(currentX, currentBottom)` 安全夹紧到新的可移动边界 [bounds] 内，
+ * 避免竖屏停靠在底部的桌宠在切换横屏后落到屏幕外消失；极窄极矮视口或非法浮点统一兜底至安全最小边界。
+ */
+internal fun remapPetPositionForBounds(
+    currentX: Float,
+    currentBottom: Float,
+    bounds: PetMotionBounds
+): PetPoint {
+    val safeX = if (!currentX.isFinite() || bounds.minX >= bounds.maxX) {
+        bounds.minX
+    } else {
+        currentX.coerceIn(bounds.minX, bounds.maxX)
+    }
+    val safeBottom = if (!currentBottom.isFinite() || bounds.minBottom >= bounds.maxBottom) {
+        bounds.minBottom
+    } else {
+        currentBottom.coerceIn(bounds.minBottom, bounds.maxBottom)
+    }
+    return PetPoint(x = safeX, bottom = safeBottom)
+}
+
+/**
+ * 将偏移到屏幕坐标的单个触控热区裁剪至当前视口 `[0, viewportWidth] × [0, viewportHeight]` 之内；
+ * 无有效正面积交集时返回 null，防止旋转后向 `setTouchableRegion` 写入负坐标或屏外区域。
+ */
+internal fun clipHitRectToViewport(
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+    viewportWidth: Int,
+    viewportHeight: Int
+): PixelRect? {
+    if (viewportWidth <= 0 || viewportHeight <= 0) return null
+    val clippedLeft = left.coerceIn(0, viewportWidth)
+    val clippedTop = top.coerceIn(0, viewportHeight)
+    val clippedRight = right.coerceIn(0, viewportWidth)
+    val clippedBottom = bottom.coerceIn(0, viewportHeight)
+    if (clippedLeft >= clippedRight || clippedTop >= clippedBottom) return null
+    return PixelRect(
+        left = clippedLeft,
+        top = clippedTop,
+        right = clippedRight,
+        bottom = clippedBottom
+    )
+}
+
 /**
  * 计算 Android 8–12 悬浮窗防抖上裁剪位置：
  * 当气泡/菜单向上弹出越过当前 [currentClipTop] 时立即上扩防截断；
