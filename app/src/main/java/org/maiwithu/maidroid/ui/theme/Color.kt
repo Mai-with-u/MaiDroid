@@ -17,15 +17,15 @@ val OobeTextPrimary = Color(0xFFFAFAFA)
 val OobeTextSecondary = Color(0x80FFFFFF)  // 50% 白
 val OobeTextDimmed = Color(0x66FFFFFF)     // 40% 白
 
-// ── 主页各页（WebUI、消息平台、设置、终端）：深邃基底 + 温润扁平卡片 ──────────
-val PageBackground = Color(0xFF0B0C0E)
+// ── 主页各页（WebUI、消息平台、设置、终端）：OLED 纯黑基底 + 温润扁平卡片 ──────────
+val PageBackground = Color(0xFF000000)
 val TextPrimary = Color.White      // 主要文字、图标
 val CardSurface = Color(0xFF1A1B1F)
 val CardBorder = Color(0xFF262830)           // 次级控件槽底、输入框柔边
 val CardSurfaceSelected = Color(0xFF30333C)  // 卡片里选中的一格（接入方式选择器）
 val CardDivider = Color(0x12FFFFFF)          // 7% 纯白行间细丝分隔线
 val DialogInnerSurface = PageBackground.copy(alpha = 0.56f)     // 弹窗内嵌分组与折叠面板底色
-val DialogBackdropScrim = Color(0xFF030405).copy(alpha = 0.52f) // 弹窗外围半透明遮罩（背后页面隐约可见）
+val DialogBackdropScrim = Color(0xFF000000).copy(alpha = 0.52f) // 弹窗外围纯黑半透明遮罩（背后页面隐约可见且不抬亮像素）
 val DialogFooterTray = Color.Black.copy(alpha = 0.14f)          // 弹窗底栏轻微压暗托盘，与内容区拉开层级
 val TextMuted = Color(0xFF8E929B)  // 次要说明文字
 val TextFaint = Color(0xFF6B6F78)  // 更弱一级的提示文字
@@ -73,11 +73,11 @@ val LiquidButtonSurface = Color(0x26FFFFFF)     // 次级液态玻璃按钮叠�
 const val SubtleGlassBlurRadius = 8f
 
 // ── 终端输出 ─────────────────────────────────────────────────────
-val TerminalBackground = Color(0xFF0B0B0C)  // 日志区底色，比卡片更黑一档
+val TerminalBackground = Color(0xFF000000)  // 日志区纯黑底色，契合 OLED 屏幕且比卡片更黑一档
 val TerminalText = Color(0xFFD0D0D4)        // 没有颜色序列的日志文字
 
-// ── 唤醒页（开机自检画面）：墨黑底 + 三档灰字，强调色沿用品牌橙 ──────────────
-val BootInk = Color(0xFF0A0B0D)        // 底色，也是收尾时上下拉开的两扇快门
+// ── 唤醒页（开机自检画面）：纯黑底 + 三档灰字，强调色沿用品牌橙 ──────────────
+val BootInk = Color(0xFF000000)        // 纯黑底色，也是收尾时上下拉开的两扇快门
 val BootTrack = Color(0xFF22262B)      // 进度条轨道
 val BootText = Color(0xFFECECE7)       // 抬头
 val BootTextDim = Color(0xFF9A9EA5)    // 自检行
