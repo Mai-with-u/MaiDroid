@@ -232,7 +232,8 @@ internal fun ExtensionsPage(
                     onSelectBot = desktopPet::selectBot,
                     onToggleVisibility = desktopPet::toggleVisibility,
                     onOpenRecords = desktopPet::openRecords,
-                    onReconnect = handleReconnect
+                    onReconnect = handleReconnect,
+                    onPetScaleChange = desktopPet::setPetScale
                 )
             }
         }

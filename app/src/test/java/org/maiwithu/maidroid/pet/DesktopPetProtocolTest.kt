@@ -111,4 +111,30 @@ class DesktopPetProtocolTest {
         )
         assertEquals(DesktopPetProtocol.MAX_DRAG_SCALE, clampedHigh.scale, 0.0001)
     }
+
+    @Test
+    fun `normalizeDesktopPetScale snaps to 5 percent steps, clamps bounds and handles non-finite inputs`() {
+        assertEquals(DesktopPetScaleSpec.DEFAULT, normalizeDesktopPetScale(Float.NaN), 0.0001f)
+        assertEquals(DesktopPetScaleSpec.DEFAULT, normalizeDesktopPetScale(Float.POSITIVE_INFINITY), 0.0001f)
+        assertEquals(DesktopPetScaleSpec.DEFAULT, normalizeDesktopPetScale(Float.NEGATIVE_INFINITY), 0.0001f)
+        assertEquals(DesktopPetScaleSpec.MIN, normalizeDesktopPetScale(0.20f), 0.0001f)
+        assertEquals(DesktopPetScaleSpec.MAX, normalizeDesktopPetScale(2.00f), 0.0001f)
+        assertEquals(0.75f, normalizeDesktopPetScale(0.73f), 0.0001f)
+        assertEquals(0.75f, normalizeDesktopPetScale(0.77f), 0.0001f)
+        assertEquals(1.00f, normalizeDesktopPetScale(1.00f), 0.0001f)
+        assertEquals(1.20f, normalizeDesktopPetScale(1.22f), 0.0001f)
+    }
+
+    @Test
+    fun `resolveEffectivePetScale keeps requested scale on normal screens and caps on ultra narrow screens`() {
+        // 常见 1080px (360dp @3x, base=780px) 屏幕允许 1.30x
+        assertEquals(1.30f, resolveEffectivePetScale(1.30f, displayWidthPx = 1080, baseWidthPx = 780), 0.0001f)
+        // 极窄屏幕 (900px, base=780px) 最大安全缩放被压在 900 / 780 ≈ 1.1538x 内
+        val narrow = resolveEffectivePetScale(1.30f, displayWidthPx = 900, baseWidthPx = 780)
+        assertEquals(900f / 780f, narrow, 0.0001f)
+        assertTrue(780f * narrow <= 900.1f)
+        // 非法或零宽度回退规范化后的请求值
+        assertEquals(0.85f, resolveEffectivePetScale(0.84f, displayWidthPx = 0, baseWidthPx = 780), 0.0001f)
+        assertEquals(0.85f, resolveEffectivePetScale(0.84f, displayWidthPx = 1080, baseWidthPx = 0), 0.0001f)
+    }
 }

@@ -144,10 +144,13 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     // Android 13+ 常驻全屏窗口内部的子舞台容器，直接通过 translation/scale 驱动 GPU 渲染与物理反弹。
     private var petContainer: FrameLayout? = null
+    private var localHitRectsCss: List<CssRect> = emptyList()
     private var localHitRects: List<Rect> = emptyList()
     private var topHitCss: Double = 0.0
     private var hasReportedHitRects = false
     private var regionUpdateFrameCounter = 0
+    private var requestedScale = DesktopPetScaleSpec.DEFAULT
+    private var effectiveScale = DesktopPetScaleSpec.DEFAULT
 
     // Android 8–12 在拖动与滑行期间启用的固定全屏无触控 GPU 舞台及帧快照。
     private var motionStageFrame: FrameLayout? = null
@@ -226,13 +229,17 @@ class PetOverlayService : Service(), PetOverlayHost {
         windowManager = getSystemService(WindowManager::class.java)
         choreographer = Choreographer.getInstance()
         density = resources.displayMetrics.density
+        requestedScale = manager.currentPetScale()
+        effectiveScale = computeEffectiveScale()
         val displayHeight = resources.displayMetrics.heightPixels
         val displayWidth = resources.displayMetrics.widthPixels
 
         fullHeight = min(dp(900.0), displayHeight)
-        val petWidthPx = dp(BASE_PET_WIDTH_DP)
-        petX = max(0, displayWidth - petWidthPx).toFloat()
-        petBottom = max(dp(BASE_MIN_VISIBLE_HEIGHT_DP), displayHeight - dp(80.0)).toFloat()
+        val baseWidthPx = basePetWidthPx()
+        val scaledWidthPx = scaledPetWidthPx()
+        val scaledInitHeightPx = min(displayHeight, dpScaled(BASE_MIN_VISIBLE_HEIGHT_DP).coerceAtLeast(1))
+        petX = max(0, displayWidth - scaledWidthPx).toFloat()
+        petBottom = max(scaledInitHeightPx, displayHeight - dp(80.0)).toFloat()
 
         frame = FrameLayout(this).apply { clipChildren = true }
         val baseFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -257,8 +264,8 @@ class PetOverlayService : Service(), PetOverlayHost {
             }
         } else {
             params = WindowManager.LayoutParams(
-                petWidthPx,
-                dp(BASE_MIN_VISIBLE_HEIGHT_DP),
+                scaledWidthPx,
+                scaledInitHeightPx,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 baseFlags,
                 PixelFormat.TRANSLUCENT
@@ -281,19 +288,23 @@ class PetOverlayService : Service(), PetOverlayHost {
 
         if (supportsTouchRegions) {
             val container = FrameLayout(this).apply { clipChildren = true }
-            val containerParams = FrameLayout.LayoutParams(petWidthPx, fullHeight).apply {
+            val containerParams = FrameLayout.LayoutParams(scaledWidthPx, scaledFullHeightPx()).apply {
                 gravity = Gravity.TOP or Gravity.LEFT
             }
-            val pageLayout = FrameLayout.LayoutParams(petWidthPx, fullHeight)
+            val pageLayout = FrameLayout.LayoutParams(baseWidthPx, fullHeight)
+            boundPet.pivotX = 0f
+            boundPet.pivotY = 0f
+            boundPet.scaleX = effectiveScale
+            boundPet.scaleY = effectiveScale
             container.addView(boundPet, pageLayout)
             frame.addView(container, containerParams)
             petContainer = container
             clipTop = 0
         } else {
-            val pageLayout = FrameLayout.LayoutParams(petWidthPx, fullHeight)
-            clipTop = max(0, fullHeight - params.height)
-            pageLayout.topMargin = -clipTop
+            val pageLayout = FrameLayout.LayoutParams(baseWidthPx, fullHeight)
+            clipTop = max(0, fullHeight - dp(BASE_MIN_VISIBLE_HEIGHT_DP))
             frame.addView(boundPet, pageLayout)
+            syncLegacyPetViewTransform()
         }
 
         setupImeAvoidance()
@@ -329,12 +340,8 @@ class PetOverlayService : Service(), PetOverlayHost {
         super.onConfigurationChanged(newConfig)
         if (!::frame.isInitialized) return
         stopMotionAndStageNow()
-        clampLogicalCoordinates(currentMotionBounds())
-        if (supportsTouchRegions) {
-            applyFullScreenContainerTransform(updateRegionNow = true)
-        } else {
-            place(forceLayout = true)
-        }
+        // 横竖屏切换后按新屏宽重新约束有效缩放比并夹紧坐标，避免窄屏超宽或出界。
+        applyEffectiveScaleChange(preserveAnchorCenter = false)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -370,27 +377,31 @@ class PetOverlayService : Service(), PetOverlayHost {
         val pet = petView ?: return
         fullHeight = dp(max(460.0, min(900.0, cssHeight)))
         val pageLayout = pet.layoutParams as FrameLayout.LayoutParams
+        pageLayout.width = basePetWidthPx()
         pageLayout.height = fullHeight
+        pageLayout.topMargin = 0
+        pet.layoutParams = pageLayout
         if (supportsTouchRegions) {
             clipTop = 0
-            pageLayout.topMargin = 0
-            pet.layoutParams = pageLayout
             petContainer?.let { container ->
                 val containerLayout = container.layoutParams as FrameLayout.LayoutParams
-                containerLayout.height = fullHeight
+                containerLayout.width = scaledPetWidthPx()
+                containerLayout.height = scaledFullHeightPx()
                 container.layoutParams = containerLayout
             }
             applyFullScreenContainerTransform(updateRegionNow = true)
             return
         }
-        clipTop = max(0, fullHeight - params.height)
-        pageLayout.topMargin = -clipTop
-        pet.layoutParams = pageLayout
+        val unscaledVisible = (params.height / max(DesktopPetScaleSpec.MIN_ADAPTIVE, effectiveScale))
+            .roundToInt()
+            .coerceAtLeast(dp(1.0))
+        clipTop = max(0, fullHeight - unscaledVisible)
+        syncLegacyPetViewTransform()
     }
 
     override fun updateTouchableRegion(rects: JSONArray) {
         if (rects.length() > 256) return
-        val parsedRects = ArrayList<Rect>(rects.length())
+        val parsedCssRects = ArrayList<CssRect>(rects.length())
         var topCss = fullHeight / density.toDouble()
         for (i in 0 until rects.length()) {
             val rect = rects.optJSONArray(i) ?: continue
@@ -402,13 +413,14 @@ class PetOverlayService : Service(), PetOverlayHost {
             if (!x.isFinite() || !y.isFinite() || !w.isFinite() || !h.isFinite()) continue
             if (w > 0.0 && h > 0.0) {
                 topCss = min(topCss, y)
-                parsedRects.add(Rect(dp(x), dp(y), dp(x + w), dp(y + h)))
+                parsedCssRects.add(CssRect(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat()))
             }
         }
 
-        localHitRects = parsedRects
+        localHitRectsCss = parsedCssRects
         topHitCss = topCss
-        hasReportedHitRects = parsedRects.isNotEmpty()
+        hasReportedHitRects = parsedCssRects.isNotEmpty()
+        rebuildScaledHitRects()
 
         if (supportsTouchRegions) {
             applyCurrentTouchableRegion()
@@ -422,6 +434,14 @@ class PetOverlayService : Service(), PetOverlayHost {
             return
         }
         applyStableLegacyClipTop(rawTopPx)
+    }
+
+    override fun updateScale(scale: Float) {
+        val normalized = normalizeDesktopPetScale(scale)
+        if (abs(normalized - requestedScale) < 0.0001f) return
+        requestedScale = normalized
+        if (!::frame.isInitialized) return
+        applyEffectiveScaleChange(preserveAnchorCenter = true)
     }
 
     override fun updateInputFocus(editing: Boolean) {
@@ -597,11 +617,11 @@ class PetOverlayService : Service(), PetOverlayHost {
                 DesktopPetProtocol.computeDragStartPayload(
                     gestureId = gestureId,
                     windowX = dragStartX.roundToInt(),
-                    windowWidth = dp(BASE_PET_WIDTH_DP),
+                    windowWidth = scaledPetWidthPx(),
                     windowBottom = dragStartBottom.roundToInt(),
                     pointerDownX = downX,
                     pointerDownY = downY,
-                    density = density
+                    density = density * effectiveScale
                 )
             )
             if (!supportsTouchRegions) {
@@ -1007,8 +1027,11 @@ class PetOverlayService : Service(), PetOverlayHost {
         val snapshot = runCatching {
             val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
+            // 以实际缩放后画布与窗口底边的真实差值对齐，确保在极窄屏/高度钳位下仍与实体脚底像素吻合。
+            val effectiveClipOffsetPx = fullHeight * effectiveScale - h.toFloat()
             canvas.save()
-            canvas.translate(0f, -clipTop.toFloat())
+            canvas.translate(0f, -effectiveClipOffsetPx)
+            canvas.scale(effectiveScale, effectiveScale)
             pet.draw(canvas)
             canvas.restore()
 
@@ -1019,19 +1042,20 @@ class PetOverlayService : Service(), PetOverlayHost {
                 } else {
                     density
                 }
+                val combinedScale = scale * effectiveScale
                 val dst = RectF(
-                    canvasFrame.leftCss * scale,
-                    canvasFrame.topCss * scale - clipTop,
-                    (canvasFrame.leftCss + canvasFrame.widthCss) * scale,
-                    (canvasFrame.topCss + canvasFrame.heightCss) * scale - clipTop
+                    canvasFrame.leftCss * combinedScale,
+                    canvasFrame.topCss * combinedScale - effectiveClipOffsetPx,
+                    (canvasFrame.leftCss + canvasFrame.widthCss) * combinedScale,
+                    (canvasFrame.topCss + canvasFrame.heightCss) * combinedScale - effectiveClipOffsetPx
                 )
                 val sayRect = canvasFrame.sayRectCss
                 val sayDst = if (sayRect != null) {
                     RectF(
-                        sayRect.left * scale,
-                        sayRect.top * scale - clipTop,
-                        (sayRect.left + sayRect.width) * scale,
-                        (sayRect.top + sayRect.height) * scale - clipTop
+                        sayRect.left * combinedScale,
+                        sayRect.top * combinedScale - effectiveClipOffsetPx,
+                        (sayRect.left + sayRect.width) * combinedScale,
+                        (sayRect.top + sayRect.height) * combinedScale - effectiveClipOffsetPx
                     )
                 } else {
                     null
@@ -1157,19 +1181,21 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     private fun applyFullScreenContainerTransform(updateRegionNow: Boolean) {
         val container = petContainer ?: return
+        val scaledFullHeight = scaledFullHeightPx()
         val effectiveBottom = min(petBottom, keyboardTop.toFloat())
-        val containerTop = effectiveBottom - fullHeight.toFloat()
+        val containerTop = effectiveBottom - scaledFullHeight.toFloat()
+        val minVisibleScaled = dpScaled(BASE_MIN_VISIBLE_HEIGHT_DP)
         val topVisible = if (hasReportedHitRects) {
-            dp(topHitCss).coerceIn(0, max(0, fullHeight - dp(BASE_MIN_VISIBLE_HEIGHT_DP))).toFloat()
+            dpScaled(topHitCss).coerceIn(0, max(0, scaledFullHeight - minVisibleScaled)).toFloat()
         } else {
-            max(0f, fullHeight - dp(BASE_MIN_VISIBLE_HEIGHT_DP).toFloat())
+            max(0f, scaledFullHeight - minVisibleScaled.toFloat())
         }
-        val visibleHeight = (fullHeight.toFloat() - topVisible).coerceAtLeast(1f)
+        val visibleHeight = (scaledFullHeight.toFloat() - topVisible).coerceAtLeast(1f)
         applySquashTransform(
             target = container,
             translationX = petX,
             translationY = containerTop,
-            width = container.width.takeIf { it > 0 }?.toFloat() ?: dp(BASE_PET_WIDTH_DP).toFloat(),
+            width = scaledPetWidthPx().toFloat(),
             visibleTop = topVisible,
             visibleHeight = visibleHeight
         )
@@ -1197,7 +1223,7 @@ class PetOverlayService : Service(), PetOverlayHost {
     private fun applyCurrentTouchableRegion() {
         if (!supportsTouchRegions || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val offsetX = petX.roundToInt()
-        val offsetY = (min(petBottom, keyboardTop.toFloat()) - fullHeight).roundToInt()
+        val offsetY = (min(petBottom, keyboardTop.toFloat()) - scaledFullHeightPx()).roundToInt()
         val touchable = Region()
         for (rect in localHitRects) {
             touchable.op(
@@ -1211,6 +1237,82 @@ class PetOverlayService : Service(), PetOverlayHost {
         frame.rootSurfaceControl?.setTouchableRegion(touchable)
     }
 
+    private fun applyEffectiveScaleChange(preserveAnchorCenter: Boolean) {
+        stopMotionAndStageNow()
+        val oldWidth = scaledPetWidthPx()
+        effectiveScale = computeEffectiveScale()
+        val newWidth = scaledPetWidthPx()
+        if (preserveAnchorCenter) {
+            // 调节桌宠大小时保持水平中心与脚底原地缩放，防止左右跳偏。
+            petX += (oldWidth - newWidth) / 2f
+        }
+        val pet = petView
+        if (supportsTouchRegions) {
+            pet?.let {
+                it.pivotX = 0f
+                it.pivotY = 0f
+                it.scaleX = effectiveScale
+                it.scaleY = effectiveScale
+            }
+            petContainer?.let { container ->
+                val containerLayout = container.layoutParams as FrameLayout.LayoutParams
+                containerLayout.width = newWidth
+                containerLayout.height = scaledFullHeightPx()
+                container.layoutParams = containerLayout
+            }
+            rebuildScaledHitRects()
+            clampLogicalCoordinates(currentMotionBounds())
+            applyFullScreenContainerTransform(updateRegionNow = true)
+        } else {
+            params.width = newWidth
+            params.height = computeLegacyVisibleHeightPx()
+            pet?.let {
+                val layout = it.layoutParams as FrameLayout.LayoutParams
+                layout.topMargin = 0
+                it.layoutParams = layout
+            }
+            syncLegacyPetViewTransform()
+            place(forceLayout = true)
+        }
+    }
+
+    private fun rebuildScaledHitRects() {
+        localHitRects = localHitRectsCss.map { css ->
+            Rect(
+                dpScaled(css.left.toDouble()),
+                dpScaled(css.top.toDouble()),
+                dpScaled((css.left + css.width).toDouble()),
+                dpScaled((css.top + css.height).toDouble())
+            )
+        }
+    }
+
+    private fun syncLegacyPetViewTransform() {
+        val pet = petView ?: return
+        // Android 8–12 将 WebView 缩放基准定在左上角并平移底边对齐，确保触控坐标与画布可见区域一致。
+        pet.pivotX = 0f
+        pet.pivotY = 0f
+        pet.scaleX = effectiveScale
+        pet.scaleY = effectiveScale
+        pet.translationY = params.height - fullHeight * effectiveScale
+    }
+
+    private fun computeLegacyVisibleHeightPx(): Int {
+        val unscaledVisible = (fullHeight - clipTop).coerceAtLeast(dp(1.0))
+        return min(currentDisplayHeightPx(), (unscaledVisible * effectiveScale).roundToInt().coerceAtLeast(1))
+    }
+
+    private fun computeEffectiveScale(): Float =
+        resolveEffectivePetScale(requestedScale, currentDisplayWidthPx(), basePetWidthPx())
+
+    private fun basePetWidthPx(): Int = dp(BASE_PET_WIDTH_DP)
+
+    private fun scaledPetWidthPx(): Int = (basePetWidthPx() * effectiveScale).roundToInt().coerceAtLeast(1)
+
+    private fun scaledFullHeightPx(): Int = (fullHeight * effectiveScale).roundToInt().coerceAtLeast(1)
+
+    private fun dpScaled(value: Double): Int = (value * density * effectiveScale).roundToInt()
+
     private fun applyStableLegacyClipTop(rawTopPx: Int) {
         val pet = petView ?: return
         val nextClipTop = resolveStableClipTop(
@@ -1223,10 +1325,12 @@ class PetOverlayService : Service(), PetOverlayHost {
         )
         if (nextClipTop == clipTop) return
         clipTop = nextClipTop
-        params.height = fullHeight - clipTop
+        params.width = scaledPetWidthPx()
+        params.height = computeLegacyVisibleHeightPx()
         val layout = pet.layoutParams as FrameLayout.LayoutParams
-        layout.topMargin = -clipTop
+        layout.topMargin = 0
         pet.layoutParams = layout
+        syncLegacyPetViewTransform()
         place(forceLayout = true)
     }
 
@@ -1277,7 +1381,7 @@ class PetOverlayService : Service(), PetOverlayHost {
 
     private fun imeLimitTopFromOverlap(overlapPx: Int): Int {
         if (supportsTouchRegions) {
-            return max(dp(BASE_MIN_VISIBLE_HEIGHT_DP), currentDisplayHeightPx() - overlapPx)
+            return max(dpScaled(BASE_MIN_VISIBLE_HEIGHT_DP), currentDisplayHeightPx() - overlapPx)
         }
         return params.y + params.height - overlapPx
     }
@@ -1314,16 +1418,17 @@ class PetOverlayService : Service(), PetOverlayHost {
     private fun currentMotionBounds(): PetMotionBounds {
         val displayWidth = currentDisplayWidthPx()
         val displayHeight = currentDisplayHeightPx()
-        val petWidthPx = dp(BASE_PET_WIDTH_DP)
+        val petWidthPx = scaledPetWidthPx()
         val maxX = max(0, displayWidth - petWidthPx)
         val effectiveMaxBottom = min(displayHeight, keyboardTop)
         val rawMinBottom = if (supportsTouchRegions) {
-            val contentHeight = if (hasReportedHitRects) {
-                max(dp(BASE_MIN_VISIBLE_HEIGHT_DP), fullHeight - dp(topHitCss).coerceAtLeast(0))
+            val scaledHeight = scaledFullHeightPx()
+            val minVisibleScaled = dpScaled(BASE_MIN_VISIBLE_HEIGHT_DP)
+            if (hasReportedHitRects) {
+                max(minVisibleScaled, scaledHeight - dpScaled(topHitCss).coerceAtLeast(0))
             } else {
-                dp(BASE_MIN_VISIBLE_HEIGHT_DP)
+                minVisibleScaled
             }
-            contentHeight
         } else {
             params.height
         }

@@ -36,6 +36,8 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -56,7 +58,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.pet.DesktopPetBot
 import org.maiwithu.maidroid.pet.DesktopPetPhase
+import org.maiwithu.maidroid.pet.DesktopPetScaleSpec
 import org.maiwithu.maidroid.pet.DesktopPetUiState
+import org.maiwithu.maidroid.pet.normalizeDesktopPetScale
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
@@ -67,6 +71,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
@@ -85,6 +90,8 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 悬浮桌宠主控制卡片：
@@ -106,6 +113,7 @@ internal fun FloatingPetExtensionCard(
     onToggleVisibility: () -> Unit,
     onOpenRecords: () -> Unit,
     onReconnect: () -> Unit,
+    onPetScaleChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false
 ) {
@@ -194,6 +202,12 @@ internal fun FloatingPetExtensionCard(
             overlayGranted = overlayGranted,
             compact = compact,
             onRequestPermission = onRequestPermission
+        )
+
+        PetScaleControlPanel(
+            scale = petState.petScale,
+            compact = compact,
+            onScaleChange = onPetScaleChange
         )
 
         if (petState.bots.size > 1) {
@@ -517,6 +531,137 @@ private fun PetStatusMetricItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+/** 桌宠缩放比例控制面板：提供 60%–130% 滑块与 3 个常用快捷档位，拖动时以桌宠脚底居中实时生效。 */
+@Composable
+private fun PetScaleControlPanel(
+    scale: Float,
+    compact: Boolean,
+    onScaleChange: (Float) -> Unit
+) {
+    val normalizedScale = normalizeDesktopPetScale(scale)
+    val percent = (normalizedScale * 100f).roundToInt()
+    val isDefault = abs(normalizedScale - DesktopPetScaleSpec.DEFAULT) < 0.001f
+    val haptics = rememberLiquidHaptics()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Corners.Panel))
+            .background(PageBackground.copy(alpha = 0.62f))
+            .padding(horizontal = 14.dp, vertical = if (compact) 10.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "桌宠大小",
+                color = TextPrimary,
+                fontSize = TextSizes.Body,
+                fontWeight = FontWeight.Medium
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (!isDefault) {
+                    Text(
+                        text = "恢复默认",
+                        color = BrandOrange,
+                        fontSize = TextSizes.Caption,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .clip(Capsule())
+                            .clickable(role = Role.Button) {
+                                haptics.performTabStep()
+                                onScaleChange(DesktopPetScaleSpec.DEFAULT)
+                            }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                ExtensionTagPill(
+                    text = "$percent%",
+                    color = if (isDefault) TextMuted else BrandOrange
+                )
+            }
+        }
+
+        Slider(
+            value = normalizedScale,
+            onValueChange = { rawValue ->
+                val nextNormalized = normalizeDesktopPetScale(rawValue)
+                if (abs(nextNormalized - normalizedScale) >= 0.001f) {
+                    haptics.performTabStep()
+                    onScaleChange(nextNormalized)
+                }
+            },
+            valueRange = DesktopPetScaleSpec.MIN..DesktopPetScaleSpec.MAX,
+            steps = 13,
+            colors = SliderDefaults.colors(
+                thumbColor = BrandOrange,
+                activeTrackColor = BrandOrange,
+                inactiveTrackColor = CardDivider,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            DesktopPetScaleSpec.PRESETS.forEach { (presetScale, presetTitle) ->
+                val selected = abs(normalizedScale - presetScale) < 0.001f
+                val bg by animateColorAsState(
+                    targetValue = if (selected) BrandOrange.copy(alpha = 0.18f) else PageBackground.copy(alpha = 0.65f),
+                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
+                    label = "PetScalePresetBg"
+                )
+                val border by animateColorAsState(
+                    targetValue = if (selected) BrandOrange.copy(alpha = 0.72f) else CardBorder,
+                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
+                    label = "PetScalePresetBorder"
+                )
+                val textColor by animateColorAsState(
+                    targetValue = if (selected) BrandOrange else TextMuted,
+                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
+                    label = "PetScalePresetText"
+                )
+                val presetPercent = (presetScale * 100f).roundToInt()
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(Capsule())
+                        .background(bg)
+                        .border(BorderStroke(1.dp, border), Capsule())
+                        .clickable(role = Role.RadioButton) {
+                            if (!selected) {
+                                haptics.performTabStep()
+                                onScaleChange(presetScale)
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "$presetTitle $presetPercent%",
+                        color = textColor,
+                        fontSize = TextSizes.Caption,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }

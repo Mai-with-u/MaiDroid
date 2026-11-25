@@ -8,6 +8,8 @@ import com.tencent.mmkv.MMKVRecoverStrategic
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.maiwithu.maidroid.pet.DesktopPetScaleSpec
+import org.maiwithu.maidroid.pet.normalizeDesktopPetScale
 import org.maiwithu.maidroid.runtime.MirrorCategory
 import org.maiwithu.maidroid.runtime.MirrorPreference
 import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
@@ -43,6 +45,7 @@ internal class AppSettings(
         const val KEY_WEBUI_PILL_VERTICAL_BIAS = "webui_pill_vertical_bias"
         const val KEY_DESKTOP_PET_BOT_ID = "desktop_pet_bot_id"
         const val KEY_DESKTOP_PET_CLIENT_ID = "desktop_pet_client_id"
+        const val KEY_DESKTOP_PET_SCALE = "desktop_pet_scale"
         const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
         const val KEY_TELEMETRY_INSTALL_ID = "telemetry_install_id"
         const val KEY_LAST_HEARTBEAT_SECONDS = "telemetry_last_heartbeat_sec"
@@ -187,6 +190,13 @@ internal class AppSettings(
         get() = kv.decodeString(KEY_DESKTOP_PET_BOT_ID, "")?.trim().orEmpty()
         set(value) {
             kv.encode(KEY_DESKTOP_PET_BOT_ID, value.trim())
+        }
+
+    /** 悬浮桌宠画面缩放比例（默认 1.0，范围 0.60–1.30，5% 步进）。 */
+    var desktopPetScale: Float
+        get() = normalizeDesktopPetScale(kv.decodeFloat(KEY_DESKTOP_PET_SCALE, DesktopPetScaleSpec.DEFAULT))
+        set(value) {
+            kv.encode(KEY_DESKTOP_PET_SCALE, normalizeDesktopPetScale(value))
         }
 
     /** 悬浮桌宠向本机服务器声明的稳定客户端 ID（32 位十六进制），首次读取时生成并持久化。 */
