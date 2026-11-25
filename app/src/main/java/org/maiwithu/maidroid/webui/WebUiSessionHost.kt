@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.webui
 
-import android.R as AndroidR
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
@@ -20,12 +19,10 @@ import android.text.TextWatcher
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AbsListView
 import android.widget.BaseAdapter
-import android.widget.CheckedTextView
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -1107,7 +1104,8 @@ internal class WebUiSessionHost(
 }
 
 /**
- * 原生 `<select>` 选项弹窗适配器：统一渲染普通/单选/多选行、`<optgroup>` 分组标题与 `<hr>` 分隔线。
+ * 原生 `<select>` 选项弹窗适配器：采用自绘高对比度列表行替代系统 `CheckedTextView`，
+ * 规避部分 Android/EMUI 深色 AlertDialog 主题将已选中项文字和圆圈染成暗灰导致隐身的问题。
  */
 private class ChoiceListAdapter(
     private val context: Context,
@@ -1115,17 +1113,13 @@ private class ChoiceListAdapter(
     private val rows: List<WebUiChoiceRow>,
     private val selectedIds: Set<String>
 ) : BaseAdapter() {
-    private val inflater = LayoutInflater.from(context)
-    private val groupTitleColor = resolveThemeColor(context, AndroidR.attr.textColorSecondary, Color.LTGRAY)
-    private val optionLayoutRes = when (promptType) {
-        ChoicePrompt.Type.MULTIPLE -> AndroidR.layout.simple_list_item_multiple_choice
-        ChoicePrompt.Type.SINGLE -> AndroidR.layout.simple_list_item_single_choice
-        else -> AndroidR.layout.simple_list_item_1
-    }
-
     private class OptionViewHolder(
-        val textView: TextView,
-        val basePaddingStart: Int
+        val container: LinearLayout,
+        val labelView: TextView,
+        val radioOuter: GradientDrawable?,
+        val radioDot: View?,
+        val checkView: TextView?,
+        val checkBackground: GradientDrawable?
     )
 
     override fun getCount(): Int = rows.size
@@ -1151,44 +1145,133 @@ private class ChoiceListAdapter(
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
         when (val row = rows[position]) {
-            is WebUiChoiceRow.Option -> bindOptionView(row, convertView, parent)
+            is WebUiChoiceRow.Option -> bindOptionView(row, convertView)
             is WebUiChoiceRow.GroupHeader -> bindGroupHeaderView(row, convertView)
             is WebUiChoiceRow.Separator -> bindSeparatorView(convertView)
         }
 
-    private fun bindOptionView(row: WebUiChoiceRow.Option, convertView: View?, parent: ViewGroup): View {
+    private fun bindOptionView(row: WebUiChoiceRow.Option, convertView: View?): View {
+        val density = context.resources.displayMetrics.density
         val existingHolder = convertView?.tag as? OptionViewHolder
-        val view: View
-        val holder: OptionViewHolder
-        if (convertView != null && existingHolder != null) {
-            view = convertView
-            holder = existingHolder
-        } else {
-            view = inflater.inflate(optionLayoutRes, parent, false)
-            val textView = view.findViewById<TextView>(AndroidR.id.text1)
-            holder = OptionViewHolder(textView = textView, basePaddingStart = textView.paddingStart)
-            view.tag = holder
+        val holder = existingHolder ?: createOptionHolder(density)
+        val container = holder.container
+
+        val horizontalPx = (OPTION_HORIZONTAL_PADDING_DP * density).toInt()
+        val verticalPx = (OPTION_VERTICAL_PADDING_DP * density).toInt()
+        val indentPx = (row.depth * CHOICE_INDENT_DP * density).toInt()
+        container.setPaddingRelative(horizontalPx + indentPx, verticalPx, horizontalPx, verticalPx)
+
+        val selected = row.id in selectedIds
+        val strokePx = maxOf(1, (2 * density).toInt())
+        container.setBackgroundColor(if (selected) SELECTED_ROW_BG_COLOR else Color.TRANSPARENT)
+        container.alpha = if (row.disabled) DISABLED_ALPHA else 1f
+        container.isEnabled = !row.disabled
+
+        holder.labelView.text = row.label
+        holder.labelView.isEnabled = !row.disabled
+        holder.labelView.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+        holder.labelView.setTextColor(
+            when {
+                row.disabled -> DISABLED_TEXT_COLOR
+                selected -> Color.WHITE
+                else -> UNSELECTED_TEXT_COLOR
+            }
+        )
+
+        if (promptType == ChoicePrompt.Type.SINGLE) {
+            holder.radioOuter?.setStroke(strokePx, if (selected) ACCENT_COLOR else UNSELECTED_BORDER_COLOR)
+            holder.radioDot?.visibility = if (selected) View.VISIBLE else View.GONE
+        } else if (promptType == ChoicePrompt.Type.MULTIPLE) {
+            holder.checkView?.text = if (selected) "✓" else ""
+            holder.checkBackground?.apply {
+                if (selected) {
+                    setColor(ACCENT_COLOR)
+                    setStroke(0, Color.TRANSPARENT)
+                } else {
+                    setColor(Color.TRANSPARENT)
+                    setStroke(strokePx, UNSELECTED_BORDER_COLOR)
+                }
+            }
+        }
+        return container
+    }
+
+    private fun createOptionHolder(density: Float): OptionViewHolder {
+        val hasIndicator = promptType == ChoicePrompt.Type.SINGLE || promptType == ChoicePrompt.Type.MULTIPLE
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = (OPTION_MIN_HEIGHT_DP * density).toInt()
+            layoutParams = AbsListView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val labelView = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = if (hasIndicator) (12 * density).toInt() else 0
+            }
+        }
+        container.addView(labelView)
+
+        val indicatorPx = (INDICATOR_SIZE_DP * density).toInt()
+        var radioOuter: GradientDrawable? = null
+        var radioDot: View? = null
+        var checkView: TextView? = null
+        var checkBackground: GradientDrawable? = null
+
+        when (promptType) {
+            ChoicePrompt.Type.SINGLE -> {
+                val outerDrawable = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.TRANSPARENT)
+                }
+                val dotSize = (RADIO_DOT_SIZE_DP * density).toInt()
+                val dotView = View(context).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(ACCENT_COLOR)
+                    }
+                    layoutParams = FrameLayout.LayoutParams(dotSize, dotSize, Gravity.CENTER)
+                }
+                val radioBox = FrameLayout(context).apply {
+                    background = outerDrawable
+                    layoutParams = LinearLayout.LayoutParams(indicatorPx, indicatorPx)
+                    addView(dotView)
+                }
+                container.addView(radioBox)
+                radioOuter = outerDrawable
+                radioDot = dotView
+            }
+
+            ChoicePrompt.Type.MULTIPLE -> {
+                val boxDrawable = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = CHECKBOX_RADIUS_DP * density
+                }
+                val boxView = TextView(context).apply {
+                    gravity = Gravity.CENTER
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    background = boxDrawable
+                    layoutParams = LinearLayout.LayoutParams(indicatorPx, indicatorPx)
+                }
+                container.addView(boxView)
+                checkView = boxView
+                checkBackground = boxDrawable
+            }
         }
 
-        val textView = holder.textView
-        val indentPx = (row.depth * CHOICE_INDENT_DP * context.resources.displayMetrics.density).toInt()
-        textView.text = row.label
-        textView.isEnabled = !row.disabled
-        textView.alpha = if (row.disabled) DISABLED_ALPHA else 1f
-        textView.setPaddingRelative(
-            holder.basePaddingStart + indentPx,
-            textView.paddingTop,
-            textView.paddingEnd,
-            textView.paddingBottom
-        )
-        val selected = row.id in selectedIds
-        if (textView is CheckedTextView) {
-            textView.isChecked = selected
-        } else if (promptType == ChoicePrompt.Type.MENU) {
-            textView.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-        }
-        view.isEnabled = !row.disabled
-        return view
+        return OptionViewHolder(
+            container = container,
+            labelView = labelView,
+            radioOuter = radioOuter,
+            radioDot = radioDot,
+            checkView = checkView,
+            checkBackground = checkBackground
+        ).also { container.tag = it }
     }
 
     private fun bindGroupHeaderView(row: WebUiChoiceRow.GroupHeader, convertView: View?): View {
@@ -1200,10 +1283,10 @@ private class ChoiceListAdapter(
             )
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTypeface(null, Typeface.BOLD)
-            setTextColor(groupTitleColor)
+            setTextColor(GROUP_TITLE_COLOR)
         }
-        val startPx = ((16 + row.depth * CHOICE_INDENT_DP) * density).toInt()
-        val endPx = (16 * density).toInt()
+        val startPx = ((OPTION_HORIZONTAL_PADDING_DP + row.depth * CHOICE_INDENT_DP) * density).toInt()
+        val endPx = (OPTION_HORIZONTAL_PADDING_DP * density).toInt()
         textView.setPaddingRelative(startPx, (10 * density).toInt(), endPx, (4 * density).toInt())
         textView.alpha = if (row.disabled) DISABLED_ALPHA else 1f
         textView.text = row.label
@@ -1231,24 +1314,25 @@ private class ChoiceListAdapter(
         }
     }
 
-    private fun resolveThemeColor(context: Context, attrRes: Int, fallback: Int): Int {
-        val out = TypedValue()
-        if (!context.theme.resolveAttribute(attrRes, out, true)) return fallback
-        return when {
-            out.type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT -> out.data
-            out.resourceId != 0 -> runCatching { context.getColorStateList(out.resourceId).defaultColor }
-                .getOrDefault(fallback)
-            else -> fallback
-        }
-    }
-
     private companion object {
         const val VIEW_TYPE_OPTION = 0
         const val VIEW_TYPE_GROUP_HEADER = 1
         const val VIEW_TYPE_SEPARATOR = 2
         const val VIEW_TYPE_COUNT = 3
         const val CHOICE_INDENT_DP = 16
+        const val OPTION_HORIZONTAL_PADDING_DP = 20
+        const val OPTION_VERTICAL_PADDING_DP = 12
+        const val OPTION_MIN_HEIGHT_DP = 52
+        const val INDICATOR_SIZE_DP = 20
+        const val RADIO_DOT_SIZE_DP = 10
+        const val CHECKBOX_RADIUS_DP = 4f
         const val DISABLED_ALPHA = 0.45f
+        val ACCENT_COLOR = Color.rgb(255, 148, 66)
+        val SELECTED_ROW_BG_COLOR = Color.argb(26, 255, 148, 66)
+        val UNSELECTED_TEXT_COLOR = Color.rgb(234, 234, 234)
+        val DISABLED_TEXT_COLOR = Color.rgb(136, 136, 136)
+        val GROUP_TITLE_COLOR = Color.rgb(176, 176, 176)
+        val UNSELECTED_BORDER_COLOR = Color.rgb(176, 176, 176)
     }
 }
 
