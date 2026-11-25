@@ -1,7 +1,11 @@
 package org.maiwithu.maidroid.ui.extension
 
 import android.widget.FrameLayout
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,12 +32,12 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,10 +70,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -488,7 +489,7 @@ private fun PetStatusMetricItem(
     }
 }
 
-/** 桌宠缩放比例控制面板：采用连续无顿挫液态玻璃滑块（每 5% 清晰刻度震感）与 3 个快捷档位，拖动时以桌宠脚底居中实时生效。 */
+/** 桌宠缩放比例控制面板：采用连续无顿挫液态玻璃滑块（每 5% 清晰刻度震感）与液态玻璃快捷档位，拖动时以桌宠脚底居中实时生效。 */
 @Composable
 internal fun PetScaleControlPanel(
     scale: Float,
@@ -499,6 +500,7 @@ internal fun PetScaleControlPanel(
     val percent = (normalizedScale * 100f).roundToInt()
     val isDefault = abs(normalizedScale - DesktopPetScaleSpec.DEFAULT) < 0.005f
     val haptics = rememberLiquidHaptics()
+    val cardBackdrop = rememberSurfaceBackdrop(CardSurface)
 
     Column(
         modifier = Modifier
@@ -510,10 +512,12 @@ internal fun PetScaleControlPanel(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
                     text = "桌宠大小",
                     color = TextPrimary,
@@ -521,29 +525,54 @@ internal fun PetScaleControlPanel(
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "拖动滑块可实时预览大小，自动保存",
+                    text = "拖动实时预览，自动保存",
                     color = TextMuted,
-                    fontSize = TextSizes.Caption
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp,
+                    maxLines = 2
                 )
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (!isDefault) {
-                    Text(
-                        text = "恢复默认",
-                        color = BrandOrange,
-                        fontSize = TextSizes.Caption,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier
-                            .clip(Capsule())
-                            .clickable(role = Role.Button) {
-                                haptics.performTabStep()
-                                onScaleChange(DesktopPetScaleSpec.DEFAULT)
-                            }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                AnimatedVisibility(
+                    visible = !isDefault,
+                    enter = fadeIn() + scaleIn(initialScale = 0.85f),
+                    exit = fadeOut() + scaleOut(targetScale = 0.85f)
+                ) {
+                    LiquidButton(
+                        onClick = {
+                            haptics.performTabStep()
+                            onScaleChange(DesktopPetScaleSpec.DEFAULT)
+                        },
+                        backdrop = cardBackdrop,
+                        style = LiquidButtonStyle.SoftAccent,
+                        shape = { Capsule() },
+                        minHeight = 30.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "重置",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
                 }
                 ExtensionTagPill(
                     text = "$percent%",
@@ -557,7 +586,7 @@ internal fun PetScaleControlPanel(
             onValueChange = onScaleChange,
             valueRange = DesktopPetScaleSpec.MIN..DesktopPetScaleSpec.MAX,
             hapticStep = DesktopPetScaleSpec.HAPTIC_STEP,
-            backdrop = rememberSurfaceBackdrop(CardSurface),
+            backdrop = cardBackdrop,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -567,41 +596,23 @@ internal fun PetScaleControlPanel(
         ) {
             DesktopPetScaleSpec.PRESETS.forEach { (presetScale, presetTitle) ->
                 val selected = abs(normalizedScale - presetScale) < 0.005f
-                val bg by animateColorAsState(
-                    targetValue = if (selected) BrandOrange.copy(alpha = 0.18f) else PageBackground.copy(alpha = 0.65f),
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetScalePresetBg"
-                )
-                val border by animateColorAsState(
-                    targetValue = if (selected) BrandOrange.copy(alpha = 0.72f) else CardBorder,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetScalePresetBorder"
-                )
-                val textColor by animateColorAsState(
-                    targetValue = if (selected) BrandOrange else TextMuted,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetScalePresetText"
-                )
                 val presetPercent = (presetScale * 100f).roundToInt()
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(Capsule())
-                        .background(bg)
-                        .border(BorderStroke(1.dp, border), Capsule())
-                        .clickable(role = Role.RadioButton) {
-                            if (!selected) {
-                                haptics.performTabStep()
-                                onScaleChange(presetScale)
-                            }
+                LiquidButton(
+                    onClick = {
+                        if (!selected) {
+                            haptics.performTabStep()
+                            onScaleChange(presetScale)
                         }
-                        .padding(horizontal = 8.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    },
+                    backdrop = cardBackdrop,
+                    style = if (selected) LiquidButtonStyle.SoftAccent else LiquidButtonStyle.Secondary,
+                    shape = { Capsule() },
+                    minHeight = if (compact) 34.dp else 38.dp,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "$presetTitle $presetPercent%",
-                        color = textColor,
                         fontSize = TextSizes.Caption,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                         maxLines = 1,
@@ -621,6 +632,7 @@ internal fun PetBotSelectorRow(
     selectedBotId: String,
     onSelectBot: (String) -> Unit
 ) {
+    val cardBackdrop = rememberSurfaceBackdrop(CardSurface)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "联动机器人实例",
@@ -636,48 +648,36 @@ internal fun PetBotSelectorRow(
         ) {
             bots.forEach { bot ->
                 val selected = bot.botId == selectedBotId
-                val bg by animateColorAsState(
-                    targetValue = if (selected) BrandOrange.copy(alpha = 0.18f) else PageBackground.copy(alpha = 0.65f),
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetBotChipBg"
-                )
-                val border by animateColorAsState(
-                    targetValue = if (selected) BrandOrange.copy(alpha = 0.72f) else CardBorder,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetBotChipBorder"
-                )
-                val textColor by animateColorAsState(
-                    targetValue = if (selected) BrandOrange else TextMuted,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetBotChipText"
-                )
                 val displayName = bot.name.ifBlank { bot.botId.take(8) }
-                Row(
-                    modifier = Modifier
-                        .clip(Capsule())
-                        .background(bg)
-                        .border(BorderStroke(1.dp, border), Capsule())
-                        .clickable(role = Role.RadioButton) { onSelectBot(bot.botId) }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                LiquidButton(
+                    onClick = { onSelectBot(bot.botId) },
+                    backdrop = cardBackdrop,
+                    style = if (selected) LiquidButtonStyle.SoftAccent else LiquidButtonStyle.Secondary,
+                    shape = { Capsule() },
+                    minHeight = 34.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    if (selected) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(BrandOrange)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (selected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandOrange)
+                            )
+                        }
+                        Text(
+                            text = displayName,
+                            fontSize = TextSizes.Caption,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Text(
-                        text = displayName,
-                        color = textColor,
-                        fontSize = TextSizes.Caption,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
             }
         }
