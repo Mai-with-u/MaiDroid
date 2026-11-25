@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,6 +65,7 @@ import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -369,6 +371,7 @@ internal fun WebUiTabPage(
         }
 
         if (activeHost != null) {
+            val activePrompt by activeHost.activePrompt.collectAsState()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -419,6 +422,7 @@ internal fun WebUiTabPage(
                     )
                 }
             }
+            WebUiPromptDialogHost(prompt = activePrompt)
         }
 
         if (state.webUiError != null) {

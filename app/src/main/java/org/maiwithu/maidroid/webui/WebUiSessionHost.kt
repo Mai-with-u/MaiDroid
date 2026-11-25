@@ -2,7 +2,6 @@ package org.maiwithu.maidroid.webui
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.Dialog
 import android.app.TimePickerDialog
@@ -10,25 +9,15 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.DialogInterface
 import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Log
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AbsListView
-import android.widget.BaseAdapter
-import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ListView
-import android.widget.ScrollView
-import android.widget.TextView
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.mozilla.geckoview.AllowOrDeny
@@ -62,6 +51,7 @@ import org.mozilla.geckoview.WebExtension.PortDelegate
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
 import java.util.Calendar
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 单个 WebUI 页面的 GeckoView 会话宿主：主页 WebUI 页签与全屏 WebUiActivity 共用。
@@ -89,6 +79,12 @@ internal class WebUiSessionHost(
     @Volatile
     var canGoBack: Boolean = false
         private set
+
+    private val promptIdCounter = AtomicLong(1L)
+    private val _activePrompt = MutableStateFlow<WebUiPromptRequest?>(null)
+
+    /** 当前待用户在 Compose 液态玻璃卡片中处理的原生网页弹窗请求，未展示或已结算时为 null。 */
+    val activePrompt: StateFlow<WebUiPromptRequest?> = _activePrompt.asStateFlow()
 
     private val hostContext = context
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -298,6 +294,8 @@ internal class WebUiSessionHost(
         twoFingerScroll.release()
         view.setOnTouchListener(null)
 
+        _activePrompt.value?.onDismiss?.invoke()
+        _activePrompt.value = null
         activeDialog?.cancel()
         activeDialog = null
 
@@ -527,31 +525,39 @@ internal class WebUiSessionHost(
     }
 
     private fun showAlertPrompt(prompt: AlertPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, prompt.message) { builder, complete, _ ->
-            builder.setPositiveButton("确定") { _, _ -> complete { prompt.dismiss() } }
+        showComposePrompt(prompt) { requestId, settle ->
+            WebUiPromptRequest.Alert(
+                id = requestId,
+                title = prompt.title.orEmpty(),
+                message = prompt.message.orEmpty(),
+                onDismiss = { settle { prompt.dismiss() } }
+            )
         }
 
     private fun showButtonPrompt(prompt: ButtonPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, prompt.message) { builder, complete, _ ->
-            builder.setPositiveButton("确定") { _, _ -> complete { prompt.confirm(ButtonPrompt.Type.POSITIVE) } }
-            builder.setNegativeButton("取消") { _, _ -> complete { prompt.confirm(ButtonPrompt.Type.NEGATIVE) } }
+        showComposePrompt(prompt) { requestId, settle ->
+            WebUiPromptRequest.Confirm(
+                id = requestId,
+                title = prompt.title.orEmpty(),
+                message = prompt.message.orEmpty(),
+                onConfirm = { settle { prompt.confirm(ButtonPrompt.Type.POSITIVE) } },
+                onCancel = { settle { prompt.confirm(ButtonPrompt.Type.NEGATIVE) } },
+                onDismiss = { settle { prompt.dismiss() } }
+            )
         }
 
     private fun showTextPrompt(prompt: TextPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, prompt.message) { builder, complete, _ ->
-            val dialogContext = builder.context
-            val input = EditText(dialogContext).apply {
-                setText(prompt.defaultValue.orEmpty())
-                setSelection(text?.length ?: 0)
-            }
-            val horizontalMargin = dp(dialogContext, DIALOG_INPUT_MARGIN_DP)
-            val container = FrameLayout(dialogContext).apply {
-                setPadding(horizontalMargin, horizontalMargin / 2, horizontalMargin, 0)
-                addView(input)
-            }
-            builder.setView(container)
-            builder.setPositiveButton("确定") { _, _ -> complete { prompt.confirm(input.text?.toString().orEmpty()) } }
-            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
+        showComposePrompt(prompt) { requestId, settle ->
+            WebUiPromptRequest.TextInput(
+                id = requestId,
+                title = prompt.title.orEmpty(),
+                message = prompt.message.orEmpty(),
+                defaultValue = prompt.defaultValue.orEmpty(),
+                placeholder = "",
+                allowClear = false,
+                onConfirm = { value -> settle { prompt.confirm(value) } },
+                onDismiss = { settle { prompt.dismiss() } }
+            )
         }
 
     private fun showChoicePrompt(prompt: ChoicePrompt): GeckoResult<PromptResponse> {
@@ -559,54 +565,36 @@ internal class WebUiSessionHost(
         if (rows.none { it is WebUiChoiceRow.Option }) {
             return if (prompt.isComplete) GeckoResult() else GeckoResult.fromValue(prompt.dismiss())
         }
-        val isMultiple = prompt.type == ChoicePrompt.Type.MULTIPLE
-        val selectedIds = initialSelectedChoiceIds(rows)
-        return showPromptDialog(prompt, prompt.message) { builder, complete, dismissDialog ->
-            val dialogContext = builder.context
-            val adapter = ChoiceListAdapter(
-                context = dialogContext,
-                promptType = prompt.type,
+        val mode = when (prompt.type) {
+            ChoicePrompt.Type.MULTIPLE -> WebUiChoiceMode.Multiple
+            ChoicePrompt.Type.MENU -> WebUiChoiceMode.Menu
+            else -> WebUiChoiceMode.Single
+        }
+        val initialSelectedIds = initialSelectedChoiceIds(rows)
+        return showComposePrompt(prompt) { requestId, settle ->
+            WebUiPromptRequest.Choice(
+                id = requestId,
+                title = prompt.title.orEmpty(),
+                message = prompt.message.orEmpty(),
+                mode = mode,
                 rows = rows,
-                selectedIds = selectedIds
+                initialSelectedIds = initialSelectedIds,
+                // 单选/菜单模式必须显式调用单字符串重载，避免 GeckoView 对非多选传数组抛出异常。
+                onConfirmSingle = { optionId -> settle { prompt.confirm(optionId) } },
+                onConfirmMultiple = { selectedIds -> settle { prompt.confirm(selectedIds) } },
+                onDismiss = { settle { prompt.dismiss() } }
             )
-            val listView = ListView(dialogContext).apply {
-                this.adapter = adapter
-                isVerticalScrollBarEnabled = true
-                val initialIndex = initialSelectedOptionIndex(rows)
-                if (initialIndex >= 0) {
-                    setSelection(initialIndex)
-                }
-                setOnItemClickListener { _, _, position, _ ->
-                    val option = rows.getOrNull(position) as? WebUiChoiceRow.Option ?: return@setOnItemClickListener
-                    if (option.disabled) return@setOnItemClickListener
-                    if (isMultiple) {
-                        if (!selectedIds.add(option.id)) {
-                            selectedIds.remove(option.id)
-                        }
-                        adapter.notifyDataSetChanged()
-                    } else {
-                        // 单选/菜单模式选中后必须立即传单字符串确认，避免 GeckoView 对非多选调用数组重载抛错。
-                        selectedIds.clear()
-                        selectedIds.add(option.id)
-                        adapter.notifyDataSetChanged()
-                        complete { prompt.confirm(option.id) }
-                        dismissDialog()
-                    }
-                }
-            }
-            builder.setView(listView)
-            if (isMultiple) {
-                builder.setPositiveButton("确定") { _, _ ->
-                    complete { prompt.confirm(selectedChoiceIdsInOrder(rows, selectedIds)) }
-                }
-            }
-            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
         }
     }
 
     private fun showDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
         if (prompt.isComplete) return GeckoResult()
-        if (usableActivity() == null) return GeckoResult.fromValue(prompt.dismiss())
+        if (usableActivity() == null &&
+            prompt.type != DateTimePrompt.Type.MONTH &&
+            prompt.type != DateTimePrompt.Type.WEEK
+        ) {
+            return GeckoResult.fromValue(prompt.dismiss())
+        }
         return when (prompt.type) {
             DateTimePrompt.Type.DATE -> showDatePickerPrompt(prompt)
             DateTimePrompt.Type.TIME -> showTimePickerPrompt(prompt)
@@ -718,191 +706,83 @@ internal class WebUiSessionHost(
     }
 
     private fun showTextDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, null) { builder, complete, _ ->
-            val dialogContext = builder.context
-            if (prompt.title.isNullOrBlank()) {
-                builder.setTitle(
-                    when (prompt.type) {
-                        DateTimePrompt.Type.MONTH -> "选择月份"
-                        DateTimePrompt.Type.WEEK -> "选择星期"
-                        else -> "输入日期时间"
-                    }
-                )
+        showComposePrompt(prompt) { requestId, settle ->
+            val fallbackTitle = when (prompt.type) {
+                DateTimePrompt.Type.MONTH -> "选择月份"
+                DateTimePrompt.Type.WEEK -> "选择星期"
+                else -> "输入日期时间"
             }
-            val input = EditText(dialogContext).apply {
-                setSingleLine(true)
-                hint = when (prompt.type) {
-                    DateTimePrompt.Type.MONTH -> "格式：YYYY-MM（例如 2026-11）"
-                    DateTimePrompt.Type.WEEK -> "格式：YYYY-Www（例如 2026-W48）"
-                    else -> "输入日期或时间"
-                }
-                setText(prompt.defaultValue.orEmpty())
-                setSelection(text?.length ?: 0)
+            val placeholder = when (prompt.type) {
+                DateTimePrompt.Type.MONTH -> "格式：YYYY-MM（例如 2026-11）"
+                DateTimePrompt.Type.WEEK -> "格式：YYYY-Www（例如 2026-W48）"
+                else -> "输入日期或时间"
             }
-            val horizontalMargin = dp(dialogContext, DIALOG_INPUT_MARGIN_DP)
-            val container = FrameLayout(dialogContext).apply {
-                setPadding(horizontalMargin, horizontalMargin / 2, horizontalMargin, 0)
-                addView(input)
-            }
-            builder.setView(container)
-            builder.setPositiveButton("确定") { _, _ ->
-                complete { prompt.confirm(input.text?.toString()?.trim().orEmpty()) }
-            }
-            builder.setNeutralButton("清除") { _, _ -> complete { prompt.confirm("") } }
-            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
+            WebUiPromptRequest.TextInput(
+                id = requestId,
+                title = prompt.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+                message = "",
+                defaultValue = prompt.defaultValue.orEmpty(),
+                placeholder = placeholder,
+                allowClear = true,
+                onConfirm = { value -> settle { prompt.confirm(value.trim()) } },
+                onDismiss = { settle { prompt.dismiss() } }
+            )
         }
 
-    private fun showColorPrompt(prompt: ColorPrompt): GeckoResult<PromptResponse> =
-        showPromptDialog(prompt, null) { builder, complete, _ ->
-            val dialogContext = builder.context
-            if (prompt.title.isNullOrBlank()) {
-                builder.setTitle("选择颜色")
+    private fun showColorPrompt(prompt: ColorPrompt): GeckoResult<PromptResponse> {
+        val initialColor = normalizeHexColor(prompt.defaultValue) ?: "#000000"
+        val paletteColors = buildList {
+            prompt.predefinedValues.orEmpty().forEach { candidate ->
+                normalizeHexColor(candidate)?.let(::add)
             }
-            val initialColor = normalizeHexColor(prompt.defaultValue) ?: "#000000"
-            var lastValidColor = initialColor
-            val horizontalMargin = dp(dialogContext, DIALOG_INPUT_MARGIN_DP)
-
-            val previewDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(dialogContext, 8).toFloat()
-                setColor(Color.parseColor(initialColor))
-                setStroke(dp(dialogContext, 1), Color.argb(110, 255, 255, 255))
-            }
-            val previewView = View(dialogContext).apply {
-                background = previewDrawable
-                layoutParams = LinearLayout.LayoutParams(dp(dialogContext, 44), dp(dialogContext, 44)).apply {
-                    marginEnd = dp(dialogContext, 12)
-                }
-            }
-            val input = EditText(dialogContext).apply {
-                setSingleLine(true)
-                hint = "#rrggbb"
-                setText(initialColor)
-                setSelection(text?.length ?: 0)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            input.addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) {
-                    normalizeHexColor(s?.toString())?.let { valid ->
-                        lastValidColor = valid
-                        previewDrawable.setColor(Color.parseColor(valid))
-                    }
-                }
-            })
-
-            val headerRow = LinearLayout(dialogContext).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(previewView)
-                addView(input)
-            }
-
-            val paletteColors = buildList {
-                prompt.predefinedValues.orEmpty().forEach { candidate ->
-                    normalizeHexColor(candidate)?.let(::add)
-                }
-                addAll(DEFAULT_WEB_UI_COLOR_PALETTE)
-            }.distinct()
-
-            val rootColumn = LinearLayout(dialogContext).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(horizontalMargin, dp(dialogContext, 12), horizontalMargin, dp(dialogContext, 4))
-                addView(headerRow)
-            }
-            val swatchSpacing = dp(dialogContext, 4)
-            paletteColors.chunked(COLOR_SWATCH_COLUMNS).forEachIndexed { rowIndex, rowColors ->
-                val rowLayout = LinearLayout(dialogContext).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        topMargin = if (rowIndex == 0) dp(dialogContext, 12) else dp(dialogContext, 6)
-                    }
-                }
-                for (colIndex in 0 until COLOR_SWATCH_COLUMNS) {
-                    val hex = rowColors.getOrNull(colIndex)
-                    val cell = View(dialogContext).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, dp(dialogContext, 36), 1f).apply {
-                            marginStart = if (colIndex == 0) 0 else swatchSpacing
-                            marginEnd = if (colIndex == COLOR_SWATCH_COLUMNS - 1) 0 else swatchSpacing
-                        }
-                        if (hex != null) {
-                            background = GradientDrawable().apply {
-                                shape = GradientDrawable.RECTANGLE
-                                cornerRadius = dp(dialogContext, 6).toFloat()
-                                setColor(Color.parseColor(hex))
-                                setStroke(dp(dialogContext, 1), Color.argb(96, 255, 255, 255))
-                            }
-                            contentDescription = hex
-                            isClickable = true
-                            isFocusable = true
-                            setOnClickListener {
-                                lastValidColor = hex
-                                previewDrawable.setColor(Color.parseColor(hex))
-                                input.setText(hex)
-                                input.setSelection(hex.length)
-                            }
-                        } else {
-                            visibility = View.INVISIBLE
-                        }
-                    }
-                    rowLayout.addView(cell)
-                }
-                rootColumn.addView(rowLayout)
-            }
-
-            val scrollContainer = ScrollView(dialogContext).apply {
-                addView(rootColumn)
-            }
-            builder.setView(scrollContainer)
-            builder.setPositiveButton("确定") { _, _ ->
-                val chosen = normalizeHexColor(input.text?.toString()) ?: lastValidColor
-                complete { prompt.confirm(chosen) }
-            }
-            builder.setNegativeButton("取消") { _, _ -> complete { prompt.dismiss() } }
+            addAll(DEFAULT_WEB_UI_COLOR_PALETTE)
+        }.distinct()
+        return showComposePrompt(prompt) { requestId, settle ->
+            WebUiPromptRequest.ColorPicker(
+                id = requestId,
+                title = prompt.title?.takeIf { it.isNotBlank() } ?: "选择颜色",
+                initialHex = initialColor,
+                paletteHexes = paletteColors,
+                onConfirm = { chosen ->
+                    val normalized = normalizeHexColor(chosen) ?: initialColor
+                    settle { prompt.confirm(normalized) }
+                },
+                onDismiss = { settle { prompt.dismiss() } }
+            )
         }
+    }
 
-    private fun showPromptDialog(
+    private fun showComposePrompt(
         prompt: BasePrompt,
-        message: String?,
-        configure: (AlertDialog.Builder, (() -> PromptResponse) -> Unit, () -> Unit) -> Unit
+        buildRequest: (Long, (() -> PromptResponse) -> Unit) -> WebUiPromptRequest
     ): GeckoResult<PromptResponse> {
         if (prompt.isComplete) return GeckoResult()
-        val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
+        if (released) return GeckoResult.fromValue(prompt.dismiss())
+
+        // 切出新 Compose 弹窗前先按取消收尾旧弹窗，防止网页连弹时出现二次结算异常。
+        _activePrompt.value?.onDismiss?.invoke()
+        _activePrompt.value = null
+        activeDialog?.dismiss()
+
+        val requestId = promptIdCounter.getAndIncrement()
         val result = GeckoResult<PromptResponse>()
-        var dialog: AlertDialog? = null
         val guard = PromptSettlementGuard<PromptResponse>(
             isAlreadyComplete = { prompt.isComplete }
         ) { response ->
-            if (activeDialog === dialog) {
-                activeDialog = null
+            if (_activePrompt.value?.id == requestId) {
+                _activePrompt.value = null
             }
             result.complete(response)
         }
-        val builder = AlertDialog.Builder(activity).apply {
-            prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
-            message?.takeIf { it.isNotBlank() }?.let(::setMessage)
-        }
-        configure(builder, { produce -> guard.settleOnce(produce) }) { dialog?.dismiss() }
-        // 统一监听 dismiss，用惰性闭包确保已通过按钮完成弹窗时不会在 Dialog 关闭阶段重复调用 prompt.dismiss()。
-        builder.setOnDismissListener {
-            if (activeDialog === dialog) {
-                activeDialog = null
+        val settle: (() -> PromptResponse) -> Unit = { produce -> guard.settleOnce(produce) }
+
+        // 网页主动撤销弹窗或关闭标签时，同步收起 Compose 弹窗并完成取消结算。
+        prompt.delegate = object : PromptInstanceDelegate {
+            override fun onPromptDismiss(targetPrompt: BasePrompt) {
+                runOnMain { guard.settleOnce { targetPrompt.dismiss() } }
             }
-            guard.settleOnce { prompt.dismiss() }
         }
-        val created = builder.create()
-        dialog = created
-        attachActiveDialog(
-            prompt = prompt,
-            dialog = created,
-            logLabel = "prompt dialog"
-        ) {
-            guard.settleOnce { prompt.dismiss() }
-        }
+        _activePrompt.value = buildRequest(requestId, settle)
         return result
     }
 
@@ -948,6 +828,8 @@ internal class WebUiSessionHost(
         logLabel: String,
         onShowFailed: () -> Unit
     ) {
+        _activePrompt.value?.onDismiss?.invoke()
+        _activePrompt.value = null
         // 网页主动撤销或关闭标签页时同步关掉当前原生弹窗，防止界面残留。
         prompt.delegate = object : PromptInstanceDelegate {
             override fun onPromptDismiss(targetPrompt: BasePrompt) {
@@ -1053,9 +935,6 @@ internal class WebUiSessionHost(
             )
         }
 
-    private fun dp(context: Context, dpValue: Int): Int =
-        (dpValue * context.resources.displayMetrics.density).toInt()
-
     private fun usableActivity(): Activity? {
         if (released) return null
         val activity = findActivity(hostContext) ?: return null
@@ -1095,244 +974,6 @@ internal class WebUiSessionHost(
         WebRequestError.ERROR_FILE_NOT_FOUND -> "文件不存在"
         WebRequestError.ERROR_MALFORMED_URI -> "地址格式无效"
         else -> "页面加载错误"
-    }
-
-    private companion object {
-        const val DIALOG_INPUT_MARGIN_DP = 20
-        const val COLOR_SWATCH_COLUMNS = 4
-    }
-}
-
-/**
- * 原生 `<select>` 选项弹窗适配器：采用自绘高对比度列表行替代系统 `CheckedTextView`，
- * 规避部分 Android/EMUI 深色 AlertDialog 主题将已选中项文字和圆圈染成暗灰导致隐身的问题。
- */
-private class ChoiceListAdapter(
-    private val context: Context,
-    private val promptType: Int,
-    private val rows: List<WebUiChoiceRow>,
-    private val selectedIds: Set<String>
-) : BaseAdapter() {
-    private class OptionViewHolder(
-        val container: LinearLayout,
-        val labelView: TextView,
-        val radioOuter: GradientDrawable?,
-        val radioDot: View?,
-        val checkView: TextView?,
-        val checkBackground: GradientDrawable?
-    )
-
-    override fun getCount(): Int = rows.size
-
-    override fun getItem(position: Int): WebUiChoiceRow = rows[position]
-
-    override fun getItemId(position: Int): Long = position.toLong()
-
-    override fun getViewTypeCount(): Int = VIEW_TYPE_COUNT
-
-    override fun getItemViewType(position: Int): Int = when (rows[position]) {
-        is WebUiChoiceRow.Option -> VIEW_TYPE_OPTION
-        is WebUiChoiceRow.GroupHeader -> VIEW_TYPE_GROUP_HEADER
-        is WebUiChoiceRow.Separator -> VIEW_TYPE_SEPARATOR
-    }
-
-    override fun areAllItemsEnabled(): Boolean = false
-
-    override fun isEnabled(position: Int): Boolean {
-        val row = rows.getOrNull(position) as? WebUiChoiceRow.Option ?: return false
-        return !row.disabled
-    }
-
-    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-        when (val row = rows[position]) {
-            is WebUiChoiceRow.Option -> bindOptionView(row, convertView)
-            is WebUiChoiceRow.GroupHeader -> bindGroupHeaderView(row, convertView)
-            is WebUiChoiceRow.Separator -> bindSeparatorView(convertView)
-        }
-
-    private fun bindOptionView(row: WebUiChoiceRow.Option, convertView: View?): View {
-        val density = context.resources.displayMetrics.density
-        val existingHolder = convertView?.tag as? OptionViewHolder
-        val holder = existingHolder ?: createOptionHolder(density)
-        val container = holder.container
-
-        val horizontalPx = (OPTION_HORIZONTAL_PADDING_DP * density).toInt()
-        val verticalPx = (OPTION_VERTICAL_PADDING_DP * density).toInt()
-        val indentPx = (row.depth * CHOICE_INDENT_DP * density).toInt()
-        container.setPaddingRelative(horizontalPx + indentPx, verticalPx, horizontalPx, verticalPx)
-
-        val selected = row.id in selectedIds
-        val strokePx = maxOf(1, (2 * density).toInt())
-        container.setBackgroundColor(if (selected) SELECTED_ROW_BG_COLOR else Color.TRANSPARENT)
-        container.alpha = if (row.disabled) DISABLED_ALPHA else 1f
-        container.isEnabled = !row.disabled
-
-        holder.labelView.text = row.label
-        holder.labelView.isEnabled = !row.disabled
-        holder.labelView.setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-        holder.labelView.setTextColor(
-            when {
-                row.disabled -> DISABLED_TEXT_COLOR
-                selected -> Color.WHITE
-                else -> UNSELECTED_TEXT_COLOR
-            }
-        )
-
-        if (promptType == ChoicePrompt.Type.SINGLE) {
-            holder.radioOuter?.setStroke(strokePx, if (selected) ACCENT_COLOR else UNSELECTED_BORDER_COLOR)
-            holder.radioDot?.visibility = if (selected) View.VISIBLE else View.GONE
-        } else if (promptType == ChoicePrompt.Type.MULTIPLE) {
-            holder.checkView?.text = if (selected) "✓" else ""
-            holder.checkBackground?.apply {
-                if (selected) {
-                    setColor(ACCENT_COLOR)
-                    setStroke(0, Color.TRANSPARENT)
-                } else {
-                    setColor(Color.TRANSPARENT)
-                    setStroke(strokePx, UNSELECTED_BORDER_COLOR)
-                }
-            }
-        }
-        return container
-    }
-
-    private fun createOptionHolder(density: Float): OptionViewHolder {
-        val hasIndicator = promptType == ChoicePrompt.Type.SINGLE || promptType == ChoicePrompt.Type.MULTIPLE
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = (OPTION_MIN_HEIGHT_DP * density).toInt()
-            layoutParams = AbsListView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val labelView = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = if (hasIndicator) (12 * density).toInt() else 0
-            }
-        }
-        container.addView(labelView)
-
-        val indicatorPx = (INDICATOR_SIZE_DP * density).toInt()
-        var radioOuter: GradientDrawable? = null
-        var radioDot: View? = null
-        var checkView: TextView? = null
-        var checkBackground: GradientDrawable? = null
-
-        when (promptType) {
-            ChoicePrompt.Type.SINGLE -> {
-                val outerDrawable = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.TRANSPARENT)
-                }
-                val dotSize = (RADIO_DOT_SIZE_DP * density).toInt()
-                val dotView = View(context).apply {
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(ACCENT_COLOR)
-                    }
-                    layoutParams = FrameLayout.LayoutParams(dotSize, dotSize, Gravity.CENTER)
-                }
-                val radioBox = FrameLayout(context).apply {
-                    background = outerDrawable
-                    layoutParams = LinearLayout.LayoutParams(indicatorPx, indicatorPx)
-                    addView(dotView)
-                }
-                container.addView(radioBox)
-                radioOuter = outerDrawable
-                radioDot = dotView
-            }
-
-            ChoicePrompt.Type.MULTIPLE -> {
-                val boxDrawable = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = CHECKBOX_RADIUS_DP * density
-                }
-                val boxView = TextView(context).apply {
-                    gravity = Gravity.CENTER
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(Color.WHITE)
-                    background = boxDrawable
-                    layoutParams = LinearLayout.LayoutParams(indicatorPx, indicatorPx)
-                }
-                container.addView(boxView)
-                checkView = boxView
-                checkBackground = boxDrawable
-            }
-        }
-
-        return OptionViewHolder(
-            container = container,
-            labelView = labelView,
-            radioOuter = radioOuter,
-            radioDot = radioDot,
-            checkView = checkView,
-            checkBackground = checkBackground
-        ).also { container.tag = it }
-    }
-
-    private fun bindGroupHeaderView(row: WebUiChoiceRow.GroupHeader, convertView: View?): View {
-        val density = context.resources.displayMetrics.density
-        val textView = (convertView as? TextView) ?: TextView(context).apply {
-            layoutParams = AbsListView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(GROUP_TITLE_COLOR)
-        }
-        val startPx = ((OPTION_HORIZONTAL_PADDING_DP + row.depth * CHOICE_INDENT_DP) * density).toInt()
-        val endPx = (OPTION_HORIZONTAL_PADDING_DP * density).toInt()
-        textView.setPaddingRelative(startPx, (10 * density).toInt(), endPx, (4 * density).toInt())
-        textView.alpha = if (row.disabled) DISABLED_ALPHA else 1f
-        textView.text = row.label
-        return textView
-    }
-
-    private fun bindSeparatorView(convertView: View?): View {
-        if (convertView != null) return convertView
-        val density = context.resources.displayMetrics.density
-        val verticalMargin = (4 * density).toInt()
-        val lineHeight = maxOf(1, density.toInt())
-        val line = View(context).apply {
-            setBackgroundColor(Color.argb(48, 255, 255, 255))
-            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, lineHeight).apply {
-                topMargin = verticalMargin
-                bottomMargin = verticalMargin
-            }
-        }
-        return FrameLayout(context).apply {
-            layoutParams = AbsListView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            addView(line)
-        }
-    }
-
-    private companion object {
-        const val VIEW_TYPE_OPTION = 0
-        const val VIEW_TYPE_GROUP_HEADER = 1
-        const val VIEW_TYPE_SEPARATOR = 2
-        const val VIEW_TYPE_COUNT = 3
-        const val CHOICE_INDENT_DP = 16
-        const val OPTION_HORIZONTAL_PADDING_DP = 20
-        const val OPTION_VERTICAL_PADDING_DP = 12
-        const val OPTION_MIN_HEIGHT_DP = 52
-        const val INDICATOR_SIZE_DP = 20
-        const val RADIO_DOT_SIZE_DP = 10
-        const val CHECKBOX_RADIUS_DP = 4f
-        const val DISABLED_ALPHA = 0.45f
-        val ACCENT_COLOR = Color.rgb(255, 148, 66)
-        val SELECTED_ROW_BG_COLOR = Color.argb(26, 255, 148, 66)
-        val UNSELECTED_TEXT_COLOR = Color.rgb(234, 234, 234)
-        val DISABLED_TEXT_COLOR = Color.rgb(136, 136, 136)
-        val GROUP_TITLE_COLOR = Color.rgb(176, 176, 176)
-        val UNSELECTED_BORDER_COLOR = Color.rgb(176, 176, 176)
     }
 }
 
