@@ -433,6 +433,21 @@ internal object FlatFeatureIcons {
         }
     }
 
+    /** 自动备份图标：柔白归档盒配居中向下归档箭头，表达组件配置与记忆库归档保存。 */
+    val Backup: ImageVector by lazy {
+        flatVector("FlatBackup") {
+            fillLayer(IconSecondary) { roundedRectPath(3.4f, 4.6f, 20.6f, 19.6f, 4.0f) }
+            fillLayer(IconForeground) { roundedRectPath(7.0f, 15.8f, 17.0f, 17.6f, 0.9f) }
+            strokeLayer(IconForeground, width = 2.1f) {
+                moveTo(12.0f, 7.6f)
+                lineTo(12.0f, 13.4f)
+                moveTo(9.2f, 10.9f)
+                lineTo(12.0f, 13.7f)
+                lineTo(14.8f, 10.9f)
+            }
+        }
+    }
+
     /** 悬浮桌宠图标：圆润猫耳麦麦剪影与灵动笑眼，专用于「扩展组件」悬浮桌宠卡片。 */
     val DesktopPet: ImageVector by lazy {
         flatVector("FlatDesktopPet") {
