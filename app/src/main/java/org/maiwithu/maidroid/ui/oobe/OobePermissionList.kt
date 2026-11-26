@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -33,8 +31,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maiwithu.maidroid.permission.PermissionActions
@@ -71,7 +67,7 @@ internal fun CompactOobePermissionList(
         NotificationPermissionCard(granted = state.notificationGranted, onAuthorize = actions.enableNotification)
         Spacer(modifier = Modifier.height(14.dp))
         StoragePermissionCard(granted = state.storageGranted, onAuthorize = actions.requestStorage)
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         BackgroundKeepAliveCard(state = state, actions = actions)
         Spacer(modifier = Modifier.height(12.dp))
     }
@@ -178,19 +174,17 @@ private fun BackgroundKeepAliveCard(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 71.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FlatFeatureIconBadge(
                 icon = FlatFeatureIcons.BackgroundKeepAlive,
                 backgroundColor = IconPeachOrange,
-                size = 48.dp,
-                iconSize = 31.dp
+                size = 44.dp,
+                iconSize = 28.dp
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 FlowRow(
@@ -200,18 +194,16 @@ private fun BackgroundKeepAliveCard(
                 ) {
                     Text(
                         text = "后台保活",
-                        fontSize = TextSizes.TitleLarge,
+                        fontSize = TextSizes.Title,
                         fontWeight = FontWeight.Bold,
                         color = OobeTextPrimary,
                         letterSpacing = 0.sp,
-                        lineHeight = 24.sp
+                        lineHeight = 22.sp
                     )
 
-                    KeepAliveTag(
+                    OobePermissionTag(
                         text = "可选",
                         backgroundColor = OobeTextPrimary.copy(alpha = 0.14f),
-                        width = 48.dp,
-                        fontSize = TextSizes.Caption,
                         textColor = OobeTextPrimary.copy(alpha = 0.82f)
                     )
                 }
@@ -221,9 +213,10 @@ private fun BackgroundKeepAliveCard(
                 Text(
                     text = "MaiSaka 需要后台权限才能在切换到其他应用时保持后台运行；这个设置是可选项，你可以视情况开启一部分。",
                     fontSize = TextSizes.Caption,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Normal,
                     color = OobeTextSecondary,
-                    lineHeight = 15.sp,
+                    letterSpacing = 0.sp,
+                    lineHeight = 16.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -290,11 +283,11 @@ private fun KeepAlivePermissionRow(
             .padding(horizontal = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        KeepAliveTag(
+        OobePermissionTag(
             text = tagText,
             backgroundColor = if (destructive) StatusDanger else BrandOrange,
-            width = if (destructive) 42.dp else 32.dp,
-            fontSize = TextSizes.Tag
+            textColor = TextPrimary,
+            minWidth = 44.dp
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -302,9 +295,10 @@ private fun KeepAlivePermissionRow(
         Text(
             text = title,
             modifier = Modifier.weight(1f),
-            fontSize = TextSizes.BodyLarge,
-            fontWeight = FontWeight.Bold,
+            fontSize = TextSizes.Body,
+            fontWeight = FontWeight.Medium,
             color = OobeTextPrimary,
+            letterSpacing = 0.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 18.sp
@@ -320,6 +314,8 @@ private fun KeepAlivePermissionRow(
                 fontWeight = FontWeight.Normal,
                 color = actionColor,
                 maxLines = 1,
+                softWrap = false,
+                letterSpacing = 0.sp,
                 lineHeight = 14.sp
             )
             Icon(
@@ -337,34 +333,4 @@ private fun KeepAliveDivider() {
     Spacer(modifier = Modifier.height(4.dp))
     HorizontalDivider(color = TextPrimary.copy(alpha = 0.08f), thickness = 1.dp)
     Spacer(modifier = Modifier.height(3.dp))
-}
-
-@Composable
-private fun KeepAliveTag(
-    text: String,
-    backgroundColor: Color,
-    width: Dp,
-    fontSize: TextUnit,
-    textColor: Color = TextPrimary
-) {
-    Box(
-        modifier = Modifier
-            .widthIn(min = width)
-            .heightIn(min = 18.dp)
-            .clip(RoundedCornerShape(Corners.Tag))
-            .background(backgroundColor)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            fontSize = fontSize,
-            fontWeight = FontWeight.Bold,
-            color = textColor,
-            maxLines = 1,
-            softWrap = false,
-            letterSpacing = 0.sp,
-            lineHeight = fontSize
-        )
-    }
 }
