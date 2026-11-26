@@ -70,6 +70,21 @@ internal class AppSettings(
         const val KEY_MIRROR_PYPI_CUSTOM = "mirror_pypi_custom"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_WIFI_LOCK_ENABLED = "wifi_lock_enabled"
+        const val KEY_BACKUP_AUTO_ENABLED = "backup_auto_enabled"
+        const val KEY_BACKUP_SCHEDULE_HOUR = "backup_schedule_hour"
+        const val KEY_BACKUP_SCHEDULE_MINUTE = "backup_schedule_minute"
+        const val KEY_BACKUP_RETENTION_COUNT = "backup_retention_count"
+        const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
+        const val KEY_BACKUP_TREE_LABEL = "backup_tree_label"
+        const val KEY_BACKUP_INCLUDE_MAIBOT_CONFIG = "backup_include_maibot_config"
+        const val KEY_BACKUP_INCLUDE_MAIBOT_MEMORY = "backup_include_maibot_memory"
+        const val KEY_BACKUP_INCLUDE_PLUGINS = "backup_include_plugins"
+        const val KEY_BACKUP_INCLUDE_SNOWLUMA = "backup_include_snowluma"
+        const val KEY_BACKUP_INCLUDE_NAPCAT = "backup_include_napcat"
+        const val KEY_LAST_AUTO_BACKUP_DAY_KEY = "backup_last_auto_day"
+        const val KEY_LAST_BACKUP_AT_MILLIS = "backup_last_at_ms"
+        const val KEY_LAST_BACKUP_SUMMARY = "backup_last_summary"
+        const val KEY_LAST_BACKUP_ERROR = "backup_last_error"
 
         const val DEFAULT_CONTAINER_SSH_PORT = 2222
         const val DEFAULT_WEBUI_PILL_VERTICAL_BIAS = 0.65f
@@ -243,6 +258,97 @@ internal class AppSettings(
         set(value) {
             kv.encode(KEY_WIFI_LOCK_ENABLED, value)
             _wifiLockEnabled.value = value
+        }
+
+    // ── 自动备份设置与最近状态 ────────────────────────────────────────────
+    var backupAutoEnabled: Boolean
+        get() = kv.decodeBool(KEY_BACKUP_AUTO_ENABLED, false)
+        set(value) {
+            kv.encode(KEY_BACKUP_AUTO_ENABLED, value)
+        }
+
+    var backupScheduleHour: Int
+        get() = kv.decodeInt(KEY_BACKUP_SCHEDULE_HOUR, 4).coerceIn(0, 23)
+        set(value) {
+            kv.encode(KEY_BACKUP_SCHEDULE_HOUR, value.coerceIn(0, 23))
+        }
+
+    var backupScheduleMinute: Int
+        get() = kv.decodeInt(KEY_BACKUP_SCHEDULE_MINUTE, 0).coerceIn(0, 59)
+        set(value) {
+            kv.encode(KEY_BACKUP_SCHEDULE_MINUTE, value.coerceIn(0, 59))
+        }
+
+    var backupRetentionCount: Int
+        get() = kv.decodeInt(KEY_BACKUP_RETENTION_COUNT, 7).coerceIn(1, 30)
+        set(value) {
+            kv.encode(KEY_BACKUP_RETENTION_COUNT, value.coerceIn(1, 30))
+        }
+
+    var backupTreeUri: String
+        get() = kv.decodeString(KEY_BACKUP_TREE_URI, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_BACKUP_TREE_URI, value.trim())
+        }
+
+    var backupTreeLabel: String
+        get() = kv.decodeString(KEY_BACKUP_TREE_LABEL, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_BACKUP_TREE_LABEL, value.trim())
+        }
+
+    var backupIncludeMaiBotConfig: Boolean
+        get() = kv.decodeBool(KEY_BACKUP_INCLUDE_MAIBOT_CONFIG, true)
+        set(value) {
+            kv.encode(KEY_BACKUP_INCLUDE_MAIBOT_CONFIG, value)
+        }
+
+    var backupIncludeMaiBotMemory: Boolean
+        get() = kv.decodeBool(KEY_BACKUP_INCLUDE_MAIBOT_MEMORY, true)
+        set(value) {
+            kv.encode(KEY_BACKUP_INCLUDE_MAIBOT_MEMORY, value)
+        }
+
+    var backupIncludePlugins: Boolean
+        get() = kv.decodeBool(KEY_BACKUP_INCLUDE_PLUGINS, true)
+        set(value) {
+            kv.encode(KEY_BACKUP_INCLUDE_PLUGINS, value)
+        }
+
+    var backupIncludeSnowLuma: Boolean
+        get() = kv.decodeBool(KEY_BACKUP_INCLUDE_SNOWLUMA, true)
+        set(value) {
+            kv.encode(KEY_BACKUP_INCLUDE_SNOWLUMA, value)
+        }
+
+    var backupIncludeNapCat: Boolean
+        get() = kv.decodeBool(KEY_BACKUP_INCLUDE_NAPCAT, true)
+        set(value) {
+            kv.encode(KEY_BACKUP_INCLUDE_NAPCAT, value)
+        }
+
+    var lastAutoBackupDayKey: String
+        get() = kv.decodeString(KEY_LAST_AUTO_BACKUP_DAY_KEY, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_LAST_AUTO_BACKUP_DAY_KEY, value.trim())
+        }
+
+    var lastBackupAtMillis: Long
+        get() = kv.decodeLong(KEY_LAST_BACKUP_AT_MILLIS, 0L)
+        set(value) {
+            kv.encode(KEY_LAST_BACKUP_AT_MILLIS, value)
+        }
+
+    var lastBackupSummary: String
+        get() = kv.decodeString(KEY_LAST_BACKUP_SUMMARY, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_LAST_BACKUP_SUMMARY, value.trim())
+        }
+
+    var lastBackupError: String
+        get() = kv.decodeString(KEY_LAST_BACKUP_ERROR, "")?.trim().orEmpty()
+        set(value) {
+            kv.encode(KEY_LAST_BACKUP_ERROR, value.trim())
         }
 
     /** 匿名安装随机标识：首次读取时生成 UUID，卸载重装即变，不绑定任何硬件序列号或账号。 */

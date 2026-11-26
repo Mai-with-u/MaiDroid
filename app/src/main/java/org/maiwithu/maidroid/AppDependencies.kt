@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Process
 import org.maiwithu.maidroid.appupdate.AppUpdateManager
+import org.maiwithu.maidroid.backup.BackupManager
 import org.maiwithu.maidroid.cleanup.StorageCleanupManager
 import org.maiwithu.maidroid.diagnostics.CrashRecorder
 import org.maiwithu.maidroid.diagnostics.DiagnosticsFiles
@@ -174,6 +175,10 @@ internal class AppDependencies(context: Context) {
     // 设置页和“空间不足”提示里的“清理空间”：量各类缓存的大小，删掉勾选的。
     val storageCleanup: StorageCleanupManager by lazy {
         StorageCleanupManager(runtimePaths, runtimeReadiness, commandRunner)
+    }
+    // 各组件配置与记忆库自动备份：支持默认 /sdcard/MaiDroid/Backups 与 SAF 自定义目录双模式。
+    val backupManager: BackupManager by lazy {
+        BackupManager(appContext, settings, runtimePaths, BuildConfig.VERSION_NAME)
     }
     // 设置页的“安全退出”：先在主线程关掉悬浮桌宠，再让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {

@@ -27,6 +27,9 @@ class RuntimeAutoStartReceiver : BroadcastReceiver() {
         }
 
         val settings = context.appDependencies.settings
+        if (settings.backupAutoEnabled) {
+            runCatching { context.appDependencies.backupManager.syncJobSchedule() }
+        }
         if (!settings.autoStartService) {
             Log.d(TAG, "Received $reason broadcast, but service auto-resume is disabled")
             return

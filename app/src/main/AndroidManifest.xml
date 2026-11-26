@@ -127,6 +127,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- 每日自动备份离线兜底：使用系统持久化 JobScheduler，不依赖应用常驻 -->
+        <service
+            android:name=".backup.AutoBackupJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
     </application>
 
 </manifest>
