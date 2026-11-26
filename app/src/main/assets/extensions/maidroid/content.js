@@ -232,6 +232,7 @@
   var lastViewportHeight = 0;
   var revealRaf = 0;
   var revealTimer = 0;
+  var isSyncingViewportMeta = false;
 
   // Gecko 132+ 默认使用 resizes-visual（弹键盘只缩 visualViewport，fixed bottom:0 仍按全屏底边定位），
   // 会让 MaiBot WebUI 手机底部弹窗/底栏反向向下掉进键盘后面；统一声明 resizes-content 让布局视口随键盘同缩。
@@ -265,27 +266,32 @@
     var parent = document.head || document.documentElement;
     if (!parent) return;
 
-    var metas = Array.prototype.slice.call(document.querySelectorAll('meta[name="viewport"]'));
-    captureOriginalViewport(metas);
+    isSyncingViewportMeta = true;
+    try {
+      var metas = Array.prototype.slice.call(document.querySelectorAll('meta[name="viewport"]'));
+      captureOriginalViewport(metas);
 
-    if (metas.length === 0) {
-      var created = document.createElement('meta');
-      created.name = 'viewport';
-      created.setAttribute('data-maidroid-created', 'true');
-      created.setAttribute('content', targetContent);
-      parent.appendChild(created);
-      return;
-    }
+      if (metas.length === 0) {
+        var created = document.createElement('meta');
+        created.name = 'viewport';
+        created.setAttribute('data-maidroid-created', 'true');
+        created.setAttribute('content', targetContent);
+        parent.appendChild(created);
+        return;
+      }
 
-    if (originalViewportContent !== null && metas[0].hasAttribute('data-maidroid-created')) {
-      metas[0].removeAttribute('data-maidroid-created');
-    }
-    if (metas[0].getAttribute('content') !== targetContent) {
-      metas[0].setAttribute('content', targetContent);
-    }
-    // 丢弃多余的 viewport meta，避免 HTML 后续解析到的第二条 viewport 覆盖桌面宽度或键盘视口策略
-    for (var i = 1; i < metas.length; i++) {
-      metas[i].remove();
+      if (originalViewportContent !== null && metas[0].hasAttribute('data-maidroid-created')) {
+        metas[0].removeAttribute('data-maidroid-created');
+      }
+      if (metas[0].getAttribute('content') !== targetContent) {
+        metas[0].setAttribute('content', targetContent);
+      }
+      // 丢弃多余的 viewport meta，避免 HTML 后续解析到的第二条 viewport 覆盖桌面宽度或键盘视口策略
+      for (var i = 1; i < metas.length; i++) {
+        metas[i].remove();
+      }
+    } finally {
+      isSyncingViewportMeta = false;
     }
   }
 
@@ -503,8 +509,10 @@
   bgCanvas.width = 1;
   bgCanvas.height = 1;
   var bgContext = bgCanvas.getContext('2d', { willReadFrequently: true });
+  var lastRawBgPair = '';
   var lastBgKey = '';
   var bgTimer = 0;
+  var headObserverTimer = 0;
 
   function colorToBytes(color) {
     if (!bgContext) return [0, 0, 0, 0];
@@ -518,11 +526,15 @@
 
   function reportPageBackground(force) {
     if (!document.documentElement) return;
-    var bytes = document.body
-      ? colorToBytes(getComputedStyle(document.body).backgroundColor)
-      : [0, 0, 0, 0];
-    if (bytes[3] === 0) {
-      bytes = colorToBytes(getComputedStyle(document.documentElement).backgroundColor);
+    var bodyBg = document.body ? (getComputedStyle(document.body).backgroundColor || '') : '';
+    var rootBg = getComputedStyle(document.documentElement).backgroundColor || '';
+    var rawPair = bodyBg + '|' + rootBg;
+    if (!force && rawPair === lastRawBgPair) return;
+    lastRawBgPair = rawPair;
+
+    var bytes = bodyBg ? colorToBytes(bodyBg) : [0, 0, 0, 0];
+    if (bytes[3] === 0 && rootBg) {
+      bytes = colorToBytes(rootBg);
     }
     var key = bytes.join(',');
     if (!force && key === lastBgKey) return;
@@ -537,9 +549,21 @@
   }
 
   function scheduleBackgroundReport() {
-    reportPageBackground(false);
     clearTimeout(bgTimer);
-    bgTimer = setTimeout(function() { reportPageBackground(false); }, 400);
+    bgTimer = setTimeout(function() { reportPageBackground(false); }, 180);
+  }
+
+  function scheduleHeadSync() {
+    clearTimeout(headObserverTimer);
+    headObserverTimer = setTimeout(function() {
+      headObserverTimer = 0;
+      if (currentConfig) {
+        applyViewportConfig(currentConfig);
+      } else {
+        ensureViewportResizesContent();
+      }
+      scheduleBackgroundReport();
+    }, 120);
   }
 
   var observedBody = null;
@@ -548,17 +572,13 @@
     if (document.body && observedBody !== document.body) {
       observedBody = document.body;
       new MutationObserver(scheduleBackgroundReport).observe(document.body, { attributes: true });
-      scheduleBackgroundReport();
+      reportPageBackground(false);
     }
     if (document.head && observedHead !== document.head) {
       observedHead = document.head;
       new MutationObserver(function() {
-        if (currentConfig) {
-          applyViewportConfig(currentConfig);
-        } else {
-          ensureViewportResizesContent();
-        }
-        scheduleBackgroundReport();
+        if (isSyncingViewportMeta) return;
+        scheduleHeadSync();
       }).observe(document.head, {
         childList: true,
         subtree: true,
@@ -585,7 +605,7 @@
     } else {
       ensureViewportResizesContent();
     }
-    scheduleBackgroundReport();
+    reportPageBackground(false);
   });
   window.addEventListener('load', function() {
     if (currentConfig) {

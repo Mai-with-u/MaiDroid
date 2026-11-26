@@ -30,8 +30,17 @@ class AptMirrorsTest {
     fun `apt gives up on a stalled download after thirty seconds`() {
         val functions = AptMirrors.shellFunctions()
 
-        assertTrue(functions.contains("apt-get -o Acquire::http::Pipeline-Depth=0 -o Acquire::http::Timeout=30 --error-on=any update"))
-        assertTrue(functions.contains("apt-get -o Acquire::http::Timeout=30 install -y -f --no-install-recommends"))
+        assertTrue(
+            functions.contains(
+                "apt-get -o Dir::Etc::sourcelist=/tmp/maidroid-apt-sources.list -o Acquire::http::Pipeline-Depth=0 -o Acquire::http::Timeout=30 --error-on=any update"
+            )
+        )
+        assertTrue(
+            functions.contains(
+                "apt-get -o Dir::Etc::sourcelist=/tmp/maidroid-apt-sources.list -o Acquire::http::Timeout=30 install -y -f --no-install-recommends"
+            )
+        )
+        assertTrue(functions.contains("cp /etc/apt/sources.list /tmp/maidroid-apt-sources.list"))
         // NapCat 安装器自己调的 apt-get 读这份配置
         assertTrue(functions.contains("'Acquire::http::Timeout \"30\";'"))
         assertTrue(ContainerSetupScripts.configureAptMirror().body.contains("maidroid_apt_write_network_conf\n"))
@@ -44,6 +53,7 @@ class AptMirrorsTest {
 
         assertTrue(fetchCheck.contains("Hash Sum mismatch"))
         assertTrue(fetchCheck.contains("Temporary failure resolving"))
+        assertTrue(fetchCheck.contains("Unable to locate package"))
         // 空间满、手机时间不对时换源也没用，先排除掉
         val excluded = fetchCheck.lineSequence().first { it.contains("grep -qiE") }
         assertTrue(excluded.contains("No space left on device"))

@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,8 +27,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Code
@@ -101,7 +104,7 @@ private val OobeStep.title: String
 
 private val OobeStep.description: String
     get() = when (this) {
-        OobeStep.Permissions -> "MaiSaka需要以下权限才能运行~\n可选权限也可以不给，如果你确定你在做什么的话"
+        OobeStep.Permissions -> "请先开启消息通知权限以维持容器后台保活~\n其余权限均为可选，之后随时可在设置里调整"
         OobeStep.Container -> "正在自动下载运行环境，以给予麦麦一个新家\n请保持网络连接，下载完成后麦麦会自己装~"
         OobeStep.Install -> "麦麦正在装修并入住新家……，请耐心等待"
     }
@@ -156,7 +159,7 @@ internal fun OobeStepHeader(
 
 /**
  * 每一步底部的按钮区：
- * 权限步骤 -> 存储授权后才能点“下一步”；
+ * 权限步骤 -> 开启必选消息通知权限后才能点“下一步”；
  * 配置容器 -> 容器就绪时“开始安装”，失败时“重新配置”；
  * 安装 MaiBot -> 完成时“进入 MaiDroid”，失败且没有任务在跑时“重试安装”，否则“请稍候”。
  * 两步失败时说明下面多一块：错误码、认出的原因和建议、跳转按钮和“反馈问题”。
@@ -166,15 +169,15 @@ internal fun OobeStepHeader(
 internal fun OobeStepFooter(
     step: OobeStep,
     setupState: OobeSetupState,
-    storageGranted: Boolean,
+    notificationGranted: Boolean,
     onNext: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     when (step) {
         OobeStep.Permissions -> NextButton(
-            text = if (storageGranted) "下一步" else "请先授权",
-            enabled = storageGranted,
+            text = if (notificationGranted) "下一步" else "请先授权",
+            enabled = notificationGranted,
             onNext = onNext,
             modifier = modifier
         )
@@ -372,10 +375,10 @@ private fun SetupFooter(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Corners.Chip))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(OobeSurface)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -388,7 +391,7 @@ private fun SetupFooter(
                 else -> WaitingRing()
             }
 
-            Spacer(modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.size(12.dp))
 
             Text(
                 text = footerText,
@@ -396,12 +399,21 @@ private fun SetupFooter(
                 fontSize = TextSizes.Body,
                 fontWeight = FontWeight.Normal,
                 color = OobeTextSecondary,
-                lineHeight = 17.sp
+                letterSpacing = 0.sp,
+                lineHeight = 18.sp
             )
         }
 
         if (failure != null && !canProceed) {
-            FailureNotice(failure = failure, textColor = OobeTextSecondary, modifier = Modifier.padding(start = 38.dp))
+            // 故障详情可能含求助码或长建议：放在弹性可滚槽内，确保无论屏高多小都不会压扁底部重试按钮。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                FailureNotice(failure = failure, textColor = OobeTextSecondary)
+            }
         }
 
         LiquidButton(
@@ -416,7 +428,11 @@ private fun SetupFooter(
             Text(
                 text = if (canProceed) proceedText else waitingText,
                 fontSize = TextSizes.BodyLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                letterSpacing = 0.sp,
+                lineHeight = 20.sp
             )
         }
     }

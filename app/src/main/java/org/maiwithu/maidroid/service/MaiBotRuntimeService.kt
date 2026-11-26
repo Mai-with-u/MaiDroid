@@ -186,14 +186,21 @@ class MaiBotRuntimeService : Service() {
         }
     }
 
-    // 手机改时区（手动改，或开着自动时区跨了时区）时系统发这条广播：同步容器时区，MaiBot 在跑就重启。
+    // 手机改时区或校准系统时间时系统发这两条广播：改时区时同步容器，两者都重算每日自动备份触发时刻。
     private val timeZoneReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != Intent.ACTION_TIMEZONE_CHANGED) return
-            Log.d(TAG, "Phone time zone changed")
-            // 框架收到改时区时也会这样清掉本进程缓存的默认时区；这里先清一次，免得广播比框架的更新先到、读到旧时区。
-            TimeZone.setDefault(null)
-            maiBotProcess.followPhoneTimeZone()
+            when (intent.action) {
+                Intent.ACTION_TIMEZONE_CHANGED -> {
+                    Log.d(TAG, "Phone time zone changed")
+                    // 框架收到改时区时也会这样清掉本进程缓存的默认时区；这里先清一次，免得广播比框架的更新先到、读到旧时区。
+                    TimeZone.setDefault(null)
+                    maiBotProcess.followPhoneTimeZone()
+                    appDependencies.backupManager.onClockOrTimezoneChanged()
+                }
+                Intent.ACTION_TIME_CHANGED -> {
+                    appDependencies.backupManager.onClockOrTimezoneChanged()
+                }
+            }
         }
     }
 
@@ -206,7 +213,10 @@ class MaiBotRuntimeService : Service() {
         ContextCompat.registerReceiver(
             this,
             timeZoneReceiver,
-            IntentFilter(Intent.ACTION_TIMEZONE_CHANGED),
+            IntentFilter().apply {
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+                addAction(Intent.ACTION_TIME_CHANGED)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         ContextCompat.registerReceiver(
@@ -260,6 +270,23 @@ class MaiBotRuntimeService : Service() {
         serviceScope.launch {
             appDependencies.settings.wifiLockEnabledFlow.collect {
                 syncWifiLock()
+            }
+        }
+        // 前台服务常驻期间按配置时刻精准等待执行每日自动备份（短间隔按壁钟重对齐，防系统定时偏差）。
+        serviceScope.launch {
+            appDependencies.backupManager.scheduleSignal.collectLatest { signal ->
+                if (!signal.enabled) return@collectLatest
+                val targetAtMillis = signal.nextTriggerAtMillis ?: return@collectLatest
+                while (true) {
+                    val remaining = targetAtMillis - System.currentTimeMillis()
+                    if (remaining <= 0L) break
+                    delay(remaining.coerceAtMost(30 * 60 * 1000L))
+                }
+                if (!safeExitRunning && !lowBatteryPaused) {
+                    appDependencies.backupManager.runScheduledBackupIfDue()
+                } else {
+                    appDependencies.backupManager.onClockOrTimezoneChanged()
+                }
             }
         }
         // 服务刚起或开机自启时先补发一次上次尚未上报的崩溃记录

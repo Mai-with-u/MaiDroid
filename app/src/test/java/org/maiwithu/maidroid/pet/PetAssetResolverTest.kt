@@ -133,6 +133,44 @@ class PetAssetResolverTest {
         assertEquals("application/javascript", bridge?.mimeType)
     }
 
+    @Test
+    fun `parses http byte ranges for audio and rejects invalid ranges`() {
+        assertEquals(PetRangeResult.NoRange, parseHttpByteRange(null, 100))
+        assertEquals(PetRangeResult.NoRange, parseHttpByteRange("   ", 100))
+
+        assertEquals(
+            PetRangeResult.Partial(PetByteRange(0, 99)),
+            parseHttpByteRange("bytes=0-", 100)
+        )
+        assertEquals(
+            PetRangeResult.Partial(PetByteRange(10, 25)),
+            parseHttpByteRange("BYTES=10-25", 100)
+        )
+        assertEquals(16, (parseHttpByteRange("bytes=10-25", 100) as PetRangeResult.Partial).range.length)
+        assertEquals(
+            PetRangeResult.Partial(PetByteRange(80, 99)),
+            parseHttpByteRange("bytes=80-999", 100)
+        )
+        assertEquals(
+            PetRangeResult.Partial(PetByteRange(80, 99)),
+            parseHttpByteRange("bytes=-20", 100)
+        )
+        assertEquals(
+            PetRangeResult.Partial(PetByteRange(0, 99)),
+            parseHttpByteRange("bytes=-500", 100)
+        )
+        assertEquals(
+            PetRangeResult.Partial(PetByteRange(0, 9)),
+            parseHttpByteRange("bytes=0-9, 20-29", 100)
+        )
+
+        assertEquals(PetRangeResult.Unsatisfiable, parseHttpByteRange("bytes=100-", 100))
+        assertEquals(PetRangeResult.Unsatisfiable, parseHttpByteRange("bytes=20-10", 100))
+        assertEquals(PetRangeResult.Unsatisfiable, parseHttpByteRange("bytes=-0", 100))
+        assertEquals(PetRangeResult.Unsatisfiable, parseHttpByteRange("items=0-5", 100))
+        assertEquals(PetRangeResult.Unsatisfiable, parseHttpByteRange("bytes=0-10", 0))
+    }
+
     private fun buildZipBytes(vararg entries: Pair<String, ByteArray>): ByteArray {
         val out = ByteArrayOutputStream()
         ZipOutputStream(out).use { zip ->

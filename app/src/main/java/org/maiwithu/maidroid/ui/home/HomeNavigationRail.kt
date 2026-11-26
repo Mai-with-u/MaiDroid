@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -236,6 +237,7 @@ private fun AnimatedHomeTabRail(
     val barShape = { HomeNavBarShape }
     val indicatorShape = { HomeNavIndicatorShape }
     val tabsBackdrop = rememberLayerBackdrop()
+    val combinedIndicatorBackdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop)
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     BoxWithConstraints(modifier = modifier) {
@@ -353,6 +355,11 @@ private fun AnimatedHomeTabRail(
             1f + with(density) { 12f.dp.toPx() } / railHeightPx,
             railDragAnimation.pressProgress
         )
+        val refractionActive by remember(railDragAnimation) {
+            derivedStateOf {
+                shouldRenderLiquidTabRefraction(railDragAnimation.pressProgress, isRailDragging)
+            }
+        }
 
         // 兄弟层 1：基础液态玻璃竖栏与可点击页签
         Column(
@@ -388,62 +395,102 @@ private fun AnimatedHomeTabRail(
             }
         }
 
-        // 兄弟层 2：隐身品牌橙放大高亮层，供上方纵移水滴折射采样
-        CompositionLocalProvider(
-            LocalLiquidBottomTabScale provides {
-                lerp(1f, HomeNavVerticalAccentScale, railDragAnimation.pressProgress)
-            }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
-                    .graphicsLayer { translationY = panelOffsetPx }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = barShape,
-                        effects = {
-                            val progress = railDragAnimation.pressProgress
-                            vibrancy()
-                            blur(10f.dp.toPx())
-                            lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
-                        },
-                        highlight = {
-                            Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
-                        },
-                        shadow = null,
-                        layerBlock = {
-                            scaleX = railPressScale
-                            scaleY = railPressScale
-                        },
-                        onDrawSurface = {
-                            drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
-                        }
-                    )
-                    .then(railHighlight.modifier)
-                    .padding(horizontal = horizontalInset, vertical = verticalInset)
+        // 兄弟层 2：隐身品牌橙放大高亮层（仅按压或拖拽滑块时按需挂载，静止态零离屏着色器开销）
+        if (refractionActive) {
+            CompositionLocalProvider(
+                LocalLiquidBottomTabScale provides {
+                    lerp(1f, HomeNavVerticalAccentScale, railDragAnimation.pressProgress)
+                }
             ) {
-                HomeTab.entries.forEach { tab ->
-                    // 折射高亮层与底层严格同排版尺寸，保证水滴拖过时品牌橙放大字全部落入椭圆指示器内。
-                    HomeTabButton(
-                        tab = tab,
-                        selected = true,
-                        compact = compact,
-                        accentHighlighted = true,
-                        clickableEnabled = false,
-                        onClick = {},
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clearAndSetSemantics {}
+                        .alpha(0f)
+                        .layerBackdrop(tabsBackdrop)
+                        .graphicsLayer { translationY = panelOffsetPx }
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = barShape,
+                            effects = {
+                                val progress = railDragAnimation.pressProgress
+                                vibrancy()
+                                blur(10f.dp.toPx())
+                                lens(20f.dp.toPx() * progress, 24f.dp.toPx() * progress)
+                            },
+                            highlight = {
+                                Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
+                            },
+                            shadow = null,
+                            layerBlock = {
+                                scaleX = railPressScale
+                                scaleY = railPressScale
+                            },
+                            onDrawSurface = {
+                                drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
+                            }
+                        )
+                        .then(railHighlight.modifier)
+                        .padding(horizontal = horizontalInset, vertical = verticalInset)
+                ) {
+                    HomeTab.entries.forEach { tab ->
+                        // 折射高亮层与底层严格同排版尺寸，保证水滴拖过时品牌橙放大字全部落入椭圆指示器内。
+                        HomeTabButton(
+                            tab = tab,
+                            selected = true,
+                            compact = compact,
+                            accentHighlighted = true,
+                            clickableEnabled = false,
+                            onClick = {},
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        )
+                    }
                 }
             }
         }
 
-        // 兄弟层 3：独立游走纵向水滴滑块（不进竖栏裁剪区，按下自由膨胀并做纵向速度挤压）
+        // 兄弟层 3：独立游走纵向水滴滑块（静止态仅绘轻量底色胶囊，按压拖拽期间启用实时双源透镜折射）
         val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
+        val indicatorSurfaceModifier = if (refractionActive) {
+            Modifier.drawBackdrop(
+                backdrop = combinedIndicatorBackdrop,
+                shape = indicatorShape,
+                effects = {
+                    val progress = railDragAnimation.pressProgress
+                    lens(
+                        refractionHeight = 10f.dp.toPx() * progress,
+                        refractionAmount = 14f.dp.toPx() * progress,
+                        chromaticAberration = true
+                    )
+                },
+                highlight = {
+                    Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
+                },
+                shadow = {
+                    Shadow(alpha = railDragAnimation.pressProgress)
+                },
+                innerShadow = {
+                    val progress = railDragAnimation.pressProgress
+                    InnerShadow(radius = 8f.dp * progress, alpha = progress)
+                },
+                layerBlock = {
+                    scaleX = railDragAnimation.scaleX
+                    scaleY = railDragAnimation.scaleY
+                    val velocity = railDragAnimation.velocity / 10f
+                    scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                    scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                },
+                onDrawSurface = {
+                    val progress = railDragAnimation.pressProgress
+                    drawRect(GlassSelectedIndicator, alpha = 1f - progress)
+                    drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                }
+            )
+        } else {
+            Modifier.background(GlassSelectedIndicator, HomeNavIndicatorShape)
+        }
         Box(
             modifier = Modifier
                 .padding(horizontal = horizontalInset)
@@ -452,40 +499,7 @@ private fun AnimatedHomeTabRail(
                 }
                 .then(railHighlight.gestureModifier)
                 .then(railDragAnimation.modifier)
-                .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                    shape = indicatorShape,
-                    effects = {
-                        val progress = railDragAnimation.pressProgress
-                        lens(
-                            refractionHeight = 10f.dp.toPx() * progress,
-                            refractionAmount = 14f.dp.toPx() * progress,
-                            chromaticAberration = true
-                        )
-                    },
-                    highlight = {
-                        Highlight.Default.copy(alpha = railDragAnimation.pressProgress)
-                    },
-                    shadow = {
-                        Shadow(alpha = railDragAnimation.pressProgress)
-                    },
-                    innerShadow = {
-                        val progress = railDragAnimation.pressProgress
-                        InnerShadow(radius = 8f.dp * progress, alpha = progress)
-                    },
-                    layerBlock = {
-                        scaleX = railDragAnimation.scaleX
-                        scaleY = railDragAnimation.scaleY
-                        val velocity = railDragAnimation.velocity / 10f
-                        scaleY /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                        scaleX *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                    },
-                    onDrawSurface = {
-                        val progress = railDragAnimation.pressProgress
-                        drawRect(GlassSelectedIndicator, alpha = 1f - progress)
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
-                    }
-                )
+                .then(indicatorSurfaceModifier)
                 .then(fallbackBorder)
                 .fillMaxWidth()
                 .height(tabHeight)

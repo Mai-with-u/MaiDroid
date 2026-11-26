@@ -13,6 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -204,7 +205,7 @@ internal fun MaiBotUpdateDialog(
     showChannelSelector: Boolean = false
 ) {
     // 用户在选择器上点了另一个通道、还没确认：先弹确认框，确认后才真正切换
-    var pendingChannel by remember { mutableStateOf<MaiBotChannel?>(null) }
+    var pendingChannel by rememberSaveable { mutableStateOf<MaiBotChannel?>(null) }
     val primaryButton = maiBotUpdatePrimaryButton(state)
     val showLatest = state.latest != null && state.phase != MaiBotUpdatePhase.Idle
     // 有新版本或上次更新失败时提醒：用户改过的源码文件更新时会直接还原为上游版本，不做备份。

@@ -9,6 +9,7 @@ internal interface PetOverlayHost {
     fun attachTransportView(authView: View)
     fun fit(cssHeight: Double)
     fun updateTouchableRegion(rects: JSONArray)
+    fun updateScale(scale: Float)
     fun updateInputFocus(editing: Boolean)
     fun dragBegin()
     fun dragMove()

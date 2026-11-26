@@ -2,7 +2,39 @@ package org.maiwithu.maidroid.pet
 
 import java.net.URI
 import java.util.Locale
+import kotlin.math.max
 import kotlin.math.roundToInt
+
+/** 悬浮桌宠等比缩放范围、步进、触觉刻度与快捷预设档位。 */
+internal object DesktopPetScaleSpec {
+    const val MIN = 0.60f
+    const val MAX = 1.30f
+    const val DEFAULT = 1.00f
+    const val STEP = 0.01f
+    const val HAPTIC_STEP = 0.02f
+    const val MIN_ADAPTIVE = 0.40f
+    val PRESETS = listOf(0.75f to "小", 1.00f to "标准", 1.20f to "大")
+}
+
+/** 归一化桌宠缩放比例：过滤非法浮点后夹紧到 [0.60, 1.30] 并按 1% 连续精度收敛浮点尾数。 */
+internal fun normalizeDesktopPetScale(scale: Float): Float {
+    if (!scale.isFinite()) return DesktopPetScaleSpec.DEFAULT
+    val clamped = scale.coerceIn(DesktopPetScaleSpec.MIN, DesktopPetScaleSpec.MAX)
+    return ((clamped * 100f).roundToInt() / 100f)
+        .coerceIn(DesktopPetScaleSpec.MIN, DesktopPetScaleSpec.MAX)
+}
+
+/** 根据当前屏幕宽度限制最大有效缩放比例，保证极窄屏或横竖屏切换下桌宠窗口不越出屏幕宽。 */
+internal fun resolveEffectivePetScale(
+    requestedScale: Float,
+    displayWidthPx: Int,
+    baseWidthPx: Int
+): Float {
+    val normalized = normalizeDesktopPetScale(requestedScale)
+    if (displayWidthPx <= 0 || baseWidthPx <= 0) return normalized
+    val maxFitScale = displayWidthPx.toFloat() / baseWidthPx.toFloat()
+    return normalized.coerceAtMost(max(DesktopPetScaleSpec.MIN_ADAPTIVE, maxFitScale))
+}
 
 /** 本机 MaiBot 多实例列表中的单个机器人摘要。 */
 internal data class DesktopPetBot(
@@ -47,6 +79,7 @@ internal data class DesktopPetUiState(
     val assetSource: PetAssetSource = PetAssetSource.BundledFallback,
     val containerHasDesktopPet: Boolean = false,
     val updatingConfig: Boolean = false,
+    val petScale: Float = DesktopPetScaleSpec.DEFAULT,
     val lastError: String? = null
 )
 

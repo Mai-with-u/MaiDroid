@@ -7,7 +7,7 @@ import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 @Preview(
     name = "Home / Online",
     showBackground = true,
-    backgroundColor = 0xFF07090D,
+    backgroundColor = 0xFF000000,
     widthDp = 412,
     heightDp = 917
 )
@@ -25,7 +25,7 @@ private fun HomeScreenOnlinePreview() {
 @Preview(
     name = "Home / Offline",
     showBackground = true,
-    backgroundColor = 0xFF07090D,
+    backgroundColor = 0xFF000000,
     widthDp = 412,
     heightDp = 917
 )
@@ -43,7 +43,7 @@ private fun HomeScreenOfflinePreview() {
 @Preview(
     name = "Home / Tall Ratio",
     showBackground = true,
-    backgroundColor = 0xFF07090D,
+    backgroundColor = 0xFF000000,
     widthDp = 360,
     heightDp = 900
 )
@@ -61,7 +61,7 @@ private fun HomeScreenTallRatioPreview() {
 @Preview(
     name = "Home / Short Ratio",
     showBackground = true,
-    backgroundColor = 0xFF07090D,
+    backgroundColor = 0xFF000000,
     widthDp = 412,
     heightDp = 760
 )

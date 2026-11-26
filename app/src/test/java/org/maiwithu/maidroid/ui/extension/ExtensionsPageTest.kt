@@ -76,6 +76,42 @@ class ExtensionsPageTest {
     }
 
     @Test
+    fun `resolve extension detail selection toggles back to empty icon in two pane and pushes in compact`() {
+        assertEquals(
+            ExtensionId.DesktopPet,
+            resolveExtensionDetailSelection(
+                currentDetail = null,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = false
+            )
+        )
+        assertEquals(
+            ExtensionId.DesktopPet,
+            resolveExtensionDetailSelection(
+                currentDetail = ExtensionId.DesktopPet,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = false
+            )
+        )
+        assertEquals(
+            ExtensionId.DesktopPet,
+            resolveExtensionDetailSelection(
+                currentDetail = null,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = true
+            )
+        )
+        assertEquals(
+            null,
+            resolveExtensionDetailSelection(
+                currentDetail = ExtensionId.DesktopPet,
+                targetDetail = ExtensionId.DesktopPet,
+                useTwoPane = true
+            )
+        )
+    }
+
+    @Test
     fun `extension catalog keeps desktop pet primary and user facing copy concise`() {
         assertTrue(ExtensionCatalog.primaryEntry.available)
         assertEquals(ExtensionId.DesktopPet, ExtensionCatalog.primaryEntry.id)

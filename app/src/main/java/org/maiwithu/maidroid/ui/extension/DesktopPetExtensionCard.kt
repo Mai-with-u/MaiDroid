@@ -1,10 +1,11 @@
 package org.maiwithu.maidroid.ui.extension
 
 import android.widget.FrameLayout
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,23 +24,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,19 +54,23 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.pet.DesktopPetBot
 import org.maiwithu.maidroid.pet.DesktopPetPhase
+import org.maiwithu.maidroid.pet.DesktopPetScaleSpec
 import org.maiwithu.maidroid.pet.DesktopPetUiState
+import org.maiwithu.maidroid.pet.normalizeDesktopPetScale
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.LiquidSlider
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
@@ -85,66 +87,65 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
- * 悬浮桌宠主控制卡片：
- * - 统一采用全应用 20dp 外卡圆角、16dp 内嵌摘要面板与全胶囊交互控件；
- * - 顶部集中展示双层麦麦桌宠徽章、动态状态胶囊与液态玻璃开关；
- * - 内部呈现可读服务指标、多机器人切换、阶段异常/授权引导以及弹性展开的全胶囊操控栏。
+ * 扩展组件总览列表中的悬浮桌宠精简入口卡：
+ * - 展示当前运行徽章、状态摘要与快捷总开关；
+ * - 点击整张卡片可进入悬浮桌宠子页面调节缩放大小、切换机器人与执行快捷操作，维持主页列表轻量克制。
  */
 @Composable
-internal fun FloatingPetExtensionCard(
+internal fun FloatingPetSummaryCard(
     entry: ExtensionEntry,
     petState: DesktopPetUiState,
-    webUiOnline: Boolean,
-    overlayGranted: Boolean,
+    onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
-    onRequestPermission: () -> Unit,
-    onOpenLogin: () -> Unit,
-    onEnableRemoteMode: () -> Unit,
-    onSelectBot: (String) -> Unit,
-    onToggleVisibility: () -> Unit,
-    onOpenRecords: () -> Unit,
-    onReconnect: () -> Unit,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    exposesSelection: Boolean = false,
     compact: Boolean = false
 ) {
     val switchChecked = petState.desiredEnabled || petState.overlayActive
-    val targetPhaseColor = resolvePetPhaseColor(petState)
-    val animatedPhaseColor by animateColorAsState(
-        targetValue = targetPhaseColor,
-        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-        label = "PetPhaseColor"
-    )
     val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(entry.badge, petState)
+    val scalePercent = (normalizeDesktopPetScale(petState.petScale) * 100f).roundToInt()
+    val summarySubtitle = if (switchChecked) {
+        "${petState.statusText} · 大小 $scalePercent%"
+    } else {
+        entry.subtitle
+    }
+    val clickModifier = if (exposesSelection) {
+        Modifier.selectable(
+            selected = selected,
+            onClick = onClick,
+            role = Role.Tab
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Chip))
             .background(CardSurface)
-            .animateContentSize(
-                animationSpec = spring(
-                    dampingRatio = 0.88f,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            )
-            .padding(if (compact) 14.dp else 16.dp),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
     ) {
-        // 主控头行：专属麦麦桌宠双层圆标 + 标题与实时胶囊 + 液态玻璃开关
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (selected) BrandOrange.copy(alpha = 0.08f) else Color.Transparent)
+                .then(clickModifier)
+                .padding(horizontal = if (compact) 14.dp else 16.dp, vertical = if (compact) 12.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FlatFeatureIconBadge(
                 icon = FlatFeatureIcons.DesktopPet,
                 backgroundColor = IconPeachOrange,
-                size = if (compact) 40.dp else 44.dp,
-                iconSize = if (compact) 25.dp else 28.dp
+                size = if (compact) 38.dp else 42.dp,
+                iconSize = if (compact) 24.dp else 26.dp
             )
 
-            Spacer(modifier = Modifier.width(if (compact) 10.dp else 12.dp))
+            Spacer(modifier = Modifier.width(if (compact) 10.dp else 13.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -162,7 +163,7 @@ internal fun FloatingPetExtensionCard(
                 }
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = entry.subtitle,
+                    text = summarySubtitle,
                     color = TextMuted,
                     fontSize = TextSizes.Caption,
                     lineHeight = if (compact) 15.sp else 17.sp,
@@ -171,82 +172,48 @@ internal fun FloatingPetExtensionCard(
                 )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
+            if (!compact) {
+                Spacer(modifier = Modifier.width(10.dp))
+                FlatSwitch(
+                    checked = switchChecked,
+                    onCheckedChange = onToggle
+                )
+            }
 
-            FlatSwitch(
-                checked = switchChecked,
-                onCheckedChange = onToggle
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "进入悬浮桌宠设置",
+                tint = if (selected) BrandOrange else TextMuted.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
             )
         }
 
-        // 细丝分隔线：区分主控制行与下方实时状态摘要区
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(CardDivider)
-        )
-
-        PetRuntimeSummaryBox(
-            petState = petState,
-            phaseColor = animatedPhaseColor,
-            webUiOnline = webUiOnline,
-            overlayGranted = overlayGranted,
-            compact = compact,
-            onRequestPermission = onRequestPermission
-        )
-
-        if (petState.bots.size > 1) {
-            PetBotSelectorRow(
-                bots = petState.bots,
-                selectedBotId = petState.selectedBotId,
-                onSelectBot = onSelectBot
+        if (compact) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .height(0.5.dp)
+                    .background(CardDivider)
             )
-        }
-
-        PetActionPromptBanner(
-            petState = petState,
-            webUiOnline = webUiOnline,
-            onOpenLogin = onOpenLogin,
-            onEnableRemoteMode = onEnableRemoteMode,
-            onReconnect = onReconnect
-        )
-
-        if (switchChecked) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (selected) BrandOrange.copy(alpha = 0.08f) else Color.Transparent)
+                    .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                CompactActionButton(
-                    icon = if (petState.overlayVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                    label = if (petState.overlayVisible) "隐藏桌宠" else "显示桌宠",
-                    style = if (!petState.overlayVisible && petState.overlayActive) {
-                        LiquidButtonStyle.SoftAccent
-                    } else {
-                        LiquidButtonStyle.Secondary
-                    },
-                    enabled = petState.overlayActive,
-                    compact = compact,
-                    onClick = onToggleVisibility,
+                Text(
+                    text = "启用悬浮桌宠",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
-                CompactActionButton(
-                    icon = Icons.Outlined.Explore,
-                    label = "探索记录",
-                    style = LiquidButtonStyle.Secondary,
-                    enabled = petState.overlayActive,
-                    compact = compact,
-                    onClick = onOpenRecords,
-                    modifier = Modifier.weight(1f)
-                )
-                CompactActionButton(
-                    icon = Icons.Outlined.Refresh,
-                    label = "重连",
-                    style = LiquidButtonStyle.Secondary,
-                    enabled = !petState.updatingConfig,
-                    compact = compact,
-                    onClick = onReconnect,
-                    modifier = Modifier.weight(1f)
+                FlatSwitch(
+                    checked = switchChecked,
+                    onCheckedChange = onToggle
                 )
             }
         }
@@ -377,19 +344,20 @@ internal fun WebUiLoginDialog(
 
 /** 运行时摘要区：16dp 内嵌圆角面板呈现当前状态文本、悬浮权限引导胶囊以及双列清晰指标。 */
 @Composable
-private fun PetRuntimeSummaryBox(
+internal fun PetRuntimeSummaryBox(
     petState: DesktopPetUiState,
     phaseColor: Color,
     webUiOnline: Boolean,
     overlayGranted: Boolean,
     compact: Boolean,
-    onRequestPermission: () -> Unit
+    onRequestPermission: () -> Unit,
+    containerColor: Color = PageBackground.copy(alpha = 0.62f)
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Corners.Panel))
-            .background(PageBackground.copy(alpha = 0.62f))
+            .background(containerColor)
             .padding(horizontal = 14.dp, vertical = if (compact) 10.dp else 12.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
     ) {
@@ -521,13 +489,150 @@ private fun PetStatusMetricItem(
     }
 }
 
+/** 桌宠缩放比例控制面板：采用连续无顿挫液态玻璃滑块（每 2% 清晰刻度震感）与液态玻璃快捷档位，拖动时以桌宠脚底居中实时生效。 */
+@Composable
+internal fun PetScaleControlPanel(
+    scale: Float,
+    compact: Boolean,
+    onScaleChange: (Float) -> Unit
+) {
+    val normalizedScale = normalizeDesktopPetScale(scale)
+    val percent = (normalizedScale * 100f).roundToInt()
+    val isDefault = abs(normalizedScale - DesktopPetScaleSpec.DEFAULT) < 0.005f
+    val haptics = rememberLiquidHaptics()
+    val cardBackdrop = rememberSurfaceBackdrop(CardSurface)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Corners.Chip))
+            .background(CardSurface)
+            .padding(horizontal = if (compact) 14.dp else 16.dp, vertical = if (compact) 12.dp else 14.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "桌宠大小",
+                    color = TextPrimary,
+                    fontSize = TextSizes.BodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "拖动实时预览，自动保存",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp,
+                    maxLines = 2
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AnimatedVisibility(
+                    visible = !isDefault,
+                    enter = fadeIn() + scaleIn(initialScale = 0.85f),
+                    exit = fadeOut() + scaleOut(targetScale = 0.85f)
+                ) {
+                    LiquidButton(
+                        onClick = {
+                            haptics.performTabStep()
+                            onScaleChange(DesktopPetScaleSpec.DEFAULT)
+                        },
+                        backdrop = cardBackdrop,
+                        style = LiquidButtonStyle.SoftAccent,
+                        shape = { Capsule() },
+                        minHeight = 30.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "重置",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+                ExtensionTagPill(
+                    text = "$percent%",
+                    color = if (isDefault) TextMuted else BrandOrange
+                )
+            }
+        }
+
+        LiquidSlider(
+            value = { normalizedScale },
+            onValueChange = onScaleChange,
+            valueRange = DesktopPetScaleSpec.MIN..DesktopPetScaleSpec.MAX,
+            hapticStep = DesktopPetScaleSpec.HAPTIC_STEP,
+            backdrop = cardBackdrop,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            DesktopPetScaleSpec.PRESETS.forEach { (presetScale, presetTitle) ->
+                val selected = abs(normalizedScale - presetScale) < 0.005f
+                val presetPercent = (presetScale * 100f).roundToInt()
+                LiquidButton(
+                    onClick = {
+                        if (!selected) {
+                            haptics.performTabStep()
+                            onScaleChange(presetScale)
+                        }
+                    },
+                    backdrop = cardBackdrop,
+                    style = if (selected) LiquidButtonStyle.SoftAccent else LiquidButtonStyle.Secondary,
+                    shape = { Capsule() },
+                    minHeight = if (compact) 34.dp else 38.dp,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "$presetTitle $presetPercent%",
+                        fontSize = TextSizes.Caption,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** 多实例机器人胶囊选择器：仅在宿主机托管了两个及以上机器人时展示。 */
 @Composable
-private fun PetBotSelectorRow(
+internal fun PetBotSelectorRow(
     bots: List<DesktopPetBot>,
     selectedBotId: String,
     onSelectBot: (String) -> Unit
 ) {
+    val cardBackdrop = rememberSurfaceBackdrop(CardSurface)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "联动机器人实例",
@@ -543,48 +648,36 @@ private fun PetBotSelectorRow(
         ) {
             bots.forEach { bot ->
                 val selected = bot.botId == selectedBotId
-                val bg by animateColorAsState(
-                    targetValue = if (selected) BrandOrange.copy(alpha = 0.18f) else PageBackground.copy(alpha = 0.65f),
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetBotChipBg"
-                )
-                val border by animateColorAsState(
-                    targetValue = if (selected) BrandOrange.copy(alpha = 0.72f) else CardBorder,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetBotChipBorder"
-                )
-                val textColor by animateColorAsState(
-                    targetValue = if (selected) BrandOrange else TextMuted,
-                    animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
-                    label = "PetBotChipText"
-                )
                 val displayName = bot.name.ifBlank { bot.botId.take(8) }
-                Row(
-                    modifier = Modifier
-                        .clip(Capsule())
-                        .background(bg)
-                        .border(BorderStroke(1.dp, border), Capsule())
-                        .clickable(role = Role.RadioButton) { onSelectBot(bot.botId) }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                LiquidButton(
+                    onClick = { onSelectBot(bot.botId) },
+                    backdrop = cardBackdrop,
+                    style = if (selected) LiquidButtonStyle.SoftAccent else LiquidButtonStyle.Secondary,
+                    shape = { Capsule() },
+                    minHeight = 34.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    if (selected) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(BrandOrange)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (selected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandOrange)
+                            )
+                        }
+                        Text(
+                            text = displayName,
+                            fontSize = TextSizes.Caption,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Text(
-                        text = displayName,
-                        color = textColor,
-                        fontSize = TextSizes.Caption,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
             }
         }
@@ -593,7 +686,7 @@ private fun PetBotSelectorRow(
 
 /** 根据当前连接/配置/错误阶段按需展示对应内联引导卡片。 */
 @Composable
-private fun PetActionPromptBanner(
+internal fun PetActionPromptBanner(
     petState: DesktopPetUiState,
     webUiOnline: Boolean,
     onOpenLogin: () -> Unit,
@@ -717,7 +810,7 @@ private fun PhaseCalloutBox(
 }
 
 @Composable
-private fun CompactActionButton(
+internal fun CompactActionButton(
     icon: ImageVector,
     label: String,
     style: LiquidButtonStyle,
@@ -756,7 +849,7 @@ private fun CompactActionButton(
     }
 }
 
-private fun resolvePetHeaderBadge(
+internal fun resolvePetHeaderBadge(
     defaultBadge: String,
     petState: DesktopPetUiState
 ): Pair<String, Color> = when {
@@ -769,7 +862,7 @@ private fun resolvePetHeaderBadge(
     else -> defaultBadge to TextMuted
 }
 
-private fun resolvePetPhaseColor(petState: DesktopPetUiState): Color = when (petState.phase) {
+internal fun resolvePetPhaseColor(petState: DesktopPetUiState): Color = when (petState.phase) {
     DesktopPetPhase.Running -> if (petState.connected) StatusOnline else BrandOrange
     DesktopPetPhase.Connecting -> BrandOrange
     DesktopPetPhase.AuthRequired, DesktopPetPhase.ConfigRequired -> StatusWarning

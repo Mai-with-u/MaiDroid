@@ -28,6 +28,7 @@ import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import kotlin.math.abs
 
 /**
  * 本机悬浮桌宠运行时总控（主线程拥有三个隔离 WebView 与悬浮窗服务的生命周期）：
@@ -133,7 +134,8 @@ internal class DesktopPetManager(
         val hasLocal = assetResolver.hasLocalContainerDesktopPet()
         return DesktopPetUiState(
             assetSource = if (hasLocal) PetAssetSource.LocalContainer else PetAssetSource.BundledFallback,
-            containerHasDesktopPet = hasLocal
+            containerHasDesktopPet = hasLocal,
+            petScale = settings.desktopPetScale
         )
     }
 
@@ -182,7 +184,8 @@ internal class DesktopPetManager(
             desiredEnabled = true,
             statusText = "正在连接本机 WebUI…",
             assetSource = if (hasLocal) PetAssetSource.LocalContainer else PetAssetSource.BundledFallback,
-            containerHasDesktopPet = hasLocal
+            containerHasDesktopPet = hasLocal,
+            petScale = settings.desktopPetScale
         )
 
         scope.launch {
@@ -239,8 +242,26 @@ internal class DesktopPetManager(
                 desiredEnabled = false,
                 statusText = "未开启悬浮桌宠",
                 assetSource = if (hasLocal) PetAssetSource.LocalContainer else PetAssetSource.BundledFallback,
-                containerHasDesktopPet = hasLocal
+                containerHasDesktopPet = hasLocal,
+                petScale = settings.desktopPetScale
             )
+        }
+    }
+
+    internal fun currentPetScale(): Float = settings.desktopPetScale
+
+    /** 调整悬浮桌宠缩放比例：立即持久化、刷新卡片状态并在桌宠运行中实时通知悬浮窗缩放。 */
+    fun setPetScale(scale: Float) {
+        val normalized = normalizeDesktopPetScale(scale)
+        runOnMain {
+            if (abs(settings.desktopPetScale - normalized) < 0.0001f &&
+                abs(_state.value.petScale - normalized) < 0.0001f
+            ) {
+                return@runOnMain
+            }
+            settings.desktopPetScale = normalized
+            _state.update { it.copy(petScale = normalized) }
+            overlayHost?.updateScale(normalized)
         }
     }
 

@@ -349,4 +349,61 @@ class QqOfficialPlatformTest {
             )
         )
     }
+
+    @Test
+    fun `fatal 4914 and 4915 disconnects are parsed as persistent errors`() {
+        val offline = parseQqOfficialConnectionError(
+            "ERROR QQ 官方网关不可恢复地断开: code=4914，请检查机器人上线状态及平台权限"
+        )!!
+        assertTrue(offline.persistent)
+        assertTrue(offline.message.contains("4914"))
+        assertTrue(offline.message.contains("下架"))
+
+        val banned = parseQqOfficialConnectionError(
+            "ERROR QQ 官方网关不可恢复地断开: code=4915，请检查机器人上线状态及平台权限"
+        )!!
+        assertTrue(banned.persistent)
+        assertTrue(banned.message.contains("4915"))
+        assertTrue(banned.message.contains("封禁"))
+
+        val genericFatal = parseQqOfficialConnectionError(
+            "ERROR QQ 官方网关不可恢复地断开: code=4999"
+        )!!
+        assertTrue(genericFatal.persistent)
+        assertTrue(genericFatal.message.contains("不可恢复"))
+
+        val missingCreds = parseQqOfficialConnectionError("ERROR QQ 官方适配器缺少凭据")!!
+        assertTrue(missingCreds.persistent)
+
+        val transient = parseQqOfficialConnectionError(
+            "WARNING QQ 官方网关连接失败，将重试: timeout"
+        )!!
+        assertFalse(transient.persistent)
+    }
+
+    @Test
+    fun `4009 timeout detection and sliding window distinguish rare rotation from frequent drops`() {
+        assertTrue(isQqOfficialSessionTimeoutDisconnect("WARNING QQ 官方网关已断开: code=4009，将重连"))
+        assertTrue(isQqOfficialSessionTimeoutDisconnect("QQ 官方网关已断开: code = 4009"))
+        assertFalse(isQqOfficialSessionTimeoutDisconnect("WARNING QQ 官方网关已断开: code=4008，将等待至少 60 秒重连"))
+        assertFalse(isQqOfficialSessionTimeoutDisconnect("WARNING QQ 官方网关已断开: code=40090，将重连"))
+        assertFalse(isQqOfficialSessionTimeoutDisconnect("[NapCat] code=4009"))
+
+        // 单次 4009 自动重连提示不标记为红灯连接错误
+        assertNull(qqOfficialConnectionError("WARNING QQ 官方网关已断开: code=4009，将重连"))
+
+        val window = QqOfficialTimeoutWindow(windowMs = 10 * 60_000L, threshold = 3)
+        assertFalse(window.record(1_000L))
+        assertFalse(window.record(200_000L))
+        assertTrue(window.record(400_000L))
+        assertTrue(window.isFrequent(500_000L))
+
+        // 超过 10 分钟窗口后旧记录过期，不再保持高频预警
+        assertFalse(window.isFrequent(700_000L))
+
+        // 清空窗口立即复位
+        assertTrue(window.record(800_000L))
+        window.clear()
+        assertFalse(window.isFrequent(800_000L))
+    }
 }

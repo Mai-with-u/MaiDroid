@@ -31,6 +31,10 @@ class MaiDroidApplication : Application() {
         RemoteOpsManager.createAnnouncementChannel(this)
         // 进程启动后立即挂载终端失败日志监听器，不触发容器监管组件的提前初始化
         dependencies.remoteOps.ensureStarted()
+        // 已开启每日自动备份时同步一次系统持久化任务，确保升级或重启后调度不丢失。
+        if (dependencies.settings.backupAutoEnabled) {
+            dependencies.backupManager.syncJobSchedule()
+        }
     }
 
     // 优先用系统 getProcessName（API 28+）；旧系统直接读 /proc/self/cmdline，避免在隔离渲染进程调 ActivityManager 触发 SecurityException。

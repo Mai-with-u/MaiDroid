@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -53,6 +54,7 @@ import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.settings.MirrorSettingsDialog
@@ -77,6 +79,22 @@ internal fun oobeUsesAdaptiveLayout(widthDp: Float, heightDp: Float): Boolean =
 
 internal fun oobeHeroWidthDp(availableWidthDp: Float): Float =
     availableWidthDp.coerceAtLeast(0f) / 3f
+
+/**
+ * 计算 OOBE 底部状态卡的最大高度上限：
+ * 出现故障且竖向空间充裕（≥340dp）时，至少为上方任务列表留出 1 张任务卡（88dp）和 14dp 间距；
+ * 矮屏/手机横屏下不超过可用高度减间距，配合页脚内部滚动保证底部重试按钮永不被压扁裁切。
+ */
+internal fun oobeFooterMaxHeightDp(availableHeightDp: Float, hasFailure: Boolean): Float {
+    val safeAvailable = availableHeightDp.coerceAtLeast(0f)
+    val maxWithoutOverflow = (safeAvailable - 14f).coerceAtLeast(0f)
+    if (!hasFailure) return maxWithoutOverflow
+    return if (safeAvailable >= 340f) {
+        (safeAvailable - 102f).coerceAtLeast(220f).coerceAtMost(maxWithoutOverflow)
+    } else {
+        maxWithoutOverflow
+    }
+}
 
 /** 横屏且短边不小于 600dp（大平板横放）时，终端输出直接嵌在右侧工作区下方，而不是弹窗。 */
 internal fun oobeUsesEmbeddedTerminal(widthDp: Float, heightDp: Float): Boolean =
@@ -139,7 +157,7 @@ internal fun OobeFlowScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(OobeBackground)
+            .appPageBackground(OobeBackground)
     ) {
         val density = LocalDensity.current
         val layoutDirection = LocalLayoutDirection.current
@@ -272,7 +290,12 @@ private class OobeStepContent(
     val permissionActions: PermissionActions,
     val onNext: () -> Unit,
     val onRetry: () -> Unit
-)
+) {
+    fun hasActiveFooterFailure(): Boolean =
+        step != OobeStep.Permissions &&
+            setupState.failure != null &&
+            !((step == OobeStep.Container && setupState.canInstall) || (step == OobeStep.Install && setupState.isComplete))
+}
 
 // 终端按钮与嵌入式终端面板的显示状态。
 private class OobeTerminalControl(
@@ -345,7 +368,7 @@ private fun BoxScope.CompactOobeLayout(
             .fillMaxWidth()
             .height(maxHeight - contentTop)
             .clip(RoundedCornerShape(topStart = contentCornerRadius, topEnd = contentCornerRadius))
-            .background(OobeBackground)
+            .appPageBackground(OobeBackground)
             .padding(horizontal = 24.dp)
     ) {
         Spacer(modifier = Modifier.height(32.dp))
@@ -367,39 +390,53 @@ private fun BoxScope.CompactOobeLayout(
 
         AnnouncementBannerSection(modifier = Modifier.padding(bottom = 12.dp))
 
-        AnimatedContent(
-            targetState = step,
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            transitionSpec = { oobeStepTransition() },
-            label = "OobeStepCards"
-        ) { targetStep ->
-            when (targetStep) {
-                OobeStep.Permissions -> CompactOobePermissionList(content.permissionState, content.permissionActions)
-                OobeStep.Container -> CompactOobeTaskList(content.setupState.containerTasks)
-                OobeStep.Install -> CompactOobeTaskList(content.setupState.installTasks)
+                .weight(1f)
+        ) {
+            val footerMaxHeight = oobeFooterMaxHeightDp(
+                availableHeightDp = maxHeight.value,
+                hasFailure = content.hasActiveFooterFailure()
+            ).dp
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                AnimatedContent(
+                    targetState = step,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    transitionSpec = { oobeStepTransition() },
+                    label = "OobeStepCards"
+                ) { targetStep ->
+                    when (targetStep) {
+                        OobeStep.Permissions -> CompactOobePermissionList(content.permissionState, content.permissionActions)
+                        OobeStep.Container -> CompactOobeTaskList(content.setupState.containerTasks)
+                        OobeStep.Install -> CompactOobeTaskList(content.setupState.installTasks)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                AnimatedContent(
+                    targetState = step,
+                    modifier = Modifier.fillMaxWidth(),
+                    transitionSpec = { oobeStepTransition() },
+                    label = "OobeStepBottom"
+                ) { targetStep ->
+                    OobeStepFooter(
+                        step = targetStep,
+                        setupState = content.setupState,
+                        notificationGranted = content.permissionState.notificationGranted,
+                        onNext = content.onNext,
+                        onRetry = content.onRetry,
+                        modifier = Modifier.heightIn(max = footerMaxHeight)
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        AnimatedContent(
-            targetState = step,
-            modifier = Modifier.fillMaxWidth(),
-            transitionSpec = { oobeStepTransition() },
-            label = "OobeStepBottom"
-        ) { targetStep ->
-            OobeStepFooter(
-                step = targetStep,
-                setupState = content.setupState,
-                storageGranted = content.permissionState.storageGranted,
-                onNext = content.onNext,
-                onRetry = content.onRetry
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(maxOf(16.dp, insets.safeBottom + 12.dp)))
     }
 }
 
@@ -501,7 +538,7 @@ private fun AdaptiveOobeLayout(
                 .weight(OOBE_WORK_PANE_WEIGHT)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(topStart = 36.dp, bottomStart = 36.dp))
-                .background(OobeBackground)
+                .appPageBackground(OobeBackground)
         ) {
             Column(
                 modifier = Modifier
@@ -532,43 +569,58 @@ private fun AdaptiveOobeLayout(
 
                     AnnouncementBannerSection(modifier = Modifier.padding(bottom = 10.dp))
 
-                    AnimatedContent(
-                        targetState = step,
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
-                        transitionSpec = { oobeStepTransition() },
-                        label = "AdaptiveOobeStepCards"
-                    ) { targetStep ->
-                        when (targetStep) {
-                            OobeStep.Permissions -> AdaptiveOobePermissionList(content.permissionState, content.permissionActions)
-                            OobeStep.Container -> AdaptiveOobeTaskList(content.setupState.containerTasks)
-                            OobeStep.Install -> AdaptiveOobeTaskList(content.setupState.installTasks)
-                        }
-                    }
+                            .weight(1f)
+                    ) {
+                        val footerMaxHeight = oobeFooterMaxHeightDp(
+                            availableHeightDp = maxHeight.value,
+                            hasFailure = content.hasActiveFooterFailure()
+                        ).dp
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            AnimatedContent(
+                                targetState = step,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                transitionSpec = { oobeStepTransition() },
+                                label = "AdaptiveOobeStepCards"
+                            ) { targetStep ->
+                                when (targetStep) {
+                                    OobeStep.Permissions -> AdaptiveOobePermissionList(content.permissionState, content.permissionActions)
+                                    OobeStep.Container -> AdaptiveOobeTaskList(content.setupState.containerTasks)
+                                    OobeStep.Install -> AdaptiveOobeTaskList(content.setupState.installTasks)
+                                }
+                            }
 
-                    AnimatedContent(
-                        targetState = step,
-                        modifier = Modifier.fillMaxWidth(),
-                        transitionSpec = { oobeStepTransition() },
-                        label = "AdaptiveOobeStepBottom"
-                    ) { targetStep ->
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
-                            OobeStepFooter(
-                                step = targetStep,
-                                setupState = content.setupState,
-                                storageGranted = content.permissionState.storageGranted,
-                                onNext = content.onNext,
-                                onRetry = content.onRetry,
-                                modifier = Modifier.widthIn(
-                                    max = if (targetStep == OobeStep.Permissions) 520.dp else 560.dp
-                                )
-                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            AnimatedContent(
+                                targetState = step,
+                                modifier = Modifier.fillMaxWidth(),
+                                transitionSpec = { oobeStepTransition() },
+                                label = "AdaptiveOobeStepBottom"
+                            ) { targetStep ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    OobeStepFooter(
+                                        step = targetStep,
+                                        setupState = content.setupState,
+                                        notificationGranted = content.permissionState.notificationGranted,
+                                        onNext = content.onNext,
+                                        onRetry = content.onRetry,
+                                        modifier = Modifier
+                                            .widthIn(
+                                                max = if (targetStep == OobeStep.Permissions) 520.dp else 560.dp
+                                            )
+                                            .heightIn(max = footerMaxHeight)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

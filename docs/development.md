@@ -59,6 +59,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `maibot/update/MaiBotChannelTest` | MaiBot 更新通道：正式版（main）与测试版（dev）识别及切换判定 |
 | `oobe/OobeSetupStateTest` | 安装卡片按顺序判断完成 |
 | `oobe/OobeAutoRetryTest` | OOBE 失败后的自动重试：断网时等网络回来、其他网络错误隔一阵重试两次、重试解决不了的交给用户 |
+| `pet/DesktopPetProtocolTest`、`pet/PetAssetResolverTest`、`pet/PetFlingPhysicsTest` | 悬浮桌宠 URL/Origin 校验、缩放夹紧与拖拽载荷、音频/媒体 HTTP `Range` 分段解析、屏幕滑行物理速度估算与撞墙果冻回弹模型 |
 | `platform/qq/QqCustomSourceTest` | QQ 协议端自定义来源解析：校验 `.zip`/`.tar.gz`/`.tgz` 直链、`www.github.com` 归一化、仓库基础地址与锁定 tag |
 | `platform/qq/SnowLumaAdapterConfigTest` | SnowLuma 适配器配置迁移与安装防锁：识别 MaiBot 生成的配置、按多实例目录安装并串行防并发踩锁、启用并连本机 OneBot、搬旧配置跳过多行值、MaiBot 版本门槛、OneBot token 共用 |
 | `platform/napcat/NapCatQrCodeRefreshTest` | 二维码自动换码策略 |
@@ -68,7 +69,7 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `platform/snowluma/SnowLumaScriptsTest` | SnowLuma 安装与运行脚本：从自定义源或锁定 tag 下载归档并校验 `tar -tzf`、LinuxQQ 断点续传与失败重试、从 `package.json` 提取真实版本、LinuxQQ 按固定 sha256 校验、OneBot 配置共用端口和 token、`wait -n` 保育与 Node 堆上限设置 |
 | `platform/snowluma/SnowLumaWebUiTest`、`platform/snowluma/SnowLumaPlatformStateTest` | SnowLuma 管理页接口的进程列表解析、登录进度归类（多个 QQ 时已登录的优先）；已登录的判断、“已连接”卡片的登录提示 |
 | `platform/snowluma/XwdScreenTest` | 解析 Xvfb 的屏幕文件：裁出 QQ 窗口、屏幕上还没窗口、文件写了一半或不是 XWD、画面变了才换签名 |
-| `platform/qqofficial/QqOfficialPlatformTest` | MaiBot 内置 QQ 官方机器人适配器检测、`settings.py` 动态解析默认 `config_version`、多实例 `config.toml` 读写、连接报错识别、状态文案 |
+| `platform/qqofficial/QqOfficialPlatformTest` | MaiBot 内置 QQ 官方机器人适配器检测、`settings.py` 动态解析默认 `config_version`、多实例 `config.toml` 读写、连接报错及 `4914`/`4915`/`4009` 识别、状态文案 |
 | `runtime/ContainerDnsTest` | 容器 resolv.conf 生成：系统 DNS 优先、过滤不可用地址 |
 | `runtime/LoopbackHttpTest` | 回环主机地址判定（支持 IPv4/localhost/IPv6，供回环请求强制直连免代理） |
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
@@ -86,12 +87,16 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `appupdate/AppReleaseTest` | 应用自更新：Release 解析与挑选 APK、校验行、更新说明排版 |
 | `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、断点续传响应判断、测速、大小显示 |
 | `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
+| `backup/BackupArchivePlannerTest`、`backup/BackupArchiverAndStorageTest`、`backup/BackupScheduleTest` | 自动/手动备份：可用组件探测与多实例文件清单过滤、在线 SQLite 快照（`VACUUM INTO`）与双存储写入/清理、每 6/12 小时与每天/每周调度槽位计算 |
+| `DisplayRefreshRateTest` | 同物理分辨率下最高刷新率模式筛选（仅超过 61Hz 时请求高刷） |
 | `remote/RemoteManifestTest`、`remote/ManifestSignatureVerifierTest`、`remote/DiagnosticSnapshotPayloadTest` | 远程公告定向过滤与动态排障热规则匹配、WebCrypto 与 Android `SHA256withECDSA` 跨端验签及防篡改、超长日志自动裁剪压进 128 KB Gzip 上限 |
 | `remote/AutoErrorExtractorTest` | 自动报错提取与指纹归类：提取 Python `Traceback` 与 MaiBot 1.4 宿主退出码 2 核心报错行，过滤协议端互斥与自定义源校验等前置提示 |
 | `ui/remote/RemoteActionTargetTest` | 远程公告与热规则受控跳转动作解析，拒绝非 `https://` 外链与不安全 scheme |
 | `ui/component/BounceOverscrollTest` | 列表越界橡胶阻尼曲线、顶部下拉视差与 1:1 反向回推消费 |
 | `ui/component/CollapsingGlassHeaderTest` | 吸顶毛玻璃渐进顶栏的折叠进度计算与标题淡入淡出交接 |
+| `ui/component/DebugWatermarkBackgroundTest` | Debug 包纯黑页面斜向开发中水印开关与瓦片尺寸计算 |
 | `ui/component/MaiDialogLayoutTest` | 弹窗 `Compact`/`Medium`/`Expanded` 三档在竖屏、手机横屏（含四周留白与软键盘收窄）和平板下的宽高、双列判定与按钮行自适应堆叠 |
+| `ui/extension/ExtensionsPageTest` | 扩展组件页设备布局档位选择、顶栏桌宠运行阶段副标题与双栏选中切换 |
 | `ui/home/HomePortraitNavigationTest` | 竖屏底栏与 WebUI 侧边悬浮胶囊的几何定位及双向平滑形变轨迹 |
 | `ui/home/PillTiltDamperTest` | 重力传感器屏幕坐标投影与侧边胶囊三级阻尼防抖换边 |
 | `ui/home/WakeBootLogTest` | 唤醒页开机自检：正常三阶段、自动升级 MaiBot 时多出的一行和进度分段、容器出问题时进度条停住、端口被占时的提示 |
@@ -100,15 +105,17 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
 | `ui/platform/QqClientButtonTest` | QQ 两种协议端的按钮：支持从自定义源安装与协议/来源确认、装好并启用后进设置；点没启用的那个先确认切换；停用的那个照样列出、不算运行中 |
 | `ui/diagnostics/FeedbackDialogTest`、`ui/diagnostics/QqFeedbackGroupDialogTest` | 反馈弹窗里“诊断包包括什么”只列实际带上的；QQ 反馈群入群验证答案优先取线上更新的正式版版本号、未查到时回退当前版本 |
-| `ui/settings/*Test` | 设置页分栏规则、MaiBot 与应用更新弹窗的按钮与文案 |
+| `ui/settings/*Test` | 设置页分栏规则、自动备份排程与时间弹窗宽度规则、MaiBot 与应用更新弹窗的按钮与文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
 | `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
+| `ui/theme/ColorPaletteTest` | 深色模式最深背景色 `#000000` 及关键表面/边框对比度契约 |
 | `webui/MaiBotWebUiTest` | WebUI 访问令牌与启动密码解析 |
 | `webui/WebUiBridgeProtocolTest` | GeckoView 原生消息协议编解码（`Locale.GERMANY` 下保持标准小数点）与内置扩展 `manifest.json` / `content.js` 契约校验 |
 | `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限） |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
 | `webui/WebUiDownloadNamesTest` | 网页下载的文件名（download 属性、Content-Disposition 含 filename*、地址路径、按类型猜）、去掉非法字符、交给“另存为”的 MIME 类型与扩展名一致 |
 | `webui/WebUiBlobReceiverTest` | 分块接收 Blob 下载：拼接、核对字节数、超限和坏数据丢弃、新文件顶掉没收完的旧文件、清理遗留临时文件 |
+| `webui/WebUiPromptModelsTest` | `<select>`/`<optgroup>` 树展平、关键字筛选、多选顺序与颜色选择器十六进制归一化解析 |
 
 改了这些逻辑要同步更新测试；新写的纯逻辑也照这个方式补测试。界面和容器命令靠真机验证。
 

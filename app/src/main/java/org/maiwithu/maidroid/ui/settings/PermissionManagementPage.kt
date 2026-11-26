@@ -47,6 +47,7 @@ import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
@@ -71,7 +72,7 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
- * 设置页里的权限管理：必选的存储权限，可选的通知、电池优化（开关），以及只能跳转系统设置的几项。
+ * 设置页里的权限管理：必选的消息通知权限（与前台服务保活直接挂钩），可选的电池优化、外部存储、悬浮窗（开关），以及只能跳转系统设置的几项。
  * 竖屏时从设置列表点进来（左上角返回），横屏时作为右侧详情常驻显示，并随左侧主导航对齐顶部标题基线与紧凑顶栏尺寸。
  */
 @Composable
@@ -119,7 +120,7 @@ internal fun PermissionManagementPage(
         },
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         LazyColumn(
             state = listState,
@@ -153,14 +154,14 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionActionCard(
-                    icon = FlatFeatureIcons.Storage,
-                    iconColor = IconSkyBlue,
-                    title = "存储权限",
-                    description = "解包容器、保存 MaiBot 配置和访问外部文件。",
+                    icon = FlatFeatureIcons.NotificationKeepAlive,
+                    iconColor = IconWarmCoral,
+                    title = "消息通知权限",
+                    description = "维持前台服务常驻通知，与容器后台保活直接挂钩。",
                     badgeText = "必须",
-                    granted = state.storageGranted,
-                    actionText = if (state.storageGranted) "已授权" else "去授权",
-                    onAction = actions.requestStorage,
+                    granted = state.notificationGranted,
+                    actionText = if (state.notificationGranted) "已授权" else "去授权",
+                    onAction = actions.enableNotification,
                     modifier = Modifier.overscrollBody(overscroll)
                 )
             }
@@ -180,24 +181,6 @@ internal fun PermissionManagementPage(
 
             item {
                 PermissionSwitchCard(
-                    icon = FlatFeatureIcons.NotificationKeepAlive,
-                    iconColor = IconWarmCoral,
-                    title = "通知保活",
-                    description = "允许前台服务通知，提升后台运行稳定性。",
-                    checked = state.notificationGranted,
-                    onCheckedChange = { checked ->
-                        if (checked) {
-                            actions.enableNotification()
-                        } else {
-                            actions.disableNotification()
-                        }
-                    },
-                    modifier = Modifier.overscrollBody(overscroll)
-                )
-            }
-
-            item {
-                PermissionSwitchCard(
                     icon = FlatFeatureIcons.BatteryOptimization,
                     iconColor = IconFreshGreen,
                     title = "关闭电池优化",
@@ -208,6 +191,24 @@ internal fun PermissionManagementPage(
                             actions.ignoreBatteryOptimization()
                         } else {
                             actions.restoreBatteryOptimization()
+                        }
+                    },
+                    modifier = Modifier.overscrollBody(overscroll)
+                )
+            }
+
+            item {
+                PermissionSwitchCard(
+                    icon = FlatFeatureIcons.Storage,
+                    iconColor = IconSkyBlue,
+                    title = "外部存储权限",
+                    description = "按需让容器访问手机外部文件（/sdcard），不开启不影响运行。",
+                    checked = state.storageGranted,
+                    onCheckedChange = { checked ->
+                        if (checked) {
+                            actions.requestStorage()
+                        } else {
+                            actions.disableStorage()
                         }
                     },
                     modifier = Modifier.overscrollBody(overscroll)
@@ -257,19 +258,6 @@ internal fun PermissionManagementPage(
                     badgeText = "不建议",
                     destructive = true,
                     onClick = actions.openAccessibilitySettings,
-                    modifier = Modifier.overscrollBody(overscroll)
-                )
-            }
-
-            item {
-                PermissionSystemSettingsCard(
-                    icon = FlatFeatureIcons.DeviceAdmin,
-                    iconColor = IconRoseAlert,
-                    title = "设备管理员",
-                    description = "高风险权限，请在系统安全设置中管理。",
-                    badgeText = "不建议",
-                    destructive = true,
-                    onClick = actions.openDeviceAdminSettings,
                     modifier = Modifier.overscrollBody(overscroll)
                 )
             }
@@ -428,6 +416,9 @@ private fun PermissionBaseCard(
                     color = badgeColor,
                     fontSize = TextSizes.Tag,
                     fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    letterSpacing = 0.sp,
                     lineHeight = 12.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(Corners.Tag))

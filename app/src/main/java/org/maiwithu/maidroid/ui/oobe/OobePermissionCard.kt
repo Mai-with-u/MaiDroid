@@ -4,15 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.shapes.RoundedRectangle
@@ -43,6 +45,37 @@ import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
+/** OOBE 权限卡片与保活子行共用的单行角标，统一字号、内边距与防换行规则，避免各卡片角标大小不一。 */
+@Composable
+internal fun OobePermissionTag(
+    text: String,
+    backgroundColor: Color,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+    minWidth: Dp = Dp.Unspecified
+) {
+    Box(
+        modifier = modifier
+            .widthIn(min = minWidth)
+            .heightIn(min = 18.dp)
+            .clip(RoundedCornerShape(Corners.Tag))
+            .background(backgroundColor)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = TextSizes.Tag,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            maxLines = 1,
+            softWrap = false,
+            letterSpacing = 0.sp,
+            lineHeight = 12.sp
+        )
+    }
+}
+
 /** OOBE 里的单项权限卡片：清新扁平图标、名称、必须/可选标签、说明和“去授权”按钮，授予后整体变暗。 */
 @Composable
 internal fun OobePermissionCard(
@@ -58,15 +91,24 @@ internal fun OobePermissionCard(
     val cardColor = if (granted) OobeSurface.copy(alpha = 0.62f) else OobeSurface
     val primaryTextColor = if (granted) OobeTextSecondary else OobeTextPrimary
     val secondaryTextColor = if (granted) OobeTextSecondary.copy(alpha = 0.72f) else OobeTextSecondary
-    val badgeBackground = if (granted) OobeTextPrimary.copy(alpha = 0.1f) else BrandOrangeMuted
+    // 已授权统一降暗；未授权时「必须」用品牌橙高亮、「可选」用柔灰底块与主按钮拉开层级。
+    val badgeBackground = when {
+        granted -> OobeTextPrimary.copy(alpha = 0.1f)
+        required -> BrandOrangeMuted
+        else -> OobeTextPrimary.copy(alpha = 0.14f)
+    }
+    val badgeTextColor = when {
+        granted -> OobeTextSecondary
+        required -> OnBrandOrange
+        else -> OobeTextPrimary.copy(alpha = 0.82f)
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(Corners.Chip))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(cardColor)
-            .padding(horizontal = 17.dp, vertical = 14.dp)
+            .padding(16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -75,36 +117,37 @@ internal fun OobePermissionCard(
             FlatFeatureIconBadge(
                 icon = icon,
                 backgroundColor = iconColor,
-                size = 46.dp,
-                iconSize = 30.dp,
+                size = 44.dp,
+                iconSize = 28.dp,
                 dimmed = granted
             )
 
-            Spacer(modifier = Modifier.width(15.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 标题与角标用流式排版：常规屏单行紧贴显示，大字号下角标整体换到下一行而不被挤成竖排。
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = title,
                         fontSize = TextSizes.Title,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.Bold,
                         color = primaryTextColor,
-                        maxLines = 1,
-                        lineHeight = 20.sp
+                        letterSpacing = 0.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 22.sp
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
+                    OobePermissionTag(
                         text = if (required) "必须" else "可选",
-                        fontSize = TextSizes.Tag,
-                        fontWeight = FontWeight.Medium,
-                        color = if (granted) OobeTextSecondary else OnBrandOrange,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(Corners.Tag))
-                            .background(badgeBackground)
-                            .padding(horizontal = 6.dp, vertical = 0.dp)
+                        backgroundColor = badgeBackground,
+                        textColor = badgeTextColor
                     )
                 }
 
@@ -115,13 +158,14 @@ internal fun OobePermissionCard(
                     fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Normal,
                     color = secondaryTextColor,
+                    letterSpacing = 0.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 16.sp
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             LiquidButton(
                 onClick = onAuthorize,
@@ -129,14 +173,17 @@ internal fun OobePermissionCard(
                 backdrop = rememberSurfaceBackdrop(OobeSurface),
                 style = LiquidButtonStyle.Primary,
                 shape = { RoundedRectangle(Corners.Control) },
-                minHeight = 28.dp,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                minHeight = 32.dp,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = if (granted) "已授权" else "去授权",
                     fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false,
+                    letterSpacing = 0.sp,
+                    lineHeight = 14.sp
                 )
             }
         }
@@ -151,9 +198,9 @@ private fun OobePermissionCardPreview() {
             OobePermissionCard(
                 icon = FlatFeatureIcons.Storage,
                 iconColor = IconSkyBlue,
-                title = "存储权限",
-                description = "MaiSaka 需要存储权限来安装、运行和保存配置文件",
-                required = true,
+                title = "外部存储权限",
+                description = "按需让容器访问手机外部文件（/sdcard），不开启不影响安装与运行。",
+                required = false,
                 granted = true,
                 onAuthorize = {}
             )

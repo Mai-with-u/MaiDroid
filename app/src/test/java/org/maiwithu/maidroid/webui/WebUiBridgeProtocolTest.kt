@@ -158,7 +158,7 @@ class WebUiBridgeProtocolTest {
         // 递增扩展版本，确保已安装设备的 GeckoView ensureBuiltIn 自动更新脚本缓存
         assertFalse(extensionVersion.isNullOrBlank())
         assertFalse(extensionVersion == "1.0.0")
-        assertEquals("1.0.1", extensionVersion)
+        assertEquals("1.0.2", extensionVersion)
 
         val contentJs = extensionAsset("content.js").readText(Charsets.UTF_8)
         // 横竖屏统一声明 resizes-content 并在视口收缩/切焦时自动居中显露被遮挡输入框
@@ -168,6 +168,10 @@ class WebUiBridgeProtocolTest {
         assertTrue(contentJs.contains("isControlClipped"))
         assertTrue(contentJs.contains("scrollIntoView"))
         assertTrue(contentJs.contains("focusin"))
+        // 底色读取带原始色串缓存与防抖重入守卫，避免 SPA 高频 DOM 变更拖慢主线程
+        assertTrue(contentJs.contains("lastRawBgPair"))
+        assertTrue(contentJs.contains("isSyncingViewportMeta"))
+        assertTrue(contentJs.contains("scheduleHeadSync"))
     }
 
     private fun extensionAsset(fileName: String): File =

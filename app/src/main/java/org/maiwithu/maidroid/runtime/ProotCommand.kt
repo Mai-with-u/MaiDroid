@@ -7,10 +7,13 @@ import java.util.TimeZone
  * 把 ContainerScript 翻译成宿主机上可执行的 proot 命令行，并给出 proot 需要的环境变量。
  *
  * 容器 = APK 内置的 proot（jniLibs 里的 libproot_exec.so）+ 解包到应用私有目录的 Debian rootfs：
- * proot 以假 root（-0）把 rootfs 挂成根目录，绑定 /dev、/proc、/sys、/sdcard，
+ * proot 以假 root（-0）把 rootfs 挂成根目录，绑定 /dev、/proc、/sys，并按外部存储授权状态按需绑定 /sdcard，
  * 再把 termux/tmp 绑成容器的 /tmp；--link2symlink 让不支持硬链接的应用私有目录也能装 Debian 软件包。
  */
-internal class ProotCommand(private val paths: RuntimePaths) {
+internal class ProotCommand(
+    private val paths: RuntimePaths,
+    private val mountExternalStorage: () -> Boolean = { true }
+) {
     private companion object {
         const val DEBIAN_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     }
@@ -70,10 +73,14 @@ internal class ProotCommand(private val paths: RuntimePaths) {
                     "-b", "${paths.fakeProcUptime.absolutePath}:/proc/uptime",
                     "-b", "${paths.procLocksStandIn.absolutePath}:/proc/locks",
                     "-b", "/sys",
-                    "-b", "/sdcard",
                     "-b", "${paths.termuxTmpDir.absolutePath}:/tmp"
                 )
             )
+            // 仅在已授予外部存储权限时挂载手机 /sdcard，未授权时不挂载以避免绑定告警并遵守最小权限。
+            if (mountExternalStorage()) {
+                add("-b")
+                add("/sdcard")
+            }
             // 仅在宿主机已有对应覆盖文件时注入 proot 绑定（如 NapCat 覆盖 QQ 的 package.json），不修改磁盘原文件。
             for (bind in extraBinds) {
                 val source = File(paths.rootfsDir, bind.rootfsRelativeSource)

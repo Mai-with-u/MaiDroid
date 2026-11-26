@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,6 +34,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogInfoChip
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
@@ -103,7 +103,7 @@ internal fun MirrorSettingsPage(
         },
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         LazyColumn(
             state = listState,

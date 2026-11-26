@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -82,8 +83,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kyant.shapes.RoundedRectangle
+import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -108,7 +111,7 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 @Composable
 internal fun TerminalOutputScreen(
     visible: Boolean,
-    logs: List<String>,
+    logs: List<String>? = null,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -118,13 +121,15 @@ internal fun TerminalOutputScreen(
         enter = fadeIn(tween(180)) + slideInVertically(tween(240)) { it / 16 },
         exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 16 }
     ) {
+        // 主页仅在终端输出层真正展开时订阅全局日志流，避免后台每新增一行日志触发根界面整树重组。
+        val activeLogs = logs ?: TerminalLog.logs.collectAsState().value
         TerminalViewer(
-            logs = logs,
+            logs = activeLogs,
             onDismiss = onDismiss,
             embedded = false,
             modifier = Modifier
                 .fillMaxSize()
-                .background(TerminalBackground)
+                .appPageBackground(TerminalBackground)
                 // 只登记命中、不消费事件：落在终端页上的点按和滑动不会漏到下面的网页和导航栏，子控件照常处理。
                 .pointerInput(Unit) {
                     awaitPointerEventScope {

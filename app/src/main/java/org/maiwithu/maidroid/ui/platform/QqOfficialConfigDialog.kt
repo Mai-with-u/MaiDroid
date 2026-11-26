@@ -36,6 +36,7 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.StatusOnline
+import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -79,7 +80,7 @@ internal fun QqOfficialConfigDialog(
             null
         },
         secondaryContent = {
-            // 横屏时将三条接入指南并列排在右列，左列专注表单填写。
+            // 横屏时将配置说明并列排在右列，左列专注表单填写。
             MaiDialogSectionCard(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = "配置说明",
@@ -90,6 +91,7 @@ internal fun QqOfficialConfigDialog(
                 QqOfficialGuideBullet("在 QQ 开放平台（q.qq.com）创建机器人并开通群聊、单聊能力。")
                 QqOfficialGuideBullet("IP 白名单请留空：手机网络的出口 IP 会变化，填了容易被拦截。")
                 QqOfficialGuideBullet("群里需要 @机器人 才会收到消息；确认后会重启 MaiBot，期间暂不收发。")
+                QqOfficialGuideBullet("同一 AppID 请勿在多台设备同时登录；若后台容易掉线，可检查电池优化与后台联网权限。")
             }
         },
         onDismissRequest = onDismiss,
@@ -116,6 +118,13 @@ internal fun QqOfficialConfigDialog(
                 title = "连接失败",
                 body = state.connectionError,
                 accentColor = StatusDanger
+            )
+        }
+        if (state.installed && state.connectionError == null && state.frequentTimeoutHint != null) {
+            MaiDialogCallout(
+                title = "连接频繁超时",
+                body = state.frequentTimeoutHint,
+                accentColor = StatusWarning
             )
         }
 

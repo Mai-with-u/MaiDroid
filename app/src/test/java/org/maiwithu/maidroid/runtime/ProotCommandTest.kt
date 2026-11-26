@@ -50,4 +50,20 @@ class ProotCommandTest {
         assertTrue(shellBody.contains("*proot*"))
         assertTrue(shellBody.contains("taskset -pc \"\$mask\" \"\$ppid\""))
     }
+
+    @Test
+    fun `prootArguments mounts sdcard only when external storage permission is granted`() {
+        val paths = RuntimePaths(
+            appFilesDir = tempFolder.newFolder("files_storage"),
+            nativeLibraryDir = tempFolder.newFolder("libs_storage")
+        )
+        val script = ContainerScript(body = "echo ok", excludeTopCpuCluster = false)
+
+        val grantedCmd = ProotCommand(paths, mountExternalStorage = { true }).commandLine(script)
+        val sdcardBindIdx = grantedCmd.indexOf("/sdcard")
+        assertTrue(sdcardBindIdx > 0 && grantedCmd[sdcardBindIdx - 1] == "-b")
+
+        val deniedCmd = ProotCommand(paths, mountExternalStorage = { false }).commandLine(script)
+        assertFalse(deniedCmd.contains("/sdcard"))
+    }
 }

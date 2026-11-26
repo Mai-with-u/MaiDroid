@@ -27,6 +27,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.InteractiveHighlight
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLiquidButtonDragTransform
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
 import org.maiwithu.maidroid.ui.theme.BrandOrange
@@ -62,14 +63,15 @@ internal fun SettingsEmptyDetailPane(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground),
+            .appPageBackground(PageBackground),
         contentAlignment = Alignment.Center
     ) {
-        // 录制极克制的居中暖橙-薄荷柔光晕，供外层液态玻璃托盘边缘产生真实光学折射色散。
+        // 录制极克制的居中暖橙-薄荷柔光晕并叠加水印基底，供外层液态玻璃托盘产生真实光学折射色散。
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .layerBackdrop(ambientBackdrop),
+                .layerBackdrop(ambientBackdrop)
+                .appPageBackground(PageBackground),
             contentAlignment = Alignment.Center
         ) {
             Box(

@@ -47,11 +47,12 @@ internal object AptMirrors {
         ).joinToString("\n")
     }
 
-    // 这些输出说明是下载出了问题，换一个源有希望；排除掉的几种（空间满、时间不对）换源也一样失败。
+    // 这些输出说明是下载出了问题或索引与 sources.list 失配，换一个源并清索引重来有希望；
+    // 排除掉的几种（空间满、时间不对）换源也一样失败。
     private const val FETCH_FAILED_PATTERN =
         "Failed to fetch|Unable to fetch|Some index files failed|Hash Sum mismatch|File has unexpected size|" +
             "Mirror sync in progress|Temporary failure resolving|Could not resolve|Could not connect|" +
-            "Connection failed|Connection timed out|Unable to connect"
+            "Connection failed|Connection timed out|Unable to connect|Unable to locate package"
     private const val NOT_MIRROR_PATTERN = "No space left on device|is not valid yet|invalid since"
 
     /**
@@ -134,14 +135,26 @@ internal object AptMirrors {
                 apt_current="${'$'}(maidroid_apt_current_base)"
                 apt_tried=" ${'$'}apt_current "
                 while :; do
-                    if ! maidroid_apt_run apt-get -o Acquire::http::Pipeline-Depth=0 -o Acquire::http::Timeout=30 --error-on=any update; then
+                    # 每次尝试前快照 sources.list 到 /tmp，隔绝后台测速在中途改写 /etc/apt/sources.list 造成的索引错配。
+                    if [ ! -s /etc/apt/sources.list ]; then
+                        maidroid_apt_write_sources "${'$'}{apt_current:-${effective.first().baseUrl}}"
+                    fi
+                    cp /etc/apt/sources.list /tmp/maidroid-apt-sources.list
+                    if ! maidroid_apt_run apt-get -o Dir::Etc::sourcelist=/tmp/maidroid-apt-sources.list -o Acquire::http::Pipeline-Depth=0 -o Acquire::http::Timeout=30 --error-on=any update; then
                         maidroid_apt_failed_step=update
-                    elif ! maidroid_apt_run apt-get -o Acquire::http::Timeout=30 install -y -f --no-install-recommends "${'$'}@"; then
+                    elif ! maidroid_apt_run apt-get -o Dir::Etc::sourcelist=/tmp/maidroid-apt-sources.list -o Acquire::http::Timeout=30 install -y -f --no-install-recommends "${'$'}@"; then
                         maidroid_apt_failed_step=install
                     else
+                        rm -f /tmp/maidroid-apt-sources.list
+                        if [ -n "${'$'}apt_current" ] && [ "${'$'}(maidroid_apt_current_base)" != "${'$'}apt_current" ]; then
+                            maidroid_apt_write_sources "${'$'}apt_current"
+                        fi
                         return 0
                     fi
-                    maidroid_apt_fetch_failed || return 1
+                    if ! maidroid_apt_fetch_failed; then
+                        rm -f /tmp/maidroid-apt-sources.list
+                        return 1
+                    fi
                     apt_next=""
                     for apt_base in ${'$'}(maidroid_apt_mirror_bases); do
                         case "${'$'}apt_tried" in
@@ -151,6 +164,7 @@ internal object AptMirrors {
                     done
                     if [ -z "${'$'}apt_next" ]; then
                         maidroid_apt_failed_step=mirrors
+                        rm -f /tmp/maidroid-apt-sources.list
                         return 1
                     fi
                     printf "$AUTO_FIX_LOG_PREFIX %s下载失败，换成%s重试\n" \

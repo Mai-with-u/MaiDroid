@@ -66,7 +66,7 @@ MaiDroid 会长期维护，同一段代码也会换不同的人来改。评审�
 
 ### 发布一个新版本
 
-1. 在 `dev` 上把本次更新的说明写进 `CHANGELOG.md` 最上面的 `## [Unreleased]` 一节。
+1. 在 `dev` 上把本次更新的说明写进 `CHANGELOG.md` 最上面的 `## [Unreleased]` 一节（每个版本节标题下按惯例放一个 `> [!TIP]` 提示块概括重点，且 `### 修复` 栏末尾固定保留 `- 修复了一些已知问题`）。
 2. 在 `dev` 上执行 `.\gradlew.bat bumpVersion -Pbump=<major|minor|patch>`，指定 a.b.c 里要 +1 的那一位：
    - `patch` 只加最后一位，例如 0.1.0 -> 0.1.1；
    - `minor` 加中间一位并把最后一位清零，例如 0.1.3 -> 0.2.0；

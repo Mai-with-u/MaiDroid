@@ -25,7 +25,7 @@
     <!-- 应用自更新：把下载好的新版本安装包交给系统安装器 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- 存储（OOBE 必需）：容器绑定 /sdcard，让容器里能存取手机文件；Android 11 起用“所有文件访问”，旧系统用读写外部存储，见 SystemPermissionController -->
+    <!-- 存储（可选）：按需让容器挂载 /sdcard 访问手机文件，后续也供外部备份使用；Android 11 起用“所有文件访问”，旧系统用读写外部存储，见 SystemPermissionController -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -53,6 +53,7 @@
             android:exported="true"
             android:label="${appLabel}"
             android:theme="@style/Theme.MaiDroid"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop">
             <intent-filter>
@@ -65,6 +66,7 @@
             android:name=".WebUiActivity"
             android:exported="false"
             android:theme="@style/Theme.MaiDroid"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
 
         <!-- 悬浮桌宠探索记录全屏页 -->
@@ -72,6 +74,7 @@
             android:name=".pet.PetRecordsActivity"
             android:exported="false"
             android:theme="@style/Theme.MaiDroid"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
 
         <!-- 托管 MaiBot、NapCat、SnowLuma、容器 sshd 的前台服务：用 specialUse 承载本地常驻运行时，不设 6 小时运行上限 -->
@@ -126,6 +129,12 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- 每日自动备份离线兜底：使用系统持久化 JobScheduler，不依赖应用常驻 -->
+        <service
+            android:name=".backup.AutoBackupJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
 
     </application>
 

@@ -38,8 +38,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +62,7 @@ import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
+import org.maiwithu.maidroid.backup.BackupState
 import org.maiwithu.maidroid.files.openMaiBotInFileManager
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
@@ -73,6 +76,7 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
@@ -106,8 +110,15 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
+private data class SettingsDetailContentArgs(
+    val showBackButton: Boolean,
+    val compact: Boolean,
+    val topOffset: Dp
+)
+
 private const val PermissionSettingsDetail = "permissions"
 internal const val MirrorSettingsDetail = "mirrors"
+internal const val BackupSettingsDetail = "backup"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
@@ -139,6 +150,9 @@ internal fun SettingsPage(
     val mirrorManager = remember(context) { context.appDependencies.mirrorManager }
     val mirrorState by mirrorManager.state.collectAsState()
     val mirrorSummaryText = remember(mirrorState) { mirrorSettingsSummaryText(mirrorState) }
+    val backupManager = remember(context) { context.appDependencies.backupManager }
+    val backupState by backupManager.state.collectAsState()
+    val backupSummaryText = remember(backupState) { backupSettingsSummaryText(backupState) }
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 或 SnowLuma 在线、官方机器人已启用且无连接报错都算。
     val runningPlatformCount = remember(napCatState, snowLumaState, qqOfficialState) {
         installedPlatformCards(napCatState, snowLumaState, qqOfficialState).count { it.running }
@@ -189,7 +203,7 @@ internal fun SettingsPage(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(PageBackground)
+            .appPageBackground(PageBackground)
     ) {
         // 横屏挖孔的左右安全区由主页外壳统一让开，这里拿到的宽度已经是安全区内的宽度。
         val useTwoPane = settingsUseTwoPane(
@@ -228,12 +242,60 @@ internal fun SettingsPage(
             }
         }
 
+        // 通过 movableContentOf 为各详情页保留唯一组合节点，竖屏单列 <-> 横屏双栏切换时子页及其内打开的弹窗不销毁。
+        val latestPermissionState by rememberUpdatedState(permissionState)
+        val latestPermissionActions by rememberUpdatedState(permissionActions)
+        val latestMirrorState by rememberUpdatedState(mirrorState)
+        val latestBackupState by rememberUpdatedState(backupState)
+
+        val permissionDetailContent = remember(context) {
+            movableContentOf<SettingsDetailContentArgs> { args ->
+                PermissionManagementPage(
+                    state = latestPermissionState,
+                    actions = latestPermissionActions,
+                    onBack = { selectedDetail = null },
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = args.topOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        val mirrorDetailContent = remember(mirrorManager) {
+            movableContentOf<SettingsDetailContentArgs> { args ->
+                MirrorSettingsPage(
+                    manager = mirrorManager,
+                    state = latestMirrorState,
+                    onBack = { selectedDetail = null },
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = args.topOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        val backupDetailContent = remember(backupManager) {
+            movableContentOf<SettingsDetailContentArgs> { args ->
+                BackupSettingsPage(
+                    manager = backupManager,
+                    state = latestBackupState,
+                    permissionState = latestPermissionState,
+                    permissionActions = latestPermissionActions,
+                    onBack = { selectedDetail = null },
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = args.topOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
         if (useTwoPane) {
             // 横屏与宽屏采用全站统一的 38% : 62% 分栏，中间保留 0.5dp 细竖线凸显主从设置与详情层级。
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(PageBackground)
+                    .appPageBackground(PageBackground)
             ) {
                 SettingsNavigationPane(
                     webUiOnline = webUiOnline,
@@ -245,6 +307,8 @@ internal fun SettingsPage(
                     permissionSelected = selectedDetail == PermissionSettingsDetail,
                     mirrorSummaryText = mirrorSummaryText,
                     mirrorSelected = selectedDetail == MirrorSettingsDetail,
+                    backupSummaryText = backupSummaryText,
+                    backupSelected = selectedDetail == BackupSettingsDetail,
                     compact = true,
                     expandedTopOffset = topSpacing,
                     onPermissionClick = {
@@ -258,6 +322,13 @@ internal fun SettingsPage(
                         selectedDetail = resolveSettingsDetailSelection(
                             currentDetail = selectedDetail,
                             targetDetail = MirrorSettingsDetail,
+                            useTwoPane = true
+                        )
+                    },
+                    onBackupClick = {
+                        selectedDetail = resolveSettingsDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = BackupSettingsDetail,
                             useTwoPane = true
                         )
                     },
@@ -287,7 +358,7 @@ internal fun SettingsPage(
                     modifier = Modifier
                         .weight(HomeTwoPaneSpec.RightPaneWeight)
                         .fillMaxHeight()
-                        .background(PageBackground)
+                        .appPageBackground(PageBackground)
                 ) {
                     AnimatedContent(
                         targetState = selectedDetail,
@@ -299,23 +370,26 @@ internal fun SettingsPage(
                         label = "SettingsTwoPaneDetail"
                     ) { detail ->
                         when (detail) {
-                            PermissionSettingsDetail -> PermissionManagementPage(
-                                state = permissionState,
-                                actions = permissionActions,
-                                onBack = { selectedDetail = null },
-                                showBackButton = false,
-                                compact = compactTwoPane,
-                                expandedTopOffset = topSpacing,
-                                modifier = Modifier.fillMaxSize()
+                            PermissionSettingsDetail -> permissionDetailContent(
+                                SettingsDetailContentArgs(
+                                    showBackButton = false,
+                                    compact = compactTwoPane,
+                                    topOffset = topSpacing
+                                )
                             )
-                            MirrorSettingsDetail -> MirrorSettingsPage(
-                                manager = mirrorManager,
-                                state = mirrorState,
-                                onBack = { selectedDetail = null },
-                                showBackButton = false,
-                                compact = compactTwoPane,
-                                expandedTopOffset = topSpacing,
-                                modifier = Modifier.fillMaxSize()
+                            MirrorSettingsDetail -> mirrorDetailContent(
+                                SettingsDetailContentArgs(
+                                    showBackButton = false,
+                                    compact = compactTwoPane,
+                                    topOffset = topSpacing
+                                )
+                            )
+                            BackupSettingsDetail -> backupDetailContent(
+                                SettingsDetailContentArgs(
+                                    showBackButton = false,
+                                    compact = compactTwoPane,
+                                    topOffset = topSpacing
+                                )
                             )
                             else -> {
                                 // 横屏/宽屏默认不展示任何具体设置详情或文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
@@ -333,24 +407,31 @@ internal fun SettingsPage(
                 targetState = selectedDetail,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(PageBackground),
+                    .appPageBackground(PageBackground),
                 transitionSpec = { horizontalSlideTransition(forward = targetState != null, dampingRatio = 0.82f) },
                 label = "SettingsPermissionTransition"
             ) { detail ->
                 when (detail) {
-                    PermissionSettingsDetail -> PermissionManagementPage(
-                        state = permissionState,
-                        actions = permissionActions,
-                        onBack = { selectedDetail = null },
-                        expandedTopOffset = topSpacing,
-                        modifier = Modifier.fillMaxSize()
+                    PermissionSettingsDetail -> permissionDetailContent(
+                        SettingsDetailContentArgs(
+                            showBackButton = true,
+                            compact = false,
+                            topOffset = topSpacing
+                        )
                     )
-                    MirrorSettingsDetail -> MirrorSettingsPage(
-                        manager = mirrorManager,
-                        state = mirrorState,
-                        onBack = { selectedDetail = null },
-                        expandedTopOffset = topSpacing,
-                        modifier = Modifier.fillMaxSize()
+                    MirrorSettingsDetail -> mirrorDetailContent(
+                        SettingsDetailContentArgs(
+                            showBackButton = true,
+                            compact = false,
+                            topOffset = topSpacing
+                        )
+                    )
+                    BackupSettingsDetail -> backupDetailContent(
+                        SettingsDetailContentArgs(
+                            showBackButton = true,
+                            compact = false,
+                            topOffset = topSpacing
+                        )
                     )
                     else -> {
                         SettingsNavigationPane(
@@ -363,6 +444,8 @@ internal fun SettingsPage(
                             permissionSelected = false,
                             mirrorSummaryText = mirrorSummaryText,
                             mirrorSelected = false,
+                            backupSummaryText = backupSummaryText,
+                            backupSelected = false,
                             compact = false,
                             expandedTopOffset = topSpacing,
                             onPermissionClick = {
@@ -376,6 +459,13 @@ internal fun SettingsPage(
                                 selectedDetail = resolveSettingsDetailSelection(
                                     currentDetail = selectedDetail,
                                     targetDetail = MirrorSettingsDetail,
+                                    useTwoPane = false
+                                )
+                            },
+                            onBackupClick = {
+                                selectedDetail = resolveSettingsDetailSelection(
+                                    currentDetail = selectedDetail,
+                                    targetDetail = BackupSettingsDetail,
                                     useTwoPane = false
                                 )
                             },
@@ -476,10 +566,13 @@ private fun SettingsNavigationPane(
     permissionSelected: Boolean,
     mirrorSummaryText: String,
     mirrorSelected: Boolean,
+    backupSummaryText: String,
+    backupSelected: Boolean,
     compact: Boolean,
     expandedTopOffset: Dp,
     onPermissionClick: () -> Unit,
     onMirrorClick: () -> Unit,
+    onBackupClick: () -> Unit,
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
     onUpdateClick: () -> Unit,
@@ -537,7 +630,7 @@ private fun SettingsNavigationPane(
         collapsedFontSize = if (compact) 18.sp else 19.sp,
         topBarHeight = if (compact) 46.dp else 52.dp,
         headerOverscrollPx = overscroll.headerOverscrollPx,
-        modifier = modifier.background(PageBackground)
+        modifier = modifier.appPageBackground(PageBackground)
     ) {
         LazyColumn(
             state = listState,
@@ -653,6 +746,26 @@ private fun SettingsNavigationPane(
                         }
                     }
                 )
+
+                SettingsDivider()
+
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.Backup,
+                    iconColor = IconTealMint,
+                    title = "自动备份",
+                    supportingText = backupSummaryText,
+                    selected = backupSelected,
+                    exposesSelection = true,
+                    onClick = onBackupClick,
+                    trailing = if (compact) null else {
+                        {
+                            SettingsRowArrow(
+                                contentDescription = "进入自动备份设置",
+                                tint = if (backupSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                )
             }
         }
 
@@ -728,12 +841,12 @@ private fun SettingsNavigationPane(
 
                 SettingsDivider()
 
-                // 默认关闭低延迟 Wi-Fi 锁降低息屏射频能耗，仅部分旧机型息屏断连时按需开启。
+                // 默认关闭低延迟 Wi-Fi 锁降低息屏射频能耗，仅息屏后容易断网的机型按需开启。
                 SettingsNavigationRow(
                     icon = FlatFeatureIcons.WifiLock,
                     iconColor = IconTealMint,
                     title = "Wi-Fi 低延迟保活",
-                    supportingText = "防止部分旧机型息屏后 Wi-Fi 断连；关闭可降低后台射频耗电与发热",
+                    supportingText = "息屏后尽量保持 Wi-Fi 连接不断开，关闭可降低发热与耗电",
                     onClick = { onWifiLockChange(!wifiLockEnabled) },
                     trailing = if (compact) null else {
                         {
@@ -1090,11 +1203,11 @@ private fun appUpdateSummaryColor(state: AppUpdateState): Color =
         else -> TextMuted
     }
 
-private fun permissionSummary(state: PermissionState): String {
+internal fun permissionSummary(state: PermissionState): String {
+    val notificationStatus = if (state.notificationGranted) "通知已开启" else "通知未开启"
     val optionalGranted = listOf(
-        state.notificationGranted,
-        state.batteryOptimizationIgnored
+        state.batteryOptimizationIgnored,
+        state.storageGranted
     ).count { it }
-    val storageStatus = if (state.storageGranted) "存储已授权" else "存储未授权"
-    return "$storageStatus · 可选项 $optionalGranted/2"
+    return "$notificationStatus · 可选项 $optionalGranted/2"
 }

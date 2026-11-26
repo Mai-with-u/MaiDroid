@@ -366,6 +366,8 @@ internal fun MaiDialogInfoChip(
         fontWeight = FontWeight.Bold,
         lineHeight = 15.sp,
         maxLines = 1,
+        softWrap = false,
+        letterSpacing = 0.sp,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .clip(RoundedCornerShape(Corners.Tag))

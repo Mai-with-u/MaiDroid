@@ -5,8 +5,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
@@ -29,12 +27,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,12 +68,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.terminal.AnsiLine
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurface
-import org.maiwithu.maidroid.ui.theme.Corners
-import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import org.maiwithu.maidroid.ui.theme.TerminalBackground
 import org.maiwithu.maidroid.ui.theme.TerminalText
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
@@ -187,6 +187,12 @@ internal fun TerminalLogList(
         }
     }
 
+    val showResumePill = viewer.paused && !viewer.selecting
+    val logBackdrop = rememberLayerBackdrop {
+        drawRect(TerminalBackground)
+        drawContent()
+    }
+
     BoxWithConstraints(modifier = modifier) {
         val viewportWidth = maxWidth
         if (rows.isEmpty()) {
@@ -203,6 +209,8 @@ internal fun TerminalLogList(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 仅在暂停露出底部悬浮胶囊时按需录制日志纹理做实时玻璃折射，平时滚动零离屏层消耗。
+                    .then(if (showResumePill) Modifier.layerBackdrop(logBackdrop) else Modifier)
                     .then(if (viewer.wrapLines) Modifier else Modifier.horizontalScroll(horizontalScroll))
             ) {
                 LazyColumn(
@@ -265,14 +273,18 @@ internal fun TerminalLogList(
         }
 
         AnimatedVisibility(
-            visible = viewer.paused && !viewer.selecting,
+            visible = showResumePill,
             enter = fadeIn() + slideInVertically { it },
             exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 16.dp)
         ) {
-            ResumeLivePill(newLineCount = newLineCount, onClick = viewer::resume)
+            ResumeLivePill(
+                newLineCount = newLineCount,
+                backdrop = logBackdrop,
+                onClick = viewer::resume
+            )
         }
     }
 }
@@ -314,39 +326,38 @@ private fun TerminalLogLine(
     )
 }
 
-/** 暂停时浮在列表底部的提示，点一下回到实时。有新日志时用品牌橙底色提醒，没有时只是一个低调的“回到实时”。 */
+/** 暂停时浮在列表底部的液态玻璃胶囊：有新日志时显示品牌橙玻璃提醒，没有时以暗透玻璃呈现“回到实时”。 */
 @Composable
-private fun ResumeLivePill(newLineCount: Int?, onClick: () -> Unit) {
+private fun ResumeLivePill(
+    newLineCount: Int?,
+    backdrop: Backdrop,
+    onClick: () -> Unit
+) {
     val hasNew = newLineCount != 0
-    Surface(
+    LiquidButton(
         onClick = onClick,
-        shape = RoundedCornerShape(Corners.Pill),
-        color = if (hasNew) BrandOrange else CardSurface,
-        contentColor = if (hasNew) OnBrandOrange else TextPrimary,
-        border = if (hasNew) null else BorderStroke(1.dp, CardBorder),
-        shadowElevation = 6.dp
+        backdrop = backdrop,
+        style = if (hasNew) LiquidButtonStyle.Primary else LiquidButtonStyle.Secondary,
+        surfaceColor = if (hasNew) Color.Unspecified else LiquidBarSurface,
+        shape = { Capsule() },
+        minHeight = 38.dp,
+        contentPadding = PaddingValues(start = 14.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(start = 14.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.ArrowDownward,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = when (newLineCount) {
-                    null -> "大量新输出"
-                    0 -> "回到实时"
-                    else -> "$newLineCount 条新输出"
-                },
-                fontSize = TextSizes.Body,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
-        }
+        Icon(
+            imageVector = Icons.Outlined.ArrowDownward,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = when (newLineCount) {
+                null -> "大量新输出"
+                0 -> "回到实时"
+                else -> "$newLineCount 条新输出"
+            },
+            fontSize = TextSizes.Body,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
     }
 }
 

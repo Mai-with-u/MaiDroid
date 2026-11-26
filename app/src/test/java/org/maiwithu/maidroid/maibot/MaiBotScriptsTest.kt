@@ -45,4 +45,20 @@ class MaiBotScriptsTest {
         ).body
         assertTrue(syncCustom.contains("preferred_pypi_url='https://custom.pypi.test/simple'"))
     }
+
+    @Test
+    fun `sync repairs readonly venv permissions and moves stubborn leftover aside while launch ensures venv traversal`() {
+        val sync = MaiBotScripts.syncDependencies().body
+        assertTrue(sync.contains("chmod -R u+rwX .venv 2>/dev/null || true"))
+        assertTrue(sync.indexOf("maidroid_fix_venv_perms") < sync.indexOf("maidroid_uv_sync && exit 0"))
+        assertTrue(sync.contains("mv .venv \".venv.broken."))
+        assertTrue(sync.contains("maidroid_remove_venv"))
+
+        val launch = MaiBotScripts.launch().body
+        assertTrue(launch.contains("chmod u+rx '/opt/MaiBot/.venv' '/opt/MaiBot/.venv/bin'"))
+        assertTrue(
+            launch.indexOf("chmod u+rx '/opt/MaiBot/.venv'") <
+                launch.indexOf("if [ -x '/opt/MaiBot/.venv/bin/python' ]")
+        )
+    }
 }

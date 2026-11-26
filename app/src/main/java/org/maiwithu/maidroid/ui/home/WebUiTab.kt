@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,7 +54,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.Dispatchers
@@ -64,8 +64,12 @@ import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
+import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
+import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
@@ -362,19 +366,13 @@ internal fun WebUiTabPage(
             resolvedLaunch = requestToken to computed
         }
 
-        val showBanner = state.webUiError != null || !webUiOnline
-        val bannerContentBackdrop = rememberLayerBackdrop {
-            drawRect(PageBackground)
-            drawContent()
-        }
+        // 离线或加载失败横幅改用基于网页底色（冷启动未上报时兜底 CardSurface）的零开销采样背景；仅弹窗打开时临时启用离屏层。
+        val bannerContentBackdrop = rememberSurfaceBackdrop(state.pageBackground ?: CardSurface)
+        val hasActiveModal = LocalLiquidModalHost.current?.hasModals == true
 
         if (activeHost != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // 仅当顶部需要展示离线或失败液态玻璃条时按需录制网页视图，正常浏览零开销
-                    .then(if (showBanner) Modifier.layerBackdrop(bannerContentBackdrop) else Modifier)
-            ) {
+            val activePrompt by activeHost.activePrompt.collectAsState()
+            Box(modifier = Modifier.fillMaxSize()) {
                 key(activeHost) {
                     AndroidView(
                         factory = {
@@ -411,14 +409,15 @@ internal fun WebUiTabPage(
                             .padding(top = statusBarTop)
                             .windowInsetsPadding(imeClearance)
                             .fillMaxSize()
-                            // 配合 AndroidLiquidGlass：让内嵌 TextureView(GeckoView) 走稳定的离屏图层合成，防止毛玻璃采样闪烁或黑块
-                            .graphicsLayer { alpha = 0.999f }
+                            // 仅在弹出液态玻璃模态卡片需要录制整页采样时开启离屏合成，防止常规浏览每帧分配全屏 FBO 拖慢帧率。
+                            .then(if (hasActiveModal) Modifier.graphicsLayer { alpha = 0.999f } else Modifier)
                             .onSizeChanged { size ->
                                 state.viewHasSize = size.width > 0 && size.height > 0
                             }
                     )
                 }
             }
+            WebUiPromptDialogHost(prompt = activePrompt)
         }
 
         if (state.webUiError != null) {
