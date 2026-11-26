@@ -183,9 +183,12 @@ internal fun MaiDroidApp(
                                 permissionState = permissions.state,
                                 permissionActions = permissions.oobeActions,
                                 onNext = {
-                                    // 进下一步前刷新一次权限状态，外部存储已改为可选，不再拦截流程。
+                                    // 进下一步前现查一次通知权限：通知开关与前台服务保活直接挂钩，未开启则拦截并引导授权。
                                     permissions.refresh()
-                                    viewModel.onOobeNext()
+                                    if (!viewModel.onOobeNext(notificationGranted = permissions.isNotificationGranted())) {
+                                        Toast.makeText(context, "请先开启必选的消息通知权限", Toast.LENGTH_SHORT).show()
+                                        permissions.oobeActions.enableNotification()
+                                    }
                                 },
                                 onRetry = viewModel::retryOobeStep,
                                 modifier = Modifier

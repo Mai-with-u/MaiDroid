@@ -394,6 +394,7 @@ private fun BoxScope.CompactOobeLayout(
             OobeStepFooter(
                 step = targetStep,
                 setupState = content.setupState,
+                notificationGranted = content.permissionState.notificationGranted,
                 onNext = content.onNext,
                 onRetry = content.onRetry
             )
@@ -562,6 +563,7 @@ private fun AdaptiveOobeLayout(
                             OobeStepFooter(
                                 step = targetStep,
                                 setupState = content.setupState,
+                                notificationGranted = content.permissionState.notificationGranted,
                                 onNext = content.onNext,
                                 onRetry = content.onRetry,
                                 modifier = Modifier.widthIn(

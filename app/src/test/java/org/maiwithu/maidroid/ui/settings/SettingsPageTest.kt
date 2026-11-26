@@ -166,13 +166,13 @@ class SettingsPageTest {
     }
 
     @Test
-    fun `permissionSummary reports keep-alive count and external storage state`() {
+    fun `permissionSummary reports required notification and optional keep-alive or storage count`() {
         assertEquals(
-            "后台保活 0/2 · 外部存储未授权",
+            "通知未开启 · 可选项 0/2",
             permissionSummary(PermissionState())
         )
         assertEquals(
-            "后台保活 1/2 · 外部存储已授权",
+            "通知已开启 · 可选项 1/2",
             permissionSummary(
                 PermissionState(
                     storageGranted = true,
@@ -182,10 +182,10 @@ class SettingsPageTest {
             )
         )
         assertEquals(
-            "后台保活 2/2 · 外部存储未授权",
+            "通知已开启 · 可选项 2/2",
             permissionSummary(
                 PermissionState(
-                    storageGranted = false,
+                    storageGranted = true,
                     notificationGranted = true,
                     batteryOptimizationIgnored = true
                 )
@@ -264,5 +264,17 @@ class SettingsPageTest {
         assertEquals("上午", backupTimePeriodLabel(9))
         assertEquals("下午", backupTimePeriodLabel(15))
         assertEquals("夜间", backupTimePeriodLabel(22))
+    }
+
+    @Test
+    fun `resolveTimePickerWheelSpec adapts visible rows and row height for phone landscape`() {
+        assertEquals(
+            TimePickerWheelSpec(visibleRows = 5, itemHeightDp = 40),
+            resolveTimePickerWheelSpec(isPhoneLandscape = false)
+        )
+        assertEquals(
+            TimePickerWheelSpec(visibleRows = 3, itemHeightDp = 36),
+            resolveTimePickerWheelSpec(isPhoneLandscape = true)
+        )
     }
 }

@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.ui.settings
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -106,9 +108,23 @@ internal fun backupTimePeriodLabel(hour: Int): String = when (hour.coerceIn(0, 2
     else -> "夜间"
 }
 
+internal data class TimePickerWheelSpec(
+    val visibleRows: Int,
+    val itemHeightDp: Int
+)
+
+/** 依据是否手机横屏矮视口决定滚轮可见行数与行高，确保横屏也能完整显示 3 行而非被压成单行。 */
+internal fun resolveTimePickerWheelSpec(isPhoneLandscape: Boolean): TimePickerWheelSpec =
+    if (isPhoneLandscape) {
+        TimePickerWheelSpec(visibleRows = 3, itemHeightDp = 36)
+    } else {
+        TimePickerWheelSpec(visibleRows = 5, itemHeightDp = 40)
+    }
+
 /**
  * 液态玻璃风格的 24 小时制每日备份时间选择器：
- * 采用双列循环吸附滚轮、实时时段与下次触发预览以及常用快捷时段胶囊，取代原生系统时间弹窗。
+ * 采用双列循环吸附滚轮、实时时段与下次触发预览以及常用快捷时段胶囊，取代原生系统时间弹窗；
+ * 手机横屏切换为左右双栏布局并收紧行高，避免矮视口下滚轮被压成单行。
  */
 @Composable
 internal fun BackupTimePickerDialog(
@@ -154,10 +170,7 @@ internal fun BackupTimePickerDialog(
             }
     }
 
-    val isPhoneLandscape = LocalMaiDialogPhoneLandscape.current
-    val visibleRows = if (isPhoneLandscape) 3 else 5
-    val itemHeight = if (isPhoneLandscape) 36.dp else 40.dp
-    val wheelHeight = itemHeight * visibleRows
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val nowMillis = remember(selectedHour, selectedMinute) { System.currentTimeMillis() }
     val nextTriggerMillis = remember(nowMillis, selectedHour, selectedMinute) {
@@ -172,12 +185,19 @@ internal fun BackupTimePickerDialog(
         formatNextScheduleHint(nowMillis, nextTriggerMillis, ZoneId.systemDefault())
     }
 
+    fun jumpToPreset(hour: Int, minute: Int) {
+        val targetHourIdx = nearestWheelTargetIndex(selectedHourIndex, hour, 24)
+        val targetMinuteIdx = nearestWheelTargetIndex(selectedMinuteIndex, minute, 60)
+        coroutineScope.launch { hourListState.animateScrollToItem(targetHourIdx) }
+        coroutineScope.launch { minuteListState.animateScrollToItem(targetMinuteIdx) }
+    }
+
     MaiDialog(
         title = "选择每日备份时间",
         subtitle = "24 小时制 · 同一天最多自动备份一次",
         icon = Icons.Outlined.Schedule,
         iconBackground = BrandOrange,
-        size = MaiDialogSize.Compact,
+        size = if (isLandscape) MaiDialogSize.Expanded else MaiDialogSize.Compact,
         scrollable = false,
         onDismissRequest = onDismiss,
         footer = {
@@ -195,8 +215,125 @@ internal fun BackupTimePickerDialog(
                     onClick = { onConfirm(selectedHour, selectedMinute) }
                 )
             }
+        },
+        secondaryContent = {
+            // 必须在 MaiDialog 内部读取 LocalMaiDialogPhoneLandscape，才能拿到弹窗实际测算的矮宽视口标志。
+            val phoneLandscape = LocalMaiDialogPhoneLandscape.current
+            val wheelSpec = resolveTimePickerWheelSpec(phoneLandscape)
+            val itemHeight = wheelSpec.itemHeightDp.dp
+            val wheelHeight = itemHeight * wheelSpec.visibleRows
+
+            // 双列循环吸附滚轮容器
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Corners.Chip))
+                    .background(DialogInnerSurface)
+                    .border(0.8.dp, CardBorder, RoundedCornerShape(Corners.Chip))
+                    .padding(
+                        horizontal = if (phoneLandscape) 12.dp else 14.dp,
+                        vertical = if (phoneLandscape) 6.dp else 10.dp
+                    ),
+                verticalArrangement = Arrangement.spacedBy(if (phoneLandscape) 4.dp else 6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "时",
+                        color = TextFaint,
+                        fontSize = TextSizes.Caption,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(20.dp))
+                    Text(
+                        text = "分",
+                        color = TextFaint,
+                        fontSize = TextSizes.Caption,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(wheelHeight),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // 居中选中高亮带与冒号分隔符，透出液态玻璃容器背景
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(itemHeight)
+                            .clip(RoundedCornerShape(Corners.Control))
+                            .background(CardSurfaceSelected.copy(alpha = 0.78f))
+                            .border(0.8.dp, BrandOrange.copy(alpha = 0.45f), RoundedCornerShape(Corners.Control)),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = ":",
+                            color = BrandOrange,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        WheelNumberColumn(
+                            listState = hourListState,
+                            valueCount = 24,
+                            selectedIndex = selectedHourIndex,
+                            visibleRows = wheelSpec.visibleRows,
+                            itemHeight = itemHeight,
+                            onItemTap = { targetIndex ->
+                                coroutineScope.launch { hourListState.animateScrollToItem(targetIndex) }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(20.dp))
+                        WheelNumberColumn(
+                            listState = minuteListState,
+                            valueCount = 60,
+                            selectedIndex = selectedMinuteIndex,
+                            visibleRows = wheelSpec.visibleRows,
+                            itemHeight = itemHeight,
+                            onItemTap = { targetIndex ->
+                                coroutineScope.launch { minuteListState.animateScrollToItem(targetIndex) }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            if (!isLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    PICKER_PRESET_TIMES.forEach { (hour, minute) ->
+                        TimePresetChip(
+                            hour = hour,
+                            minute = minute,
+                            active = selectedHour == hour && selectedMinute == minute,
+                            onClick = { jumpToPreset(hour, minute) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
         }
     ) {
+        val phoneLandscape = LocalMaiDialogPhoneLandscape.current
         // 实时时间与下次触发预览卡
         Column(
             modifier = Modifier
@@ -204,14 +341,14 @@ internal fun BackupTimePickerDialog(
                 .clip(RoundedCornerShape(Corners.Chip))
                 .background(DialogInnerSurface)
                 .border(0.8.dp, CardBorder, RoundedCornerShape(Corners.Chip))
-                .padding(horizontal = 14.dp, vertical = if (isPhoneLandscape) 8.dp else 12.dp),
+                .padding(horizontal = 14.dp, vertical = if (phoneLandscape) 8.dp else 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
                 text = formatScheduleTime(selectedHour, selectedMinute),
                 color = BrandOrange,
-                fontSize = if (isPhoneLandscape) 26.sp else 32.sp,
+                fontSize = if (phoneLandscape) 26.sp else 32.sp,
                 fontWeight = FontWeight.Bold,
                 style = TextStyle(fontFeatureSettings = "tnum")
             )
@@ -223,131 +360,61 @@ internal fun BackupTimePickerDialog(
             )
         }
 
-        // 双列循环吸附滚轮容器
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Corners.Chip))
-                .background(DialogInnerSurface)
-                .border(0.8.dp, CardBorder, RoundedCornerShape(Corners.Chip))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(
+        if (isLandscape) {
+            // 横屏下将快捷时段放在左栏底部 2×2 排列，为右栏滚轮让出完整三行高度
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "时",
-                    color = TextFaint,
-                    fontSize = TextSizes.Caption,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(20.dp))
-                Text(
-                    text = "分",
-                    color = TextFaint,
-                    fontSize = TextSizes.Caption,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(wheelHeight),
-                contentAlignment = Alignment.Center
-            ) {
-                // 居中选中高亮带与冒号分隔符，透出液态玻璃容器背景
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(itemHeight)
-                        .clip(RoundedCornerShape(Corners.Control))
-                        .background(CardSurfaceSelected.copy(alpha = 0.78f))
-                        .border(0.8.dp, BrandOrange.copy(alpha = 0.45f), RoundedCornerShape(Corners.Control)),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = ":",
-                        color = BrandOrange,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    WheelNumberColumn(
-                        listState = hourListState,
-                        valueCount = 24,
-                        selectedIndex = selectedHourIndex,
-                        visibleRows = visibleRows,
-                        itemHeight = itemHeight,
-                        onItemTap = { targetIndex ->
-                            coroutineScope.launch { hourListState.animateScrollToItem(targetIndex) }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(20.dp))
-                    WheelNumberColumn(
-                        listState = minuteListState,
-                        valueCount = 60,
-                        selectedIndex = selectedMinuteIndex,
-                        visibleRows = visibleRows,
-                        itemHeight = itemHeight,
-                        onItemTap = { targetIndex ->
-                            coroutineScope.launch { minuteListState.animateScrollToItem(targetIndex) }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        // 常用时段快捷胶囊：同时沿最短路径平滑滚动小时与分钟两列
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            PICKER_PRESET_TIMES.forEach { (hour, minute) ->
-                val active = selectedHour == hour && selectedMinute == minute
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Corners.Control))
-                        .background(if (active) CardSurfaceSelected else CardDivider.copy(alpha = 0.45f))
-                        .border(
-                            width = 0.8.dp,
-                            color = if (active) BrandOrange else CardBorder,
-                            shape = RoundedCornerShape(Corners.Control)
-                        )
-                        .clickable {
-                            val targetHourIdx = nearestWheelTargetIndex(selectedHourIndex, hour, 24)
-                            val targetMinuteIdx = nearestWheelTargetIndex(selectedMinuteIndex, minute, 60)
-                            coroutineScope.launch { hourListState.animateScrollToItem(targetHourIdx) }
-                            coroutineScope.launch { minuteListState.animateScrollToItem(targetMinuteIdx) }
+                PICKER_PRESET_TIMES.chunked(2).forEach { rowPresets ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowPresets.forEach { (hour, minute) ->
+                            TimePresetChip(
+                                hour = hour,
+                                minute = minute,
+                                active = selectedHour == hour && selectedMinute == minute,
+                                onClick = { jumpToPreset(hour, minute) },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
-                        .padding(vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = formatScheduleTime(hour, minute),
-                        color = if (active) BrandOrange else TextMuted,
-                        fontSize = TextSizes.Caption,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                        style = TextStyle(fontFeatureSettings = "tnum")
-                    )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TimePresetChip(
+    hour: Int,
+    minute: Int,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(Corners.Control))
+            .background(if (active) CardSurfaceSelected else CardDivider.copy(alpha = 0.45f))
+            .border(
+                width = 0.8.dp,
+                color = if (active) BrandOrange else CardBorder,
+                shape = RoundedCornerShape(Corners.Control)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = formatScheduleTime(hour, minute),
+            color = if (active) BrandOrange else TextMuted,
+            fontSize = TextSizes.Caption,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            style = TextStyle(fontFeatureSettings = "tnum")
+        )
     }
 }
 

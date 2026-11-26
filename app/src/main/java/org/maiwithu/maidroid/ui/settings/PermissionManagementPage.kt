@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
@@ -43,6 +44,8 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
+import org.maiwithu.maidroid.ui.component.LiquidButton
+import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
@@ -69,7 +72,7 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
- * 设置页里的权限管理：通知、电池优化、外部存储、悬浮窗（开关），以及只能跳转系统设置的几项；所有权限均为可选。
+ * 设置页里的权限管理：必选的消息通知权限（与前台服务保活直接挂钩），可选的电池优化、外部存储、悬浮窗（开关），以及只能跳转系统设置的几项。
  * 竖屏时从设置列表点进来（左上角返回），横屏时作为右侧详情常驻显示，并随左侧主导航对齐顶部标题基线与紧凑顶栏尺寸。
  */
 @Composable
@@ -138,7 +141,7 @@ internal fun PermissionManagementPage(
 
             item {
                 Text(
-                    text = "可选权限",
+                    text = "必选权限",
                     color = TextMuted,
                     fontSize = TextSizes.Caption,
                     fontWeight = FontWeight.Medium,
@@ -150,20 +153,29 @@ internal fun PermissionManagementPage(
             }
 
             item {
-                PermissionSwitchCard(
+                PermissionActionCard(
                     icon = FlatFeatureIcons.NotificationKeepAlive,
                     iconColor = IconWarmCoral,
-                    title = "通知保活",
-                    description = "允许前台服务通知，提升后台运行稳定性。",
-                    checked = state.notificationGranted,
-                    onCheckedChange = { checked ->
-                        if (checked) {
-                            actions.enableNotification()
-                        } else {
-                            actions.disableNotification()
-                        }
-                    },
+                    title = "消息通知权限",
+                    description = "维持前台服务常驻通知，与容器后台保活直接挂钩。",
+                    badgeText = "必须",
+                    granted = state.notificationGranted,
+                    actionText = if (state.notificationGranted) "已授权" else "去授权",
+                    onAction = actions.enableNotification,
                     modifier = Modifier.overscrollBody(overscroll)
+                )
+            }
+
+            item {
+                Text(
+                    text = "可选权限",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 14.sp,
+                    modifier = Modifier
+                        .overscrollBody(overscroll)
+                        .padding(top = 8.dp, start = 4.dp)
                 )
             }
 
@@ -249,6 +261,46 @@ internal fun PermissionManagementPage(
                     modifier = Modifier.overscrollBody(overscroll)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PermissionActionCard(
+    icon: ImageVector,
+    iconColor: Color,
+    title: String,
+    description: String,
+    badgeText: String,
+    granted: Boolean,
+    actionText: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    PermissionBaseCard(
+        icon = icon,
+        iconColor = iconColor,
+        title = title,
+        description = description,
+        badgeText = badgeText,
+        statusText = if (granted) "已开启" else "未开启",
+        statusColor = if (granted) StatusOnline else StatusWarning,
+        modifier = modifier
+    ) {
+        LiquidButton(
+            onClick = onAction,
+            enabled = !granted,
+            style = LiquidButtonStyle.Primary,
+            shape = { RoundedRectangle(Corners.Control) },
+            minHeight = 34.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = actionText,
+                fontSize = TextSizes.Caption,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1
+            )
         }
     }
 }

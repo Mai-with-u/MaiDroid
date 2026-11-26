@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.IconWarmCoral
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
@@ -52,9 +53,9 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// OOBE 第一步“授予权限”的内容：可选的外部存储权限卡片 + 可选的后台保活卡片（五项保活设置）。
+// OOBE 第一步“授予权限”的内容：必选的消息通知权限卡片 + 可选的外部存储权限卡片 + 可选的后台保活卡片（四项保活设置）。
 
-/** 手机竖屏：两张卡片上下排列，整列可滚动。 */
+/** 手机竖屏：三张卡片上下排列，整列可滚动。 */
 @Composable
 internal fun CompactOobePermissionList(
     state: PermissionState,
@@ -65,6 +66,8 @@ internal fun CompactOobePermissionList(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
+        NotificationPermissionCard(granted = state.notificationGranted, onAuthorize = actions.enableNotification)
+        Spacer(modifier = Modifier.height(14.dp))
         StoragePermissionCard(granted = state.storageGranted, onAuthorize = actions.requestStorage)
         Spacer(modifier = Modifier.height(20.dp))
         BackgroundKeepAliveCard(state = state, actions = actions)
@@ -72,7 +75,7 @@ internal fun CompactOobePermissionList(
     }
 }
 
-/** 平板和横屏：右侧工作区宽于 760dp 时左右两栏（存储 4 : 保活 6，各自滚动），否则上下排列。 */
+/** 平板和横屏：右侧工作区宽于 760dp 时左右两栏（左侧通知与存储 4 : 右侧保活 6，各自滚动），否则上下排列。 */
 @Composable
 internal fun AdaptiveOobePermissionList(
     state: PermissionState,
@@ -90,6 +93,8 @@ internal fun AdaptiveOobePermissionList(
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
                 ) {
+                    NotificationPermissionCard(granted = state.notificationGranted, onAuthorize = actions.enableNotification)
+                    Spacer(modifier = Modifier.height(14.dp))
                     StoragePermissionCard(granted = state.storageGranted, onAuthorize = actions.requestStorage)
                     Spacer(modifier = Modifier.height(12.dp))
                 }
@@ -110,6 +115,8 @@ internal fun AdaptiveOobePermissionList(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
+                NotificationPermissionCard(granted = state.notificationGranted, onAuthorize = actions.enableNotification)
+                Spacer(modifier = Modifier.height(14.dp))
                 StoragePermissionCard(granted = state.storageGranted, onAuthorize = actions.requestStorage)
                 Spacer(modifier = Modifier.height(14.dp))
                 BackgroundKeepAliveCard(state = state, actions = actions)
@@ -117,6 +124,22 @@ internal fun AdaptiveOobePermissionList(
             }
         }
     }
+}
+
+@Composable
+private fun NotificationPermissionCard(
+    granted: Boolean,
+    onAuthorize: () -> Unit
+) {
+    OobePermissionCard(
+        icon = FlatFeatureIcons.NotificationKeepAlive,
+        iconColor = IconWarmCoral,
+        title = "消息通知权限",
+        description = "维持前台服务常驻通知，与容器后台保活直接挂钩，必须开启。",
+        required = true,
+        granted = granted,
+        onAuthorize = onAuthorize
+    )
 }
 
 @Composable
@@ -136,7 +159,7 @@ private fun StoragePermissionCard(
 }
 
 /**
- * 后台保活卡片：通知和电池优化能读出是否已授予；自启动、多任务加锁只能引导去系统设置；
+ * 后台保活卡片：电池优化能读出是否已授予；自启动、多任务加锁只能引导去系统设置；
  * 无障碍风险较高，用红色“不建议”标签和“你确定？！”提醒（为后续小手机自动化预留）。
  */
 @Composable
@@ -208,13 +231,6 @@ private fun BackgroundKeepAliveCard(
                 .background(CardSurface)
                 .padding(8.dp)
         ) {
-            KeepAlivePermissionRow(
-                tagText = "推荐",
-                title = "通知保活",
-                granted = state.notificationGranted,
-                onAuthorize = actions.enableNotification
-            )
-            KeepAliveDivider()
             KeepAlivePermissionRow(
                 tagText = "推荐",
                 title = "关闭电池优化",

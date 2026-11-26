@@ -1158,10 +1158,10 @@ private fun appUpdateSummaryColor(state: AppUpdateState): Color =
     }
 
 internal fun permissionSummary(state: PermissionState): String {
-    val keepAliveGranted = listOf(
-        state.notificationGranted,
-        state.batteryOptimizationIgnored
+    val notificationStatus = if (state.notificationGranted) "通知已开启" else "通知未开启"
+    val optionalGranted = listOf(
+        state.batteryOptimizationIgnored,
+        state.storageGranted
     ).count { it }
-    val storageStatus = if (state.storageGranted) "已授权" else "未授权"
-    return "后台保活 $keepAliveGranted/2 · 外部存储$storageStatus"
+    return "$notificationStatus · 可选项 $optionalGranted/2"
 }
