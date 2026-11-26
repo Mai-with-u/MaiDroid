@@ -433,13 +433,6 @@ internal object FlatFeatureIcons {
         }
     }
 
-    val DeviceAdmin: ImageVector by lazy {
-        flatVector("FlatDeviceAdmin") {
-            fillLayer(IconSecondary) { shieldPath() }
-            fillLayer(IconForeground) { sparklePath(12.0f, 12.0f, 4.7f, 1.65f) }
-        }
-    }
-
     /** 悬浮桌宠图标：圆润猫耳麦麦剪影与灵动笑眼，专用于「扩展组件」悬浮桌宠卡片。 */
     val DesktopPet: ImageVector by lazy {
         flatVector("FlatDesktopPet") {

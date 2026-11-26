@@ -17,6 +17,7 @@ import org.maiwithu.maidroid.maibot.MaiBotConsoleLogRotator
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateManager
 import org.maiwithu.maidroid.oobe.OobeSetupManager
+import org.maiwithu.maidroid.permission.hasExternalStoragePermission
 import org.maiwithu.maidroid.pet.DesktopPetManager
 import org.maiwithu.maidroid.pet.PetOverlayService
 import org.maiwithu.maidroid.pet.PetRecordsActivity
@@ -79,7 +80,9 @@ internal class AppDependencies(context: Context) {
     // ── 容器运行时：路径、就绪检查、命令执行与全链路镜像源测速 ───────────
     val runtimePaths = RuntimePaths.from(appContext)
     val runtimeReadiness = RuntimeReadiness(runtimePaths)
-    val commandRunner = ContainerCommandRunner(runtimePaths)
+    val commandRunner = ContainerCommandRunner(runtimePaths) {
+        hasExternalStoragePermission(appContext)
+    }
     val mirrorManager: MirrorManager by lazy { MirrorManager(settings, runtimePaths.rootfsDir) }
 
     // ── 容器里的长驻进程与功能模块 ───────────────────────────────────────

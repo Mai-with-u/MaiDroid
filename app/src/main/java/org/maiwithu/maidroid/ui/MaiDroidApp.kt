@@ -183,12 +183,9 @@ internal fun MaiDroidApp(
                                 permissionState = permissions.state,
                                 permissionActions = permissions.oobeActions,
                                 onNext = {
-                                    // 权限步骤的“下一步”现查一次存储权限：用户可能刚从系统设置页回来。
+                                    // 进下一步前刷新一次权限状态，外部存储已改为可选，不再拦截流程。
                                     permissions.refresh()
-                                    if (!viewModel.onOobeNext(storageGranted = permissions.isStorageGranted())) {
-                                        Toast.makeText(context, "请先授予必选存储权限", Toast.LENGTH_SHORT).show()
-                                        permissions.oobeActions.requestStorage()
-                                    }
+                                    viewModel.onOobeNext()
                                 },
                                 onRetry = viewModel::retryOobeStep,
                                 modifier = Modifier

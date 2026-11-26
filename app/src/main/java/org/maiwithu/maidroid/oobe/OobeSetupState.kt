@@ -5,7 +5,7 @@ import org.maiwithu.maidroid.runtime.RuntimeComponent
 
 /** OOBE 的三步，顺序就是界面上步骤指示器的顺序。 */
 internal enum class OobeStep {
-    /** 授予存储（必需）和后台保活（可选）权限。 */
+    /** 授予外部存储与后台保活（均为可选）权限。 */
     Permissions,
 
     /** 解包容器资源并装好 git、curl 等系统依赖。 */

@@ -101,7 +101,7 @@ private val OobeStep.title: String
 
 private val OobeStep.description: String
     get() = when (this) {
-        OobeStep.Permissions -> "MaiSaka需要以下权限才能运行~\n可选权限也可以不给，如果你确定你在做什么的话"
+        OobeStep.Permissions -> "以下权限均为可选，推荐开启后台保活以减少断连~\n不授权也可以直接继续，之后随时可在设置里调整"
         OobeStep.Container -> "正在自动下载运行环境，以给予麦麦一个新家\n请保持网络连接，下载完成后麦麦会自己装~"
         OobeStep.Install -> "麦麦正在装修并入住新家……，请耐心等待"
     }
@@ -156,7 +156,7 @@ internal fun OobeStepHeader(
 
 /**
  * 每一步底部的按钮区：
- * 权限步骤 -> 存储授权后才能点“下一步”；
+ * 权限步骤 -> 所有权限均为可选，可直接点“下一步”；
  * 配置容器 -> 容器就绪时“开始安装”，失败时“重新配置”；
  * 安装 MaiBot -> 完成时“进入 MaiDroid”，失败且没有任务在跑时“重试安装”，否则“请稍候”。
  * 两步失败时说明下面多一块：错误码、认出的原因和建议、跳转按钮和“反馈问题”。
@@ -166,15 +166,14 @@ internal fun OobeStepHeader(
 internal fun OobeStepFooter(
     step: OobeStep,
     setupState: OobeSetupState,
-    storageGranted: Boolean,
     onNext: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     when (step) {
         OobeStep.Permissions -> NextButton(
-            text = if (storageGranted) "下一步" else "请先授权",
-            enabled = storageGranted,
+            text = "下一步",
+            enabled = true,
             onNext = onNext,
             modifier = modifier
         )

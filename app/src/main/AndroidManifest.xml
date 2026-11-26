@@ -25,7 +25,7 @@
     <!-- 应用自更新：把下载好的新版本安装包交给系统安装器 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- 存储（OOBE 必需）：容器绑定 /sdcard，让容器里能存取手机文件；Android 11 起用“所有文件访问”，旧系统用读写外部存储，见 SystemPermissionController -->
+    <!-- 存储（可选）：按需让容器挂载 /sdcard 访问手机文件，后续也供外部备份使用；Android 11 起用“所有文件访问”，旧系统用读写外部存储，见 SystemPermissionController -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"

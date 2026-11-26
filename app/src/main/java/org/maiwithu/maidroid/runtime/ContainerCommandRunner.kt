@@ -24,8 +24,11 @@ internal data class ContainerCommandResult(
  * 所有容器命令都以 rootfs 为工作目录、合并 stderr 并注入 proot 环境变量；
  * 调用方需要的额外环境变量（例如启动 MaiBot 时的协议 hash）通过 extraEnvironment 传入。
  */
-internal class ContainerCommandRunner(private val paths: RuntimePaths) {
-    private val proot = ProotCommand(paths)
+internal class ContainerCommandRunner(
+    private val paths: RuntimePaths,
+    mountExternalStorage: () -> Boolean = { true }
+) {
+    private val proot = ProotCommand(paths, mountExternalStorage)
 
     /** 脚本在宿主机上实际执行的 proot 命令行，供安装页和终端日志展示。 */
     fun commandLine(script: ContainerScript): List<String> = proot.commandLine(script)

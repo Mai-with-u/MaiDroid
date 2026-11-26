@@ -52,7 +52,7 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// OOBE 第一步“授予权限”的内容：必需的存储权限卡片 + 可选的后台保活卡片（六项保活设置）。
+// OOBE 第一步“授予权限”的内容：可选的外部存储权限卡片 + 可选的后台保活卡片（五项保活设置）。
 
 /** 手机竖屏：两张卡片上下排列，整列可滚动。 */
 @Composable
@@ -127,9 +127,9 @@ private fun StoragePermissionCard(
     OobePermissionCard(
         icon = FlatFeatureIcons.Storage,
         iconColor = IconSkyBlue,
-        title = "存储权限",
-        description = "用于解包容器、保存 MaiBot 配置和访问外部文件。",
-        required = true,
+        title = "外部存储权限",
+        description = "按需让容器访问手机外部文件（/sdcard），不开启不影响安装与运行。",
+        required = false,
         granted = granted,
         onAuthorize = onAuthorize
     )
@@ -137,7 +137,7 @@ private fun StoragePermissionCard(
 
 /**
  * 后台保活卡片：通知和电池优化能读出是否已授予；自启动、多任务加锁只能引导去系统设置；
- * 无障碍、设备管理员风险高，用红色“不建议”标签和“你确定？！”提醒。
+ * 无障碍风险较高，用红色“不建议”标签和“你确定？！”提醒（为后续小手机自动化预留）。
  */
 @Composable
 private fun BackgroundKeepAliveCard(
@@ -204,7 +204,6 @@ private fun BackgroundKeepAliveCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(272.dp)
                 .clip(RoundedCornerShape(Corners.Panel))
                 .background(CardSurface)
                 .padding(8.dp)
@@ -241,14 +240,6 @@ private fun BackgroundKeepAliveCard(
                 actionText = "你确定？！",
                 destructive = true,
                 onAuthorize = actions.openAccessibilitySettings
-            )
-            KeepAliveDivider()
-            KeepAlivePermissionRow(
-                tagText = "不建议",
-                title = "设备管理员",
-                actionText = "你确定？！",
-                destructive = true,
-                onAuthorize = actions.openDeviceAdminSettings
             )
         }
     }

@@ -6,7 +6,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
 import androidx.core.app.NotificationManagerCompat
@@ -19,6 +18,7 @@ import org.maiwithu.maidroid.maibot.MaiBotInstances
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.maibot.update.maiBotBranchLabel
+import org.maiwithu.maidroid.permission.hasExternalStoragePermission
 import org.maiwithu.maidroid.platform.napcat.NapCatFiles
 import org.maiwithu.maidroid.platform.qq.QqClient
 import org.maiwithu.maidroid.platform.qq.QqClientChoice
@@ -176,7 +176,7 @@ internal class DiagnosticsManager(
     }
 
     private fun permissionSection(): ReportSection {
-        val storageGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+        val storageGranted = hasExternalStoragePermission(appContext)
         val batteryIgnored = appContext.getSystemService(PowerManager::class.java)
             .isIgnoringBatteryOptimizations(appContext.packageName)
         val notifications = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
@@ -358,7 +358,7 @@ internal class DiagnosticsManager(
             appContext.getSystemService(ActivityManager::class.java).getMemoryInfo(mem)
             mem.availMem / (1024L * 1024L)
         }.getOrNull()
-        val storageGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+        val storageGranted = hasExternalStoragePermission(appContext)
         val batteryIgnored = appContext.getSystemService(PowerManager::class.java)
             .isIgnoringBatteryOptimizations(appContext.packageName)
         val notifications = NotificationManagerCompat.from(appContext).areNotificationsEnabled()

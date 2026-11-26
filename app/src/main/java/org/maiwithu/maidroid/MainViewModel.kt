@@ -216,17 +216,14 @@ internal class MainViewModel(
 
     /**
      * 页脚主按钮：
-     * 权限步骤 -> 存储已授权才进入配置容器（未授权返回 false，由界面提示并再次申请）；
+     * 权限步骤 -> 权限均为可选，直接进入配置容器；
      * 配置容器 -> 容器就绪就进入安装，否则重新配置；
      * 安装 MaiBot -> 已完成就进入主页，否则重新开始安装。
      */
-    fun onOobeNext(storageGranted: Boolean): Boolean {
+    fun onOobeNext() {
         val state = setupManager.state.value
         when (oobeStep.value) {
-            OobeStep.Permissions -> {
-                if (!storageGranted) return false
-                moveToOobeStep(OobeStep.Container)
-            }
+            OobeStep.Permissions -> moveToOobeStep(OobeStep.Container)
             OobeStep.Container -> {
                 if (state.canInstall) {
                     moveToOobeStep(OobeStep.Install)
@@ -244,7 +241,6 @@ internal class MainViewModel(
                 }
             }
         }
-        return true
     }
 
     /** 页脚的“重新配置 / 重试安装”。 */

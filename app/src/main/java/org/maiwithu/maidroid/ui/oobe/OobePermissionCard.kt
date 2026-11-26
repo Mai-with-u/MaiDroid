@@ -151,9 +151,9 @@ private fun OobePermissionCardPreview() {
             OobePermissionCard(
                 icon = FlatFeatureIcons.Storage,
                 iconColor = IconSkyBlue,
-                title = "存储权限",
-                description = "MaiSaka 需要存储权限来安装、运行和保存配置文件",
-                required = true,
+                title = "外部存储权限",
+                description = "按需让容器访问手机外部文件（/sdcard），不开启不影响安装与运行。",
+                required = false,
                 granted = true,
                 onAuthorize = {}
             )

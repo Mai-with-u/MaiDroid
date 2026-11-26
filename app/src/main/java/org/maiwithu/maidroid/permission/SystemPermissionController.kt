@@ -3,6 +3,7 @@ package org.maiwithu.maidroid.permission
 import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -21,7 +22,7 @@ import androidx.core.net.toUri
 
 /** MaiDroid 用到的、能读出授予情况的系统权限。 */
 data class PermissionState(
-    /** 所有文件访问（Android 11+）或读写外部存储：解包容器、让容器访问 /sdcard，必需。 */
+    /** 所有文件访问（Android 11+）或读写外部存储：按需挂载 /sdcard 供容器存取手机文件，可选。 */
     val storageGranted: Boolean = false,
     /** 允许发通知：前台服务的常驻通知靠它，可选但推荐。 */
     val notificationGranted: Boolean = false,
@@ -31,13 +32,23 @@ data class PermissionState(
     val overlayGranted: Boolean = false
 )
 
+/** 判断是否已授予外部存储权限（Android 11+ 看所有文件访问，旧系统看读写外部存储），供界面检查与容器按需挂载共用。 */
+internal fun hasExternalStoragePermission(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+            context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+    }
+
 /**
  * 界面上所有“去授权 / 去系统设置”的入口。
  * OOBE 第一步只用开启方向的动作；设置页的权限管理开关还会用到关闭方向（跳到系统设置让用户自己关）。
- * 自启动、多任务加锁、无障碍、设备管理员没有可读的授予状态，只能引导用户去系统里操作。
+ * 自启动、多任务加锁、无障碍没有可读的授予状态，只能引导用户去系统里操作。
  */
 data class PermissionActions(
     val requestStorage: () -> Unit = {},
+    val disableStorage: () -> Unit = {},
     val enableNotification: () -> Unit = {},
     val disableNotification: () -> Unit = {},
     val ignoreBatteryOptimization: () -> Unit = {},
@@ -45,8 +56,7 @@ data class PermissionActions(
     val requestOverlay: () -> Unit = {},
     val openAutoStartSettings: () -> Unit = {},
     val showTaskLockHint: () -> Unit = {},
-    val openAccessibilitySettings: () -> Unit = {},
-    val openDeviceAdminSettings: () -> Unit = {}
+    val openAccessibilitySettings: () -> Unit = {}
 )
 
 /**
@@ -67,7 +77,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
     ) { results ->
         val granted = results.values.all { it } && isStorageGranted()
         state = state.copy(storageGranted = granted)
-        toast(if (granted) "存储权限已授权" else "存储权限未授权")
+        toast(if (granted) "外部存储权限已授权" else "外部存储权限未授权")
     }
 
     private val notificationPermissionLauncher = activity.registerForActivityResult(
@@ -86,13 +96,13 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         requestOverlay = ::openOverlaySettings,
         openAutoStartSettings = { openBackgroundActivitySettings(forEnable = true) },
         showTaskLockHint = { toast("请在系统多任务界面将 MaiDroid 加锁", long = true) },
-        openAccessibilitySettings = ::openAccessibilitySettings,
-        openDeviceAdminSettings = ::openDeviceAdminSettings
+        openAccessibilitySettings = ::openAccessibilitySettings
     )
 
     /** 设置页权限管理的动作：开关可以开也可以关，关闭方向一律跳到系统设置页。 */
     val settingsActions = PermissionActions(
         requestStorage = ::requestStorage,
+        disableStorage = ::openStorageSettings,
         enableNotification = ::requestNotification,
         disableNotification = ::openNotificationSettings,
         ignoreBatteryOptimization = ::requestIgnoreBatteryOptimizations,
@@ -100,8 +110,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
         requestOverlay = ::openOverlaySettings,
         openAutoStartSettings = { openBackgroundActivitySettings(forEnable = false) },
         showTaskLockHint = { toast("请在系统多任务界面为 MaiDroid 开启或关闭加锁", long = true) },
-        openAccessibilitySettings = ::openAccessibilitySettings,
-        openDeviceAdminSettings = ::openDeviceAdminSettings
+        openAccessibilitySettings = ::openAccessibilitySettings
     )
 
     /** 重新读一遍可检测的权限。onCreate 和每次 onResume（可能刚从系统设置页回来）调用。 */
@@ -117,14 +126,8 @@ internal class SystemPermissionController(private val activity: ComponentActivit
     /** 当前是否已授予悬浮窗（显示在其他应用上层）权限。 */
     fun isOverlayGranted(): Boolean = Settings.canDrawOverlays(activity)
 
-    /** 当下的存储权限（OOBE 点“下一步”时现查，不依赖可能过时的状态）。 */
-    fun isStorageGranted(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            isGranted(Manifest.permission.READ_EXTERNAL_STORAGE) &&
-                isGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
+    /** 当下的外部存储权限（每次回到前台和进入设置开关时现查，不依赖可能过时的状态）。 */
+    fun isStorageGranted(): Boolean = hasExternalStoragePermission(activity)
 
     private fun isNotificationGranted(): Boolean {
         val runtimeGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -139,7 +142,7 @@ internal class SystemPermissionController(private val activity: ComponentActivit
     private fun requestStorage() {
         if (isStorageGranted()) {
             state = state.copy(storageGranted = true)
-            toast("存储权限已授权")
+            toast("外部存储权限已授权")
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -153,6 +156,21 @@ internal class SystemPermissionController(private val activity: ComponentActivit
                     Manifest.permission.READ_EXTERNAL_STORAGE,
                     Manifest.permission.WRITE_EXTERNAL_STORAGE
                 )
+            )
+        }
+    }
+
+    // 设置页关闭外部存储权限开关时引导前往系统设置手动撤销。
+    private fun openStorageSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startSettingsActivity(
+                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri()),
+                Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            )
+        } else {
+            startSettingsActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri()),
+                Intent(Settings.ACTION_SETTINGS)
             )
         }
     }
@@ -263,11 +281,6 @@ internal class SystemPermissionController(private val activity: ComponentActivit
     private fun openAccessibilitySettings() {
         toast("无障碍权限风险较高，请确认确实需要后再开启", long = true)
         startSettingsActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), Intent(Settings.ACTION_SETTINGS))
-    }
-
-    private fun openDeviceAdminSettings() {
-        toast("设备管理员权限风险较高，当前请在系统安全设置中手动检查", long = true)
-        startSettingsActivity(Intent(Settings.ACTION_SECURITY_SETTINGS), Intent(Settings.ACTION_SETTINGS))
     }
 
     // 部分 ROM 精简了某些设置页，打不开时退到备用页面。

@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.shouldKeepScreenOn
+import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.service.shouldHoldWifiLock
 import org.maiwithu.maidroid.runtime.AptMirrors
 import org.maiwithu.maidroid.runtime.GitHubMirrors
@@ -159,5 +160,33 @@ class SettingsPageTest {
         assertTrue(shouldHoldWifiLock(wifiLockEnabled = true, lowBatteryPaused = false, safeExitRunning = false))
         assertFalse(shouldHoldWifiLock(wifiLockEnabled = true, lowBatteryPaused = true, safeExitRunning = false))
         assertFalse(shouldHoldWifiLock(wifiLockEnabled = true, lowBatteryPaused = false, safeExitRunning = true))
+    }
+
+    @Test
+    fun `permissionSummary reports keep-alive count and external storage state`() {
+        assertEquals(
+            "后台保活 0/2 · 外部存储未授权",
+            permissionSummary(PermissionState())
+        )
+        assertEquals(
+            "后台保活 1/2 · 外部存储已授权",
+            permissionSummary(
+                PermissionState(
+                    storageGranted = true,
+                    notificationGranted = true,
+                    batteryOptimizationIgnored = false
+                )
+            )
+        )
+        assertEquals(
+            "后台保活 2/2 · 外部存储未授权",
+            permissionSummary(
+                PermissionState(
+                    storageGranted = false,
+                    notificationGranted = true,
+                    batteryOptimizationIgnored = true
+                )
+            )
+        )
     }
 }

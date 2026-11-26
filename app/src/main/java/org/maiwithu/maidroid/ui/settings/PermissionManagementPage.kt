@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
@@ -44,8 +43,6 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
-import org.maiwithu.maidroid.ui.component.LiquidButton
-import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
@@ -72,7 +69,7 @@ import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
- * 设置页里的权限管理：必选的存储权限，可选的通知、电池优化（开关），以及只能跳转系统设置的几项。
+ * 设置页里的权限管理：通知、电池优化、外部存储、悬浮窗（开关），以及只能跳转系统设置的几项；所有权限均为可选。
  * 竖屏时从设置列表点进来（左上角返回），横屏时作为右侧详情常驻显示，并随左侧主导航对齐顶部标题基线与紧凑顶栏尺寸。
  */
 @Composable
@@ -141,33 +138,6 @@ internal fun PermissionManagementPage(
 
             item {
                 Text(
-                    text = "必选权限",
-                    color = TextMuted,
-                    fontSize = TextSizes.Caption,
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = 14.sp,
-                    modifier = Modifier
-                        .overscrollBody(overscroll)
-                        .padding(top = 4.dp, start = 4.dp)
-                )
-            }
-
-            item {
-                PermissionActionCard(
-                    icon = FlatFeatureIcons.Storage,
-                    iconColor = IconSkyBlue,
-                    title = "存储权限",
-                    description = "解包容器、保存 MaiBot 配置和访问外部文件。",
-                    badgeText = "必须",
-                    granted = state.storageGranted,
-                    actionText = if (state.storageGranted) "已授权" else "去授权",
-                    onAction = actions.requestStorage,
-                    modifier = Modifier.overscrollBody(overscroll)
-                )
-            }
-
-            item {
-                Text(
                     text = "可选权限",
                     color = TextMuted,
                     fontSize = TextSizes.Caption,
@@ -175,7 +145,7 @@ internal fun PermissionManagementPage(
                     lineHeight = 14.sp,
                     modifier = Modifier
                         .overscrollBody(overscroll)
-                        .padding(top = 8.dp, start = 4.dp)
+                        .padding(top = 4.dp, start = 4.dp)
                 )
             }
 
@@ -209,6 +179,24 @@ internal fun PermissionManagementPage(
                             actions.ignoreBatteryOptimization()
                         } else {
                             actions.restoreBatteryOptimization()
+                        }
+                    },
+                    modifier = Modifier.overscrollBody(overscroll)
+                )
+            }
+
+            item {
+                PermissionSwitchCard(
+                    icon = FlatFeatureIcons.Storage,
+                    iconColor = IconSkyBlue,
+                    title = "外部存储权限",
+                    description = "按需让容器访问手机外部文件（/sdcard），不开启不影响运行。",
+                    checked = state.storageGranted,
+                    onCheckedChange = { checked ->
+                        if (checked) {
+                            actions.requestStorage()
+                        } else {
+                            actions.disableStorage()
                         }
                     },
                     modifier = Modifier.overscrollBody(overscroll)
@@ -261,59 +249,6 @@ internal fun PermissionManagementPage(
                     modifier = Modifier.overscrollBody(overscroll)
                 )
             }
-
-            item {
-                PermissionSystemSettingsCard(
-                    icon = FlatFeatureIcons.DeviceAdmin,
-                    iconColor = IconRoseAlert,
-                    title = "设备管理员",
-                    description = "高风险权限，请在系统安全设置中管理。",
-                    badgeText = "不建议",
-                    destructive = true,
-                    onClick = actions.openDeviceAdminSettings,
-                    modifier = Modifier.overscrollBody(overscroll)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionActionCard(
-    icon: ImageVector,
-    iconColor: Color,
-    title: String,
-    description: String,
-    badgeText: String,
-    granted: Boolean,
-    actionText: String,
-    onAction: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    PermissionBaseCard(
-        icon = icon,
-        iconColor = iconColor,
-        title = title,
-        description = description,
-        badgeText = badgeText,
-        statusText = if (granted) "已开启" else "未开启",
-        statusColor = if (granted) StatusOnline else StatusWarning,
-        modifier = modifier
-    ) {
-        LiquidButton(
-            onClick = onAction,
-            enabled = !granted,
-            style = LiquidButtonStyle.Primary,
-            shape = { RoundedRectangle(Corners.Control) },
-            minHeight = 34.dp,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text(
-                text = actionText,
-                fontSize = TextSizes.Caption,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1
-            )
         }
     }
 }

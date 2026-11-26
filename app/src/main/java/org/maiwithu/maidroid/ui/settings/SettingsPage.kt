@@ -1091,11 +1091,11 @@ private fun appUpdateSummaryColor(state: AppUpdateState): Color =
         else -> TextMuted
     }
 
-private fun permissionSummary(state: PermissionState): String {
-    val optionalGranted = listOf(
+internal fun permissionSummary(state: PermissionState): String {
+    val keepAliveGranted = listOf(
         state.notificationGranted,
         state.batteryOptimizationIgnored
     ).count { it }
-    val storageStatus = if (state.storageGranted) "存储已授权" else "存储未授权"
-    return "$storageStatus · 可选项 $optionalGranted/2"
+    val storageStatus = if (state.storageGranted) "已授权" else "未授权"
+    return "后台保活 $keepAliveGranted/2 · 外部存储$storageStatus"
 }
