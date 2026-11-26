@@ -62,7 +62,6 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
@@ -299,6 +298,10 @@ internal fun BackupScheduleCard(
         BackupFrequency.entries.map { LiquidSegmentItem(it.label) }
     }
     val selectedFrequencyIdx = BackupFrequency.entries.indexOf(config.frequency).takeIf { it >= 0 }
+    val weekdayItems = remember {
+        (1..7).map { LiquidSegmentItem(formatWeekdayShort(it)) }
+    }
+    val selectedWeekdayIdx = (config.scheduleDayOfWeek - 1).coerceIn(0, 6)
     val retentionItems = remember { RETENTION_OPTIONS.map { LiquidSegmentItem("$it 份") } }
     val selectedRetentionIdx = RETENTION_OPTIONS.indexOf(config.retentionCount).takeIf { it >= 0 }
 
@@ -319,35 +322,14 @@ internal fun BackupScheduleCard(
         )
 
         if (config.frequency == BackupFrequency.Weekly) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                (1..7).forEach { dow ->
-                    val selected = config.scheduleDayOfWeek == dow
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(Corners.Control))
-                            .background(if (selected) CardSurfaceSelected else CardDivider.copy(alpha = 0.45f))
-                            .border(
-                                width = 0.8.dp,
-                                color = if (selected) BrandOrange else CardBorder,
-                                shape = RoundedCornerShape(Corners.Control)
-                            )
-                            .clickable { onSelectDayOfWeek(dow) }
-                            .padding(vertical = 7.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = formatWeekdayShort(dow),
-                            color = if (selected) BrandOrange else TextMuted,
-                            fontSize = TextSizes.Caption,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                }
-            }
+            // 与频率选择器复用同一套深槽液态玻璃滑块，避免亮灰透明度底色在深底上文字发虚。
+            LiquidSegmentedSelector(
+                items = weekdayItems,
+                selectedIndex = selectedWeekdayIdx,
+                onSelect = { idx -> onSelectDayOfWeek(idx + 1) },
+                height = 38.dp,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         val timeRowTitle = when (config.frequency) {

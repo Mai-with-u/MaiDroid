@@ -38,8 +38,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -107,6 +109,12 @@ import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
+
+private data class SettingsDetailContentArgs(
+    val showBackButton: Boolean,
+    val compact: Boolean,
+    val topOffset: Dp
+)
 
 private const val PermissionSettingsDetail = "permissions"
 internal const val MirrorSettingsDetail = "mirrors"
@@ -234,6 +242,54 @@ internal fun SettingsPage(
             }
         }
 
+        // 通过 movableContentOf 为各详情页保留唯一组合节点，竖屏单列 <-> 横屏双栏切换时子页及其内打开的弹窗不销毁。
+        val latestPermissionState by rememberUpdatedState(permissionState)
+        val latestPermissionActions by rememberUpdatedState(permissionActions)
+        val latestMirrorState by rememberUpdatedState(mirrorState)
+        val latestBackupState by rememberUpdatedState(backupState)
+
+        val permissionDetailContent = remember(context) {
+            movableContentOf<SettingsDetailContentArgs> { args ->
+                PermissionManagementPage(
+                    state = latestPermissionState,
+                    actions = latestPermissionActions,
+                    onBack = { selectedDetail = null },
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = args.topOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        val mirrorDetailContent = remember(mirrorManager) {
+            movableContentOf<SettingsDetailContentArgs> { args ->
+                MirrorSettingsPage(
+                    manager = mirrorManager,
+                    state = latestMirrorState,
+                    onBack = { selectedDetail = null },
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = args.topOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        val backupDetailContent = remember(backupManager) {
+            movableContentOf<SettingsDetailContentArgs> { args ->
+                BackupSettingsPage(
+                    manager = backupManager,
+                    state = latestBackupState,
+                    permissionState = latestPermissionState,
+                    permissionActions = latestPermissionActions,
+                    onBack = { selectedDetail = null },
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = args.topOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
         if (useTwoPane) {
             // 横屏与宽屏采用全站统一的 38% : 62% 分栏，中间保留 0.5dp 细竖线凸显主从设置与详情层级。
             Row(
@@ -314,34 +370,26 @@ internal fun SettingsPage(
                         label = "SettingsTwoPaneDetail"
                     ) { detail ->
                         when (detail) {
-                            PermissionSettingsDetail -> PermissionManagementPage(
-                                state = permissionState,
-                                actions = permissionActions,
-                                onBack = { selectedDetail = null },
-                                showBackButton = false,
-                                compact = compactTwoPane,
-                                expandedTopOffset = topSpacing,
-                                modifier = Modifier.fillMaxSize()
+                            PermissionSettingsDetail -> permissionDetailContent(
+                                SettingsDetailContentArgs(
+                                    showBackButton = false,
+                                    compact = compactTwoPane,
+                                    topOffset = topSpacing
+                                )
                             )
-                            MirrorSettingsDetail -> MirrorSettingsPage(
-                                manager = mirrorManager,
-                                state = mirrorState,
-                                onBack = { selectedDetail = null },
-                                showBackButton = false,
-                                compact = compactTwoPane,
-                                expandedTopOffset = topSpacing,
-                                modifier = Modifier.fillMaxSize()
+                            MirrorSettingsDetail -> mirrorDetailContent(
+                                SettingsDetailContentArgs(
+                                    showBackButton = false,
+                                    compact = compactTwoPane,
+                                    topOffset = topSpacing
+                                )
                             )
-                            BackupSettingsDetail -> BackupSettingsPage(
-                                manager = backupManager,
-                                state = backupState,
-                                permissionState = permissionState,
-                                permissionActions = permissionActions,
-                                onBack = { selectedDetail = null },
-                                showBackButton = false,
-                                compact = compactTwoPane,
-                                expandedTopOffset = topSpacing,
-                                modifier = Modifier.fillMaxSize()
+                            BackupSettingsDetail -> backupDetailContent(
+                                SettingsDetailContentArgs(
+                                    showBackButton = false,
+                                    compact = compactTwoPane,
+                                    topOffset = topSpacing
+                                )
                             )
                             else -> {
                                 // 横屏/宽屏默认不展示任何具体设置详情或文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
@@ -364,28 +412,26 @@ internal fun SettingsPage(
                 label = "SettingsPermissionTransition"
             ) { detail ->
                 when (detail) {
-                    PermissionSettingsDetail -> PermissionManagementPage(
-                        state = permissionState,
-                        actions = permissionActions,
-                        onBack = { selectedDetail = null },
-                        expandedTopOffset = topSpacing,
-                        modifier = Modifier.fillMaxSize()
+                    PermissionSettingsDetail -> permissionDetailContent(
+                        SettingsDetailContentArgs(
+                            showBackButton = true,
+                            compact = false,
+                            topOffset = topSpacing
+                        )
                     )
-                    MirrorSettingsDetail -> MirrorSettingsPage(
-                        manager = mirrorManager,
-                        state = mirrorState,
-                        onBack = { selectedDetail = null },
-                        expandedTopOffset = topSpacing,
-                        modifier = Modifier.fillMaxSize()
+                    MirrorSettingsDetail -> mirrorDetailContent(
+                        SettingsDetailContentArgs(
+                            showBackButton = true,
+                            compact = false,
+                            topOffset = topSpacing
+                        )
                     )
-                    BackupSettingsDetail -> BackupSettingsPage(
-                        manager = backupManager,
-                        state = backupState,
-                        permissionState = permissionState,
-                        permissionActions = permissionActions,
-                        onBack = { selectedDetail = null },
-                        expandedTopOffset = topSpacing,
-                        modifier = Modifier.fillMaxSize()
+                    BackupSettingsDetail -> backupDetailContent(
+                        SettingsDetailContentArgs(
+                            showBackButton = true,
+                            compact = false,
+                            topOffset = topSpacing
+                        )
                     )
                     else -> {
                         SettingsNavigationPane(

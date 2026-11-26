@@ -85,7 +85,10 @@ internal fun BackupSettingsPage(
     // 点“立即备份”但尚未授予默认目录权限时先跳系统授权，用户授权回到页内后自动补执行这次备份。
     var pendingManualBackup by rememberSaveable { mutableStateOf(false) }
     var showTimePicker by rememberSaveable { mutableStateOf(false) }
-    var recordToDelete by remember { mutableStateOf<BackupRecord?>(null) }
+    var recordToDeleteRef by rememberSaveable { mutableStateOf<String?>(null) }
+    val recordToDelete = recordToDeleteRef?.let { ref ->
+        state.records.firstOrNull { it.storageRef == ref }
+    }
 
     val treePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -226,7 +229,7 @@ internal fun BackupSettingsPage(
                 BackupHistoryCard(
                     state = state,
                     onRefresh = { uiScope.launch { manager.refreshRecords() } },
-                    onDeleteRequest = { recordToDelete = it },
+                    onDeleteRequest = { recordToDeleteRef = it.storageRef },
                     modifier = Modifier.overscrollBody(overscroll)
                 )
             }
@@ -250,10 +253,10 @@ internal fun BackupSettingsPage(
     recordToDelete?.let { record ->
         BackupDeleteConfirmDialog(
             record = record,
-            onDismiss = { recordToDelete = null },
+            onDismiss = { recordToDeleteRef = null },
             onConfirm = {
                 val target = record
-                recordToDelete = null
+                recordToDeleteRef = null
                 uiScope.launch {
                     val ok = manager.deleteBackup(target)
                     Toast.makeText(

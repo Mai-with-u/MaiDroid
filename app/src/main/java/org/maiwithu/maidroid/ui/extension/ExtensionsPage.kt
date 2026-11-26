@@ -31,8 +31,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,6 +82,11 @@ import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
+
+private data class ExtensionDetailContentArgs(
+    val showBackButton: Boolean,
+    val compact: Boolean
+)
 
 /** 扩展组件页在不同窗口宽高下的排版策略：手机竖屏单列、手机横屏双栏、平板双列仪表盘。 */
 internal enum class ExtensionsLayout {
@@ -300,26 +307,36 @@ internal fun ExtensionsPage(
             }
         }
 
-        val petDetailPage: @Composable (Boolean, Boolean, Modifier) -> Unit = { showBack, compactDetail, detailModifier ->
-            DesktopPetSettingsPage(
-                petState = petState,
-                webUiOnline = webUiOnline,
-                overlayGranted = permissionState.overlayGranted,
-                showBackButton = showBack,
-                compact = compactDetail,
-                expandedTopOffset = topSpacing,
-                onBack = { selectedDetail = null },
-                onToggle = handleStartOrToggle,
-                onRequestPermission = { showOverlayPermissionDialog = true },
-                onOpenLogin = { showLoginDialog = true },
-                onEnableRemoteMode = desktopPet::enableRemoteModeAndStart,
-                onSelectBot = desktopPet::selectBot,
-                onToggleVisibility = desktopPet::toggleVisibility,
-                onOpenRecords = desktopPet::openRecords,
-                onReconnect = handleReconnect,
-                onPetScaleChange = desktopPet::setPetScale,
-                modifier = detailModifier
-            )
+        val latestPetState by rememberUpdatedState(petState)
+        val latestWebUiOnline by rememberUpdatedState(webUiOnline)
+        val latestOverlayGranted by rememberUpdatedState(permissionState.overlayGranted)
+        val latestTopSpacing by rememberUpdatedState(topSpacing)
+        val latestOnToggle by rememberUpdatedState(handleStartOrToggle)
+        val latestOnReconnect by rememberUpdatedState(handleReconnect)
+
+        // 单一 movableContentOf 实例保证竖屏与双栏来回旋转切换时桌宠详情页及其内打开的弹窗不销毁。
+        val petDetailContent = remember(desktopPet) {
+            movableContentOf<ExtensionDetailContentArgs> { args ->
+                DesktopPetSettingsPage(
+                    petState = latestPetState,
+                    webUiOnline = latestWebUiOnline,
+                    overlayGranted = latestOverlayGranted,
+                    showBackButton = args.showBackButton,
+                    compact = args.compact,
+                    expandedTopOffset = latestTopSpacing,
+                    onBack = { selectedDetail = null },
+                    onToggle = latestOnToggle,
+                    onRequestPermission = { showOverlayPermissionDialog = true },
+                    onOpenLogin = { showLoginDialog = true },
+                    onEnableRemoteMode = desktopPet::enableRemoteModeAndStart,
+                    onSelectBot = desktopPet::selectBot,
+                    onToggleVisibility = desktopPet::toggleVisibility,
+                    onOpenRecords = desktopPet::openRecords,
+                    onReconnect = latestOnReconnect,
+                    onPetScaleChange = desktopPet::setPetScale,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         when (layout) {
@@ -333,7 +350,7 @@ internal fun ExtensionsPage(
                     label = "ExtensionsCompactDetailTransition"
                 ) { detail ->
                     if (detail == ExtensionId.DesktopPet) {
-                        petDetailPage(true, false, Modifier.fillMaxSize())
+                        petDetailContent(ExtensionDetailContentArgs(showBackButton = true, compact = false))
                     } else {
                         val scrollState = rememberScrollState()
                         val overscroll = rememberSplitHeaderOverscrollEffect()
@@ -457,7 +474,9 @@ internal fun ExtensionsPage(
                             label = "ExtensionsTwoPaneDetail"
                         ) { detail ->
                             when (detail) {
-                                ExtensionId.DesktopPet -> petDetailPage(false, compactTwoPane, Modifier.fillMaxSize())
+                                ExtensionId.DesktopPet -> petDetailContent(
+                                    ExtensionDetailContentArgs(showBackButton = false, compact = compactTwoPane)
+                                )
                                 else -> SettingsEmptyDetailPane(
                                     compact = compactTwoPane,
                                     modifier = Modifier.fillMaxSize()

@@ -312,4 +312,10 @@ class SettingsPageTest {
             resolveTimePickerWheelSpec(isPhoneLandscape = true)
         )
     }
+
+    @Test
+    fun `resolveTimePickerDialogMaxWidthDp keeps landscape dialog compact and non-fullscreen`() {
+        assertEquals(456, resolveTimePickerDialogMaxWidthDp(isPhoneLandscape = true))
+        assertEquals(380, resolveTimePickerDialogMaxWidthDp(isPhoneLandscape = false))
+    }
 }
