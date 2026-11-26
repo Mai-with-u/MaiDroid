@@ -9,8 +9,8 @@ val BrandOrange = Color(0xFFE97F0F)
 val BrandOrangeMuted = Color(0xCCE97F0F)  // 80% 不透明，OOBE 的按钮和图标底色
 val OnBrandOrange = Color.White
 
-// ── OOBE（首次引导）页面：OLED 纯黑底色，卡片是灰阶区块 ───────────────────
-val OobeBackground = Color(0xFF000000)
+// ── OOBE（首次引导）页面：保留深灰底色，与插画暗部及灰阶卡片拉开层级 ───────────
+val OobeBackground = Color(0xFF121212)
 val OobeSurface = Color(0xFF2B2B2B)
 val OobeSurfaceVariant = Color(0xFF1E1E1E)
 val OobeTextPrimary = Color(0xFFFAFAFA)

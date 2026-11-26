@@ -197,7 +197,7 @@ private fun TaskStatusIcon(status: OobeTaskStatus) {
     )
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF000000, widthDp = 360)
+@Preview(showBackground = true, backgroundColor = 0xFF121212, widthDp = 360)
 @Composable
 private fun OobeTaskCardPreview() {
     MaiDroidTheme {

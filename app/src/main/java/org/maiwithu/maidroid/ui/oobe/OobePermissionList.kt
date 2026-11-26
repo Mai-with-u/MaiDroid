@@ -6,15 +6,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,7 +42,6 @@ import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.BrandOrangeMuted
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
@@ -178,7 +180,7 @@ private fun BackgroundKeepAliveCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(71.dp),
+                .heightIn(min = 71.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FlatFeatureIconBadge(
@@ -191,22 +193,26 @@ private fun BackgroundKeepAliveCard(
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = "后台保活",
                         fontSize = TextSizes.TitleLarge,
                         fontWeight = FontWeight.Bold,
                         color = OobeTextPrimary,
+                        letterSpacing = 0.sp,
                         lineHeight = 24.sp
                     )
 
-                    Spacer(modifier = Modifier.width(5.dp))
-
                     KeepAliveTag(
                         text = "可选",
-                        backgroundColor = BrandOrangeMuted,
+                        backgroundColor = OobeTextPrimary.copy(alpha = 0.14f),
                         width = 48.dp,
-                        fontSize = TextSizes.Caption
+                        fontSize = TextSizes.Caption,
+                        textColor = OobeTextPrimary.copy(alpha = 0.82f)
                     )
                 }
 
@@ -338,21 +344,26 @@ private fun KeepAliveTag(
     text: String,
     backgroundColor: Color,
     width: Dp,
-    fontSize: TextUnit
+    fontSize: TextUnit,
+    textColor: Color = TextPrimary
 ) {
     Box(
         modifier = Modifier
-            .size(width = width, height = 18.dp)
+            .widthIn(min = width)
+            .heightIn(min = 18.dp)
             .clip(RoundedCornerShape(Corners.Tag))
-            .background(backgroundColor),
+            .background(backgroundColor)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             fontSize = fontSize,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
+            color = textColor,
             maxLines = 1,
+            softWrap = false,
+            letterSpacing = 0.sp,
             lineHeight = fontSize
         )
     }

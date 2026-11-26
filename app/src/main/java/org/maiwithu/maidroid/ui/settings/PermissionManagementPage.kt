@@ -416,6 +416,9 @@ private fun PermissionBaseCard(
                     color = badgeColor,
                     fontSize = TextSizes.Tag,
                     fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    letterSpacing = 0.sp,
                     lineHeight = 12.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(Corners.Tag))
