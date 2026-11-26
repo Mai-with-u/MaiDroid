@@ -267,6 +267,30 @@ internal object MaiBotScripts {
                     fi
                 fi
 
+                # proot -0 下部分 wheel（如 opencv-python-headless）会解出只读目录，导致非 root 内核里 uv sync / rm -rf 报 EACCES。
+                maidroid_fix_venv_perms() {
+                    if [ -d .venv ]; then
+                        chmod -R u+rwX .venv 2>/dev/null || true
+                    fi
+                }
+                maidroid_remove_venv() {
+                    maidroid_fix_venv_perms
+                    rm -rf .venv 2>/dev/null || true
+                    if [ -e .venv ]; then
+                        chmod -R u+rwX .venv 2>/dev/null || true
+                        rm -rf .venv 2>/dev/null || true
+                    fi
+                    if [ -e .venv ]; then
+                        mv .venv ".venv.broken.${'$'}${'$'}" 2>/dev/null || true
+                    fi
+                }
+                for broken_venv in .venv.broken.*; do
+                    [ -e "${'$'}broken_venv" ] || continue
+                    chmod -R u+rwX "${'$'}broken_venv" 2>/dev/null || true
+                    rm -rf "${'$'}broken_venv" 2>/dev/null || true
+                done
+                maidroid_fix_venv_perms
+
                 # 跑一次 uv sync：输出照常打到终端，同时留一份，失败后据此判断怎么修。
                 maidroid_uv_sync() {
                     { uv sync; echo "${'$'}?" > /tmp/maidroid-uv.status; } 2>&1 | tee /tmp/maidroid-uv.log
@@ -314,7 +338,7 @@ internal object MaiBotScripts {
 
                 if [ -d .venv ] && ! maidroid_uv_output_has '$UV_NOT_REBUILDABLE_PATTERN'; then
                     printf "$AUTO_FIX_LOG_PREFIX uv sync 失败，虚拟环境可能已损坏，删掉 .venv 重建一次\n"
-                    rm -rf .venv
+                    maidroid_remove_venv
                     maidroid_uv_sync && exit 0
                 fi
                 exit 1
@@ -347,6 +371,9 @@ internal object MaiBotScripts {
      */
     fun launch(): ContainerScript = ContainerScript(
         body = "${uvPrelude()}; cd ${shellQuote(MAIBOT_DIR)} && " +
+            "if [ -d ${shellQuote("$MAIBOT_DIR/.venv")} ]; then " +
+            "chmod u+rx ${shellQuote("$MAIBOT_DIR/.venv")} ${shellQuote("$MAIBOT_DIR/.venv/bin")} 2>/dev/null || true; " +
+            "fi; " +
             "export PYTHONUNBUFFERED=1 VIRTUAL_ENV=${shellQuote("$MAIBOT_DIR/.venv")} " +
             "PATH=${shellQuote("$MAIBOT_DIR/.venv/bin")}:\"\$PATH\"; " +
             "if [ -x ${shellQuote("$MAIBOT_DIR/.venv/bin/python")} ]; then " +

@@ -490,4 +490,49 @@ class AutoErrorExtractorTest {
             )
         )
     }
+
+    @Test
+    fun maiBotBootDraftPreservesPrefixedPythonTracebackFramesAndExceptionTitle() {
+        val logA = listOf(
+            "[MaiBot] Process started (PID: 15401)",
+            "[MaiBot] Traceback (most recent call last):",
+            "[MaiBot]   File \"/opt/MaiBot/src/runtime/app.py\", line 88, in boot",
+            "[MaiBot]     raise RuntimeError(\"boom sk-test-secret-key-987654\")",
+            "[MaiBot]   File \"/opt/MaiBot/src/runtime/chat.py\", line 10, in 收到消息",
+            "[MaiBot] RuntimeError: boom sk-test-secret-key-987654",
+            "[MaiBot] Process exited with code: 2"
+        )
+        val logB = listOf(
+            "[MaiBot] Process started (PID: 29999)",
+            "[MaiBot] Traceback (most recent call last):",
+            "[MaiBot]   File \"/opt/MaiBot/src/runtime/app.py\", line 91, in boot",
+            "[MaiBot]     raise RuntimeError(\"boom sk-test-secret-key-987654\")",
+            "[MaiBot] RuntimeError: boom sk-test-secret-key-987654",
+            "[MaiBot] Process exited with code: 2"
+        )
+
+        val draftA = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 2），请查看终端输出里的报错",
+            recentRunLines = logA,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+        val draftB = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 2），请查看终端输出里的报错",
+            recentRunLines = logB,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+
+        assertTrue(draftA.title.startsWith("RuntimeError: boom"))
+        assertTrue(draftA.contextText.contains("File \"/opt/MaiBot/src/runtime/app.py\""))
+        assertTrue(draftA.contextText.contains("RuntimeError: boom"))
+        assertFalse(draftA.contextText.contains("收到消息"))
+        assertFalse(draftA.contextText.contains("sk-test-secret-key-987654"))
+        assertEquals(draftA.fingerprint, draftB.fingerprint)
+    }
 }

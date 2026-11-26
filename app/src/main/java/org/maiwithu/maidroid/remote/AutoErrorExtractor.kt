@@ -122,6 +122,9 @@ internal object AutoErrorExtractor {
 
     private val CRASH_HEADER_VERSION_RE = Regex("""^MaiDroid\s+([0-9A-Za-z._-]+)""")
 
+    // 终端里的 MaiBot 日志可能带 `[MaiBot] ` / `[麦麦] ` 前缀；剥离时只吃掉紧跟 `]` 的 1 个空格，保留栈帧自身的 2 空格缩进。
+    private val MAIBOT_LINE_PREFIX_RE = Regex("""^\[(?:MaiBot|麦麦)](?: |$)""")
+
     // 正常退出码（如 apt/git 成功输出 exit code: 0）不得因匹配到 "exit code" 关键词而被当成错误标题
     private val ZERO_EXIT_CODE_RE = Regex("""(?i)(?:exit code|退出码)\s*[:：]?\s*0\b""")
 
@@ -393,8 +396,12 @@ internal object AutoErrorExtractor {
         } else {
             emptyList()
         }
-        val pyErrLine = redactedTbLines.lastOrNull { EXCEPTION_CLASS_LINE.matches(it.trim()) }?.trim()
-        val lastFileMatch = redactedTbLines.asReversed().firstNotNullOfOrNull { PYTHON_FILE_FRAME.find(it) }
+        val pyErrLine = redactedTbLines.lastOrNull {
+            EXCEPTION_CLASS_LINE.matches(stripMaiBotPrefix(it).trim())
+        }?.let(::stripMaiBotPrefix)?.trim()
+        val lastFileMatch = redactedTbLines.asReversed().firstNotNullOfOrNull {
+            PYTHON_FILE_FRAME.find(stripMaiBotPrefix(it))
+        }
 
         // 没有 Traceback 时优先挑出真正的宿主/系统报错行，跳过 Process started / exited 等泛化状态行，避免指纹错聚或丢失标题。
         val highSignalLine = if (pyErrLine == null) {
@@ -440,7 +447,11 @@ internal object AutoErrorExtractor {
         )
     }
 
-    /** 仅截取最后一段 Python `Traceback (most recent call last):` 到异常结尾行之间的栈帧文本。 */
+    /**
+     * 仅截取最后一段 Python `Traceback (most recent call last):` 到异常结尾行之间的栈帧文本：
+     * 剥离 `[MaiBot] ` / `[麦麦] ` 日志前缀但保留 Python 原生缩进，遇到进程起停状态行立即结束，
+     * 防止首行之外的栈帧因前缀干扰在 `collected.size <= 3` 处被误截断。
+     */
     private fun extractPythonTraceback(lines: List<String>): List<String> {
         val tbStart = lines.indexOfLast { it.contains("Traceback (most recent call last):") }
         if (tbStart < 0) return emptyList()
@@ -448,18 +459,25 @@ internal object AutoErrorExtractor {
         val collected = mutableListOf<String>()
         var seenExceptionLine = false
         for (i in tbStart until minOf(lines.size, tbStart + MAX_TRACEBACK_LINES)) {
-            val line = lines[i]
-            val trimmed = line.trim()
+            val cleanLine = stripMaiBotPrefix(lines[i])
+            val trimmed = cleanLine.trim()
             if (containsChatPrivacyKeyword(trimmed)) continue
 
             if (i == tbStart) {
-                collected.add(line)
+                val tbIndex = cleanLine.indexOf("Traceback (most recent call last):")
+                collected.add(if (tbIndex >= 0) cleanLine.substring(tbIndex) else cleanLine)
                 continue
             }
+            if (trimmed.startsWith("Process started") ||
+                trimmed.startsWith("Process exited with code:") ||
+                trimmed.startsWith("Failed to start process:")
+            ) {
+                break
+            }
             if (trimmed.isEmpty()) {
-                val next = lines.getOrNull(i + 1)?.trim().orEmpty()
+                val next = lines.getOrNull(i + 1)?.let(::stripMaiBotPrefix)?.trim().orEmpty()
                 if (next.startsWith("During handling of") || next.startsWith("The above exception") || next.startsWith("Traceback")) {
-                    collected.add(line)
+                    collected.add("")
                     seenExceptionLine = false
                     continue
                 }
@@ -469,18 +487,18 @@ internal object AutoErrorExtractor {
                 trimmed.startsWith("During handling of the above exception") ||
                 trimmed.startsWith("The above exception was the direct cause")
             ) {
-                collected.add(line)
+                collected.add(trimmed)
                 seenExceptionLine = false
                 continue
             }
-            if (line.startsWith("  ") && !LOG_TIMESTAMP_LINE.containsMatchIn(trimmed)) {
-                collected.add(line)
+            if (cleanLine.startsWith("  ") && !LOG_TIMESTAMP_LINE.containsMatchIn(trimmed)) {
+                collected.add(cleanLine)
                 continue
             }
             if (EXCEPTION_CLASS_LINE.matches(trimmed)) {
                 collected.add(trimmed)
                 seenExceptionLine = true
-                val nextTrimmed = lines.getOrNull(i + 1)?.trim().orEmpty()
+                val nextTrimmed = lines.getOrNull(i + 1)?.let(::stripMaiBotPrefix)?.trim().orEmpty()
                 if (!nextTrimmed.startsWith("During handling") && !nextTrimmed.startsWith("The above exception")) {
                     break
                 }
@@ -500,8 +518,18 @@ internal object AutoErrorExtractor {
         lines.mapNotNull { raw ->
             val trimmed = raw.trim()
             if (trimmed.isEmpty() || containsChatPrivacyKeyword(trimmed)) return@mapNotNull null
-            if (MAIBOT_BOOT_WHITELIST_REGEXES.any { it.containsMatchIn(trimmed) }) trimmed else null
+            val strippedTrimmed = stripMaiBotPrefix(trimmed).trim()
+            val matched = MAIBOT_BOOT_WHITELIST_REGEXES.any { regex ->
+                regex.containsMatchIn(trimmed) || (strippedTrimmed.isNotEmpty() && regex.containsMatchIn(strippedTrimmed))
+            }
+            if (matched) trimmed else null
         }
+
+    private fun stripMaiBotPrefix(line: String): String {
+        val trimmedStart = line.trimStart()
+        val match = MAIBOT_LINE_PREFIX_RE.find(trimmedStart) ?: return line
+        return trimmedStart.substring(match.value.length)
+    }
 
     private fun containsChatPrivacyKeyword(line: String): Boolean {
         val lower = line.lowercase()
