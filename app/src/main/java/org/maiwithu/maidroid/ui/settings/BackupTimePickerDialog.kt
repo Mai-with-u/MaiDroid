@@ -27,23 +27,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.backup.formatNextScheduleHint
 import org.maiwithu.maidroid.backup.formatScheduleTime
@@ -54,6 +52,7 @@ import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonStyle
 import org.maiwithu.maidroid.ui.component.MaiDialogSize
+import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
@@ -126,7 +125,7 @@ internal fun BackupTimePickerDialog(
     val hourListState = rememberLazyListState(initialFirstVisibleItemIndex = hourBase + safeInitialHour)
     val minuteListState = rememberLazyListState(initialFirstVisibleItemIndex = minuteBase + safeInitialMinute)
     val coroutineScope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
+    val liquidHaptics = rememberLiquidHaptics()
 
     val selectedHourIndex by remember {
         derivedStateOf {
@@ -145,22 +144,14 @@ internal fun BackupTimePickerDialog(
         derivedStateOf { wheelIndexToValue(selectedMinuteIndex, 60) }
     }
 
-    var previousHour by remember { mutableIntStateOf(safeInitialHour) }
-    var previousMinute by remember { mutableIntStateOf(safeInitialMinute) }
-    var initializedHaptics by remember { mutableStateOf(false) }
-
-    LaunchedEffect(selectedHour, selectedMinute) {
-        if (!initializedHaptics) {
-            initializedHaptics = true
-            previousHour = selectedHour
-            previousMinute = selectedMinute
-            return@LaunchedEffect
-        }
-        if (selectedHour != previousHour || selectedMinute != previousMinute) {
-            previousHour = selectedHour
-            previousMinute = selectedMinute
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
+    // 滚轮跨过小时或分钟刻度时复用液态线性马达触觉播放清脆刻度震动，跳过首次进入
+    LaunchedEffect(liquidHaptics) {
+        snapshotFlow { selectedHour to selectedMinute }
+            .distinctUntilChanged()
+            .drop(1)
+            .collect {
+                liquidHaptics.performTabStep()
+            }
     }
 
     val isPhoneLandscape = LocalMaiDialogPhoneLandscape.current
