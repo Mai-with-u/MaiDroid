@@ -142,6 +142,10 @@ class PetOverlayService : Service(), PetOverlayHost {
     private lateinit var frame: FrameLayout
     private lateinit var params: WindowManager.LayoutParams
 
+    // 独立 1×1 常显透明锚点窗：专供后台 authView 维持 WebSocket 心跳，
+    // 避免息屏或隐藏桌宠把主悬浮窗 frame 设为 View.GONE 时连带冻结传输页定时器。
+    private var transportAnchorFrame: FrameLayout? = null
+
     // Android 13+ 常驻全屏窗口内部的子舞台容器，直接通过 translation/scale 驱动 GPU 渲染与物理反弹。
     private var petContainer: FrameLayout? = null
     private var localHitRectsCss: List<CssRect> = emptyList()
@@ -416,12 +420,44 @@ class PetOverlayService : Service(), PetOverlayHost {
     }
 
     override fun attachTransportView(authView: View) {
-        if (!::frame.isInitialized) return
-        if (authView.parent !== frame) {
+        val anchor = ensureTransportAnchorFrame() ?: return
+        if (authView.parent !== anchor) {
             (authView.parent as? ViewGroup)?.removeView(authView)
-            frame.addView(authView, 0, FrameLayout.LayoutParams(1, 1))
+            anchor.addView(authView, 0, FrameLayout.LayoutParams(1, 1))
         }
+        authView.visibility = View.VISIBLE
         authView.alpha = 0f
+    }
+
+    @SuppressLint("RtlHardcoded")
+    private fun ensureTransportAnchorFrame(): FrameLayout? {
+        if (closing || !::windowManager.isInitialized) return null
+        transportAnchorFrame?.let { existing ->
+            if (existing.isAttachedToWindow) {
+                existing.visibility = View.VISIBLE
+                return existing
+            }
+            transportAnchorFrame = null
+        }
+        val anchor = FrameLayout(this)
+        val anchorParams = WindowManager.LayoutParams(
+            1,
+            1,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = 0
+            y = 0
+            applyOverlayWindowChrome(this)
+        }
+        windowManager.addView(anchor, anchorParams)
+        transportAnchorFrame = anchor
+        return anchor
     }
 
     override fun fit(cssHeight: Double) {
@@ -548,6 +584,7 @@ class PetOverlayService : Service(), PetOverlayHost {
         if (!visible) {
             stopMotionAndStageNow()
         }
+        // 只控制前景展示窗口 frame，绝不隐藏独立锚点窗 transportAnchorFrame，保证息屏心跳不断链。
         if (::frame.isInitialized) {
             frame.visibility = if (visible) View.VISIBLE else View.GONE
         }
@@ -1568,6 +1605,14 @@ class PetOverlayService : Service(), PetOverlayHost {
     private fun removeOverlayFrame() {
         if (::frame.isInitialized && frame.isAttachedToWindow) {
             runCatching { windowManager.removeView(frame) }
+        }
+        val anchor = transportAnchorFrame
+        transportAnchorFrame = null
+        if (anchor != null) {
+            anchor.removeAllViews()
+            if (anchor.isAttachedToWindow) {
+                runCatching { windowManager.removeView(anchor) }
+            }
         }
     }
 
