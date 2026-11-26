@@ -160,21 +160,24 @@ internal class BackupManager(
     suspend fun refreshRecords() {
         val config = readConfig()
         _state.value = _state.value.copy(loadingRecords = true)
-        val (records, errorText) = withContext(Dispatchers.IO) {
+        val (available, records, errorText) = withContext(Dispatchers.IO) {
+            val detected = planner.detectAvailableComponents()
             if (!config.usesCustomTree && !hasExternalStoragePermission(appContext)) {
-                return@withContext emptyList<BackupRecord>() to ""
+                return@withContext Triple(detected, emptyList<BackupRecord>(), "")
             }
             val target = resolveStorageTarget(config)
-            try {
+            val result = try {
                 target.listBackups() to ""
             } catch (e: SafAccessLostException) {
                 emptyList<BackupRecord>() to (e.message ?: "已选文件夹访问权限已失效")
             } catch (_: Throwable) {
                 emptyList<BackupRecord>() to ""
             }
+            Triple(detected, result.first, result.second)
         }
         _state.value = _state.value.copy(
             config = config,
+            availableComponents = available,
             records = records,
             loadingRecords = false,
             lastError = errorText.ifEmpty { _state.value.lastError }
@@ -232,7 +235,17 @@ internal class BackupManager(
         val tempZip = File(stagingRoot, "staging.zip")
         val snapshotDir = File(stagingRoot, "sqlite")
         try {
-            val entries = withContext(Dispatchers.IO) { planner.plan(config.components) }
+            val available = withContext(Dispatchers.IO) { planner.detectAvailableComponents() }
+            _state.value = _state.value.copy(availableComponents = available)
+            // 先按当前实际已安装组件裁剪勾选集合，防止只剩未安装协议端被默认勾选时误触发扫描。
+            val effectiveComponents = config.components intersect available
+            if (effectiveComponents.isEmpty()) {
+                val msg = "请至少选择一项需要备份的内容"
+                recordFailure(msg)
+                return BackupRunOutcome.EmptySelection
+            }
+
+            val entries = withContext(Dispatchers.IO) { planner.plan(effectiveComponents) }
             if (entries.isEmpty()) {
                 val msg = "所选组件当前没有可备份的文件"
                 recordFailure(msg)
@@ -253,7 +266,7 @@ internal class BackupManager(
                     appVersion = appVersionName,
                     maiBotVersion = maiBotVersion,
                     trigger = trigger,
-                    components = config.components,
+                    components = effectiveComponents,
                     createdAtMillis = now,
                     onProgress = { processed, total ->
                         _state.value = _state.value.copy(
@@ -384,6 +397,7 @@ internal class BackupManager(
         }
         return BackupState(
             config = config,
+            availableComponents = planner.detectAvailableComponents(),
             lastSuccessAtMillis = settings.lastBackupAtMillis,
             lastBackupSummary = settings.lastBackupSummary,
             lastError = settings.lastBackupError,

@@ -240,4 +240,29 @@ class SettingsPageTest {
             backupSettingsSummaryText(BackupState(running = true))
         )
     }
+
+    @Test
+    fun `wheel helpers map circular indices and find shortest path`() {
+        val hourBase = wheelLoopBaseIndex(24)
+        val minuteBase = wheelLoopBaseIndex(60)
+        assertEquals(0, wheelIndexToValue(hourBase, 24))
+        assertEquals(0, wheelIndexToValue(minuteBase, 60))
+        assertEquals(23, wheelIndexToValue(hourBase - 1, 24))
+        assertEquals(59, wheelIndexToValue(minuteBase - 1, 60))
+
+        // 跨午夜从 23 点跳到 0 点走 +1 步，从 1 点跳到 23 点走 -2 步
+        assertEquals(hourBase + 24, nearestWheelTargetIndex(hourBase + 23, 0, 24))
+        assertEquals(hourBase - 1, nearestWheelTargetIndex(hourBase + 1, 23, 24))
+        // 跨整点从 59 分跳到 2 分走 +3 步
+        assertEquals(minuteBase + 62, nearestWheelTargetIndex(minuteBase + 59, 2, 60))
+    }
+
+    @Test
+    fun `backupTimePeriodLabel describes periods accurately`() {
+        assertEquals("凌晨低峰期", backupTimePeriodLabel(0))
+        assertEquals("凌晨低峰期", backupTimePeriodLabel(4))
+        assertEquals("上午", backupTimePeriodLabel(9))
+        assertEquals("下午", backupTimePeriodLabel(15))
+        assertEquals("夜间", backupTimePeriodLabel(22))
+    }
 }

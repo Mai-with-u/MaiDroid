@@ -1,6 +1,5 @@
 package org.maiwithu.maidroid.ui.settings
 
-import android.app.TimePickerDialog
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,6 +84,7 @@ internal fun BackupSettingsPage(
 
     // 点“立即备份”但尚未授予默认目录权限时先跳系统授权，用户授权回到页内后自动补执行这次备份。
     var pendingManualBackup by rememberSaveable { mutableStateOf(false) }
+    var showTimePicker by rememberSaveable { mutableStateOf(false) }
     var recordToDelete by remember { mutableStateOf<BackupRecord?>(null) }
 
     val treePickerLauncher = rememberLauncherForActivityResult(
@@ -143,18 +143,6 @@ internal fun BackupSettingsPage(
             ).show()
             permissionActions.requestStorage()
         }
-    }
-
-    fun openTimePicker() {
-        TimePickerDialog(
-            context,
-            { _, hourOfDay, minute ->
-                manager.setScheduleTime(hourOfDay, minute)
-            },
-            state.config.scheduleHour,
-            state.config.scheduleMinute,
-            true
-        ).show()
     }
 
     CollapsingGlassHeaderContainer(
@@ -217,7 +205,7 @@ internal fun BackupSettingsPage(
             item {
                 BackupScheduleCard(
                     state = state,
-                    onOpenTimePicker = ::openTimePicker,
+                    onOpenTimePicker = { showTimePicker = true },
                     onSelectQuickTime = { hour, minute -> manager.setScheduleTime(hour, minute) },
                     onSelectRetention = manager::setRetentionCount,
                     modifier = Modifier.overscrollBody(overscroll)
@@ -227,6 +215,7 @@ internal fun BackupSettingsPage(
             item {
                 BackupComponentsCard(
                     selected = state.config.components,
+                    available = state.availableComponents,
                     onToggle = manager::setComponentEnabled,
                     modifier = Modifier.overscrollBody(overscroll)
                 )
@@ -241,6 +230,18 @@ internal fun BackupSettingsPage(
                 )
             }
         }
+    }
+
+    if (showTimePicker) {
+        BackupTimePickerDialog(
+            initialHour = state.config.scheduleHour,
+            initialMinute = state.config.scheduleMinute,
+            onConfirm = { hour, minute ->
+                showTimePicker = false
+                manager.setScheduleTime(hour, minute)
+            },
+            onDismiss = { showTimePicker = false }
+        )
     }
 
     recordToDelete?.let { record ->

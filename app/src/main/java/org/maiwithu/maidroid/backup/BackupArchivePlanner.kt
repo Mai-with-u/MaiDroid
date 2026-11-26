@@ -31,6 +31,22 @@ internal class BackupArchivePlanner(
         val MEMORY_EXCLUDED_FILES = setOf(".a_memorix_runtime_writer.lock")
     }
 
+    /**
+     * 检测容器内当前实际可用的备份组件：
+     * MaiBot 配置/记忆库/插件固定保留；SnowLuma 与 NapCat 仅在本体安装标记与配置文件就绪时开放。
+     */
+    fun detectAvailableComponents(): Set<BackupComponent> = buildSet {
+        add(BackupComponent.MaiBotConfig)
+        add(BackupComponent.MaiBotMemory)
+        add(BackupComponent.Plugins)
+        if (SnowLumaFiles(paths).isSnowLumaReady()) {
+            add(BackupComponent.SnowLuma)
+        }
+        if (NapCatFiles(paths).isNapCatReady()) {
+            add(BackupComponent.NapCat)
+        }
+    }
+
     fun plan(components: Set<BackupComponent>): List<PlannedBackupEntry> {
         if (components.isEmpty()) return emptyList()
         val entries = mutableListOf<PlannedBackupEntry>()

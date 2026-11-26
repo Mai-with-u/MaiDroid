@@ -83,6 +83,7 @@ internal data class BackupScheduleSignal(
 
 internal data class BackupState(
     val config: BackupConfig = BackupConfig(),
+    val availableComponents: Set<BackupComponent> = BackupComponent.entries.toSet(),
     val running: Boolean = false,
     val progressText: String = "",
     val lastSuccessAtMillis: Long = 0L,

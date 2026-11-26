@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
@@ -30,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -276,6 +278,12 @@ internal fun BackupScheduleCard(
     modifier: Modifier = Modifier
 ) {
     val config = state.config
+    val quickPresetItems = remember {
+        QUICK_SCHEDULE_PRESETS.map { (hour, minute) -> LiquidSegmentItem(formatScheduleTime(hour, minute)) }
+    }
+    val selectedPresetIdx = QUICK_SCHEDULE_PRESETS.indexOfFirst { (hour, minute) ->
+        config.scheduleHour == hour && config.scheduleMinute == minute
+    }.takeIf { it >= 0 }
     val retentionItems = remember { RETENTION_OPTIONS.map { LiquidSegmentItem("$it 份") } }
     val selectedRetentionIdx = RETENTION_OPTIONS.indexOf(config.retentionCount).takeIf { it >= 0 }
 
@@ -301,54 +309,48 @@ internal fun BackupScheduleCard(
                     fontSize = TextSizes.Caption
                 )
             }
+            Spacer(modifier = Modifier.width(10.dp))
             Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Corners.Control))
+                    .background(CardSurfaceSelected)
+                    .border(0.8.dp, BrandOrange.copy(alpha = 0.35f), RoundedCornerShape(Corners.Control))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,
                     tint = BrandOrange,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = formatScheduleTime(config.scheduleHour, config.scheduleMinute),
                     color = BrandOrange,
                     fontSize = TextSizes.BodyLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(fontFeatureSettings = "tnum")
+                )
+                Icon(
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = BrandOrange.copy(alpha = 0.8f),
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            QUICK_SCHEDULE_PRESETS.forEach { (hour, minute) ->
-                val selected = config.scheduleHour == hour && config.scheduleMinute == minute
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Corners.Control))
-                        .background(if (selected) CardSurfaceSelected else CardDivider.copy(alpha = 0.45f))
-                        .border(
-                            width = 0.8.dp,
-                            color = if (selected) BrandOrange else CardBorder,
-                            shape = RoundedCornerShape(Corners.Control)
-                        )
-                        .clickable { onSelectQuickTime(hour, minute) }
-                        .padding(vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = formatScheduleTime(hour, minute),
-                        color = if (selected) BrandOrange else TextMuted,
-                        fontSize = TextSizes.Caption,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                    )
+        LiquidSegmentedSelector(
+            items = quickPresetItems,
+            selectedIndex = selectedPresetIdx,
+            onSelect = { idx ->
+                QUICK_SCHEDULE_PRESETS.getOrNull(idx)?.let { (hour, minute) ->
+                    onSelectQuickTime(hour, minute)
                 }
-            }
-        }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
 
         Text(
             text = "保留最近备份份数（自动删除超出数量的旧包）",
@@ -369,9 +371,15 @@ internal fun BackupScheduleCard(
 @Composable
 internal fun BackupComponentsCard(
     selected: Set<BackupComponent>,
+    available: Set<BackupComponent> = BackupComponent.entries.toSet(),
     onToggle: (BackupComponent, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 仅展示本机已安装的组件项，避免未安装 NapCat / SnowLuma 的设备看到无意义开关。
+    val visibleComponents = remember(available) {
+        BackupComponent.entries.filter { it in available }
+    }
+
     BackupSectionCard(modifier = modifier) {
         Text(
             text = "备份内容",
@@ -379,7 +387,7 @@ internal fun BackupComponentsCard(
             fontSize = TextSizes.BodyLarge,
             fontWeight = FontWeight.Medium
         )
-        BackupComponent.entries.forEachIndexed { index, component ->
+        visibleComponents.forEachIndexed { index, component ->
             if (index > 0) {
                 Box(
                     modifier = Modifier

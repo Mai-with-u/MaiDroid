@@ -108,6 +108,50 @@ class BackupArchivePlannerTest {
         assertFalse("maibot/root/config/bot_config.toml" in archivePaths)
     }
 
+    @Test
+    fun `detectAvailableComponents hides uninstalled protocol clients`() {
+        val filesDir = tempFolder.newFolder("files_avail")
+        val libsDir = tempFolder.newFolder("libs_avail")
+        val paths = RuntimePaths(appFilesDir = filesDir, nativeLibraryDir = libsDir)
+        val planner = BackupArchivePlanner(paths)
+
+        assertEquals(
+            setOf(BackupComponent.MaiBotConfig, BackupComponent.MaiBotMemory, BackupComponent.Plugins),
+            planner.detectAvailableComponents()
+        )
+
+        // 仅安装 SnowLuma
+        writeFile(File(paths.rootfsDir, "root/.maidroid/snowluma_ready"), "1.0.0")
+        writeFile(File(paths.rootfsDir, "root/snowluma/app/index.mjs"), "")
+        writeFile(File(paths.rootfsDir, "root/snowluma/data/config/onebot.json"), "{}")
+        assertEquals(
+            setOf(
+                BackupComponent.MaiBotConfig,
+                BackupComponent.MaiBotMemory,
+                BackupComponent.Plugins,
+                BackupComponent.SnowLuma
+            ),
+            planner.detectAvailableComponents()
+        )
+
+        // 再补装 NapCat
+        writeFile(File(paths.rootfsDir, "root/.maidroid/napcat_ready"), "1")
+        writeFile(File(paths.rootfsDir, "root/napcat/config/onebot11.json"), "{}")
+        assertEquals(BackupComponent.entries.toSet(), planner.detectAvailableComponents())
+
+        // 仅留 NapCat 时不返回 SnowLuma
+        File(paths.rootfsDir, "root/.maidroid/snowluma_ready").delete()
+        assertEquals(
+            setOf(
+                BackupComponent.MaiBotConfig,
+                BackupComponent.MaiBotMemory,
+                BackupComponent.Plugins,
+                BackupComponent.NapCat
+            ),
+            planner.detectAvailableComponents()
+        )
+    }
+
     private fun writeFile(file: File, text: String) {
         file.parentFile?.mkdirs()
         file.writeText(text)
