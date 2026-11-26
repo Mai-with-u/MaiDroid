@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,8 +27,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Code
@@ -372,10 +375,10 @@ private fun SetupFooter(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Corners.Chip))
+            .clip(RoundedCornerShape(Corners.Card))
             .background(OobeSurface)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -388,7 +391,7 @@ private fun SetupFooter(
                 else -> WaitingRing()
             }
 
-            Spacer(modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.size(12.dp))
 
             Text(
                 text = footerText,
@@ -396,12 +399,21 @@ private fun SetupFooter(
                 fontSize = TextSizes.Body,
                 fontWeight = FontWeight.Normal,
                 color = OobeTextSecondary,
-                lineHeight = 17.sp
+                letterSpacing = 0.sp,
+                lineHeight = 18.sp
             )
         }
 
         if (failure != null && !canProceed) {
-            FailureNotice(failure = failure, textColor = OobeTextSecondary, modifier = Modifier.padding(start = 38.dp))
+            // 故障详情可能含求助码或长建议：放在弹性可滚槽内，确保无论屏高多小都不会压扁底部重试按钮。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                FailureNotice(failure = failure, textColor = OobeTextSecondary)
+            }
         }
 
         LiquidButton(
@@ -416,7 +428,11 @@ private fun SetupFooter(
             Text(
                 text = if (canProceed) proceedText else waitingText,
                 fontSize = TextSizes.BodyLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                letterSpacing = 0.sp,
+                lineHeight = 20.sp
             )
         }
     }

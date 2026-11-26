@@ -138,4 +138,15 @@ class OobeFlowScreenTest {
         )
         assertEquals(initial, reset)
     }
+
+    @Test
+    fun `footer max height reserves space for task list on failure when height is sufficient`() {
+        assertEquals(386f, oobeFooterMaxHeightDp(availableHeightDp = 400f, hasFailure = false), 0.001f)
+        assertEquals(298f, oobeFooterMaxHeightDp(availableHeightDp = 400f, hasFailure = true), 0.001f)
+        assertEquals(398f, oobeFooterMaxHeightDp(availableHeightDp = 500f, hasFailure = true), 0.001f)
+        assertEquals(238f, oobeFooterMaxHeightDp(availableHeightDp = 340f, hasFailure = true), 0.001f)
+        assertEquals(266f, oobeFooterMaxHeightDp(availableHeightDp = 280f, hasFailure = true), 0.001f)
+        assertEquals(0f, oobeFooterMaxHeightDp(availableHeightDp = 0f, hasFailure = true), 0.001f)
+        assertEquals(0f, oobeFooterMaxHeightDp(availableHeightDp = -20f, hasFailure = true), 0.001f)
+    }
 }

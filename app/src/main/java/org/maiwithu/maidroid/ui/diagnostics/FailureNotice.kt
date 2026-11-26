@@ -15,12 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -57,7 +54,6 @@ import org.maiwithu.maidroid.ui.remote.defaultRemoteActionLabel
 import org.maiwithu.maidroid.ui.remote.dispatchRemoteAction
 import org.maiwithu.maidroid.ui.remote.parseRemoteActionTarget
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.StatusDanger
@@ -109,25 +105,34 @@ internal fun FailureNotice(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
+        // 标题与错误码胶囊使用流式排版：短错误码同行展示，长错误码自动换到第二行，绝不挤压标题成竖排。
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            itemVerticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Outlined.ErrorOutline,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Text(
-                text = diagnosisTitle,
-                color = TextPrimary,
-                fontSize = TextSizes.Body,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 18.sp,
-                modifier = Modifier.weight(1f)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = diagnosisTitle,
+                    color = TextPrimary,
+                    fontSize = TextSizes.Body,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             MaiDialogInfoChip(
                 text = failure.code,
                 color = accentColor,
@@ -141,6 +146,7 @@ internal fun FailureNotice(
                 text = diagnosisAdvice,
                 color = textColor,
                 fontSize = 13.sp,
+                letterSpacing = 0.sp,
                 lineHeight = 18.sp
             )
         }
@@ -218,18 +224,34 @@ internal fun FailureNotice(
             }
         }
 
-        // 次要排查与进群动作收敛成轻量文字链接，不和主修复钮争抢视觉焦点。
-        Row(
+        // 次要排查与进群动作收敛成轻量文字链接，窄屏下“点错误码可复制”整句换行而不截断词组。
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically
         ) {
-            NoticeTextLink(text = "诊断详情", onClick = { showFeedback = true })
-            Text(text = "·", color = CardDivider, fontSize = TextSizes.Caption, modifier = Modifier.padding(horizontal = 8.dp))
-            NoticeTextLink(text = "QQ 群求助", onClick = { showQqGroup = true })
-            Spacer(modifier = Modifier.weight(1f))
-            Text(text = "点错误码可复制", color = TextMuted.copy(alpha = 0.7f), fontSize = 11.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NoticeTextLink(text = "诊断详情", onClick = { showFeedback = true })
+                Text(
+                    text = "·",
+                    color = CardDivider,
+                    fontSize = TextSizes.Caption,
+                    modifier = Modifier.padding(horizontal = 6.dp)
+                )
+                NoticeTextLink(text = "QQ 群求助", onClick = { showQqGroup = true })
+            }
+            Text(
+                text = "点错误码可复制",
+                color = TextMuted.copy(alpha = 0.7f),
+                fontSize = 11.sp,
+                maxLines = 1,
+                softWrap = false,
+                letterSpacing = 0.sp,
+                lineHeight = 14.sp
+            )
         }
     }
 
@@ -260,7 +282,15 @@ private fun NoticeButton(
         minHeight = 34.dp,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Text(text = text, fontSize = TextSizes.Caption, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(
+            text = text,
+            fontSize = TextSizes.Caption,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+            letterSpacing = 0.sp,
+            lineHeight = 15.sp
+        )
     }
 }
 
@@ -277,7 +307,11 @@ private fun NoticeTextLink(text: String, onClick: () -> Unit) {
             text = text,
             color = BrandOrange,
             fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            letterSpacing = 0.sp,
+            lineHeight = 15.sp
         )
     }
 }
