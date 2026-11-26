@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.maiwithu.maidroid.pet.DesktopPetScaleSpec
 import org.maiwithu.maidroid.pet.normalizeDesktopPetScale
+import org.maiwithu.maidroid.backup.BackupFrequency
+import org.maiwithu.maidroid.backup.DEFAULT_SCHEDULE_DAY_OF_WEEK
 import org.maiwithu.maidroid.runtime.MirrorCategory
 import org.maiwithu.maidroid.runtime.MirrorPreference
 import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
@@ -71,6 +73,8 @@ internal class AppSettings(
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_WIFI_LOCK_ENABLED = "wifi_lock_enabled"
         const val KEY_BACKUP_AUTO_ENABLED = "backup_auto_enabled"
+        const val KEY_BACKUP_SCHEDULE_FREQUENCY = "backup_schedule_frequency"
+        const val KEY_BACKUP_SCHEDULE_DAY_OF_WEEK = "backup_schedule_day_of_week"
         const val KEY_BACKUP_SCHEDULE_HOUR = "backup_schedule_hour"
         const val KEY_BACKUP_SCHEDULE_MINUTE = "backup_schedule_minute"
         const val KEY_BACKUP_RETENTION_COUNT = "backup_retention_count"
@@ -265,6 +269,18 @@ internal class AppSettings(
         get() = kv.decodeBool(KEY_BACKUP_AUTO_ENABLED, false)
         set(value) {
             kv.encode(KEY_BACKUP_AUTO_ENABLED, value)
+        }
+
+    var backupScheduleFrequency: BackupFrequency
+        get() = BackupFrequency.fromStorageValue(kv.decodeString(KEY_BACKUP_SCHEDULE_FREQUENCY, null))
+        set(value) {
+            kv.encode(KEY_BACKUP_SCHEDULE_FREQUENCY, value.storageValue)
+        }
+
+    var backupScheduleDayOfWeek: Int
+        get() = kv.decodeInt(KEY_BACKUP_SCHEDULE_DAY_OF_WEEK, DEFAULT_SCHEDULE_DAY_OF_WEEK).coerceIn(1, 7)
+        set(value) {
+            kv.encode(KEY_BACKUP_SCHEDULE_DAY_OF_WEEK, value.coerceIn(1, 7))
         }
 
     var backupScheduleHour: Int

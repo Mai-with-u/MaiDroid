@@ -41,7 +41,8 @@ internal class BackupManager(
 ) {
     private companion object {
         const val AUTO_BACKUP_JOB_ID = 4004
-        const val JOB_FLEX_WINDOW_MS = 2 * 60 * 60 * 1000L
+        const val JOB_FLEX_WINDOW_DEFAULT_MS = 2 * 60 * 60 * 1000L
+        const val JOB_FLEX_WINDOW_6H_MS = 60 * 60 * 1000L
         val ARCHIVE_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.US)
     }
 
@@ -60,6 +61,16 @@ internal class BackupManager(
 
     fun setAutoEnabled(enabled: Boolean) {
         settings.backupAutoEnabled = enabled
+        updateConfigAndSyncSchedule()
+    }
+
+    fun setScheduleFrequency(frequency: BackupFrequency) {
+        settings.backupScheduleFrequency = frequency
+        updateConfigAndSyncSchedule()
+    }
+
+    fun setScheduleDayOfWeek(dayOfWeek: Int) {
+        settings.backupScheduleDayOfWeek = dayOfWeek.coerceIn(1, 7)
         updateConfigAndSyncSchedule()
     }
 
@@ -135,7 +146,14 @@ internal class BackupManager(
         val config = readConfig()
         val now = System.currentTimeMillis()
         val nextMillis = if (config.autoEnabled) {
-            nextScheduledBackupMillis(now, ZoneId.systemDefault(), config.scheduleHour, config.scheduleMinute)
+            nextScheduledBackupMillis(
+                nowMillis = now,
+                zoneId = ZoneId.systemDefault(),
+                hour = config.scheduleHour,
+                minute = config.scheduleMinute,
+                frequency = config.frequency,
+                dayOfWeek = config.scheduleDayOfWeek
+            )
         } else {
             null
         }
@@ -145,13 +163,18 @@ internal class BackupManager(
             scheduler.cancel(AUTO_BACKUP_JOB_ID)
             return
         }
+        val flexWindowMs = if (config.frequency == BackupFrequency.Every6Hours) {
+            JOB_FLEX_WINDOW_6H_MS
+        } else {
+            JOB_FLEX_WINDOW_DEFAULT_MS
+        }
         val minLatencyMs = (nextMillis - now).coerceAtLeast(1_000L)
         val jobInfo = JobInfo.Builder(
             AUTO_BACKUP_JOB_ID,
             ComponentName(appContext, AutoBackupJobService::class.java)
         )
             .setMinimumLatency(minLatencyMs)
-            .setOverrideDeadline(minLatencyMs + JOB_FLEX_WINDOW_MS)
+            .setOverrideDeadline(minLatencyMs + flexWindowMs)
             .setPersisted(true)
             .build()
         scheduler.schedule(jobInfo)
@@ -191,7 +214,16 @@ internal class BackupManager(
         if (!config.autoEnabled) return BackupRunOutcome.EmptySelection
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
-        if (!shouldRunScheduledBackup(now, zone, config.scheduleHour, config.scheduleMinute, settings.lastAutoBackupDayKey)) {
+        if (!shouldRunScheduledBackup(
+                nowMillis = now,
+                zoneId = zone,
+                hour = config.scheduleHour,
+                minute = config.scheduleMinute,
+                lastAutoBackupSlotKey = settings.lastAutoBackupDayKey,
+                frequency = config.frequency,
+                dayOfWeek = config.scheduleDayOfWeek
+            )
+        ) {
             syncJobSchedule()
             return BackupRunOutcome.EmptySelection
         }
@@ -289,7 +321,14 @@ internal class BackupManager(
             settings.lastBackupSummary = summary
             settings.lastBackupError = ""
             if (trigger == BackupTrigger.Scheduled) {
-                settings.lastAutoBackupDayKey = localDayKey(now, zone)
+                settings.lastAutoBackupDayKey = currentAutoBackupSlotKey(
+                    nowMillis = now,
+                    zoneId = zone,
+                    hour = config.scheduleHour,
+                    minute = config.scheduleMinute,
+                    frequency = config.frequency,
+                    dayOfWeek = config.scheduleDayOfWeek
+                )
             }
             TerminalLog.append("[备份] ${if (trigger == BackupTrigger.Scheduled) "定时" else "手动"}备份完成：${record.fileName}（$summary）")
 
@@ -356,7 +395,9 @@ internal class BackupManager(
                 nowMillis = System.currentTimeMillis(),
                 zoneId = ZoneId.systemDefault(),
                 hour = config.scheduleHour,
-                minute = config.scheduleMinute
+                minute = config.scheduleMinute,
+                frequency = config.frequency,
+                dayOfWeek = config.scheduleDayOfWeek
             )
         } else {
             null
@@ -390,7 +431,9 @@ internal class BackupManager(
                 nowMillis = System.currentTimeMillis(),
                 zoneId = ZoneId.systemDefault(),
                 hour = config.scheduleHour,
-                minute = config.scheduleMinute
+                minute = config.scheduleMinute,
+                frequency = config.frequency,
+                dayOfWeek = config.scheduleDayOfWeek
             )
         } else {
             null
@@ -415,6 +458,8 @@ internal class BackupManager(
         }
         return BackupConfig(
             autoEnabled = settings.backupAutoEnabled,
+            frequency = settings.backupScheduleFrequency,
+            scheduleDayOfWeek = settings.backupScheduleDayOfWeek,
             scheduleHour = settings.backupScheduleHour,
             scheduleMinute = settings.backupScheduleMinute,
             retentionCount = settings.backupRetentionCount,

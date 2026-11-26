@@ -39,13 +39,18 @@ import androidx.compose.ui.unit.sp
 import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.appupdate.formatBytes
 import org.maiwithu.maidroid.backup.BackupComponent
+import org.maiwithu.maidroid.backup.BackupFrequency
 import org.maiwithu.maidroid.backup.BackupRecord
 import org.maiwithu.maidroid.backup.BackupRunOutcome
 import org.maiwithu.maidroid.backup.BackupState
 import org.maiwithu.maidroid.backup.DEFAULT_EXTERNAL_DISPLAY_PATH
 import org.maiwithu.maidroid.backup.RETENTION_OPTIONS
+import org.maiwithu.maidroid.backup.formatDailyTriggerSlots
 import org.maiwithu.maidroid.backup.formatNextScheduleHint
+import org.maiwithu.maidroid.backup.formatScheduleRuleSummary
 import org.maiwithu.maidroid.backup.formatScheduleTime
+import org.maiwithu.maidroid.backup.formatWeekdayLabel
+import org.maiwithu.maidroid.backup.formatWeekdayShort
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.LiquidButton
@@ -75,7 +80,6 @@ import java.util.Locale
 
 private val BACKUP_TIME_DISPLAY_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.CHINA)
-private val QUICK_SCHEDULE_PRESETS = listOf(2 to 0, 4 to 0, 6 to 0, 23 to 0)
 
 /** 生成设置页“自动备份”一行的副标题摘要。 */
 internal fun backupSettingsSummaryText(state: BackupState): String {
@@ -87,7 +91,13 @@ internal fun backupSettingsSummaryText(state: BackupState): String {
         DEFAULT_EXTERNAL_DISPLAY_PATH
     }
     if (!config.autoEnabled) return "未开启 · $targetLabel"
-    val base = "每天 ${formatScheduleTime(config.scheduleHour, config.scheduleMinute)} · $targetLabel"
+    val ruleText = formatScheduleRuleSummary(
+        frequency = config.frequency,
+        dayOfWeek = config.scheduleDayOfWeek,
+        hour = config.scheduleHour,
+        minute = config.scheduleMinute
+    )
+    val base = "$ruleText · $targetLabel"
     return if (state.lastError.isNotBlank()) "$base · 上次失败" else base
 }
 
@@ -103,6 +113,12 @@ internal fun BackupOverviewCard(
     val nextHint = state.nextScheduledAtMillis?.let {
         formatNextScheduleHint(nowMillis, it, ZoneId.systemDefault())
     }
+    val ruleSummary = formatScheduleRuleSummary(
+        frequency = config.frequency,
+        dayOfWeek = config.scheduleDayOfWeek,
+        hour = config.scheduleHour,
+        minute = config.scheduleMinute
+    )
 
     BackupSectionCard(modifier = modifier) {
         Row(
@@ -111,7 +127,7 @@ internal fun BackupOverviewCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "每日定时自动备份",
+                    text = "定时自动备份",
                     color = TextPrimary,
                     fontSize = TextSizes.BodyLarge,
                     fontWeight = FontWeight.Medium
@@ -119,9 +135,9 @@ internal fun BackupOverviewCard(
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = if (config.autoEnabled && nextHint != null) {
-                        "下次计划：$nextHint"
+                        "$ruleSummary · 下次：$nextHint"
                     } else {
-                        "默认每天凌晨 04:00 自动备份配置与记忆库"
+                        "按设定频率自动备份配置与记忆库（当前：$ruleSummary）"
                     },
                     color = TextMuted,
                     fontSize = TextSizes.Caption,
@@ -272,22 +288,82 @@ internal fun BackupLocationCard(
 @Composable
 internal fun BackupScheduleCard(
     state: BackupState,
+    onSelectFrequency: (BackupFrequency) -> Unit,
+    onSelectDayOfWeek: (Int) -> Unit,
     onOpenTimePicker: () -> Unit,
-    onSelectQuickTime: (hour: Int, minute: Int) -> Unit,
     onSelectRetention: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val config = state.config
-    val quickPresetItems = remember {
-        QUICK_SCHEDULE_PRESETS.map { (hour, minute) -> LiquidSegmentItem(formatScheduleTime(hour, minute)) }
+    val frequencyItems = remember {
+        BackupFrequency.entries.map { LiquidSegmentItem(it.label) }
     }
-    val selectedPresetIdx = QUICK_SCHEDULE_PRESETS.indexOfFirst { (hour, minute) ->
-        config.scheduleHour == hour && config.scheduleMinute == minute
-    }.takeIf { it >= 0 }
+    val selectedFrequencyIdx = BackupFrequency.entries.indexOf(config.frequency).takeIf { it >= 0 }
     val retentionItems = remember { RETENTION_OPTIONS.map { LiquidSegmentItem("$it 份") } }
     val selectedRetentionIdx = RETENTION_OPTIONS.indexOf(config.retentionCount).takeIf { it >= 0 }
 
     BackupSectionCard(modifier = modifier) {
+        Text(
+            text = "备份频率",
+            color = TextPrimary,
+            fontSize = TextSizes.BodyLarge,
+            fontWeight = FontWeight.Medium
+        )
+        LiquidSegmentedSelector(
+            items = frequencyItems,
+            selectedIndex = selectedFrequencyIdx,
+            onSelect = { idx ->
+                BackupFrequency.entries.getOrNull(idx)?.let(onSelectFrequency)
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (config.frequency == BackupFrequency.Weekly) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                (1..7).forEach { dow ->
+                    val selected = config.scheduleDayOfWeek == dow
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(Corners.Control))
+                            .background(if (selected) CardSurfaceSelected else CardDivider.copy(alpha = 0.45f))
+                            .border(
+                                width = 0.8.dp,
+                                color = if (selected) BrandOrange else CardBorder,
+                                shape = RoundedCornerShape(Corners.Control)
+                            )
+                            .clickable { onSelectDayOfWeek(dow) }
+                            .padding(vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = formatWeekdayShort(dow),
+                            color = if (selected) BrandOrange else TextMuted,
+                            fontSize = TextSizes.Caption,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        val timeRowTitle = when (config.frequency) {
+            BackupFrequency.Every6Hours,
+            BackupFrequency.Every12Hours -> "基准执行时间"
+            BackupFrequency.Daily -> "每日执行时间"
+            BackupFrequency.Weekly -> "每周执行时间"
+        }
+        val timeRowSubtitle = when (config.frequency) {
+            BackupFrequency.Every6Hours,
+            BackupFrequency.Every12Hours ->
+                "每天触发：${formatDailyTriggerSlots(config.frequency, config.scheduleHour, config.scheduleMinute)}"
+            BackupFrequency.Daily -> "点按调整 24 小时制触发时刻（同一天最多自动备份一次）"
+            BackupFrequency.Weekly -> "每${formatWeekdayLabel(config.scheduleDayOfWeek)}触发，点按调整时刻"
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -298,15 +374,16 @@ internal fun BackupScheduleCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "每日执行时间",
+                    text = timeRowTitle,
                     color = TextPrimary,
                     fontSize = TextSizes.BodyLarge,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "点按调整 24 小时制触发时刻（同一天最多自动备份一次）",
+                    text = timeRowSubtitle,
                     color = TextMuted,
-                    fontSize = TextSizes.Caption
+                    fontSize = TextSizes.Caption,
+                    lineHeight = 16.sp
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -340,17 +417,6 @@ internal fun BackupScheduleCard(
                 )
             }
         }
-
-        LiquidSegmentedSelector(
-            items = quickPresetItems,
-            selectedIndex = selectedPresetIdx,
-            onSelect = { idx ->
-                QUICK_SCHEDULE_PRESETS.getOrNull(idx)?.let { (hour, minute) ->
-                    onSelectQuickTime(hour, minute)
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
 
         Text(
             text = "保留最近备份份数（自动删除超出数量的旧包）",

@@ -205,8 +205,9 @@ internal fun BackupSettingsPage(
             item {
                 BackupScheduleCard(
                     state = state,
+                    onSelectFrequency = manager::setScheduleFrequency,
+                    onSelectDayOfWeek = manager::setScheduleDayOfWeek,
                     onOpenTimePicker = { showTimePicker = true },
-                    onSelectQuickTime = { hour, minute -> manager.setScheduleTime(hour, minute) },
                     onSelectRetention = manager::setRetentionCount,
                     modifier = Modifier.overscrollBody(overscroll)
                 )
@@ -236,6 +237,8 @@ internal fun BackupSettingsPage(
         BackupTimePickerDialog(
             initialHour = state.config.scheduleHour,
             initialMinute = state.config.scheduleMinute,
+            frequency = state.config.frequency,
+            scheduleDayOfWeek = state.config.scheduleDayOfWeek,
             onConfirm = { hour, minute ->
                 showTimePicker = false
                 manager.setScheduleTime(hour, minute)

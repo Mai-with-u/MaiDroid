@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.shouldKeepScreenOn
 import org.maiwithu.maidroid.backup.BackupConfig
+import org.maiwithu.maidroid.backup.BackupFrequency
 import org.maiwithu.maidroid.backup.BackupState
 import org.maiwithu.maidroid.backup.DEFAULT_EXTERNAL_DISPLAY_PATH
 import org.maiwithu.maidroid.permission.PermissionState
@@ -236,25 +237,59 @@ class SettingsPageTest {
             )
         )
         assertEquals(
+            "每周三 22:30 · $DEFAULT_EXTERNAL_DISPLAY_PATH",
+            backupSettingsSummaryText(
+                BackupState(
+                    config = BackupConfig(
+                        autoEnabled = true,
+                        frequency = BackupFrequency.Weekly,
+                        scheduleDayOfWeek = 3,
+                        scheduleHour = 22,
+                        scheduleMinute = 30
+                    )
+                )
+            )
+        )
+        assertEquals(
+            "每 12 小时（04:00、16:00） · $DEFAULT_EXTERNAL_DISPLAY_PATH",
+            backupSettingsSummaryText(
+                BackupState(
+                    config = BackupConfig(
+                        autoEnabled = true,
+                        frequency = BackupFrequency.Every12Hours,
+                        scheduleHour = 4,
+                        scheduleMinute = 0
+                    )
+                )
+            )
+        )
+        assertEquals(
+            "每 6 小时（04:00 起） · $DEFAULT_EXTERNAL_DISPLAY_PATH",
+            backupSettingsSummaryText(
+                BackupState(
+                    config = BackupConfig(
+                        autoEnabled = true,
+                        frequency = BackupFrequency.Every6Hours,
+                        scheduleHour = 4,
+                        scheduleMinute = 0
+                    )
+                )
+            )
+        )
+        assertEquals(
             "正在备份...",
             backupSettingsSummaryText(BackupState(running = true))
         )
     }
 
     @Test
-    fun `wheel helpers map circular indices and find shortest path`() {
+    fun `wheel helpers map circular indices cleanly`() {
         val hourBase = wheelLoopBaseIndex(24)
         val minuteBase = wheelLoopBaseIndex(60)
         assertEquals(0, wheelIndexToValue(hourBase, 24))
         assertEquals(0, wheelIndexToValue(minuteBase, 60))
         assertEquals(23, wheelIndexToValue(hourBase - 1, 24))
         assertEquals(59, wheelIndexToValue(minuteBase - 1, 60))
-
-        // 跨午夜从 23 点跳到 0 点走 +1 步，从 1 点跳到 23 点走 -2 步
-        assertEquals(hourBase + 24, nearestWheelTargetIndex(hourBase + 23, 0, 24))
-        assertEquals(hourBase - 1, nearestWheelTargetIndex(hourBase + 1, 23, 24))
-        // 跨整点从 59 分跳到 2 分走 +3 步
-        assertEquals(minuteBase + 62, nearestWheelTargetIndex(minuteBase + 59, 2, 60))
     }
 
     @Test

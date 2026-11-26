@@ -6,8 +6,31 @@ internal const val BACKUP_FILE_PREFIX = "maidroid-backup-"
 internal const val BACKUP_FILE_SUFFIX = ".zip"
 internal const val DEFAULT_SCHEDULE_HOUR = 4
 internal const val DEFAULT_SCHEDULE_MINUTE = 0
+internal const val DEFAULT_SCHEDULE_DAY_OF_WEEK = 7
 internal const val DEFAULT_RETENTION_COUNT = 7
 internal val RETENTION_OPTIONS = listOf(3, 7, 14, 30)
+
+/**
+ * 自动备份触发频率：覆盖一日多次（每 6 / 12 小时）、每天与每周，
+ * 均以用户选择的基准时刻（以及每周的周几）锚定触发槽位。
+ */
+internal enum class BackupFrequency(
+    val storageValue: String,
+    val label: String,
+    val intervalHours: Int? = null
+) {
+    Every6Hours(storageValue = "every_6h", label = "每 6 小时", intervalHours = 6),
+    Every12Hours(storageValue = "every_12h", label = "每 12 小时", intervalHours = 12),
+    Daily(storageValue = "daily", label = "每天"),
+    Weekly(storageValue = "weekly", label = "每周");
+
+    companion object {
+        fun fromStorageValue(raw: String?): BackupFrequency {
+            val normalized = raw?.trim().orEmpty()
+            return entries.firstOrNull { it.storageValue == normalized } ?: Daily
+        }
+    }
+}
 
 /** 可纳入备份包的功能组件：覆盖 MaiBot 配置与记忆库、插件、SnowLuma 和 NapCat。 */
 internal enum class BackupComponent(
@@ -43,6 +66,8 @@ internal enum class BackupTrigger {
 
 internal data class BackupConfig(
     val autoEnabled: Boolean = false,
+    val frequency: BackupFrequency = BackupFrequency.Daily,
+    val scheduleDayOfWeek: Int = DEFAULT_SCHEDULE_DAY_OF_WEEK,
     val scheduleHour: Int = DEFAULT_SCHEDULE_HOUR,
     val scheduleMinute: Int = DEFAULT_SCHEDULE_MINUTE,
     val retentionCount: Int = DEFAULT_RETENTION_COUNT,

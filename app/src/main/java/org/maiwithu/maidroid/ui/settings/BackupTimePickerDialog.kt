@@ -45,8 +45,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.backup.BackupFrequency
+import org.maiwithu.maidroid.backup.DEFAULT_SCHEDULE_DAY_OF_WEEK
+import org.maiwithu.maidroid.backup.formatDailyTriggerSlots
 import org.maiwithu.maidroid.backup.formatNextScheduleHint
 import org.maiwithu.maidroid.backup.formatScheduleTime
+import org.maiwithu.maidroid.backup.formatWeekdayLabel
 import org.maiwithu.maidroid.backup.nextScheduledBackupMillis
 import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
@@ -57,7 +61,6 @@ import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.component.rememberLiquidHaptics
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DialogInnerSurface
@@ -68,8 +71,6 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.abs
-
-private val PICKER_PRESET_TIMES = listOf(2 to 0, 4 to 0, 6 to 0, 23 to 0)
 
 /** 计算贴近无限列表中央、且恰好对应数值 0 的基准下标，使循环滚轮双向滑动都不会触顶或触底。 */
 internal fun wheelLoopBaseIndex(valueCount: Int): Int {
@@ -82,22 +83,6 @@ internal fun wheelLoopBaseIndex(valueCount: Int): Int {
 internal fun wheelIndexToValue(index: Int, valueCount: Int): Int {
     require(valueCount > 0) { "valueCount must be positive" }
     return ((index % valueCount) + valueCount) % valueCount
-}
-
-/** 在循环滚轮中找到距离当前下标步数最短的目标下标（例如从 23 切到 0 时向前走 1 格而非倒退 23 格）。 */
-internal fun nearestWheelTargetIndex(currentIndex: Int, targetValue: Int, valueCount: Int): Int {
-    require(valueCount > 0) { "valueCount must be positive" }
-    val normalizedTarget = wheelIndexToValue(targetValue, valueCount)
-    val currentValue = wheelIndexToValue(currentIndex, valueCount)
-    var delta = normalizedTarget - currentValue
-    val half = valueCount / 2
-    if (delta > half) {
-        delta -= valueCount
-    } else if (delta < -half) {
-        delta += valueCount
-    }
-    val candidate = currentIndex.toLong() + delta.toLong()
-    return candidate.coerceIn(0L, (Int.MAX_VALUE - 1).toLong()).toInt()
 }
 
 /** 根据小时返回时段说明文字，帮助用户避开聊天活跃时段挑选备份时刻。 */
@@ -122,14 +107,16 @@ internal fun resolveTimePickerWheelSpec(isPhoneLandscape: Boolean): TimePickerWh
     }
 
 /**
- * 液态玻璃风格的 24 小时制每日备份时间选择器：
- * 采用双列循环吸附滚轮、实时时段与下次触发预览以及常用快捷时段胶囊，取代原生系统时间弹窗；
+ * 液态玻璃风格的 24 小时制自动备份时间选择器：
+ * 采用双列循环吸附滚轮与实时频率触发预览（一日多次时同步计算当天全部分段触发点）；
  * 手机横屏切换为左右双栏布局并收紧行高，避免矮视口下滚轮被压成单行。
  */
 @Composable
 internal fun BackupTimePickerDialog(
     initialHour: Int,
     initialMinute: Int,
+    frequency: BackupFrequency = BackupFrequency.Daily,
+    scheduleDayOfWeek: Int = DEFAULT_SCHEDULE_DAY_OF_WEEK,
     onConfirm: (hour: Int, minute: Int) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -172,29 +159,39 @@ internal fun BackupTimePickerDialog(
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    val nowMillis = remember(selectedHour, selectedMinute) { System.currentTimeMillis() }
-    val nextTriggerMillis = remember(nowMillis, selectedHour, selectedMinute) {
+    val nowMillis = remember(selectedHour, selectedMinute, frequency, scheduleDayOfWeek) {
+        System.currentTimeMillis()
+    }
+    val nextTriggerMillis = remember(nowMillis, selectedHour, selectedMinute, frequency, scheduleDayOfWeek) {
         nextScheduledBackupMillis(
             nowMillis = nowMillis,
             zoneId = ZoneId.systemDefault(),
             hour = selectedHour,
-            minute = selectedMinute
+            minute = selectedMinute,
+            frequency = frequency,
+            dayOfWeek = scheduleDayOfWeek
         )
     }
     val nextHint = remember(nowMillis, nextTriggerMillis) {
         formatNextScheduleHint(nowMillis, nextTriggerMillis, ZoneId.systemDefault())
     }
 
-    fun jumpToPreset(hour: Int, minute: Int) {
-        val targetHourIdx = nearestWheelTargetIndex(selectedHourIndex, hour, 24)
-        val targetMinuteIdx = nearestWheelTargetIndex(selectedMinuteIndex, minute, 60)
-        coroutineScope.launch { hourListState.animateScrollToItem(targetHourIdx) }
-        coroutineScope.launch { minuteListState.animateScrollToItem(targetMinuteIdx) }
+    val dialogTitle = when (frequency) {
+        BackupFrequency.Every6Hours,
+        BackupFrequency.Every12Hours -> "选择基准备份时间"
+        BackupFrequency.Daily -> "选择每日备份时间"
+        BackupFrequency.Weekly -> "选择每周备份时间"
+    }
+    val dialogSubtitle = when (frequency) {
+        BackupFrequency.Every6Hours -> "24 小时制 · 每 6 小时按基准偏移时刻触发"
+        BackupFrequency.Every12Hours -> "24 小时制 · 每 12 小时按基准偏移时刻触发"
+        BackupFrequency.Daily -> "24 小时制 · 同一天最多自动备份一次"
+        BackupFrequency.Weekly -> "24 小时制 · 每${formatWeekdayLabel(scheduleDayOfWeek)}触发"
     }
 
     MaiDialog(
-        title = "选择每日备份时间",
-        subtitle = "24 小时制 · 同一天最多自动备份一次",
+        title = dialogTitle,
+        subtitle = dialogSubtitle,
         icon = Icons.Outlined.Schedule,
         iconBackground = BrandOrange,
         size = if (isLandscape) MaiDialogSize.Expanded else MaiDialogSize.Compact,
@@ -314,107 +311,55 @@ internal fun BackupTimePickerDialog(
                     }
                 }
             }
-
-            if (!isLandscape) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    PICKER_PRESET_TIMES.forEach { (hour, minute) ->
-                        TimePresetChip(
-                            hour = hour,
-                            minute = minute,
-                            active = selectedHour == hour && selectedMinute == minute,
-                            onClick = { jumpToPreset(hour, minute) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
         }
     ) {
         val phoneLandscape = LocalMaiDialogPhoneLandscape.current
-        // 实时时间与下次触发预览卡
+        // 实时时间、分频触发时刻与下次触发预览卡
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Corners.Chip))
                 .background(DialogInnerSurface)
                 .border(0.8.dp, CardBorder, RoundedCornerShape(Corners.Chip))
-                .padding(horizontal = 14.dp, vertical = if (phoneLandscape) 8.dp else 12.dp),
+                .padding(horizontal = 14.dp, vertical = if (phoneLandscape) 10.dp else 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = formatScheduleTime(selectedHour, selectedMinute),
                 color = BrandOrange,
-                fontSize = if (phoneLandscape) 26.sp else 32.sp,
+                fontSize = if (phoneLandscape) 28.sp else 34.sp,
                 fontWeight = FontWeight.Bold,
                 style = TextStyle(fontFeatureSettings = "tnum")
             )
-            Text(
-                text = "${backupTimePeriodLabel(selectedHour)} · 下次计划：$nextHint",
-                color = TextMuted,
-                fontSize = TextSizes.Caption,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        if (isLandscape) {
-            // 横屏下将快捷时段放在左栏底部 2×2 排列，为右栏滚轮让出完整三行高度
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PICKER_PRESET_TIMES.chunked(2).forEach { rowPresets ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowPresets.forEach { (hour, minute) ->
-                            TimePresetChip(
-                                hour = hour,
-                                minute = minute,
-                                active = selectedHour == hour && selectedMinute == minute,
-                                onClick = { jumpToPreset(hour, minute) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+            if (frequency == BackupFrequency.Every6Hours || frequency == BackupFrequency.Every12Hours) {
+                Text(
+                    text = "每日触发：${formatDailyTriggerSlots(frequency, selectedHour, selectedMinute)}",
+                    color = TextPrimary,
+                    fontSize = TextSizes.Caption,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontFeatureSettings = "tnum")
+                )
+                Text(
+                    text = "下次计划：$nextHint",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                val periodDesc = if (frequency == BackupFrequency.Weekly) {
+                    "每${formatWeekdayLabel(scheduleDayOfWeek)} ${backupTimePeriodLabel(selectedHour)}"
+                } else {
+                    backupTimePeriodLabel(selectedHour)
                 }
+                Text(
+                    text = "$periodDesc · 下次计划：$nextHint",
+                    color = TextMuted,
+                    fontSize = TextSizes.Caption,
+                    textAlign = TextAlign.Center
+                )
             }
         }
-    }
-}
-
-@Composable
-private fun TimePresetChip(
-    hour: Int,
-    minute: Int,
-    active: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(Corners.Control))
-            .background(if (active) CardSurfaceSelected else CardDivider.copy(alpha = 0.45f))
-            .border(
-                width = 0.8.dp,
-                color = if (active) BrandOrange else CardBorder,
-                shape = RoundedCornerShape(Corners.Control)
-            )
-            .clickable(onClick = onClick)
-            .padding(vertical = 7.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = formatScheduleTime(hour, minute),
-            color = if (active) BrandOrange else TextMuted,
-            fontSize = TextSizes.Caption,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-            style = TextStyle(fontFeatureSettings = "tnum")
-        )
     }
 }
 
