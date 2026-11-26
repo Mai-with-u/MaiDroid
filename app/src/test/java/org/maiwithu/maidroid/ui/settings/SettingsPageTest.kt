@@ -6,6 +6,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.shouldKeepScreenOn
+import org.maiwithu.maidroid.backup.BackupConfig
+import org.maiwithu.maidroid.backup.BackupState
+import org.maiwithu.maidroid.backup.DEFAULT_EXTERNAL_DISPLAY_PATH
 import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.service.shouldHoldWifiLock
 import org.maiwithu.maidroid.runtime.AptMirrors
@@ -187,6 +190,54 @@ class SettingsPageTest {
                     batteryOptimizationIgnored = true
                 )
             )
+        )
+    }
+
+    @Test
+    fun `two pane backup detail toggles back to empty and switches cleanly`() {
+        assertEquals(
+            BackupSettingsDetail,
+            resolveSettingsDetailSelection(currentDetail = null, targetDetail = BackupSettingsDetail, useTwoPane = true)
+        )
+        assertNull(
+            resolveSettingsDetailSelection(currentDetail = BackupSettingsDetail, targetDetail = BackupSettingsDetail, useTwoPane = true)
+        )
+        assertEquals(
+            BackupSettingsDetail,
+            resolveSettingsDetailSelection(currentDetail = MirrorSettingsDetail, targetDetail = BackupSettingsDetail, useTwoPane = true)
+        )
+        assertEquals(
+            BackupSettingsDetail,
+            resolveSettingsDetailSelection(currentDetail = BackupSettingsDetail, targetDetail = BackupSettingsDetail, useTwoPane = false)
+        )
+    }
+
+    @Test
+    fun `backupSettingsSummaryText formats disabled default custom running and error states`() {
+        assertEquals(
+            "未开启 · $DEFAULT_EXTERNAL_DISPLAY_PATH",
+            backupSettingsSummaryText(BackupState())
+        )
+        assertEquals(
+            "每天 04:00 · $DEFAULT_EXTERNAL_DISPLAY_PATH",
+            backupSettingsSummaryText(BackupState(config = BackupConfig(autoEnabled = true)))
+        )
+        assertEquals(
+            "每天 04:00 · 内部存储/Backups · 上次失败",
+            backupSettingsSummaryText(
+                BackupState(
+                    config = BackupConfig(
+                        autoEnabled = true,
+                        customTreeUri = "content://com.android.externalstorage.documents/tree/primary%3ABackups",
+                        customTreeLabel = "内部存储/Backups"
+                    ),
+                    lastError = "权限已失效"
+                )
+            )
+        )
+        assertEquals(
+            "正在备份...",
+            backupSettingsSummaryText(BackupState(running = true))
         )
     }
 }

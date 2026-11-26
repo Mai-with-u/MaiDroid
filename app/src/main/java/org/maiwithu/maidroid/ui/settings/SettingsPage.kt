@@ -60,6 +60,7 @@ import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
+import org.maiwithu.maidroid.backup.BackupState
 import org.maiwithu.maidroid.files.openMaiBotInFileManager
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
@@ -109,6 +110,7 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private const val PermissionSettingsDetail = "permissions"
 internal const val MirrorSettingsDetail = "mirrors"
+internal const val BackupSettingsDetail = "backup"
 
 /**
  * 设置页：服务（WebUI 状态、MaiBot 在线更新、容器 SSH、MaiBot 文件）、系统（权限管理）、
@@ -140,6 +142,9 @@ internal fun SettingsPage(
     val mirrorManager = remember(context) { context.appDependencies.mirrorManager }
     val mirrorState by mirrorManager.state.collectAsState()
     val mirrorSummaryText = remember(mirrorState) { mirrorSettingsSummaryText(mirrorState) }
+    val backupManager = remember(context) { context.appDependencies.backupManager }
+    val backupState by backupManager.state.collectAsState()
+    val backupSummaryText = remember(backupState) { backupSettingsSummaryText(backupState) }
     // 设置页的“运行中平台”与消息平台页同一口径：NapCat 或 SnowLuma 在线、官方机器人已启用且无连接报错都算。
     val runningPlatformCount = remember(napCatState, snowLumaState, qqOfficialState) {
         installedPlatformCards(napCatState, snowLumaState, qqOfficialState).count { it.running }
@@ -246,6 +251,8 @@ internal fun SettingsPage(
                     permissionSelected = selectedDetail == PermissionSettingsDetail,
                     mirrorSummaryText = mirrorSummaryText,
                     mirrorSelected = selectedDetail == MirrorSettingsDetail,
+                    backupSummaryText = backupSummaryText,
+                    backupSelected = selectedDetail == BackupSettingsDetail,
                     compact = true,
                     expandedTopOffset = topSpacing,
                     onPermissionClick = {
@@ -259,6 +266,13 @@ internal fun SettingsPage(
                         selectedDetail = resolveSettingsDetailSelection(
                             currentDetail = selectedDetail,
                             targetDetail = MirrorSettingsDetail,
+                            useTwoPane = true
+                        )
+                    },
+                    onBackupClick = {
+                        selectedDetail = resolveSettingsDetailSelection(
+                            currentDetail = selectedDetail,
+                            targetDetail = BackupSettingsDetail,
                             useTwoPane = true
                         )
                     },
@@ -318,6 +332,17 @@ internal fun SettingsPage(
                                 expandedTopOffset = topSpacing,
                                 modifier = Modifier.fillMaxSize()
                             )
+                            BackupSettingsDetail -> BackupSettingsPage(
+                                manager = backupManager,
+                                state = backupState,
+                                permissionState = permissionState,
+                                permissionActions = permissionActions,
+                                onBack = { selectedDetail = null },
+                                showBackButton = false,
+                                compact = compactTwoPane,
+                                expandedTopOffset = topSpacing,
+                                modifier = Modifier.fillMaxSize()
+                            )
                             else -> {
                                 // 横屏/宽屏默认不展示任何具体设置详情或文字提示，仅在右栏居中显示纯净的液态玻璃应用图标。
                                 SettingsEmptyDetailPane(
@@ -353,6 +378,15 @@ internal fun SettingsPage(
                         expandedTopOffset = topSpacing,
                         modifier = Modifier.fillMaxSize()
                     )
+                    BackupSettingsDetail -> BackupSettingsPage(
+                        manager = backupManager,
+                        state = backupState,
+                        permissionState = permissionState,
+                        permissionActions = permissionActions,
+                        onBack = { selectedDetail = null },
+                        expandedTopOffset = topSpacing,
+                        modifier = Modifier.fillMaxSize()
+                    )
                     else -> {
                         SettingsNavigationPane(
                             webUiOnline = webUiOnline,
@@ -364,6 +398,8 @@ internal fun SettingsPage(
                             permissionSelected = false,
                             mirrorSummaryText = mirrorSummaryText,
                             mirrorSelected = false,
+                            backupSummaryText = backupSummaryText,
+                            backupSelected = false,
                             compact = false,
                             expandedTopOffset = topSpacing,
                             onPermissionClick = {
@@ -377,6 +413,13 @@ internal fun SettingsPage(
                                 selectedDetail = resolveSettingsDetailSelection(
                                     currentDetail = selectedDetail,
                                     targetDetail = MirrorSettingsDetail,
+                                    useTwoPane = false
+                                )
+                            },
+                            onBackupClick = {
+                                selectedDetail = resolveSettingsDetailSelection(
+                                    currentDetail = selectedDetail,
+                                    targetDetail = BackupSettingsDetail,
                                     useTwoPane = false
                                 )
                             },
@@ -477,10 +520,13 @@ private fun SettingsNavigationPane(
     permissionSelected: Boolean,
     mirrorSummaryText: String,
     mirrorSelected: Boolean,
+    backupSummaryText: String,
+    backupSelected: Boolean,
     compact: Boolean,
     expandedTopOffset: Dp,
     onPermissionClick: () -> Unit,
     onMirrorClick: () -> Unit,
+    onBackupClick: () -> Unit,
     onSshConfigureClick: () -> Unit,
     onSshEnabledChange: (Boolean) -> Unit,
     onUpdateClick: () -> Unit,
@@ -651,6 +697,26 @@ private fun SettingsNavigationPane(
                     trailing = if (compact) null else {
                         {
                             SettingsRowArrow(contentDescription = "在文件管理器中打开 MaiBot 目录")
+                        }
+                    }
+                )
+
+                SettingsDivider()
+
+                SettingsNavigationRow(
+                    icon = FlatFeatureIcons.Backup,
+                    iconColor = IconTealMint,
+                    title = "自动备份",
+                    supportingText = backupSummaryText,
+                    selected = backupSelected,
+                    exposesSelection = true,
+                    onClick = onBackupClick,
+                    trailing = if (compact) null else {
+                        {
+                            SettingsRowArrow(
+                                contentDescription = "进入自动备份设置",
+                                tint = if (backupSelected) BrandOrange else TextMuted.copy(alpha = 0.6f)
+                            )
                         }
                     }
                 )
