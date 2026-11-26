@@ -52,8 +52,8 @@ android {
         applicationId = "org.maiwithu.maidroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.4.1"
+        versionCode = 14
+        versionName = "0.4.2"
         buildConfigField("String", "APP_UPDATE_API_URL", "\"$appUpdateApiUrl\"")
         buildConfigField("String", "REMOTE_OPS_BASE_URL", "\"$remoteOpsBaseUrl\"")
         buildConfigField("String", "REMOTE_MANIFEST_FALLBACK_URL", "\"$remoteManifestFallbackUrl\"")
