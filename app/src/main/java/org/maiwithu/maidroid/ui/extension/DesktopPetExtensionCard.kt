@@ -74,9 +74,12 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
@@ -107,7 +110,11 @@ internal fun FloatingPetSummaryCard(
     compact: Boolean = false
 ) {
     val switchChecked = petState.desiredEnabled || petState.overlayActive
-    val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(entry.badge, petState)
+    val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(
+        defaultBadge = entry.badge,
+        petState = petState,
+        colors = LocalMaiDroidColors.current
+    )
     val scalePercent = (normalizeDesktopPetScale(petState.petScale) * 100f).roundToInt()
     val summarySubtitle = if (switchChecked) {
         "${petState.statusText} · 大小 $scalePercent%"
@@ -851,21 +858,25 @@ internal fun CompactActionButton(
 
 internal fun resolvePetHeaderBadge(
     defaultBadge: String,
-    petState: DesktopPetUiState
+    petState: DesktopPetUiState,
+    colors: MaiDroidColors = DarkMaiDroidColors
 ): Pair<String, Color> = when {
     petState.overlayActive && petState.connected && !petState.overlayVisible -> "已隐藏" to BrandOrange
-    petState.overlayActive && petState.connected -> "运行中" to StatusOnline
+    petState.overlayActive && petState.connected -> "运行中" to colors.statusOnline
     petState.phase == DesktopPetPhase.Connecting -> "连接中" to BrandOrange
-    petState.phase == DesktopPetPhase.AuthRequired -> "待登录" to StatusWarning
-    petState.phase == DesktopPetPhase.ConfigRequired -> "待配置" to StatusWarning
-    petState.phase == DesktopPetPhase.Error -> "异常" to StatusDanger
-    else -> defaultBadge to TextMuted
+    petState.phase == DesktopPetPhase.AuthRequired -> "待登录" to colors.statusWarning
+    petState.phase == DesktopPetPhase.ConfigRequired -> "待配置" to colors.statusWarning
+    petState.phase == DesktopPetPhase.Error -> "异常" to colors.statusDanger
+    else -> defaultBadge to colors.textMuted
 }
 
-internal fun resolvePetPhaseColor(petState: DesktopPetUiState): Color = when (petState.phase) {
-    DesktopPetPhase.Running -> if (petState.connected) StatusOnline else BrandOrange
+internal fun resolvePetPhaseColor(
+    petState: DesktopPetUiState,
+    colors: MaiDroidColors = DarkMaiDroidColors
+): Color = when (petState.phase) {
+    DesktopPetPhase.Running -> if (petState.connected) colors.statusOnline else BrandOrange
     DesktopPetPhase.Connecting -> BrandOrange
-    DesktopPetPhase.AuthRequired, DesktopPetPhase.ConfigRequired -> StatusWarning
-    DesktopPetPhase.Error -> StatusDanger
-    DesktopPetPhase.Idle -> TextMuted
+    DesktopPetPhase.AuthRequired, DesktopPetPhase.ConfigRequired -> colors.statusWarning
+    DesktopPetPhase.Error -> colors.statusDanger
+    DesktopPetPhase.Idle -> colors.textMuted
 }

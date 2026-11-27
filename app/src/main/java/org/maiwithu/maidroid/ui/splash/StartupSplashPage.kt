@@ -45,12 +45,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
@@ -161,10 +161,7 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        val splashBackdrop = rememberLayerBackdrop {
-            drawRect(CardSurface)
-            drawContent()
-        }
+        val splashBackdrop = rememberThemedLayerBackdrop(CardSurface)
 
         if (useAdaptiveLayout) {
             val geometry = startupSplashAdaptiveGeometry(
@@ -257,6 +254,7 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
         }
     }
 
+    val edgeShade = SplashEdgeShade
     Canvas(modifier = modifier) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
 
@@ -284,7 +282,6 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
             )
         }
 
-        val edgeShade = SplashEdgeShade
         if (artLeft > 0f) {
             drawRect(
                 brush = Brush.horizontalGradient(
@@ -394,6 +391,7 @@ private fun StartupSideBlur(
     backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
+    val sideBlurOverlay = SplashSideBlurOverlay
     Box(
         modifier = modifier.drawPlainBackdrop(
             backdrop = backdrop,
@@ -402,7 +400,7 @@ private fun StartupSideBlur(
                 blur(StartupSplashSideBlurRadius.dp.toPx())
             },
             onDrawSurface = {
-                drawRect(SplashSideBlurOverlay)
+                drawRect(sideBlurOverlay)
             }
         )
     )

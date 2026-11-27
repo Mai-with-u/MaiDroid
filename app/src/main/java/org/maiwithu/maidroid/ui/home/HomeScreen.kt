@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.maibot.MaiBotProcessStatus
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
@@ -33,6 +32,7 @@ import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.extension.ExtensionsPage
 import org.maiwithu.maidroid.ui.platform.MessagePlatformsPage
 import org.maiwithu.maidroid.ui.settings.SettingsPage
@@ -152,10 +152,7 @@ private fun HomeTabsShell(
     modifier: Modifier = Modifier,
     lowBatteryPaused: Boolean = false
 ) {
-    val homeBackdrop = rememberLayerBackdrop {
-        drawRect(PageBackground)
-        drawContent()
-    }
+    val homeBackdrop = rememberThemedLayerBackdrop(PageBackground)
     val webUiTabState = rememberWebUiTabState(isWebUiTabSelected = selectedTab == HomeTab.WebUi)
 
     BoxWithConstraints(

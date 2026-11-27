@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.oobe.OobeSetupState
@@ -56,6 +55,7 @@ import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.settings.MirrorSettingsDialog
 import org.maiwithu.maidroid.ui.terminal.TerminalOutputPanel
@@ -330,10 +330,7 @@ private fun BoxScope.CompactOobeLayout(
     val contentCornerRadius = 48.dp
     val contentTop = maxOf(headerHeight - contentCornerRadius, 0.dp)
     // 录制顶部麦麦插画作为右上角终端按钮的实时液态玻璃折射采样源
-    val heroBackdrop = rememberLayerBackdrop {
-        drawRect(OobeBackground)
-        drawContent()
-    }
+    val heroBackdrop = rememberThemedLayerBackdrop(OobeBackground)
 
     Box(
         modifier = Modifier
@@ -458,10 +455,7 @@ private fun AdaptiveOobeLayout(
     val heroHorizontalPadding = if (narrowHero) 16.dp else 24.dp
     val workHorizontalPadding = if (availableWidth < 700.dp) 16.dp else 24.dp
     // 录制左侧插画与顶部暗角层供横屏右上角调试终端按钮实时折射采样
-    val heroBackdrop = rememberLayerBackdrop {
-        drawRect(OobeBackground)
-        drawContent()
-    }
+    val heroBackdrop = rememberThemedLayerBackdrop(OobeBackground)
 
     Row(modifier = Modifier.fillMaxSize()) {
         Box(

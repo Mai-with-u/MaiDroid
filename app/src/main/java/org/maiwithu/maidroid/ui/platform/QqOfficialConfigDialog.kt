@@ -33,19 +33,24 @@ import org.maiwithu.maidroid.ui.component.MaiDialogSize
 import org.maiwithu.maidroid.ui.component.MaiDialogTextField
 import org.maiwithu.maidroid.ui.diagnostics.FailureNotice
 import org.maiwithu.maidroid.ui.theme.BrandOrange
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.StatusDanger
-import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /** 已启用标绿，有连接报错标红，其余（未安装、待填写、等待 MaiBot）标灰。 */
-internal fun qqOfficialStatusColor(state: QqOfficialPlatformState): Color = when {
-    state.presumedOnline -> StatusOnline
-    state.connectionError != null -> StatusDanger
-    else -> TextMuted
+internal fun qqOfficialStatusColor(
+    state: QqOfficialPlatformState,
+    colors: MaiDroidColors = DarkMaiDroidColors
+): Color = when {
+    state.presumedOnline -> colors.statusOnline
+    state.connectionError != null -> colors.statusDanger
+    else -> colors.textMuted
 }
 
 /**
@@ -73,7 +78,7 @@ internal fun QqOfficialConfigDialog(
             {
                 MaiDialogInfoChip(
                     text = qqOfficialStatusText(state),
-                    color = qqOfficialStatusColor(state)
+                    color = qqOfficialStatusColor(state, LocalMaiDroidColors.current)
                 )
             }
         } else {

@@ -312,6 +312,7 @@ private fun MaiDialogOverlaySurface(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val appear = remember { Animatable(0f) }
+    val scrimColor = DialogBackdropScrim
     LaunchedEffect(Unit) {
         appear.animateTo(1f, animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing))
     }
@@ -319,7 +320,7 @@ private fun MaiDialogOverlaySurface(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .drawBehind { drawRect(DialogBackdropScrim.copy(alpha = DialogBackdropScrim.alpha * appear.value)) }
+            .drawBehind { drawRect(scrimColor.copy(alpha = scrimColor.alpha * appear.value)) }
     ) {
         // 全屏点击遮罩阻断触控穿透至下方 GeckoView/列表；允许外点关闭时触发收起
         Box(

@@ -27,6 +27,8 @@ import org.maiwithu.maidroid.ui.theme.BootAccent
 import org.maiwithu.maidroid.ui.theme.BootText
 import org.maiwithu.maidroid.ui.theme.BootTextDim
 import org.maiwithu.maidroid.ui.theme.JetBrainsMono
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import kotlin.math.exp
@@ -169,6 +171,7 @@ internal fun BootLog(
     blockedReason: String?,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalMaiDroidColors.current
     Column(modifier = modifier) {
         BootLogRow(
             text = AnnotatedString(header),
@@ -177,7 +180,7 @@ internal fun BootLog(
             visible = true
         )
         BootLogRow(
-            text = bootLineText(lines[0], cursorVisible),
+            text = bootLineText(lines[0], cursorVisible, colors),
             color = BootTextDim,
             visible = revealed >= 1
         )
@@ -196,7 +199,7 @@ internal fun BootLog(
         } else {
             lines.drop(1).forEachIndexed { index, line ->
                 BootLogRow(
-                    text = bootLineText(line, cursorVisible),
+                    text = bootLineText(line, cursorVisible, colors),
                     color = BootTextDim,
                     visible = revealed >= index + 2
                 )
@@ -234,14 +237,14 @@ private fun BootLogRow(
 
 // “label ........ status”：点线补齐到 BootStatusColumn 列，状态词竖着对齐。
 // 还在等的阶段在状态词后面闪一个下划线光标；熄灭时换成透明而不是删掉，行宽不跟着跳。
-private fun bootLineText(line: BootLine, cursorVisible: Boolean): AnnotatedString = buildAnnotatedString {
+private fun bootLineText(line: BootLine, cursorVisible: Boolean, colors: MaiDroidColors): AnnotatedString = buildAnnotatedString {
     append(line.label)
     append(' ')
     append(".".repeat((BootStatusColumn - line.label.length - 2).coerceAtLeast(3)))
     append(' ')
     val statusColor = when (line.check) {
-        BootCheck.Warning, BootCheck.Failed, BootCheck.Degraded -> StatusWarning
-        else -> BootTextDim
+        BootCheck.Warning, BootCheck.Failed, BootCheck.Degraded -> colors.statusWarning
+        else -> colors.bootTextDim
     }
     withStyle(SpanStyle(color = statusColor)) { append(line.status) }
     if (line.check == BootCheck.Pending || line.check == BootCheck.Warning) {

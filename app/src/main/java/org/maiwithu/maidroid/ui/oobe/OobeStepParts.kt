@@ -86,6 +86,7 @@ import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.GlassShadow
 import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.OobeSurface
@@ -235,10 +236,15 @@ internal fun CommandLogButton(
         label = "CommandLogButtonWidth"
     )
     val animationScope = rememberCoroutineScope()
-    val interactiveHighlight = remember(animationScope) { InteractiveHighlight(animationScope) }
+    val colors = LocalMaiDroidColors.current
+    val interactiveHighlight = remember(animationScope, colors.isDark) {
+        InteractiveHighlight(animationScope, isDark = colors.isDark)
+    }
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val pillShape = { Capsule() }
     val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.8.dp, GlassStroke, Capsule())
+    val buttonShadow = Shadow(radius = 14.dp, color = GlassShadow)
+    val baseSurface = if (hasRenderEffect) GlassButtonSurface else GlassFallbackSurface
 
     Row(
         modifier = modifier
@@ -248,13 +254,13 @@ internal fun CommandLogButton(
                 backdrop = backdrop,
                 shape = pillShape,
                 effects = {
-                    // 折射下方 OOBE 插画或深色工作区，展开态与圆钮态保持一致的液态光学质感
+                    // 折射下方 OOBE 插画或工作区，展开态与圆钮态保持一致的液态光学质感
                     vibrancy()
                     blur(12f.dp.toPx())
                     lens(14f.dp.toPx(), 24f.dp.toPx())
                 },
                 highlight = { Highlight.Default.copy(alpha = 0.9f) },
-                shadow = { CommandLogButtonShadow },
+                shadow = { buttonShadow },
                 layerBlock = {
                     val transform = computeLiquidButtonDragTransform(
                         widthPx = size.width,
@@ -270,7 +276,6 @@ internal fun CommandLogButton(
                     scaleY = transform.scaleY
                 },
                 onDrawSurface = {
-                    val baseSurface = if (hasRenderEffect) GlassButtonSurface else GlassFallbackSurface
                     when {
                         expanded -> {
                             drawRect(BrandOrange, blendMode = BlendMode.Hue)
@@ -318,11 +323,6 @@ internal fun CommandLogButton(
         }
     }
 }
-
-private val CommandLogButtonShadow = Shadow(
-    radius = 14.dp,
-    color = GlassShadow
-)
 
 /** 步骤切换动画：前进时新内容从右边推进来，后退时从左边推进来。 */
 internal fun AnimatedContentTransitionScope<OobeStep>.oobeStepTransition() =

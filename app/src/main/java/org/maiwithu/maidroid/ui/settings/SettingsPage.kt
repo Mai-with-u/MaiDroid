@@ -103,6 +103,8 @@ import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.IconSunnyAmber
 import org.maiwithu.maidroid.ui.theme.IconTealMint
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -606,6 +608,7 @@ private fun SettingsNavigationPane(
             remoteOps.reportOnlineHeartbeat(force = true)
         }
     }
+    val colors = LocalMaiDroidColors.current
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
     val density = LocalDensity.current
@@ -693,7 +696,7 @@ private fun SettingsNavigationPane(
                     iconColor = IconSkyBlue,
                     title = "MaiBot 更新",
                     supportingText = maiBotUpdateSummaryText(updateState),
-                    supportingColor = maiBotUpdateSummaryColor(updateState),
+                    supportingColor = maiBotUpdateSummaryColor(updateState, colors),
                     onClick = onUpdateClick,
                     trailing = if (compact) null else {
                         {
@@ -899,7 +902,7 @@ private fun SettingsNavigationPane(
                     iconColor = IconCyanBlue,
                     title = "应用版本",
                     supportingText = appUpdateSummaryText(appUpdateState.copy(currentVersion = versionName)),
-                    supportingColor = appUpdateSummaryColor(appUpdateState),
+                    supportingColor = appUpdateSummaryColor(appUpdateState, colors),
                     onClick = onAppUpdateClick,
                     trailing = if (compact) null else {
                         {
@@ -1188,19 +1191,19 @@ private fun CompactSettingSwitchRow(
 }
 
 // 失败标醒目暖橙提醒，平时保持柔和次要灰字，避免喧宾夺主。
-private fun maiBotUpdateSummaryColor(state: MaiBotUpdateState): Color =
+private fun maiBotUpdateSummaryColor(state: MaiBotUpdateState, colors: MaiDroidColors): Color =
     when (state.phase) {
-        MaiBotUpdatePhase.Failed -> StatusWarning
+        MaiBotUpdatePhase.Failed -> colors.statusWarning
         MaiBotUpdatePhase.Available -> BrandOrange
-        else -> TextMuted
+        else -> colors.textMuted
     }
 
 // 失败标醒目暖橙提醒，发现新版本标品牌橙提醒，其余保持次要灰字。
-private fun appUpdateSummaryColor(state: AppUpdateState): Color =
+private fun appUpdateSummaryColor(state: AppUpdateState, colors: MaiDroidColors): Color =
     when (state.phase) {
-        AppUpdatePhase.Failed -> StatusWarning
+        AppUpdatePhase.Failed -> colors.statusWarning
         AppUpdatePhase.Available -> BrandOrange
-        else -> TextMuted
+        else -> colors.textMuted
     }
 
 internal fun permissionSummary(state: PermissionState): String {

@@ -30,6 +30,7 @@ import org.maiwithu.maidroid.ui.component.InteractiveHighlight
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeLiquidButtonDragTransform
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.IconMintGreen
@@ -54,10 +55,7 @@ internal fun SettingsEmptyDetailPane(
 
     val animationScope = rememberCoroutineScope()
     val highlight = remember(animationScope) { InteractiveHighlight(animationScope) }
-    val ambientBackdrop = rememberLayerBackdrop {
-        drawRect(PageBackground)
-        drawContent()
-    }
+    val ambientBackdrop = rememberThemedLayerBackdrop(PageBackground)
     val iconLayerBackdrop = rememberLayerBackdrop()
 
     Box(

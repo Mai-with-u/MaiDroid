@@ -19,10 +19,14 @@ import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 
-private val IconForeground = TextPrimary
-private val IconSecondary = TextPrimary.copy(alpha = 0.56f)
+// 实色圆形徽章内部的矢量图层恒为纯白前景与柔白底影，不跟随浅/深色正文反转为深墨色。
+private val IconForeground = OnBrandOrange
+private val IconSecondary = OnBrandOrange.copy(alpha = 0.56f)
 
 /**
  * 清新扁平圆形功能图标徽章：明快实色圆底搭配双层柔白+纯白圆润几何图标。
@@ -36,7 +40,12 @@ internal fun FlatFeatureIconBadge(
     iconSize: Dp = 25.dp,
     dimmed: Boolean = false
 ) {
-    val bg = if (dimmed) TextPrimary.copy(alpha = 0.12f) else backgroundColor
+    val isDark = LocalMaiDroidColors.current.isDark
+    val bg = if (dimmed) {
+        if (isDark) TextPrimary.copy(alpha = 0.12f) else TextMuted.copy(alpha = 0.28f)
+    } else {
+        backgroundColor
+    }
     Box(
         modifier = modifier
             .size(size)

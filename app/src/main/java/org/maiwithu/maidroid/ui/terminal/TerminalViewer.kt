@@ -254,8 +254,7 @@ private fun TerminalViewer(
     }
 }
 
-// 选择模式下顶栏换成浅橙色，提醒现在点日志是在选行。
-private val SelectionBarColor = BrandOrange.copy(alpha = 0.18f).compositeOver(CardSurface)
+// 选择模式下顶栏换成浅橙色，提醒现在点日志是在选行；移入组合作用域实时随浅/深色卡片合成。
 
 /**
  * 终端顶栏，三种状态：
@@ -279,8 +278,9 @@ private fun TerminalTopBar(
     onSelectAll: () -> Unit,
     onCopySelection: () -> Unit
 ) {
+    val selectionBarColor = BrandOrange.copy(alpha = 0.18f).compositeOver(CardSurface)
     val barColor by animateColorAsState(
-        targetValue = if (viewer.selecting) SelectionBarColor else CardSurface,
+        targetValue = if (viewer.selecting) selectionBarColor else CardSurface,
         label = "TerminalTopBarColor"
     )
     Row(

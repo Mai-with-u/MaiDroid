@@ -936,6 +936,7 @@ internal fun HomePortraitNavigation(
         // ── 兄弟层 2：隐身品牌橙放大高亮层（仅按压或拖拽滑块时按需挂载，静止态零离屏着色器开销）───────
         if (refractionActive) {
             val targetAccentScale = lerpFloat(HomeNavVerticalAccentScale, HomeNavHorizontalAccentScale, clampedBottomProgress)
+            val refractionBarSurface = if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface
             CompositionLocalProvider(
                 LocalLiquidBottomTabScale provides {
                     lerp(1f, targetAccentScale, tabDragAnimation.pressProgress)
@@ -970,7 +971,7 @@ internal fun HomePortraitNavigation(
                                 scaleY = barPressScale
                             },
                             onDrawSurface = {
-                                drawRect(if (hasRenderEffect) LiquidBarSurface else GlassFallbackSurface)
+                                drawRect(refractionBarSurface)
                             }
                         )
                         .then(barHighlight.modifier)
@@ -1041,6 +1042,7 @@ internal fun HomePortraitNavigation(
 
         // ── 兄弟层 3：顶层游走液态水滴滑块（静止态仅绘轻量底色圆角，按压拖拽期间切换实时双源透镜折射）──
         val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
+        val indicatorSurface = GlassSelectedIndicator
         val indicatorSurfaceModifier = if (refractionActive) {
             Modifier.drawBackdrop(
                 backdrop = combinedIndicatorBackdrop,
@@ -1078,12 +1080,12 @@ internal fun HomePortraitNavigation(
                 },
                 onDrawSurface = {
                     val progress = tabDragAnimation.pressProgress
-                    drawRect(GlassSelectedIndicator, alpha = 1f - progress)
+                    drawRect(indicatorSurface, alpha = 1f - progress)
                     drawRect(Color.Black.copy(alpha = 0.03f * progress))
                 }
             )
         } else {
-            Modifier.background(GlassSelectedIndicator, HomeNavIndicatorShape)
+            Modifier.background(indicatorSurface, HomeNavIndicatorShape)
         }
         Box(
             modifier = Modifier

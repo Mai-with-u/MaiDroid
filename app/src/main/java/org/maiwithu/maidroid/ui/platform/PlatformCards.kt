@@ -486,10 +486,11 @@ internal fun DownloadIconButton(
 @Composable
 private fun ProgressRing(progress: Float) {
     val clampedProgress = progress.coerceIn(0f, 1f)
+    val trackColor = CardBorder
     Canvas(modifier = Modifier.size(32.dp)) {
         val strokeWidth = 3.dp.toPx()
         drawCircle(
-            color = CardBorder,
+            color = trackColor,
             style = Stroke(width = strokeWidth)
         )
         drawArc(

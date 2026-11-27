@@ -88,6 +88,7 @@ import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -213,7 +214,8 @@ internal fun MessagePlatformsPage(modifier: Modifier = Modifier) {
     var pendingReinstallClient by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingReinstallUrl by rememberSaveable { mutableStateOf("") }
     val categories = listOf("全部", "国内", "海外", "其他")
-    val installedPlatforms = installedPlatformCards(napCatState, snowLumaState, qqOfficialState)
+    val colors = LocalMaiDroidColors.current
+    val installedPlatforms = installedPlatformCards(napCatState, snowLumaState, qqOfficialState, colors)
     val openWebPage: (String) -> Unit = { url ->
         context.startActivity(Intent(context, WebUiActivity::class.java).apply { putExtra(WebUiActivity.EXTRA_URL, url) })
     }
