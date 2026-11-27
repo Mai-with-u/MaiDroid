@@ -18,6 +18,7 @@ import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
 import org.maiwithu.maidroid.runtime.MirrorSelectionMode
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
+import org.maiwithu.maidroid.ui.theme.AppThemeMode
 import java.util.UUID
 
 /**
@@ -72,6 +73,7 @@ internal class AppSettings(
         const val KEY_MIRROR_PYPI_CUSTOM = "mirror_pypi_custom"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_WIFI_LOCK_ENABLED = "wifi_lock_enabled"
+        const val KEY_THEME_MODE = "theme_mode"
         const val KEY_BACKUP_AUTO_ENABLED = "backup_auto_enabled"
         const val KEY_BACKUP_SCHEDULE_FREQUENCY = "backup_schedule_frequency"
         const val KEY_BACKUP_SCHEDULE_DAY_OF_WEEK = "backup_schedule_day_of_week"
@@ -262,6 +264,18 @@ internal class AppSettings(
         set(value) {
             kv.encode(KEY_WIFI_LOCK_ENABLED, value)
             _wifiLockEnabled.value = value
+        }
+
+    // 与主界面/WebUI 共用外观主题状态流：设置页切换“跟随系统/浅色/深色”时整站立即重组响应。
+    private val _themeMode = MutableStateFlow(AppThemeMode.fromStorage(kv.decodeString(KEY_THEME_MODE, null)))
+    val themeModeFlow: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    /** 外观主题模式：默认跟随系统，允许手动指定浅色或深色并即时落盘。 */
+    var themeMode: AppThemeMode
+        get() = _themeMode.value
+        set(value) {
+            kv.encode(KEY_THEME_MODE, value.storageValue)
+            _themeMode.value = value
         }
 
     // ── 自动备份设置与最近状态 ────────────────────────────────────────────
