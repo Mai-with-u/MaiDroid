@@ -1,12 +1,12 @@
 package org.maiwithu.maidroid.runtime
 
 import android.os.StatFs
-import org.maiwithu.maidroid.appupdate.formatBytes
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
 import java.io.File
 import java.nio.file.Files
+import java.util.Locale
 
 /**
  * 下载、解包这类一次要写下几百 MB 到几 GB 的步骤开工前，先看一眼手机还剩多少空间。
@@ -64,5 +64,16 @@ internal object StorageSpace {
             "${what}大约需要 ${formatBytes(requiredBytes)} 空间，手机现在只剩 ${formatBytes(free)}",
             FailureCause.DiskFull
         )
+    }
+}
+
+/** 字节数的人类可读格式化（按 1024 进位，如 163110537 -> "155.6 MB"），供空间检查、清理、备份与下载进度共用。 */
+internal fun formatBytes(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0L)
+    return when {
+        value >= 1024L * 1024 * 1024 -> "%.2f GB".format(Locale.ROOT, value / (1024.0 * 1024 * 1024))
+        value >= 1024L * 1024 -> "%.1f MB".format(Locale.ROOT, value / (1024.0 * 1024))
+        value >= 1024L -> "%.0f KB".format(Locale.ROOT, value / 1024.0)
+        else -> "$value B"
     }
 }

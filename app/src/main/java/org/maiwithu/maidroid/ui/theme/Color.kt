@@ -8,26 +8,6 @@ import androidx.compose.ui.graphics.Color
 
 // 全应用配色。按用途命名：同一语义色只在一套双色板中定义，页面通过主题作用域自动响应浅/深色切换。
 
-/** 外观主题策略：默认跟随系统深浅色切换，也可在设置中手动锁定为浅色或深色。 */
-internal enum class AppThemeMode(val storageValue: String, val label: String) {
-    System("system", "跟随系统"),
-    Light("light", "浅色"),
-    Dark("dark", "深色");
-
-    companion object {
-        fun fromStorage(raw: String?): AppThemeMode =
-            entries.firstOrNull { it.storageValue == raw } ?: System
-    }
-}
-
-/** 结合用户偏好与系统当前深色状态解析本帧是否启用深色主题。 */
-internal fun resolveUseDarkTheme(mode: AppThemeMode, systemInDarkTheme: Boolean): Boolean =
-    when (mode) {
-        AppThemeMode.System -> systemInDarkTheme
-        AppThemeMode.Light -> false
-        AppThemeMode.Dark -> true
-    }
-
 // ── 主题无关恒定色：品牌橙、白字锚点、高饱和功能图标圆底与光学白画布 ─────────────────────
 val BrandOrange = Color(0xFFE97F0F)
 val BrandOrangeMuted = Color(0xCCE97F0F)  // 80% 不透明，OOBE 的按钮和图标底色

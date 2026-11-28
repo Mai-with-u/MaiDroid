@@ -39,7 +39,7 @@ import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
 import org.maiwithu.maidroid.appupdate.ReleaseNoteKind
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.appupdate.releaseNoteLines
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch

@@ -95,7 +95,7 @@ import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NUMBER
 import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
-import org.maiwithu.maidroid.ui.theme.AppThemeMode
+import org.maiwithu.maidroid.settings.AppThemeMode
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface

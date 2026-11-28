@@ -20,7 +20,7 @@ import org.maiwithu.maidroid.runtime.MirrorPreference
 import org.maiwithu.maidroid.runtime.MirrorSelectionMode
 import org.maiwithu.maidroid.runtime.MirrorSettingsState
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
-import org.maiwithu.maidroid.ui.theme.AppThemeMode
+import org.maiwithu.maidroid.settings.AppThemeMode
 import org.maiwithu.maidroid.webui.resolveGeckoColorScheme
 import org.mozilla.geckoview.GeckoRuntimeSettings
 

@@ -8,7 +8,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton

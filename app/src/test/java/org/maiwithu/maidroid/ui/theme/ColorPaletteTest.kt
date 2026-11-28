@@ -7,6 +7,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maiwithu.maidroid.settings.AppThemeMode
+import org.maiwithu.maidroid.settings.resolveUseDarkTheme
 import kotlin.math.max
 import kotlin.math.min
 

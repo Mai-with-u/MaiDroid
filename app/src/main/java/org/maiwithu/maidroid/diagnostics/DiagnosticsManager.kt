@@ -13,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.maiwithu.maidroid.BuildConfig
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.maibot.MaiBotInstances
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion

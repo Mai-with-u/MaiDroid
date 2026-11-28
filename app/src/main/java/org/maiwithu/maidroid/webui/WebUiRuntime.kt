@@ -5,7 +5,7 @@ import android.content.res.Configuration
 import android.util.Log
 import org.maiwithu.maidroid.BuildConfig
 import org.maiwithu.maidroid.appDependencies
-import org.maiwithu.maidroid.ui.theme.AppThemeMode
+import org.maiwithu.maidroid.settings.AppThemeMode
 import org.mozilla.geckoview.BuildConfig as GeckoBuildConfig
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime

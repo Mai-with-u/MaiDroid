@@ -18,7 +18,6 @@ import org.maiwithu.maidroid.runtime.MirrorPreferenceStore
 import org.maiwithu.maidroid.runtime.MirrorSelectionMode
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ssh.ContainerSshPortRange
-import org.maiwithu.maidroid.ui.theme.AppThemeMode
 import java.util.UUID
 
 /**

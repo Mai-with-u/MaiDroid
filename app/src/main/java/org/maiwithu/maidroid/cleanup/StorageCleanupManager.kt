@@ -2,7 +2,7 @@ package org.maiwithu.maidroid.cleanup
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.runtime.ContainerCommandRunner
 import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness

@@ -37,7 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.shapes.RoundedRectangle
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.backup.BackupComponent
 import org.maiwithu.maidroid.backup.BackupFrequency
 import org.maiwithu.maidroid.backup.BackupRecord

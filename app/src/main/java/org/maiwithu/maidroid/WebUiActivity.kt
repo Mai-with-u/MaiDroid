@@ -40,6 +40,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import com.kyant.backdrop.Backdrop
+import org.maiwithu.maidroid.settings.resolveUseDarkTheme
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidModalHostOverlay
 import org.maiwithu.maidroid.ui.component.LiquidModalHostState
@@ -54,7 +55,6 @@ import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.PageBackground
-import org.maiwithu.maidroid.ui.theme.resolveUseDarkTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
@@ -194,11 +194,12 @@ class WebUiActivity : ComponentActivity() {
                 }
 
                 val modalHost = rememberLiquidModalHostState()
-                // GeckoView 使用 SurfaceView 硬件直出，液态弹窗改用零离屏拷贝页面底色背景源
+                // 全屏网页页签关闭离屏模糊采样，液态弹窗直接复用页面底色零拷贝背景源以保高刷流畅度
                 val webBackdrop = rememberSurfaceBackdrop(PageBackground)
                 val activeHost = sessionHostState
-                LaunchedEffect(activeHost, isDarkTheme) {
-                    activeHost?.updateThemeBackground(isDarkTheme)
+                val pageBackgroundArgb = PageBackground.toArgb()
+                LaunchedEffect(activeHost, pageBackgroundArgb) {
+                    activeHost?.updateThemeBackground(pageBackgroundArgb)
                 }
                 val activePrompt = if (activeHost != null) {
                     activeHost.activePrompt.collectAsState().value
@@ -278,11 +279,14 @@ class WebUiActivity : ComponentActivity() {
     // 创建或从休眠恢复全屏 GeckoView 会话；拿到非零布局尺寸后再在 Compose update 中触发加载。
     private fun attachAndLoadSessionHost() {
         if (sessionHostState != null) return
+        val initialDark = resolveUseDarkTheme(appDependencies.settings.themeMode, isSystemDarkMode(resources))
+        val initialBackground = (if (initialDark) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
         sessionHostState = WebUiSessionHost(
             context = this,
             logTag = MaiBotWebUi.LOG_TAG,
             fileChooser = fileChooser,
             downloads = downloads,
+            initialBackgroundColor = initialBackground,
             onContentProcessGone = { dead ->
                 (dead.view.parent as? ViewGroup)?.removeView(dead.view)
                 dead.release()

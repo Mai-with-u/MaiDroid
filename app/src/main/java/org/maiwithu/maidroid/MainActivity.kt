@@ -17,12 +17,12 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.remote.RemoteOpsManager
+import org.maiwithu.maidroid.settings.resolveUseDarkTheme
 import org.maiwithu.maidroid.ui.MaiDroidApp
 import org.maiwithu.maidroid.ui.component.setFocusGuardedContent
 import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
-import org.maiwithu.maidroid.ui.theme.resolveUseDarkTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiRuntime
 
