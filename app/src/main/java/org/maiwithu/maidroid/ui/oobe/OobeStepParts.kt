@@ -405,7 +405,7 @@ private fun SetupFooter(
         }
 
         if (failure != null && !canProceed) {
-            // 故障详情可能含求助码或长建议：放在弹性可滚槽内，确保无论屏高多小都不会压扁底部重试按钮。
+            // 故障详情或修复建议可能较长：放在弹性可滚槽内，确保无论屏高多小都不会压扁底部重试按钮。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

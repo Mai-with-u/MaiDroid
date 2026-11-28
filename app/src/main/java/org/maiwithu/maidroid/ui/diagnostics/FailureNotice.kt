@@ -27,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,8 +40,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.shapes.RoundedRectangle
-import kotlinx.coroutines.launch
-import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureAction
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
@@ -65,8 +62,8 @@ import org.maiwithu.maidroid.ui.theme.TextSizes
 private const val FailureSummaryCollapseThreshold = 88
 
 /**
- * 统一的故障提醒卡片：将错误码、原因诊断、原文摘要折叠及修复/求助入口收敛进同一语义卡片中。
- * 上层主按钮承载直接排障动作与“生成求助码”，下层轻量入口跳转“诊断详情”与“QQ 群求助”，避免多个大胶囊按钮乱换行。
+ * 统一的故障提醒卡片：将错误码、原因诊断、原文摘要折叠及直接排障入口收敛进同一语义卡片中。
+ * 上层主按钮承载直接排障动作，下层轻量入口跳转“导出诊断包”（保存 zip 或预填 Issue）与“QQ 群求助”。
  */
 @Composable
 internal fun FailureNotice(
@@ -76,14 +73,10 @@ internal fun FailureNotice(
     summary: String? = null
 ) {
     val context = LocalContext.current
-    val remoteOps = remember(context) { context.appDependencies.remoteOps }
-    val scope = rememberCoroutineScope()
     var showFeedback by rememberSaveable { mutableStateOf(false) }
     var showQqGroup by rememberSaveable { mutableStateOf(false) }
     var showCleanup by rememberSaveable { mutableStateOf(false) }
     var remoteModalKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var helpCode by rememberSaveable(failure.code) { mutableStateOf<String?>(null) }
-    var generatingCode by remember { mutableStateOf(false) }
     var summaryExpanded by rememberSaveable(failure.code, summary) { mutableStateOf(false) }
 
     val remoteHint = failure.remoteHint
@@ -95,7 +88,7 @@ internal fun FailureNotice(
     val cleanSummary = summary?.trim()?.takeIf { it.isNotBlank() && it != diagnosisTitle && it != diagnosisAdvice }
     val cardShape = RoundedCornerShape(Corners.Panel)
 
-    // 失败遥测与自动报错提取已统一在业务层写出 failure.logLine() 时抓当下现场上报，UI 层只做展示与手动求助码上传。
+    // 失败遥测与自动报错提取已统一在业务层写出 failure.logLine() 时抓当下现场上报，UI 层只做展示与手动导出诊断包。
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -177,50 +170,32 @@ internal fun FailureNotice(
             }
         }
 
-        helpCode?.let { code ->
-            HelpCodeCard(code = code, errorCode = failure.code)
-        }
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (remoteHint != null && remoteActionTarget != null) {
-                NoticeButton(text = defaultRemoteActionLabel(remoteActionTarget), highlighted = true) {
+        val directAction: Pair<String, () -> Unit>? = when {
+            remoteHint != null && remoteActionTarget != null ->
+                defaultRemoteActionLabel(remoteActionTarget) to {
                     dispatchRemoteAction(context, remoteHint.actionTarget) { remoteModalKey = it }
                 }
-            } else {
-                cause?.action?.let { action ->
-                    NoticeButton(text = action.label, highlighted = true) {
-                        when (action) {
-                            FailureAction.FreeUpStorage -> showCleanup = true
-                            FailureAction.MaiBotUpdate ->
-                                dispatchRemoteAction(context, "open:maibot_update") { remoteModalKey = it }
-                            FailureAction.NetworkSettings,
-                            FailureAction.DateSettings -> openSystemSettings(context, action)
-                        }
+            cause?.action != null -> cause.action.let { action ->
+                action.label to {
+                    when (action) {
+                        FailureAction.FreeUpStorage -> showCleanup = true
+                        FailureAction.MaiBotUpdate ->
+                            dispatchRemoteAction(context, "open:maibot_update") { remoteModalKey = it }
+                        FailureAction.NetworkSettings,
+                        FailureAction.DateSettings -> openSystemSettings(context, action)
                     }
                 }
             }
+            else -> null
+        }
 
-            if (helpCode == null) {
-                NoticeButton(
-                    text = if (generatingCode) "生成求助码中..." else "生成求助码",
-                    highlighted = false,
-                    enabled = !generatingCode
-                ) {
-                    generatingCode = true
-                    scope.launch {
-                        val res = remoteOps.generateHelpCode(failure)
-                        generatingCode = false
-                        res.onSuccess { code ->
-                            helpCode = code
-                            copyHelpCodeToClipboard(context, code, failure.code)
-                        }.onFailure { err ->
-                            Toast.makeText(context, err.message ?: "生成求助码失败", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
+        // 仅当存在直接修复或跳转动作时才渲染主按钮行，避免空行占位
+        if (directAction != null) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                NoticeButton(text = directAction.first, highlighted = true, onClick = directAction.second)
             }
         }
 
@@ -234,7 +209,7 @@ internal fun FailureNotice(
             itemVerticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                NoticeTextLink(text = "诊断详情", onClick = { showFeedback = true })
+                NoticeTextLink(text = "导出诊断包", onClick = { showFeedback = true })
                 Text(
                     text = "·",
                     color = CardDivider,
