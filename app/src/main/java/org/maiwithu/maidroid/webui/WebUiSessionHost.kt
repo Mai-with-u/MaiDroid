@@ -1,12 +1,7 @@
 package org.maiwithu.maidroid.webui
 
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.app.DatePickerDialog
-import android.app.Dialog
-import android.app.TimePickerDialog
 import android.content.Context
-import android.content.DialogInterface
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -51,7 +46,6 @@ import org.mozilla.geckoview.WebExtension.Port
 import org.mozilla.geckoview.WebExtension.PortDelegate
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
-import java.util.Calendar
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -113,7 +107,16 @@ internal class WebUiSessionHost(
     private var desktopViewportEnabled = false
     private var layoutBasisWidthPx = 0
     private var configureEverSent = false
-    private var activeDialog: Dialog? = null
+    private val promptController = WebUiPromptController(
+        hostContext = context,
+        logTag = logTag,
+        isReleased = { released },
+        runOnMain = { block -> runOnMain(block) },
+        dismissActiveComposePrompt = {
+            _activePrompt.value?.onDismiss?.invoke()
+            _activePrompt.value = null
+        }
+    )
 
     private val twoFingerScroll: WebUiTwoFingerScroll
 
@@ -310,8 +313,7 @@ internal class WebUiSessionHost(
 
         _activePrompt.value?.onDismiss?.invoke()
         _activePrompt.value = null
-        activeDialog?.cancel()
-        activeDialog = null
+        promptController.release()
 
         runCatching { bridgePort?.disconnect() }
         bridgePort = null
@@ -603,120 +605,20 @@ internal class WebUiSessionHost(
 
     private fun showDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
         if (prompt.isComplete) return GeckoResult()
-        if (usableActivity() == null &&
+        if (promptController.usableActivity() == null &&
             prompt.type != DateTimePrompt.Type.MONTH &&
             prompt.type != DateTimePrompt.Type.WEEK
         ) {
             return GeckoResult.fromValue(prompt.dismiss())
         }
         return when (prompt.type) {
-            DateTimePrompt.Type.DATE -> showDatePickerPrompt(prompt)
-            DateTimePrompt.Type.TIME -> showTimePickerPrompt(prompt)
-            DateTimePrompt.Type.DATETIME_LOCAL -> showDateTimeLocalPrompt(prompt)
+            DateTimePrompt.Type.DATE -> promptController.showDatePickerPrompt(prompt)
+            DateTimePrompt.Type.TIME -> promptController.showTimePickerPrompt(prompt)
+            DateTimePrompt.Type.DATETIME_LOCAL -> promptController.showDateTimeLocalPrompt(prompt)
             DateTimePrompt.Type.MONTH,
             DateTimePrompt.Type.WEEK -> showTextDateTimePrompt(prompt)
             else -> showTextDateTimePrompt(prompt)
         }
-    }
-
-    private fun showDatePickerPrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
-        val initial = parseDateValue(prompt.defaultValue) ?: currentDateValue()
-        return showStandalonePromptDialog(prompt, "date picker prompt") { activity, complete ->
-            createDatePickerDialog(
-                activity = activity,
-                prompt = prompt,
-                initial = initial,
-                complete = complete
-            ) { picked ->
-                complete { prompt.confirm(formatDateValue(picked.year, picked.month, picked.day)) }
-            }
-        }
-    }
-
-    private fun showTimePickerPrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
-        val initial = parseTimeValue(prompt.defaultValue) ?: currentTimeValue()
-        return showStandalonePromptDialog(prompt, "time picker prompt") { activity, complete ->
-            createTimePickerDialog(
-                activity = activity,
-                prompt = prompt,
-                initial = initial,
-                complete = complete
-            ) { picked ->
-                complete { prompt.confirm(formatTimeValue(picked.hour, picked.minute)) }
-            }
-        }
-    }
-
-    private fun showDateTimeLocalPrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
-        if (prompt.isComplete) return GeckoResult()
-        val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
-        val initial = parseDateTimeLocalValue(prompt.defaultValue)
-            ?: WebUiDateTimeValue(currentDateValue(), currentTimeValue())
-        val result = GeckoResult<PromptResponse>()
-        var currentDialog: Dialog? = null
-        var movingToTimePicker = false
-        val guard = PromptSettlementGuard<PromptResponse>(
-            isAlreadyComplete = { prompt.isComplete }
-        ) { response ->
-            if (activeDialog === currentDialog) {
-                activeDialog = null
-            }
-            result.complete(response)
-        }
-        val complete: (() -> PromptResponse) -> Unit = { produce -> guard.settleOnce(produce) }
-
-        val dateDialog = createDatePickerDialog(
-            activity = activity,
-            prompt = prompt,
-            initial = initial.date,
-            complete = complete
-        ) { pickedDate ->
-            if (movingToTimePicker || prompt.isComplete) return@createDatePickerDialog
-            val stepActivity = usableActivity() ?: return@createDatePickerDialog
-            // 切换到第二步时间选择器期间阻止第一步对话框关闭监听把本次选择误判为取消。
-            movingToTimePicker = true
-            val timeDialog = createTimePickerDialog(
-                activity = stepActivity,
-                prompt = prompt,
-                initial = initial.time,
-                complete = complete
-            ) { pickedTime ->
-                complete { prompt.confirm(formatDateTimeLocalValue(pickedDate, pickedTime)) }
-            }
-            timeDialog.setOnDismissListener {
-                if (activeDialog === timeDialog) {
-                    activeDialog = null
-                }
-                guard.settleOnce { prompt.dismiss() }
-            }
-            currentDialog = timeDialog
-            attachActiveDialog(
-                prompt = prompt,
-                dialog = timeDialog,
-                dismissTarget = { currentDialog },
-                logLabel = "datetime-local time picker"
-            ) {
-                guard.settleOnce { prompt.dismiss() }
-            }
-        }
-        dateDialog.setOnDismissListener {
-            if (activeDialog === dateDialog) {
-                activeDialog = null
-            }
-            if (!movingToTimePicker) {
-                guard.settleOnce { prompt.dismiss() }
-            }
-        }
-        currentDialog = dateDialog
-        attachActiveDialog(
-            prompt = prompt,
-            dialog = dateDialog,
-            dismissTarget = { currentDialog },
-            logLabel = "datetime-local date picker"
-        ) {
-            guard.settleOnce { prompt.dismiss() }
-        }
-        return result
     }
 
     private fun showTextDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> =
@@ -776,7 +678,7 @@ internal class WebUiSessionHost(
         // 切出新 Compose 弹窗前先按取消收尾旧弹窗，防止网页连弹时出现二次结算异常。
         _activePrompt.value?.onDismiss?.invoke()
         _activePrompt.value = null
-        activeDialog?.dismiss()
+        promptController.dismissActiveDialog()
 
         val requestId = promptIdCounter.getAndIncrement()
         val result = GeckoResult<PromptResponse>()
@@ -800,143 +702,6 @@ internal class WebUiSessionHost(
         return result
     }
 
-    private fun showStandalonePromptDialog(
-        prompt: BasePrompt,
-        logLabel: String,
-        createDialog: (Activity, (() -> PromptResponse) -> Unit) -> Dialog
-    ): GeckoResult<PromptResponse> {
-        if (prompt.isComplete) return GeckoResult()
-        val activity = usableActivity() ?: return GeckoResult.fromValue(prompt.dismiss())
-        val result = GeckoResult<PromptResponse>()
-        var dialog: Dialog? = null
-        val guard = PromptSettlementGuard<PromptResponse>(
-            isAlreadyComplete = { prompt.isComplete }
-        ) { response ->
-            if (activeDialog === dialog) {
-                activeDialog = null
-            }
-            result.complete(response)
-        }
-        val created = createDialog(activity) { produce -> guard.settleOnce(produce) }
-        dialog = created
-        created.setOnDismissListener {
-            if (activeDialog === created) {
-                activeDialog = null
-            }
-            guard.settleOnce { prompt.dismiss() }
-        }
-        attachActiveDialog(
-            prompt = prompt,
-            dialog = created,
-            logLabel = logLabel
-        ) {
-            guard.settleOnce { prompt.dismiss() }
-        }
-        return result
-    }
-
-    private fun attachActiveDialog(
-        prompt: BasePrompt,
-        dialog: Dialog,
-        dismissTarget: () -> Dialog? = { dialog },
-        logLabel: String,
-        onShowFailed: () -> Unit
-    ) {
-        _activePrompt.value?.onDismiss?.invoke()
-        _activePrompt.value = null
-        // 网页主动撤销或关闭标签页时同步关掉当前原生弹窗，防止界面残留。
-        prompt.delegate = object : PromptInstanceDelegate {
-            override fun onPromptDismiss(targetPrompt: BasePrompt) {
-                runOnMain { dismissTarget()?.dismiss() }
-            }
-        }
-        if (activeDialog !== dialog) {
-            activeDialog?.dismiss()
-        }
-        activeDialog = dialog
-        runCatching { dialog.show() }.onFailure { error ->
-            Log.w(logTag, "Failed to show $logLabel: ${error.message}")
-            if (activeDialog === dialog) {
-                activeDialog = null
-            }
-            onShowFailed()
-        }
-    }
-
-    private fun createDatePickerDialog(
-        activity: Activity,
-        prompt: DateTimePrompt,
-        initial: WebUiDateValue,
-        complete: (() -> PromptResponse) -> Unit,
-        onPicked: (WebUiDateValue) -> Unit
-    ): DatePickerDialog =
-        DatePickerDialog(
-            activity,
-            { _, year, monthZeroBased, dayOfMonth ->
-                onPicked(WebUiDateValue(year = year, month = monthZeroBased + 1, day = dayOfMonth))
-            },
-            initial.year,
-            initial.month - 1,
-            initial.day
-        ).apply {
-            prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
-            applyDateBounds(this, prompt.minValue, prompt.maxValue)
-            setButton(DialogInterface.BUTTON_NEUTRAL, "清除") { _, _ ->
-                complete { prompt.confirm("") }
-            }
-        }
-
-    private fun createTimePickerDialog(
-        activity: Activity,
-        prompt: DateTimePrompt,
-        initial: WebUiTimeValue,
-        complete: (() -> PromptResponse) -> Unit,
-        onPicked: (WebUiTimeValue) -> Unit
-    ): TimePickerDialog =
-        TimePickerDialog(
-            activity,
-            { _, hourOfDay, minute ->
-                onPicked(WebUiTimeValue(hour = hourOfDay, minute = minute))
-            },
-            initial.hour,
-            initial.minute,
-            true
-        ).apply {
-            prompt.title?.takeIf { it.isNotBlank() }?.let(::setTitle)
-            setButton(DialogInterface.BUTTON_NEUTRAL, "清除") { _, _ ->
-                complete { prompt.confirm("") }
-            }
-        }
-
-    private fun applyDateBounds(picker: DatePickerDialog, minValue: String?, maxValue: String?) {
-        val minMillis = parseDateEpochMillis(minValue)
-        val maxMillis = parseDateEpochMillis(maxValue)
-        if (minMillis != null && maxMillis != null && minMillis > maxMillis) return
-        runCatching {
-            minMillis?.let { picker.datePicker.minDate = it }
-            maxMillis?.let { picker.datePicker.maxDate = it }
-        }.onFailure { error ->
-            Log.w(logTag, "Ignored invalid date bounds: ${error.message}")
-        }
-    }
-
-    private fun currentDateValue(): WebUiDateValue =
-        Calendar.getInstance().let { cal ->
-            WebUiDateValue(
-                year = cal.get(Calendar.YEAR),
-                month = cal.get(Calendar.MONTH) + 1,
-                day = cal.get(Calendar.DAY_OF_MONTH)
-            )
-        }
-
-    private fun currentTimeValue(): WebUiTimeValue =
-        Calendar.getInstance().let { cal ->
-            WebUiTimeValue(
-                hour = cal.get(Calendar.HOUR_OF_DAY),
-                minute = cal.get(Calendar.MINUTE)
-            )
-        }
-
     private fun toChoiceNodes(choices: Array<Choice>?): List<WebUiChoiceNode> =
         choices.orEmpty().map { choice ->
             WebUiChoiceNode(
@@ -948,12 +713,6 @@ internal class WebUiSessionHost(
                 items = toChoiceNodes(choice.items)
             )
         }
-
-    private fun usableActivity(): Activity? {
-        if (released) return null
-        val activity = resolveActivity(hostContext) ?: return null
-        return activity.takeUnless { it.isFinishing || it.isDestroyed }
-    }
 
     private inline fun runOnMain(crossinline block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -979,26 +738,5 @@ internal class WebUiSessionHost(
         WebRequestError.ERROR_FILE_NOT_FOUND -> "文件不存在"
         WebRequestError.ERROR_MALFORMED_URI -> "地址格式无效"
         else -> "页面加载错误"
-    }
-}
-
-/**
- * 弹窗一次性结算保护器：将按钮结果生成推迟到真正尚未结算时才求值，
- * 防止点击确认/取消后系统继续派发 Dialog.onDismiss 时再次调用 GeckoView 的 prompt.dismiss() 引发二次结算崩溃。
- */
-internal class PromptSettlementGuard<R>(
-    private val isAlreadyComplete: () -> Boolean = { false },
-    private val onComplete: (R) -> Unit
-) {
-    private var settled = false
-
-    fun settleOnce(produceResponse: () -> R): Boolean {
-        if (settled || isAlreadyComplete()) {
-            settled = true
-            return false
-        }
-        settled = true
-        onComplete(produceResponse())
-        return true
     }
 }
