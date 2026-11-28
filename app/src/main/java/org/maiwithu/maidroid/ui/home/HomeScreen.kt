@@ -19,7 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -163,12 +165,27 @@ private fun HomeTabsShell(
         val useRail = homeUsesNavigationRail(maxWidth.value, maxHeight.value)
 
         val density = LocalDensity.current
+        val focusManager = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
         val layoutDirection = LocalLayoutDirection.current
         val safeLeft = with(density) { WindowInsets.safeDrawing.getLeft(this, layoutDirection).toDp() }
         val safeRight = with(density) { WindowInsets.safeDrawing.getRight(this, layoutDirection).toDp() }
 
-        val selectTab = remember(onTabSelected) { onTabSelected }
-        val openTerminal = remember(onTerminalClick) { onTerminalClick }
+        // 切换页签或打开全屏终端前先清焦点并收起软键盘，避免退场的 GeckoView/输入框带着焦点卸载或残留软键盘。
+        val selectTab = remember(onTabSelected, focusManager, keyboard) {
+            { target: HomeTab ->
+                focusManager.clearFocus(force = true)
+                keyboard?.hide()
+                onTabSelected(target)
+            }
+        }
+        val openTerminal = remember(onTerminalClick, focusManager, keyboard) {
+            {
+                focusManager.clearFocus(force = true)
+                keyboard?.hide()
+                onTerminalClick()
+            }
+        }
         // WebUI 页签使用独立关闭的整屏录制，改用网页底色（冷启动尚未上报时兜底柔暗 CardSurface）给悬浮导航做零拷贝采样。
         val recordHomeBackdrop = selectedTab != HomeTab.WebUi
         val webUiNavBackdrop = rememberSurfaceBackdrop(webUiTabState.pageBackground ?: CardSurface)

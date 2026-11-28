@@ -6,7 +6,6 @@ import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -19,6 +18,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.remote.RemoteOpsManager
 import org.maiwithu.maidroid.ui.MaiDroidApp
+import org.maiwithu.maidroid.ui.component.setFocusGuardedContent
 import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
@@ -76,7 +76,8 @@ class MainActivity : ComponentActivity() {
         permissions.refresh()
         handleAnnouncementIntent(intent)
 
-        setContent {
+        // 使用带焦点防重入保护的根容器挂载界面，避免卸载仍聚焦的 TerminalView / GeckoView 时在 applyChanges 期间触发闪退。
+        setFocusGuardedContent {
             val themeMode by settings.themeModeFlow.collectAsState()
             val isDarkTheme = resolveUseDarkTheme(themeMode, isSystemInDarkTheme())
             val showStartupSplash by viewModel.showStartupSplash.collectAsState()

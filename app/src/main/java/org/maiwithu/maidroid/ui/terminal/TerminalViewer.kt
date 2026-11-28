@@ -154,6 +154,7 @@ internal fun TerminalOutputScreen(
             onDismiss = onDismiss,
             embedded = false,
             enableInteractiveShell = enableInteractiveShell,
+            active = visible,
             modifier = Modifier
                 .fillMaxSize()
                 .appPageBackground(TerminalBackground)
@@ -197,10 +198,12 @@ private fun TerminalViewer(
     onDismiss: () -> Unit,
     embedded: Boolean,
     enableInteractiveShell: Boolean,
+    active: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val viewer = rememberTerminalViewerState()
     val shellManager = remember(context, enableInteractiveShell) {
@@ -233,11 +236,16 @@ private fun TerminalViewer(
     // 暂停以来的新日志行数；null 表示多到快照里的行已经全被挤出去了。
     val newLineCount: Int? = remember(frozenLogs, logs) { if (frozenLogs == null) 0 else countNewLines(frozenLogs, logs) }
 
-    // 收起搜索前先主动清掉输入框的焦点：终端页和主页在同一个 ComposeView 里，聚焦的输入框直接被移除时，
-    // Compose 会把焦点交给下面的 WebView，网页随即露出键盘焦点轮廓。
+    // 收起搜索或关闭全屏终端页前先主动清焦点并收起软键盘，避免终端视图卸载时键盘残留或焦点落回底层页面。
     val closeSearch = {
         focusManager.clearFocus(force = true)
+        keyboard?.hide()
         viewer.closeSearch()
+    }
+    val dismissTerminal = {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+        onDismiss()
     }
 
     // 切向「终端」页时自动收起日志搜索与多选状态，避免旧页状态阻塞输入或返回键
@@ -254,7 +262,7 @@ private fun TerminalViewer(
     BackHandler(enabled = !viewer.selecting && !viewer.searchOpen && toolsExpanded) {
         toolsExpanded = false
     }
-    BackHandler(enabled = !embedded && !viewer.selecting && !viewer.searchOpen && !toolsExpanded, onBack = onDismiss)
+    BackHandler(enabled = !embedded && !viewer.selecting && !viewer.searchOpen && !toolsExpanded, onBack = dismissTerminal)
 
     if (showFeedback) {
         FeedbackDialog(failure = null, onDismiss = { showFeedback = false })
@@ -278,7 +286,7 @@ private fun TerminalViewer(
                 compact = compact,
                 embedded = embedded,
                 insets = topInsets,
-                onDismiss = onDismiss,
+                onDismiss = dismissTerminal,
                 onCloseSearch = closeSearch,
                 onSelectPage = { page ->
                     scope.launch {
@@ -360,7 +368,7 @@ private fun TerminalViewer(
                     } else {
                         ContainerTerminalPane(
                             shellManager = shellManager,
-                            isActivePage = currentPage == TerminalPage.Shell,
+                            isActivePage = active && currentPage == TerminalPage.Shell,
                             showExtraKeys = showExtraKeys,
                             onSelectingTextChange = { shellSelectingText = it },
                             onMouseTrackingChange = { shellMouseTracking = it },

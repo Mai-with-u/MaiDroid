@@ -43,7 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -118,16 +117,16 @@ internal fun ContainerTerminalPane(
     val maxFontPx = remember(density) { with(density) { 24.sp.toPx().roundToInt() }.coerceAtLeast(36) }
     var fontSizePx by remember(baseFontPx) { mutableIntStateOf(baseFontPx) }
 
-    var terminalViewRef by remember { mutableStateOf<TerminalView?>(null) }
+    val terminalViewHolder = remember { TerminalViewHolder() }
 
-    // 切到此页时懒启动容器 shell；滑回日志输出页时清焦点并收起软键盘，同时释放 Pager 锁
+    // 切到此页时懒启动容器 shell；滑回日志输出页或关闭全屏终端页时清焦点并收起软键盘，同时释放 Pager 锁
     LaunchedEffect(isActivePage) {
         if (isActivePage) {
             shellManager.ensureStarted()
         } else {
             onSelectingTextChange(false)
             onMouseTrackingChange(false)
-            terminalViewRef?.let { view ->
+            terminalViewHolder.view?.let { view ->
                 if (view.isSelectingText) view.stopTextSelectionMode()
                 view.clearFocus()
                 hideSoftKeyboard(context, view)
@@ -136,24 +135,12 @@ internal fun ContainerTerminalPane(
     }
 
     // 主题或会话代数变化时，同步写入 Termux 调色板并强制重绘终端视图
-    LaunchedEffect(isDark, shellState.session, shellState.sessionGeneration, terminalViewRef) {
+    LaunchedEffect(isDark, shellState.session, shellState.sessionGeneration) {
         applyTerminalThemeColors(shellState.session, isDark)
-        terminalViewRef?.let { view ->
+        terminalViewHolder.view?.let { view ->
             view.setBackgroundColor(TerminalBackgroundColorInt(isDark))
             view.onScreenUpdated()
             onMouseTrackingChange(shellState.session?.emulator?.isMouseTrackingActive == true)
-        }
-    }
-
-    DisposableEffect(terminalViewRef) {
-        val view = terminalViewRef
-        if (view != null) {
-            shellManager.attachView(view)
-        }
-        onDispose {
-            if (view != null) {
-                shellManager.detachView(view)
-            }
         }
     }
 
@@ -188,6 +175,7 @@ internal fun ContainerTerminalPane(
                 ) {
                     if (activeSession != null) {
                         TerminalSessionAndroidView(
+                            shellManager = shellManager,
                             session = activeSession,
                             sessionGeneration = shellState.sessionGeneration,
                             isActivePage = isActivePage,
@@ -209,7 +197,7 @@ internal fun ContainerTerminalPane(
                             },
                             onSelectingTextChange = onSelectingTextChange,
                             onMouseTrackingChange = onMouseTrackingChange,
-                            onViewReady = { terminalViewRef = it },
+                            viewHolder = terminalViewHolder,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -247,8 +235,13 @@ internal fun ContainerTerminalPane(
     }
 }
 
+private class TerminalViewHolder {
+    var view: TerminalView? = null
+}
+
 @Composable
 private fun TerminalSessionAndroidView(
+    shellManager: ContainerShellManager,
     session: TerminalSession,
     sessionGeneration: Int,
     isActivePage: Boolean,
@@ -262,7 +255,7 @@ private fun TerminalSessionAndroidView(
     readAltSticky: () -> Boolean,
     onSelectingTextChange: (Boolean) -> Unit,
     onMouseTrackingChange: (Boolean) -> Unit,
-    onViewReady: (TerminalView) -> Unit,
+    viewHolder: TerminalViewHolder,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -275,7 +268,6 @@ private fun TerminalSessionAndroidView(
     val latestReadAlt by rememberUpdatedState(readAltSticky)
     val latestOnSelectingChange by rememberUpdatedState(onSelectingTextChange)
     val latestOnMouseTrackingChange by rememberUpdatedState(onMouseTrackingChange)
-    val latestOnViewReady by rememberUpdatedState(onViewReady)
 
     val typeface = remember(context) {
         ResourcesCompat.getFont(context, R.font.jetbrains_mono_regular) ?: Typeface.MONOSPACE
@@ -360,7 +352,9 @@ private fun TerminalSessionAndroidView(
                 })
                 applyTerminalThemeColors(latestSession, latestIsDark)
                 attachSession(latestSession)
-                latestOnViewReady(this)
+                // 在节点创建阶段用普通引用持有视图并绑定会话刷新器，不触发额外的 Compose 状态写入。
+                viewHolder.view = this
+                shellManager.attachView(this)
             }
         },
         update = { view ->
@@ -374,6 +368,15 @@ private fun TerminalSessionAndroidView(
                 view.onScreenUpdated()
             }
             latestOnMouseTrackingChange(session.emulator?.isMouseTrackingActive == true)
+        },
+        onRelease = { view ->
+            // 视图从组合树卸载时收起软键盘、停止选字并解绑容器会话，防止脏引用与软键盘滞留。
+            if (view.isSelectingText) view.stopTextSelectionMode()
+            hideSoftKeyboard(context, view)
+            shellManager.detachView(view)
+            if (viewHolder.view === view) {
+                viewHolder.view = null
+            }
         }
     )
 }

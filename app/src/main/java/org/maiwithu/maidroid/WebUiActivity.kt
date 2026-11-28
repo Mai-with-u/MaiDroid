@@ -9,7 +9,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -48,6 +47,7 @@ import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
 import org.maiwithu.maidroid.ui.component.WebUiPromptDialogHost
 import org.maiwithu.maidroid.ui.component.rememberLiquidModalHostState
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
+import org.maiwithu.maidroid.ui.component.setFocusGuardedContent
 import org.maiwithu.maidroid.ui.home.WEB_UI_HIBERNATE_DELAY_MS
 import org.maiwithu.maidroid.ui.home.shouldHibernateWebUiOnTrimMemory
 import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
@@ -164,7 +164,8 @@ class WebUiActivity : ComponentActivity() {
         }
         attachAndLoadSessionHost()
 
-        setContent {
+        // 统一挂载焦点防重入根容器，防止休眠或替换 GeckoView 会话时同步触发 rootViewRequestFocus 重入。
+        setFocusGuardedContent {
             val themeMode by settings.themeModeFlow.collectAsState()
             val isDarkTheme = resolveUseDarkTheme(themeMode, isSystemInDarkTheme())
             val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
