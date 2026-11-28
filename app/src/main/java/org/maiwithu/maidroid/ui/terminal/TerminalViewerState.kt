@@ -15,12 +15,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import kotlin.math.max
+import kotlin.math.min
 import org.maiwithu.maidroid.terminal.AnsiLine
 import org.maiwithu.maidroid.terminal.AnsiStyle
 import org.maiwithu.maidroid.terminal.AnsiText
@@ -213,15 +216,22 @@ internal fun selectedText(lines: List<AnsiLine>, selection: Set<Int>): String =
 
 /**
  * 一行日志的显示文字：SGR 颜色换成 SpanStyle，再给命中筛选关键字的位置（忽略大小写）加上高亮底色。
+ * 浅色终端下会自动压暗亮白/亮黄/亮青/亮绿等高亮 ANSI 前景色，保证在浅底上的可读对比度。
  * 空行补一个空格，保持空行的行高。
  */
-internal fun AnsiLine.toDisplayText(query: String, highlight: SpanStyle): AnnotatedString = buildAnnotatedString {
+internal fun AnsiLine.toDisplayText(
+    query: String,
+    highlight: SpanStyle,
+    isDarkTerminal: Boolean = true
+): AnnotatedString = buildAnnotatedString {
     if (text.isBlank()) {
         append(' ')
         return@buildAnnotatedString
     }
     append(text)
-    spans.forEach { span -> addStyle(span.style.toSpanStyle(), span.start, span.end) }
+    spans.forEach { span ->
+        addStyle(span.style.toSpanStyle(isDarkTerminal = isDarkTerminal), span.start, span.end)
+    }
     val keyword = query.trim()
     if (keyword.isNotEmpty()) {
         var start = text.indexOf(keyword, ignoreCase = true)
@@ -232,14 +242,56 @@ internal fun AnsiLine.toDisplayText(query: String, highlight: SpanStyle): Annota
     }
 }
 
-// SGR 样式换成 Compose 的 SpanStyle；没设颜色的部分沿用终端的默认浅灰字和近黑底。
-private fun AnsiStyle.toSpanStyle(): SpanStyle = SpanStyle(
-    color = foreground?.let { Color(it) } ?: Color.Unspecified,
-    background = background?.let { Color(it) } ?: Color.Unspecified,
-    fontWeight = if (bold) FontWeight.Bold else null,
-    fontStyle = if (italic) FontStyle.Italic else null,
-    textDecoration = if (underline) TextDecoration.Underline else null
-)
+/**
+ * 在浅色终端背景（~#F6F7FA）上，把原本针对暗底调校的高亮前景色压暗至易读范围：
+ * - 近无彩色高亮度灰白直接映射到深炭墨区，避免白底白字；
+ * - 亮黄/亮青/亮绿等高明度彩色保持色相并线性压暗分量同时提升纯度，兼顾区分度与对比度。
+ */
+internal fun adaptAnsiColorForLightBackground(color: Color): Color {
+    val maxChannel = max(color.red, max(color.green, color.blue))
+    val minChannel = min(color.red, min(color.green, color.blue))
+    val saturation = if (maxChannel > 0f) (maxChannel - minChannel) / maxChannel else 0f
+    val lum = color.luminance()
+    return when {
+        saturation < 0.12f && lum > 0.45f -> {
+            // 白/浅灰线性反相并落入深炭灰 [0.12, 0.34]
+            val targetChannel = (1f - lum).coerceIn(0.12f, 0.34f)
+            Color(
+                red = targetChannel,
+                green = targetChannel,
+                blue = (targetChannel + 0.02f).coerceAtMost(0.36f),
+                alpha = color.alpha
+            )
+        }
+        lum > 0.30f -> {
+            val scale = (0.30f / lum).coerceIn(0.36f, 0.72f)
+            Color(
+                red = (color.red * scale).coerceIn(0f, 1f),
+                green = (color.green * scale).coerceIn(0f, 1f),
+                blue = (color.blue * scale).coerceIn(0f, 1f),
+                alpha = color.alpha
+            )
+        }
+        else -> color
+    }
+}
+
+// SGR 样式换成 Compose 的 SpanStyle；浅色终端且未自带背景色块时，对过亮的前景色自动压暗保证清晰可读。
+private fun AnsiStyle.toSpanStyle(isDarkTerminal: Boolean): SpanStyle {
+    val rawForeground = foreground?.let { Color(it) }
+    val resolvedForeground = when {
+        rawForeground == null -> Color.Unspecified
+        !isDarkTerminal && background == null -> adaptAnsiColorForLightBackground(rawForeground)
+        else -> rawForeground
+    }
+    return SpanStyle(
+        color = resolvedForeground,
+        background = background?.let { Color(it) } ?: Color.Unspecified,
+        fontWeight = if (bold) FontWeight.Bold else null,
+        fontStyle = if (italic) FontStyle.Italic else null,
+        textDecoration = if (underline) TextDecoration.Underline else null
+    )
+}
 
 /** 把文字放进剪贴板并提示复制了几行；hint 不为空时接在提示后面（比如告诉用户可以长按只复制几行）。 */
 internal fun copyTerminalText(context: Context, text: String, lineCount: Int, hint: String? = null) {

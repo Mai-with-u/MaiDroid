@@ -1,19 +1,29 @@
 package org.maiwithu.maidroid.webui
 
 import android.content.Context
+import android.content.res.Configuration
 import android.util.Log
 import org.maiwithu.maidroid.BuildConfig
+import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.ui.theme.AppThemeMode
 import org.mozilla.geckoview.BuildConfig as GeckoBuildConfig
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.WebExtension
 
+/** 将应用主题策略映射为 GeckoView 内置的 prefers-color-scheme 偏好值。 */
+internal fun resolveGeckoColorScheme(mode: AppThemeMode): Int = when (mode) {
+    AppThemeMode.System -> GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM
+    AppThemeMode.Light -> GeckoRuntimeSettings.COLOR_SCHEME_LIGHT
+    AppThemeMode.Dark -> GeckoRuntimeSettings.COLOR_SCHEME_DARK
+}
+
 /**
  * 进程级 Mozilla GeckoView 运行时与内置 WebExtension 安装管理器。
  *
  * 延迟到第一次真正打开 WebUI 时再创建 GeckoRuntime，避免仅挂在后台服务或 OOBE 页面时提前拉起渲染子进程；
- * 运行时启用深色配色、调试版远程调试（Firefox `about:debugging`）以及回环服务所需的明文/宽松连接配置。
+ * 运行时随应用外观主题同步配色偏好，并开启调试版远程调试以及回环服务所需的明文/宽松连接配置。
  */
 internal object WebUiRuntime {
     private const val TAG = "MaiDroidGecko"
@@ -28,16 +38,29 @@ internal object WebUiRuntime {
     fun getOrCreate(context: Context): GeckoRuntime {
         runtime?.let { return it }
         val appContext = context.applicationContext
+        val preferredScheme = resolveGeckoColorScheme(appContext.appDependencies.settings.themeMode)
         val settings = GeckoRuntimeSettings.Builder()
             .javaScriptEnabled(true)
             .consoleOutput(true)
             .remoteDebuggingEnabled(BuildConfig.DEBUG)
-            .preferredColorScheme(GeckoRuntimeSettings.COLOR_SCHEME_DARK)
+            .preferredColorScheme(preferredScheme)
             .allowInsecureConnections(GeckoRuntimeSettings.ALLOW_ALL)
             .build()
         return GeckoRuntime.create(appContext, settings).also { created ->
+            // GeckoRuntimeSettings 拷贝构造漏掉了 mPreferredColorScheme，创建后显式补写一次确保首帧配色生效
+            created.settings.preferredColorScheme = preferredScheme
             runtime = created
         }
+    }
+
+    /** 应用内切换“跟随系统/浅色/深色”时实时通知已创建的 GeckoRuntime 更新 prefers-color-scheme。 */
+    fun updatePreferredColorScheme(mode: AppThemeMode) {
+        runtime?.settings?.preferredColorScheme = resolveGeckoColorScheme(mode)
+    }
+
+    /** 清单已声明 configChanges+=uiMode，系统深浅色切换时显式转发给 GeckoRuntime 更新 prefers-color-scheme。 */
+    fun onConfigurationChanged(newConfig: Configuration) {
+        runtime?.configurationChanged(newConfig)
     }
 
     /** 安装（或复用已持久化的）内置桥接 WebExtension。 */

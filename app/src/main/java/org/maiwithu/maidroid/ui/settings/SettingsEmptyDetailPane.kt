@@ -34,6 +34,7 @@ import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.GlassSurface
 import org.maiwithu.maidroid.ui.theme.IconMintGreen
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PageBackground
 
 /**
@@ -54,7 +55,10 @@ internal fun SettingsEmptyDetailPane(
     val iconShape = remember(iconCornerRadius) { RoundedRectangle(iconCornerRadius) }
 
     val animationScope = rememberCoroutineScope()
-    val highlight = remember(animationScope) { InteractiveHighlight(animationScope) }
+    val isDark = LocalMaiDroidColors.current.isDark
+    val highlight = remember(animationScope, isDark) {
+        InteractiveHighlight(animationScope, isDark = isDark)
+    }
     val ambientBackdrop = rememberThemedLayerBackdrop(PageBackground)
     val iconLayerBackdrop = rememberLayerBackdrop()
 
@@ -103,7 +107,7 @@ internal fun SettingsEmptyDetailPane(
                     shadow = {
                         Shadow(
                             radius = 24.dp,
-                            color = Color.Black.copy(alpha = 0.36f)
+                            color = Color.Black.copy(alpha = if (isDark) 0.36f else 0.14f)
                         )
                     },
                     innerShadow = {

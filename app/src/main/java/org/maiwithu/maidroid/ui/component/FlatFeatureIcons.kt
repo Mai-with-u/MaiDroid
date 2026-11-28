@@ -534,6 +534,23 @@ internal object FlatFeatureIcons {
             }
         }
     }
+
+    /** 外观主题图标：外圈双弧日光环搭配半明半暗对比核心，表达浅色/深色与跟随系统切换。 */
+    val Appearance: ImageVector by lazy {
+        flatVector("FlatAppearance") {
+            strokeLayer(IconSecondary, width = 1.9f) {
+                circlePath(12.0f, 12.0f, 8.4f)
+            }
+            fillLayer(IconForeground) {
+                moveTo(12.0f, 6.2f)
+                arcTo(5.8f, 5.8f, 0f, false, true, 12.0f, 17.8f)
+                close()
+            }
+            strokeLayer(IconForeground, width = 1.8f) {
+                circlePath(12.0f, 12.0f, 5.8f)
+            }
+        }
+    }
 }
 
 private inline fun flatVector(

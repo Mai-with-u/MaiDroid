@@ -283,4 +283,13 @@ class MaiDialogLayoutTest {
         assertEquals(54f, longBottom.thumbHeightPx, 0.01f)
         assertEquals(522f, longBottom.thumbTopPx, 0.01f)
     }
+
+    @Test
+    fun `two column scrollbar clearance leaves breathing room while keeping 20-16-20 alignment`() {
+        val scrollbarOccupiedDp = MaiDialogScrollbarEndInsetDp + MaiDialogScrollbarWidthDp
+        assertTrue(MaiDialogTwoColumnPrimaryEndPaddingDp - scrollbarOccupiedDp >= 6f)
+        assertTrue(MaiDialogTwoColumnSecondaryEndPaddingDp - scrollbarOccupiedDp >= 6f)
+        assertEquals(16f, MaiDialogTwoColumnPrimaryEndPaddingDp + MaiDialogTwoColumnGapDp, 0.01f)
+        assertEquals(20f, MaiDialogTwoColumnSecondaryEndPaddingDp + MaiDialogTwoColumnOuterEndDp, 0.01f)
+    }
 }

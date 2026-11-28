@@ -9,10 +9,10 @@
   var CHUNK_BYTES = 512 * 1024;
   var FORGET_REVOKED_MS = 60000;
 
-  // 1. 首次加载补全深色与未来复古主题默认值，不覆盖用户已主动修改过的设置。
+  // 1. 首次加载补全跟随系统与未来复古主题默认值，不覆盖用户已主动修改过的设置。
   try {
     if (localStorage.getItem('maibot-theme-mode') === null) {
-      localStorage.setItem('maibot-theme-mode', 'dark');
+      localStorage.setItem('maibot-theme-mode', 'system');
     }
     if (localStorage.getItem('maibot-theme-dashboard-style') === null) {
       localStorage.setItem('maibot-theme-dashboard-style', 'future-retro');

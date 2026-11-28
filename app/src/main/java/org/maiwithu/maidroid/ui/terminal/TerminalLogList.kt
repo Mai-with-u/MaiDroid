@@ -317,9 +317,12 @@ private fun TerminalLogLine(
     selected: Boolean,
     wrap: Boolean
 ) {
+    val isDark = LocalMaiDroidColors.current.isDark
     val lineStyle = rememberTerminalLineStyle()
     val highlight = rememberSearchHighlightSpan()
-    val text: AnnotatedString = remember(line, query, highlight) { line.toDisplayText(query, highlight) }
+    val text: AnnotatedString = remember(line, query, highlight, isDark) {
+        line.toDisplayText(query, highlight, isDarkTerminal = isDark)
+    }
     Text(
         text = text,
         style = lineStyle,

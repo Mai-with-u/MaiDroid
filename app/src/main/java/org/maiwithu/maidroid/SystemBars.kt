@@ -1,5 +1,7 @@
 package org.maiwithu.maidroid
 
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.view.Window
 import android.view.WindowManager
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -12,6 +14,32 @@ import androidx.core.view.WindowInsetsControllerCompat
  * 保证弹窗内外系统栏状态一致：横屏全隐藏，竖屏主页只露状态栏，OOBE 全显示。
  */
 internal val LocalHideNavigationBar = staticCompositionLocalOf { false }
+
+/**
+ * 判断状态栏是否应切为深色图标（适应浅底背景）：
+ * 启动页与 OOBE 顶部均直接铺有深色/饱和蓝插画，仅在已进入主页且启用浅色模式时才切为深色状态栏图标。
+ */
+internal fun shouldUseDarkStatusBarIcons(
+    isDarkTheme: Boolean,
+    showingSplash: Boolean,
+    setupComplete: Boolean
+): Boolean = !isDarkTheme && !showingSplash && setupComplete
+
+/** 根据深浅外观模式同步系统状态栏与导航栏图标明暗。 */
+internal fun applySystemBarAppearance(
+    window: Window,
+    darkStatusBarIcons: Boolean,
+    darkNavigationBarIcons: Boolean
+) {
+    WindowInsetsControllerCompat(window, window.decorView).apply {
+        isAppearanceLightStatusBars = darkStatusBarIcons
+        isAppearanceLightNavigationBars = darkNavigationBarIcons
+    }
+}
+
+/** 读取系统当前是否处于深色模式（Configuration.UI_MODE_NIGHT_YES）。 */
+internal fun isSystemDarkMode(resources: Resources): Boolean =
+    (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
 /**
  * 按屏幕方向设置系统栏，MainActivity 和 WebUiActivity 共用。

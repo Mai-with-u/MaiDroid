@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -75,7 +76,10 @@ import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
+import org.maiwithu.maidroid.ui.component.LiquidSegmentItem
+import org.maiwithu.maidroid.ui.component.LiquidSegmentedSelector
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
+import org.maiwithu.maidroid.ui.component.LocalLiquidBackdrop
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
 import org.maiwithu.maidroid.ui.component.computeLazyHeaderCollapseProgress
@@ -83,6 +87,7 @@ import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.overscrollBody
 import org.maiwithu.maidroid.ui.component.overscrollHeader
 import org.maiwithu.maidroid.ui.component.rememberSplitHeaderOverscrollEffect
+import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NAME
@@ -90,6 +95,7 @@ import org.maiwithu.maidroid.ui.diagnostics.QQ_FEEDBACK_GROUP_NUMBER
 import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
 import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
+import org.maiwithu.maidroid.ui.theme.AppThemeMode
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
@@ -595,6 +601,10 @@ private fun SettingsNavigationPane(
     var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
     val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
     val wifiLockEnabled by settings.wifiLockEnabledFlow.collectAsState()
+    val themeMode by settings.themeModeFlow.collectAsState()
+    val onThemeModeSelected: (AppThemeMode) -> Unit = { mode ->
+        settings.themeMode = mode
+    }
     val onKeepScreenOnChange: (Boolean) -> Unit = { enabled ->
         settings.keepScreenOn = enabled
     }
@@ -813,6 +823,15 @@ private fun SettingsNavigationPane(
                             )
                         }
                     }
+                )
+
+                SettingsDivider()
+
+                // 外观主题直接内嵌液态玻璃三档选择器，点击或拖动水滴即可即时预览浅/深色切换，无需弹窗跳转。
+                ThemeModeSettingBlock(
+                    selectedMode = themeMode,
+                    isDarkTheme = colors.isDark,
+                    onModeSelected = onThemeModeSelected
                 )
 
                 SettingsDivider()
@@ -1205,6 +1224,48 @@ private fun appUpdateSummaryColor(state: AppUpdateState, colors: MaiDroidColors)
         AppUpdatePhase.Available -> BrandOrange
         else -> colors.textMuted
     }
+
+@Composable
+private fun ThemeModeSettingBlock(
+    selectedMode: AppThemeMode,
+    isDarkTheme: Boolean,
+    onModeSelected: (AppThemeMode) -> Unit
+) {
+    val cardBackdrop = rememberSurfaceBackdrop(CardSurface)
+    val items = remember {
+        AppThemeMode.entries.map { mode -> LiquidSegmentItem(label = mode.label) }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SettingsNavigationRow(
+            icon = FlatFeatureIcons.Appearance,
+            iconColor = IconIrisBlue,
+            title = "外观主题",
+            supportingText = themeModeSummaryText(selectedMode, isDark = isDarkTheme)
+        )
+        CompositionLocalProvider(
+            LocalLiquidBackdrop provides cardBackdrop
+        ) {
+            LiquidSegmentedSelector(
+                items = items,
+                selectedIndex = selectedMode.ordinal,
+                onSelect = { index ->
+                    AppThemeMode.entries.getOrNull(index)?.let(onModeSelected)
+                },
+                height = 38.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+            )
+        }
+    }
+}
+
+internal fun themeModeSummaryText(mode: AppThemeMode, isDark: Boolean): String = when (mode) {
+    AppThemeMode.System -> if (isDark) "跟随系统（当前：深色）" else "跟随系统（当前：浅色）"
+    AppThemeMode.Light -> "已固定为浅色外观"
+    AppThemeMode.Dark -> "已固定为深色外观（OLED 纯黑）"
+}
 
 internal fun permissionSummary(state: PermissionState): String {
     val notificationStatus = if (state.notificationGranted) "通知已开启" else "通知未开启"

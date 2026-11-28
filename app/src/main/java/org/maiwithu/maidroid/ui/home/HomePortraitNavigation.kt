@@ -101,6 +101,7 @@ import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.GlassSelectedIndicator
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -605,9 +606,11 @@ internal fun HomePortraitNavigation(
                 }
         }
 
-        val barHighlight = remember(animationScope, isLtr) {
+        val isDark = LocalMaiDroidColors.current.isDark
+        val barHighlight = remember(animationScope, isLtr, isDark) {
             InteractiveHighlight(
                 animationScope = animationScope,
+                isDark = isDark,
                 position = { size, _ ->
                     if (latestClampedBottomProgress < 0.5f) {
                         val slotH = expandedTabSlotHeightPx.coerceAtLeast(1f)
@@ -1041,7 +1044,11 @@ internal fun HomePortraitNavigation(
         }
 
         // ── 兄弟层 3：顶层游走液态水滴滑块（静止态仅绘轻量底色圆角，按压拖拽期间切换实时双源透镜折射）──
-        val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
+        val fallbackBorder = when {
+            !hasRenderEffect -> Modifier.border(0.6.dp, GlassStroke, HomeNavIndicatorShape)
+            !isDark -> Modifier.border(0.5.dp, GlassStroke, HomeNavIndicatorShape)
+            else -> Modifier
+        }
         val indicatorSurface = GlassSelectedIndicator
         val indicatorSurfaceModifier = if (refractionActive) {
             Modifier.drawBackdrop(
@@ -1059,7 +1066,11 @@ internal fun HomePortraitNavigation(
                     Highlight.Default.copy(alpha = tabDragAnimation.pressProgress)
                 },
                 shadow = {
-                    Shadow(alpha = tabDragAnimation.pressProgress)
+                    if (isDark) {
+                        Shadow(alpha = tabDragAnimation.pressProgress)
+                    } else {
+                        Shadow(radius = 8.dp, color = Color.Black.copy(alpha = 0.14f * tabDragAnimation.pressProgress))
+                    }
                 },
                 innerShadow = {
                     val progress = tabDragAnimation.pressProgress

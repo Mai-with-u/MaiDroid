@@ -7,21 +7,26 @@ import android.app.Dialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.DialogInterface
-import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
+import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.applyPreferredHighRefreshRate
+import org.maiwithu.maidroid.isSystemDarkMode
 import org.maiwithu.maidroid.requestHighFrameRateOnView
 import org.maiwithu.maidroid.resolveActivity
 import org.maiwithu.maidroid.terminal.TerminalLog
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.resolveUseDarkTheme
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
@@ -128,8 +133,13 @@ internal class WebUiSessionHost(
         for (index in 0 until childCount) {
             requestHighFrameRateOnView(getChildAt(index), preferredHz)
         }
-        coverUntilFirstPaint(Color.BLACK)
-        setBackgroundColor(Color.BLACK)
+        val initialDark = resolveUseDarkTheme(
+            context.appDependencies.settings.themeMode,
+            isSystemDarkMode(context.resources)
+        )
+        val initialBg = (if (initialDark) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
+        coverUntilFirstPaint(initialBg)
+        setBackgroundColor(initialBg)
         layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
@@ -137,6 +147,13 @@ internal class WebUiSessionHost(
         overScrollMode = View.OVER_SCROLL_NEVER
         isFocusable = true
         isFocusableInTouchMode = true
+    }
+
+    /** 切换浅/深色主题时同步更新 GeckoView 首帧遮罩与容器底色，防止加载过渡期闪出异色底板。 */
+    fun updateThemeBackground(isDark: Boolean) {
+        val bgColor = (if (isDark) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
+        view.coverUntilFirstPaint(bgColor)
+        view.setBackgroundColor(bgColor)
     }
 
     private val messageDelegate = object : MessageDelegate {

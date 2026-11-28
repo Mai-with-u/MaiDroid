@@ -72,6 +72,7 @@ import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -80,6 +81,7 @@ import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
+import org.maiwithu.maidroid.webui.WebUiRuntime
 import org.maiwithu.maidroid.webui.WebUiSessionHost
 
 /** 主页或全屏网页退后台连续空闲这么久后销毁 WebUI 会话，释放内容进程与显存；回到前台且选中页签再按需唤醒。 */
@@ -280,7 +282,10 @@ internal fun rememberWebUiTabState(
                 }
             }
 
-            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+            // Application 级配置回调转发给 GeckoRuntime，兜底覆盖后台窗口期间的系统深浅色切换
+            override fun onConfigurationChanged(newConfig: Configuration) {
+                WebUiRuntime.onConfigurationChanged(newConfig)
+            }
 
             @Deprecated("Deprecated in Java")
             override fun onLowMemory() {
@@ -371,6 +376,10 @@ internal fun WebUiTabPage(
         val hasActiveModal = LocalLiquidModalHost.current?.hasModals == true
 
         if (activeHost != null) {
+            val isDark = LocalMaiDroidColors.current.isDark
+            LaunchedEffect(activeHost, isDark) {
+                activeHost.updateThemeBackground(isDark)
+            }
             val activePrompt by activeHost.activePrompt.collectAsState()
             Box(modifier = Modifier.fillMaxSize()) {
                 key(activeHost) {

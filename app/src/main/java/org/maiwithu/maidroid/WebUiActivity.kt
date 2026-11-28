@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
@@ -48,12 +50,17 @@ import org.maiwithu.maidroid.ui.component.rememberLiquidModalHostState
 import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.home.WEB_UI_HIBERNATE_DELAY_MS
 import org.maiwithu.maidroid.ui.home.shouldHibernateWebUiOnTrimMemory
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
+import org.maiwithu.maidroid.ui.theme.PageBackground
+import org.maiwithu.maidroid.ui.theme.resolveUseDarkTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiPromptRequest
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
+import org.maiwithu.maidroid.webui.WebUiRuntime
 import org.maiwithu.maidroid.webui.WebUiSessionHost
 import android.graphics.Color as AndroidColor
 
@@ -107,12 +114,22 @@ class WebUiActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val settings = appDependencies.settings
         // 全屏网页同样遵循设置页的“屏幕常亮”开关，默认允许自动息屏，并在首帧前声明高刷新率。
-        applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
+        applyKeepScreenOn(window, settings.keepScreenOn)
         applyPreferredHighRefreshRate(this)
+        val initialDark = resolveUseDarkTheme(settings.themeMode, isSystemDarkMode(resources))
+        val barStyle = if (initialDark) {
+            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+        }
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            statusBarStyle = barStyle,
+            navigationBarStyle = barStyle
+        )
+        window.decorView.setBackgroundColor(
+            (if (initialDark) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
         )
         // 横屏时和主界面一样隐藏状态栏和导航栏（从边缘滑动临时呼出），竖屏保持系统栏常显。
         applySystemBars(
@@ -148,16 +165,40 @@ class WebUiActivity : ComponentActivity() {
         attachAndLoadSessionHost()
 
         setContent {
-            MaiDroidTheme {
-                val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val themeMode by settings.themeModeFlow.collectAsState()
+            val isDarkTheme = resolveUseDarkTheme(themeMode, isSystemInDarkTheme())
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+            LaunchedEffect(isDarkTheme) {
+                val activeBarStyle = if (isDarkTheme) {
+                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                }
+                enableEdgeToEdge(
+                    statusBarStyle = activeBarStyle,
+                    navigationBarStyle = activeBarStyle
+                )
+                window.decorView.setBackgroundColor(
+                    (if (isDarkTheme) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
+                )
+            }
+            LaunchedEffect(themeMode) {
+                WebUiRuntime.updatePreferredColorScheme(themeMode)
+            }
+
+            MaiDroidTheme(darkTheme = isDarkTheme) {
                 LaunchedEffect(landscape) {
                     applySystemBars(window, landscape = landscape, hideNavigationBar = false)
                 }
 
                 val modalHost = rememberLiquidModalHostState()
-                // GeckoView 使用 SurfaceView 硬件直出，液态弹窗改用零离屏拷贝纯黑背景源
-                val webBackdrop = rememberSurfaceBackdrop(Color.Black)
+                // GeckoView 使用 SurfaceView 硬件直出，液态弹窗改用零离屏拷贝页面底色背景源
+                val webBackdrop = rememberSurfaceBackdrop(PageBackground)
                 val activeHost = sessionHostState
+                LaunchedEffect(activeHost, isDarkTheme) {
+                    activeHost?.updateThemeBackground(isDarkTheme)
+                }
                 val activePrompt = if (activeHost != null) {
                     activeHost.activePrompt.collectAsState().value
                 } else {
@@ -198,6 +239,12 @@ class WebUiActivity : ComponentActivity() {
         super.onResume()
         applyPreferredHighRefreshRate(this)
         applyKeepScreenOn(window, appDependencies.settings.keepScreenOn)
+    }
+
+    // 清单已接管 uiMode 变更：系统切换深浅色时同步通知 GeckoRuntime，维持内置网页媒体查询一致。
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        WebUiRuntime.onConfigurationChanged(newConfig)
     }
 
     override fun onStop() {
@@ -274,7 +321,7 @@ private fun WebUiActivityScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(PageBackground)
     ) {
         if (activeHost != null) {
             Box(modifier = Modifier.fillMaxSize()) {

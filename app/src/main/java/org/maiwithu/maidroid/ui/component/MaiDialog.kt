@@ -87,6 +87,8 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DialogBackdropScrim
+import org.maiwithu.maidroid.ui.theme.DialogFooterTray
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -394,23 +396,35 @@ private fun MaiDialogOverlaySurface(
 
                     if (layoutSpec.useTwoColumns && secondaryContent != null) {
                         val columnVerticalPadding = if (tightLandscape) 6.dp else 10.dp
+                        // 将滚动条占用空间从外层 Row 留白拆入各列 contentPadding 末端，保持卡片对齐同时避免滚动条压住卡片边框
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f, fill = false)
-                                .padding(horizontal = 20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                .padding(
+                                    start = MaiDialogTwoColumnOuterStartDp.dp,
+                                    end = MaiDialogTwoColumnOuterEndDp.dp
+                                ),
+                            horizontalArrangement = Arrangement.spacedBy(MaiDialogTwoColumnGapDp.dp)
                         ) {
                             MaiDialogScrollColumn(
                                 scrollable = scrollable,
-                                contentPadding = PaddingValues(vertical = columnVerticalPadding),
+                                contentPadding = PaddingValues(
+                                    end = MaiDialogTwoColumnPrimaryEndPaddingDp.dp,
+                                    top = columnVerticalPadding,
+                                    bottom = columnVerticalPadding
+                                ),
                                 verticalSpacing = 8.dp,
                                 modifier = Modifier.weight(1.12f),
                                 content = content
                             )
                             MaiDialogScrollColumn(
                                 scrollable = scrollable,
-                                contentPadding = PaddingValues(vertical = columnVerticalPadding),
+                                contentPadding = PaddingValues(
+                                    end = MaiDialogTwoColumnSecondaryEndPaddingDp.dp,
+                                    top = columnVerticalPadding,
+                                    bottom = columnVerticalPadding
+                                ),
                                 verticalSpacing = 8.dp,
                                 modifier = Modifier.weight(1f),
                                 content = secondaryContent
@@ -460,9 +474,10 @@ private fun MaiDialogWindowChrome() {
     val dialogWindow = (view.parent as? DialogWindowProvider)?.window ?: return
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val hideNavigationBar = LocalHideNavigationBar.current
+    val isDark = LocalMaiDroidColors.current.isDark
 
-    DisposableEffect(dialogWindow, landscape, hideNavigationBar) {
-        dialogWindow.prepareImmersiveDialogWindow()
+    DisposableEffect(dialogWindow, landscape, hideNavigationBar, isDark) {
+        dialogWindow.prepareImmersiveDialogWindow(isDark = isDark)
         applySystemBars(dialogWindow, landscape = landscape, hideNavigationBar = hideNavigationBar)
 
         val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
@@ -480,7 +495,7 @@ private fun MaiDialogWindowChrome() {
 }
 
 @Suppress("DEPRECATION")
-private fun Window.prepareImmersiveDialogWindow() {
+private fun Window.prepareImmersiveDialogWindow(isDark: Boolean) {
     WindowCompat.setDecorFitsSystemWindows(this, false)
     clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
     setDimAmount(0f)
@@ -501,8 +516,8 @@ private fun Window.prepareImmersiveDialogWindow() {
         }
     }
     WindowInsetsControllerCompat(this, decorView).apply {
-        isAppearanceLightStatusBars = false
-        isAppearanceLightNavigationBars = false
+        isAppearanceLightStatusBars = !isDark
+        isAppearanceLightNavigationBars = !isDark
     }
 }
 
@@ -655,7 +670,7 @@ private fun MaiDialogFooterBar(
     landscapeFooter: (@Composable RowScope.() -> Unit)?,
     footer: (@Composable ColumnScope.() -> Unit)?
 ) {
-    val footerTrayColor = Color.Black.copy(alpha = 0.09f)
+    val footerTrayColor = DialogFooterTray
     MaiDialogDivider(horizontalPadding = 0.dp)
     if (compactLandscape) {
         val tightLandscape = LocalMaiDialogTightLandscape.current
@@ -713,6 +728,17 @@ private fun MaiDialogFooterBar(
         }
     }
 }
+
+/** 弹窗滚动条线宽与右侧内缩距离（dp），需与双列内边距共同保证滚动条不压住内容卡片。 */
+internal const val MaiDialogScrollbarWidthDp = 2.5f
+internal const val MaiDialogScrollbarEndInsetDp = 3f
+
+/** 双列弹窗的外缘与列间内边距（dp）：拆出滚动条呼吸区同时维持左 20 / 中 16 / 右 20 的视觉对齐。 */
+internal const val MaiDialogTwoColumnOuterStartDp = 20f
+internal const val MaiDialogTwoColumnOuterEndDp = 6f
+internal const val MaiDialogTwoColumnGapDp = 4f
+internal const val MaiDialogTwoColumnPrimaryEndPaddingDp = 12f
+internal const val MaiDialogTwoColumnSecondaryEndPaddingDp = 14f
 
 /**
  * 弹窗滚动条的垂直几何参数（像素）：[thumbTopPx] 为滑块顶边位置，[thumbHeightPx] 为滑块高度。
@@ -800,8 +826,8 @@ private fun MaiDialogScrollColumn(
                         trackInsetPx = 8.dp.toPx(),
                         minThumbHeightPx = 18.dp.toPx()
                     )?.let { metrics ->
-                        val barWidth = 2.5.dp.toPx()
-                        val barLeft = size.width - barWidth - 3.dp.toPx()
+                        val barWidth = MaiDialogScrollbarWidthDp.dp.toPx()
+                        val barLeft = size.width - barWidth - MaiDialogScrollbarEndInsetDp.dp.toPx()
                         drawRoundRect(
                             color = scrollbarColor,
                             topLeft = Offset(barLeft, metrics.thumbTopPx),
