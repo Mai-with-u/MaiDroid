@@ -8,9 +8,7 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import org.maiwithu.maidroid.applyPreferredHighRefreshRate
 import org.maiwithu.maidroid.requestHighFrameRateOnView
@@ -25,18 +23,6 @@ import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
-import org.mozilla.geckoview.GeckoSession.PromptDelegate
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.AlertPrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.BasePrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.ButtonPrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt.Choice
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.ColorPrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.DateTimePrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.FilePrompt
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptInstanceDelegate
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
-import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebExtension
@@ -46,7 +32,6 @@ import org.mozilla.geckoview.WebExtension.Port
 import org.mozilla.geckoview.WebExtension.PortDelegate
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 单个 WebUI 页面的 GeckoView 会话宿主：主页 WebUI 页签与全屏 WebUiActivity 共用。
@@ -76,13 +61,6 @@ internal class WebUiSessionHost(
     var canGoBack: Boolean = false
         private set
 
-    private val promptIdCounter = AtomicLong(1L)
-    private val _activePrompt = MutableStateFlow<WebUiPromptRequest?>(null)
-
-    /** 当前待用户在 Compose 液态玻璃卡片中处理的原生网页弹窗请求，未展示或已结算时为 null。 */
-    val activePrompt: StateFlow<WebUiPromptRequest?> = _activePrompt.asStateFlow()
-
-    private val hostContext = context
     private val mainHandler = Handler(Looper.getMainLooper())
     private val runtime = WebUiRuntime.getOrCreate(context)
     private val session = GeckoSession(
@@ -110,13 +88,14 @@ internal class WebUiSessionHost(
     private val promptController = WebUiPromptController(
         hostContext = context,
         logTag = logTag,
+        fileChooser = fileChooser,
         isReleased = { released },
-        runOnMain = { block -> runOnMain(block) },
-        dismissActiveComposePrompt = {
-            _activePrompt.value?.onDismiss?.invoke()
-            _activePrompt.value = null
-        }
+        runOnMain = { block -> runOnMain(block) }
     )
+
+    /** 当前待用户在 Compose 液态玻璃卡片中处理的原生网页弹窗请求，未展示或已结算时为 null。 */
+    val activePrompt: StateFlow<WebUiPromptRequest?>
+        get() = promptController.activePrompt
 
     private val twoFingerScroll: WebUiTwoFingerScroll
 
@@ -311,8 +290,6 @@ internal class WebUiSessionHost(
         twoFingerScroll.release()
         view.setOnTouchListener(null)
 
-        _activePrompt.value?.onDismiss?.invoke()
-        _activePrompt.value = null
         promptController.release()
 
         runCatching { bridgePort?.disconnect() }
@@ -422,47 +399,7 @@ internal class WebUiSessionHost(
             }
         }
 
-        session.promptDelegate = object : PromptDelegate {
-            override fun onFilePrompt(
-                targetSession: GeckoSession,
-                prompt: FilePrompt
-            ): GeckoResult<PromptResponse> {
-                if (released) {
-                    return if (prompt.isComplete) GeckoResult() else GeckoResult.fromValue(prompt.dismiss())
-                }
-                return fileChooser.show(prompt, hostContext)
-            }
-
-            override fun onAlertPrompt(
-                targetSession: GeckoSession,
-                prompt: AlertPrompt
-            ): GeckoResult<PromptResponse> = showAlertPrompt(prompt)
-
-            override fun onButtonPrompt(
-                targetSession: GeckoSession,
-                prompt: ButtonPrompt
-            ): GeckoResult<PromptResponse> = showButtonPrompt(prompt)
-
-            override fun onTextPrompt(
-                targetSession: GeckoSession,
-                prompt: TextPrompt
-            ): GeckoResult<PromptResponse> = showTextPrompt(prompt)
-
-            override fun onChoicePrompt(
-                targetSession: GeckoSession,
-                prompt: ChoicePrompt
-            ): GeckoResult<PromptResponse> = showChoicePrompt(prompt)
-
-            override fun onDateTimePrompt(
-                targetSession: GeckoSession,
-                prompt: DateTimePrompt
-            ): GeckoResult<PromptResponse> = showDateTimePrompt(prompt)
-
-            override fun onColorPrompt(
-                targetSession: GeckoSession,
-                prompt: ColorPrompt
-            ): GeckoResult<PromptResponse> = showColorPrompt(prompt)
-        }
+        session.promptDelegate = promptController.createPromptDelegate()
 
         session.permissionDelegate = object : PermissionDelegate {
             override fun onContentPermissionRequest(
@@ -539,180 +476,6 @@ internal class WebUiSessionHost(
             onContentProcessGone(this@WebUiSessionHost)
         }
     }
-
-    private fun showAlertPrompt(prompt: AlertPrompt): GeckoResult<PromptResponse> =
-        showComposePrompt(prompt) { requestId, settle ->
-            WebUiPromptRequest.Alert(
-                id = requestId,
-                title = prompt.title.orEmpty(),
-                message = prompt.message.orEmpty(),
-                onDismiss = { settle { prompt.dismiss() } }
-            )
-        }
-
-    private fun showButtonPrompt(prompt: ButtonPrompt): GeckoResult<PromptResponse> =
-        showComposePrompt(prompt) { requestId, settle ->
-            WebUiPromptRequest.Confirm(
-                id = requestId,
-                title = prompt.title.orEmpty(),
-                message = prompt.message.orEmpty(),
-                onConfirm = { settle { prompt.confirm(ButtonPrompt.Type.POSITIVE) } },
-                onCancel = { settle { prompt.confirm(ButtonPrompt.Type.NEGATIVE) } },
-                onDismiss = { settle { prompt.dismiss() } }
-            )
-        }
-
-    private fun showTextPrompt(prompt: TextPrompt): GeckoResult<PromptResponse> =
-        showComposePrompt(prompt) { requestId, settle ->
-            WebUiPromptRequest.TextInput(
-                id = requestId,
-                title = prompt.title.orEmpty(),
-                message = prompt.message.orEmpty(),
-                defaultValue = prompt.defaultValue.orEmpty(),
-                placeholder = "",
-                allowClear = false,
-                onConfirm = { value -> settle { prompt.confirm(value) } },
-                onDismiss = { settle { prompt.dismiss() } }
-            )
-        }
-
-    private fun showChoicePrompt(prompt: ChoicePrompt): GeckoResult<PromptResponse> {
-        val rows = flattenChoiceItems(toChoiceNodes(prompt.choices))
-        if (rows.none { it is WebUiChoiceRow.Option }) {
-            return if (prompt.isComplete) GeckoResult() else GeckoResult.fromValue(prompt.dismiss())
-        }
-        val mode = when (prompt.type) {
-            ChoicePrompt.Type.MULTIPLE -> WebUiChoiceMode.Multiple
-            ChoicePrompt.Type.MENU -> WebUiChoiceMode.Menu
-            else -> WebUiChoiceMode.Single
-        }
-        val initialSelectedIds = initialSelectedChoiceIds(rows)
-        return showComposePrompt(prompt) { requestId, settle ->
-            WebUiPromptRequest.Choice(
-                id = requestId,
-                title = prompt.title.orEmpty(),
-                message = prompt.message.orEmpty(),
-                mode = mode,
-                rows = rows,
-                initialSelectedIds = initialSelectedIds,
-                // 单选/菜单模式必须显式调用单字符串重载，避免 GeckoView 对非多选传数组抛出异常。
-                onConfirmSingle = { optionId -> settle { prompt.confirm(optionId) } },
-                onConfirmMultiple = { selectedIds -> settle { prompt.confirm(selectedIds) } },
-                onDismiss = { settle { prompt.dismiss() } }
-            )
-        }
-    }
-
-    private fun showDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> {
-        if (prompt.isComplete) return GeckoResult()
-        if (promptController.usableActivity() == null &&
-            prompt.type != DateTimePrompt.Type.MONTH &&
-            prompt.type != DateTimePrompt.Type.WEEK
-        ) {
-            return GeckoResult.fromValue(prompt.dismiss())
-        }
-        return when (prompt.type) {
-            DateTimePrompt.Type.DATE -> promptController.showDatePickerPrompt(prompt)
-            DateTimePrompt.Type.TIME -> promptController.showTimePickerPrompt(prompt)
-            DateTimePrompt.Type.DATETIME_LOCAL -> promptController.showDateTimeLocalPrompt(prompt)
-            DateTimePrompt.Type.MONTH,
-            DateTimePrompt.Type.WEEK -> showTextDateTimePrompt(prompt)
-            else -> showTextDateTimePrompt(prompt)
-        }
-    }
-
-    private fun showTextDateTimePrompt(prompt: DateTimePrompt): GeckoResult<PromptResponse> =
-        showComposePrompt(prompt) { requestId, settle ->
-            val fallbackTitle = when (prompt.type) {
-                DateTimePrompt.Type.MONTH -> "选择月份"
-                DateTimePrompt.Type.WEEK -> "选择星期"
-                else -> "输入日期时间"
-            }
-            val placeholder = when (prompt.type) {
-                DateTimePrompt.Type.MONTH -> "格式：YYYY-MM（例如 2026-11）"
-                DateTimePrompt.Type.WEEK -> "格式：YYYY-Www（例如 2026-W48）"
-                else -> "输入日期或时间"
-            }
-            WebUiPromptRequest.TextInput(
-                id = requestId,
-                title = prompt.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
-                message = "",
-                defaultValue = prompt.defaultValue.orEmpty(),
-                placeholder = placeholder,
-                allowClear = true,
-                onConfirm = { value -> settle { prompt.confirm(value.trim()) } },
-                onDismiss = { settle { prompt.dismiss() } }
-            )
-        }
-
-    private fun showColorPrompt(prompt: ColorPrompt): GeckoResult<PromptResponse> {
-        val initialColor = normalizeHexColor(prompt.defaultValue) ?: "#000000"
-        val paletteColors = buildList {
-            prompt.predefinedValues.orEmpty().forEach { candidate ->
-                normalizeHexColor(candidate)?.let(::add)
-            }
-            addAll(DEFAULT_WEB_UI_COLOR_PALETTE)
-        }.distinct()
-        return showComposePrompt(prompt) { requestId, settle ->
-            WebUiPromptRequest.ColorPicker(
-                id = requestId,
-                title = prompt.title?.takeIf { it.isNotBlank() } ?: "选择颜色",
-                initialHex = initialColor,
-                paletteHexes = paletteColors,
-                onConfirm = { chosen ->
-                    val normalized = normalizeHexColor(chosen) ?: initialColor
-                    settle { prompt.confirm(normalized) }
-                },
-                onDismiss = { settle { prompt.dismiss() } }
-            )
-        }
-    }
-
-    private fun showComposePrompt(
-        prompt: BasePrompt,
-        buildRequest: (Long, (() -> PromptResponse) -> Unit) -> WebUiPromptRequest
-    ): GeckoResult<PromptResponse> {
-        if (prompt.isComplete) return GeckoResult()
-        if (released) return GeckoResult.fromValue(prompt.dismiss())
-
-        // 切出新 Compose 弹窗前先按取消收尾旧弹窗，防止网页连弹时出现二次结算异常。
-        _activePrompt.value?.onDismiss?.invoke()
-        _activePrompt.value = null
-        promptController.dismissActiveDialog()
-
-        val requestId = promptIdCounter.getAndIncrement()
-        val result = GeckoResult<PromptResponse>()
-        val guard = PromptSettlementGuard<PromptResponse>(
-            isAlreadyComplete = { prompt.isComplete }
-        ) { response ->
-            if (_activePrompt.value?.id == requestId) {
-                _activePrompt.value = null
-            }
-            result.complete(response)
-        }
-        val settle: (() -> PromptResponse) -> Unit = { produce -> guard.settleOnce(produce) }
-
-        // 网页主动撤销弹窗或关闭标签时，同步收起 Compose 弹窗并完成取消结算。
-        prompt.delegate = object : PromptInstanceDelegate {
-            override fun onPromptDismiss(targetPrompt: BasePrompt) {
-                runOnMain { guard.settleOnce { targetPrompt.dismiss() } }
-            }
-        }
-        _activePrompt.value = buildRequest(requestId, settle)
-        return result
-    }
-
-    private fun toChoiceNodes(choices: Array<Choice>?): List<WebUiChoiceNode> =
-        choices.orEmpty().map { choice ->
-            WebUiChoiceNode(
-                id = choice.id.orEmpty(),
-                label = choice.label.orEmpty(),
-                disabled = choice.disabled,
-                selected = choice.selected,
-                separator = choice.separator,
-                items = toChoiceNodes(choice.items)
-            )
-        }
 
     private inline fun runOnMain(crossinline block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
