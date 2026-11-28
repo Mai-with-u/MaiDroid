@@ -535,4 +535,95 @@ class AutoErrorExtractorTest {
         assertFalse(draftA.contextText.contains("sk-test-secret-key-987654"))
         assertEquals(draftA.fingerprint, draftB.fingerprint)
     }
+
+    @Test
+    fun maiBotBootDraftSeparatesExitCodesWhenNoTracebackPresentAndAggregatesSignalExits() {
+        val signalLogsA = listOf(
+            "[MaiBot] Process started (PID: 5934)",
+            "[MaiBot] Process exited with code: 241",
+            "[MaiDroid] 容器子进程收到 SIGTERM(退出码 241 / -15)，本轮已运行 12s，当前本应用子进程数：8",
+            "[MaiBot] Process started (PID: 6041)"
+        )
+        val signalLogsB = listOf(
+            "[MaiBot] Process started (PID: 9901)",
+            "[MaiBot] Process exited with code: 241",
+            "[MaiDroid] 容器子进程收到 SIGTERM(退出码 241 / -15)，本轮已运行 45s，当前本应用子进程数：11",
+            "[MaiBot] Process started (PID: 9999)"
+        )
+        val sigkillLogs = listOf(
+            "[MaiBot] Process started (PID: 2106)",
+            "[MaiBot] Process exited with code: 247",
+            "[MaiDroid] 容器子进程收到 SIGKILL(退出码 247 / -9)，本轮已运行 3s，当前本应用子进程数：19"
+        )
+        val code2Logs = listOf(
+            "[MaiBot] Process started (PID: 3106)",
+            "[MaiBot] Process exited with code: 2",
+            "[MaiBot] Process started (PID: 3341)"
+        )
+
+        val draft241A = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 241），请查看终端输出里的报错",
+            recentRunLines = signalLogsA,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+        val draft241B = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 241），请查看终端输出里的报错",
+            recentRunLines = signalLogsB,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+        val draft247 = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 247），请查看终端输出里的报错",
+            recentRunLines = sigkillLogs,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+        val draftCode2 = AutoErrorExtractor.buildMaiBotBootDraft(
+            step = FailureStep.MaiBotCrash,
+            cause = null,
+            message = "MaiBot 启动后连续退出了 2 次（最后退出码 2），请查看终端输出里的报错",
+            recentRunLines = code2Logs,
+            fallbackLogTail = null,
+            redactor = testRedactor()
+        )
+
+        assertTrue(draft241A.contextText.contains("SIGTERM(退出码 241 / -15)"))
+        assertEquals(draft241A.fingerprint, draft241B.fingerprint)
+        assertTrue(draft241A.fingerprint != draft247.fingerprint)
+        assertTrue(draft241A.fingerprint != draftCode2.fingerprint)
+        assertTrue(draft247.fingerprint != draftCode2.fingerprint)
+    }
+
+    @Test
+    fun classifyFiltersUserInvalidCustomQqSourceWhileKeepingLinuxQqFailure() {
+        assertNull(
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.NapCatInstall,
+                FailureCause.HttpError,
+                "从自定义地址下载不到有效的 NapCat.Shell.zip，请检查填写的仓库或直链是否包含该发行包"
+            )
+        )
+        assertNull(
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.SnowLumaInstall,
+                FailureCause.HttpError,
+                "从自定义地址下载不到有效的 SnowLuma linux-arm64 发行包，请检查仓库 Release 或直链后重试"
+            )
+        )
+        assertEquals(
+            AutoErrorCategory.Install,
+            AutoErrorExtractor.classifyForAutoReport(
+                FailureStep.NapCatInstall,
+                FailureCause.HttpError,
+                "下载不到有效的 LinuxQQ 安装包，请检查网络后重试"
+            )
+        )
+    }
 }

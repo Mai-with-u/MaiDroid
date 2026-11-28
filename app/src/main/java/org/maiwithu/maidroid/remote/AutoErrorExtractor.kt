@@ -155,8 +155,8 @@ internal object AutoErrorExtractor {
 
     private val MAIBOT_BOOT_WHITELIST_REGEXES = listOf(
         Regex("""\[MaiBot]\s+(?:Process started|Process exited with code:|Failed to start process:|Runtime validation failed:)"""),
-        // 放行被系统 SIGKILL 强杀时的本轮运行时长与子进程水位日志，便于现场分辨冷启动崩溃与后台长跑被杀
-        Regex("""\[MaiDroid]\s+容器进程收到\s+SIGKILL\(137\)"""),
+        // 放行被系统 SIGKILL/SIGTERM 终止时的本轮运行时长与子进程水位日志，便于现场分辨冷启动崩溃与后台长跑被杀
+        Regex("""\[MaiDroid]\s+(?:容器进程收到\s+SIGKILL\(137\)|容器子进程收到\s+(?:SIGTERM\(退出码 241 / -15\)|SIGKILL\(退出码 247 / -9\)))"""),
         // 收录 1.4.x 宿主无 Traceback 直接以退出码 2 退出的硬报错行（仅限宿主引导/系统动态库前缀，不放行聊天日志）
         Regex("""(?:宿主启动失败|MaiBot 宿主关闭未完成|WebUI 凭据文件|WebUI 前端资源不可用)[：:]"""),
         Regex("""(?:error while loading shared libraries|cannot open shared object file|Permission denied)"""),
@@ -167,6 +167,9 @@ internal object AutoErrorExtractor {
         Regex("""(?:当前数据库版本高于代码内注册的最新迁移版本|database is locked|Address already in use|\[Errno \d+])"""),
         EXCEPTION_CLASS_LINE
     )
+
+    private val EXITED_CODE_RE = Regex("""\[MaiBot]\s+Process exited with code:\s*(\d+)""")
+    private val CRASH_MSG_EXIT_CODE_RE = Regex("""最后退出码\s*(\d+)""")
 
     private val TIMESTAMP_RE = Regex("""\b(?:\d{4}-\d{2}-\d{2}[T\s])?\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b""")
     private val DATE_RE = Regex("""\b\d{2,4}[-/]\d{2}[-/]\d{2}\b""")
@@ -194,6 +197,14 @@ internal object AutoErrorExtractor {
         FailureStep.NapCatPrecheck,
         FailureStep.SnowLumaPrecheck ->
             if (cause in INSTALL_NOISE_CAUSES || (cause == null && isUserGuardrailPrecheckMessage(message))) {
+                null
+            } else {
+                AutoErrorCategory.Install
+            }
+        FailureStep.NapCatInstall,
+        FailureStep.SnowLumaInstall ->
+            // 用户填写的自定义仓库/直链找不到对应发布包属于用户源地址问题，不污染远端报错看板
+            if (cause in INSTALL_NOISE_CAUSES || message.contains("从自定义地址下载不到有效的")) {
                 null
             } else {
                 AutoErrorCategory.Install
@@ -411,7 +422,7 @@ internal object AutoErrorExtractor {
                     line.isNotEmpty() &&
                         !line.startsWith("[MaiBot] Process started") &&
                         !line.startsWith("[MaiBot] Process exited with code:") &&
-                        !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)") &&
+                        !isMaiDroidSignalSummaryLine(line) &&
                         !line.startsWith("（未提取到")
                 }
         } else {
@@ -424,16 +435,24 @@ internal object AutoErrorExtractor {
                 "$fileTail:${m.groupValues[2]}"
             }.orEmpty()
             "maibot_boot|$errorCode|${normalizeSignatureLine(pyErrLine)}|$pyFrameKey"
+        } else if (highSignalLine != null) {
+            "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(highSignalLine)}"
         } else {
-            // 计算无 Traceback 指纹时跳过带运行时长与子进程数动态数值的 SIGKILL 补充行，避免同因报错按秒分裂指纹
-            val fallbackSig = highSignalLine
-                ?: contextText.lines()
+            // 无 Traceback 也无宿主报错行时，按精确退出码聚合（区分 2 / 137 / 241 / 247），避免误落到末尾 Process started 行导致错聚
+            val exitCode = EXITED_CODE_RE.findAll(contextText).lastOrNull()?.groupValues?.get(1)
+                ?: CRASH_MSG_EXIT_CODE_RE.find(redactedMessage)?.groupValues?.get(1)
+            if (exitCode != null) {
+                "maibot_boot|$errorCode|no_tb|exit_code=$exitCode"
+            } else {
+                val fallbackSig = contextText.lines()
                     .lastOrNull { line ->
-                        line.isNotBlank() && !line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)")
+                        line.isNotBlank() &&
+                            !isMaiDroidSignalSummaryLine(line) &&
+                            !line.startsWith("[MaiBot] Process started")
                     }
-                ?: contextText.lines().lastOrNull { it.isNotBlank() }
-                ?: redactedMessage
-            "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(fallbackSig)}"
+                    ?: redactedMessage
+                "maibot_boot|$errorCode|no_tb|${normalizeSignatureLine(fallbackSig)}"
+            }
         }
 
         val title = (pyErrLine ?: highSignalLine ?: cause?.title ?: redactedMessage).take(MAX_TITLE_CHARS)
@@ -535,6 +554,10 @@ internal object AutoErrorExtractor {
         val lower = line.lowercase()
         return CHAT_PRIVACY_KEYWORDS.any { lower.contains(it) }
     }
+
+    private fun isMaiDroidSignalSummaryLine(line: String): Boolean =
+        line.startsWith("[MaiDroid] 容器进程收到 SIGKILL(137)") ||
+            line.startsWith("[MaiDroid] 容器子进程收到 ")
 
     private fun isUserGuardrailPrecheckMessage(message: String): Boolean {
         val trimmed = message.trim()

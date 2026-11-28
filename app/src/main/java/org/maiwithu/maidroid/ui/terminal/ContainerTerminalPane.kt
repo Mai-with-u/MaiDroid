@@ -70,7 +70,6 @@ import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.terminal.ContainerShellManager
 import org.maiwithu.maidroid.terminal.ContainerShellPhase
 import org.maiwithu.maidroid.ui.component.LiquidButton
@@ -191,6 +190,7 @@ internal fun ContainerTerminalPane(
                         TerminalSessionAndroidView(
                             session = activeSession,
                             sessionGeneration = shellState.sessionGeneration,
+                            isActivePage = isActivePage,
                             isDark = isDark,
                             fontSizePx = fontSizePx,
                             onFontSizeChanged = { fontSizePx = it },
@@ -251,6 +251,7 @@ internal fun ContainerTerminalPane(
 private fun TerminalSessionAndroidView(
     session: TerminalSession,
     sessionGeneration: Int,
+    isActivePage: Boolean,
     isDark: Boolean,
     fontSizePx: Int,
     onFontSizeChanged: (Int) -> Unit,
@@ -266,6 +267,7 @@ private fun TerminalSessionAndroidView(
 ) {
     val context = LocalContext.current
     val latestSession by rememberUpdatedState(session)
+    val latestIsActivePage by rememberUpdatedState(isActivePage)
     val latestIsDark by rememberUpdatedState(isDark)
     val latestFontSizePx by rememberUpdatedState(fontSizePx)
     val latestOnFontSizeChanged by rememberUpdatedState(onFontSizeChanged)
@@ -315,7 +317,7 @@ private fun TerminalSessionAndroidView(
 
                     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
 
-                    override fun isTerminalViewSelected(): Boolean = true
+                    override fun isTerminalViewSelected(): Boolean = latestIsActivePage
 
                     override fun copyModeChanged(copyMode: Boolean) {
                         latestOnSelectingChange(copyMode)

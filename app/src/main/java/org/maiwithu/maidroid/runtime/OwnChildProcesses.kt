@@ -97,8 +97,10 @@ internal fun countOwnChildProcesses(
 ): Int = listOwnProcessDirs(procRoot, myUid, myPid).size
 
 /**
- * 容器非主动停止却以 SIGKILL(137) 退出时打一行本轮运行时长与进程水位日志，
- * 便于现场分辨是刚启动即死、幻影进程上限还是后台长跑强杀。
+ * 容器非主动停止却以异常信号退出时打一行本轮运行时长与进程水位日志，
+ * 便于现场分辨是刚启动即死、幻影进程上限还是后台系统清理强杀：
+ * - 137：外层 proot 或容器主进程直接收到 SIGKILL(9)；
+ * - 241 / 247：上游 launcher.py 透传的子进程 (-15) & 0xFF = 241（SIGTERM）或 (-9) & 0xFF = 247（SIGKILL）。
  */
 internal fun logUnexpectedSigkill(
     exitCode: Int,
@@ -107,10 +109,15 @@ internal fun logUnexpectedSigkill(
     childCountProvider: () -> Int = ::countOwnChildProcesses,
     onLog: (String) -> Unit
 ) {
-    if (exitCode == 137 && !intentionallyStopped) {
-        val uptimeNote = uptimeMs?.takeIf { it >= 0L }?.let { "，本轮已运行 ${it / 1000L}s" }.orEmpty()
-        onLog("[MaiDroid] 容器进程收到 SIGKILL(137)$uptimeNote，当前本应用子进程数：${childCountProvider()}")
+    if (intentionallyStopped) return
+    val signalDescription = when (exitCode) {
+        137 -> "容器进程收到 SIGKILL(137)"
+        241 -> "容器子进程收到 SIGTERM(退出码 241 / -15)"
+        247 -> "容器子进程收到 SIGKILL(退出码 247 / -9)"
+        else -> return
     }
+    val uptimeNote = uptimeMs?.takeIf { it >= 0L }?.let { "，本轮已运行 ${it / 1000L}s" }.orEmpty()
+    onLog("[MaiDroid] $signalDescription$uptimeNote，当前本应用子进程数：${childCountProvider()}")
 }
 
 /**
