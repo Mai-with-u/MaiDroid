@@ -28,6 +28,12 @@ import org.maiwithu.maidroid.terminal.AnsiLine
 import org.maiwithu.maidroid.terminal.AnsiStyle
 import org.maiwithu.maidroid.terminal.AnsiText
 
+/** 终端页签：日志输出流 vs 本机交互终端。 */
+internal enum class TerminalPage(val label: String) {
+    Output("输出"),
+    Shell("终端")
+}
+
 /**
  * 终端输出查看器的交互状态，全屏终端页和 OOBE 平板布局里的嵌入面板共用。
  *

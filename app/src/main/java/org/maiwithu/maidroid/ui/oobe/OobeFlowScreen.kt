@@ -235,6 +235,7 @@ internal fun OobeFlowScreen(
         TerminalOutputScreen(
             visible = terminalVisible && currentStep != OobeStep.Permissions && !useEmbeddedTerminal,
             logs = setupState.commandLogs,
+            enableInteractiveShell = false,
             onDismiss = {
                 terminalVisible = false
                 embeddedTerminalDefaultApplied = true
