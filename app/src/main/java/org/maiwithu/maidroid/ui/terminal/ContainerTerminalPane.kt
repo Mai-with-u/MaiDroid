@@ -308,7 +308,10 @@ private fun TerminalSessionAndroidView(
 
                     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
 
-                    override fun shouldEnforceCharBasedInput(): Boolean = true
+                    // 必须返回 false（即 InputType.TYPE_NULL，也是 Termux 默认行为）：
+                    // 返回 true 会让 TerminalView 声明 TYPE_TEXT_VARIATION_VISIBLE_PASSWORD，
+                    // 在荣耀/华为等系统上会直接拉起密码安全键盘（屏蔽截屏、限制输入法）。
+                    override fun shouldEnforceCharBasedInput(): Boolean = false
 
                     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
 
