@@ -106,6 +106,8 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // termux terminal-emulator AAR 附带多架构原生库，本项目仅面向 arm64-v8a 设备发布，剔除其余 ABI 避免包体积膨胀
+            excludes += listOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
         }
     }
 }
@@ -148,6 +150,9 @@ dependencies {
 
     // Embedded Web Engine (GeckoView arm64)
     implementation(libs.geckoview)
+
+    // Local Interactive Terminal (Termux PTY + VT100/xterm-256color)
+    implementation(libs.termux.terminal.view)
 
     // Testing：只有 JVM 单元测试，没有设备上的仪器测试
     testImplementation(libs.junit)

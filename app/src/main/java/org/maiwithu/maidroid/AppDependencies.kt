@@ -44,6 +44,7 @@ import org.maiwithu.maidroid.service.SafeExitManager
 import org.maiwithu.maidroid.settings.AppSettings
 import org.maiwithu.maidroid.ssh.ContainerSshManager
 import org.maiwithu.maidroid.terminal.AnsiText
+import org.maiwithu.maidroid.terminal.ContainerShellManager
 import org.maiwithu.maidroid.terminal.TerminalLog
 
 /**
@@ -97,6 +98,10 @@ internal class AppDependencies(context: Context) {
     }
     val containerSsh: ContainerSshManager by lazy {
         ContainerSshManager(settings, runtimeReadiness, commandRunner, mirrorManager)
+    }
+    // 本机交互式容器终端会话（懒启动，跨打开/关闭与转屏保活，安全退出时统一关闭）
+    val containerShell: ContainerShellManager by lazy {
+        ContainerShellManager(appContext, runtimePaths, runtimeReadiness, commandRunner)
     }
     // MaiBot 侧的 SnowLuma 适配器：消息平台页安装 NapCat、SnowLuma 和两边启动前的换装共用一个，迁移配置时靠它的锁串行。
     private val snowLumaAdapterInstaller: SnowLumaAdapterInstaller by lazy {
@@ -180,7 +185,7 @@ internal class AppDependencies(context: Context) {
     val backupManager: BackupManager by lazy {
         BackupManager(appContext, settings, runtimePaths, BuildConfig.VERSION_NAME)
     }
-    // 设置页的“安全退出”：先在主线程关掉悬浮桌宠，再让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
+    // 设置页的“安全退出”：先在主线程关掉悬浮桌宠与交互终端会话，再让上面几个长驻进程正常退出后关闭应用，由前台服务执行。
     val safeExit: SafeExitManager by lazy {
         SafeExitManager(
             settings = settings,
@@ -188,7 +193,8 @@ internal class AppDependencies(context: Context) {
             napCatProcess = napCatProcess,
             snowLumaProcess = snowLumaProcess,
             containerSsh = containerSsh,
-            stopDesktopPet = { desktopPet.stop() }
+            stopDesktopPet = { desktopPet.stop() },
+            stopContainerShell = { containerShell.stopForExit() }
         )
     }
 

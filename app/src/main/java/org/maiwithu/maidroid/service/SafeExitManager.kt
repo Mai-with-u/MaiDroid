@@ -64,7 +64,8 @@ internal class SafeExitManager(
     private val napCatProcess: NapCatProcessSupervisor,
     private val snowLumaProcess: SnowLumaProcessSupervisor,
     private val containerSsh: ContainerSshManager,
-    private val stopDesktopPet: () -> Unit = {}
+    private val stopDesktopPet: () -> Unit = {},
+    private val stopContainerShell: () -> Unit = {}
 ) {
     private val scope = backgroundScope("安全退出", Dispatchers.IO)
     private val lock = Any()
@@ -110,8 +111,9 @@ internal class SafeExitManager(
     // 某一项意外出错也记为强制停止、接着关闭应用：进程结束时系统会结束它留下的所有子进程，不会有残留。
     private suspend fun stopAll() {
         markStarted()
-        // 安全退出前先在主线程优雅断开并收起悬浮桌宠，不留孤儿悬浮窗口。
+        // 安全退出前先在主线程优雅断开并收起悬浮桌宠，并终止本地交互终端会话，不留孤儿窗口与子进程。
         stopDesktopPet()
+        stopContainerShell()
         TerminalLog.append("")
         TerminalLog.append("[MaiDroid] 安全退出：通知各服务正常退出，全部停下后关闭 MaiDroid")
         coroutineScope {

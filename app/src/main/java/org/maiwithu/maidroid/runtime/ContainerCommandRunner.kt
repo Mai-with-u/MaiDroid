@@ -33,6 +33,13 @@ internal class ContainerCommandRunner(
     /** 脚本在宿主机上实际执行的 proot 命令行，供安装页和终端日志展示。 */
     fun commandLine(script: ContainerScript): List<String> = proot.commandLine(script)
 
+    /** 交互式 PTY 终端拉起容器 Shell 的完整 proot 命令行（首项为 proot 可执行路径）。 */
+    fun interactiveShellCommandLine(workingDirectory: String = InContainerPaths.MAIBOT_DIR): List<String> =
+        proot.interactiveShellCommandLine(workingDirectory)
+
+    /** 交互式 PTY 终端启动所需的宿主侧环境变量数组。 */
+    fun interactiveShellEnvironment(): Array<String> = proot.interactiveShellEnvironment()
+
     /** 立即把容器时区同步成手机当前时区（手机改时区时调用），返回容器现在用的时区名，没同步成返回 null。 */
     fun syncTimeZone(): String? = proot.syncTimeZone()
 
