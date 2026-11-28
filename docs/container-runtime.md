@@ -114,15 +114,20 @@ libproot_exec.so --link2symlink -0 -r <rootfs>
 
 安装页的四张卡片按顺序判断完成：前一步没完成，后面的卡片即使文件已经在（例如协议文件随源码一起下载）也显示为等待。页脚左侧的标志跟着按钮走：可以继续时打勾，只能重试时显示失败图标，其余时候转圈。
 
-### GitHub 镜像
+### 镜像源管理（`MirrorManager`、`GitHubMirrors`、`AptMirrors`、`PyPiMirrors`）
 
-国内直连 GitHub 不稳定。`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 和供协议端安装复用的 `maidroid_download_urls` shell 函数：遇到 GitHub 域名地址时依次尝试多个镜像线路与直连（非 GitHub 地址直接走直连），git 每个镜像重试 3 次。新增或调整镜像只改 `GitHubMirrors.ALL` 一处：容器脚本里的镜像列表从它生成，宿主侧的应用自更新（`appupdate`）也用同一份列表。
+国内直连 GitHub / Debian / PyPI 不稳定。设置页“镜像源设置”经 `MirrorManager` 与 `MirrorSpeedTester` 统一管理 GitHub、Debian APT 与 PyPI 三类软件源，均支持“自动测速择优 / 固定预设 / 手动自定义 URL”三种模式，持久化在 `AppSettings` 中并在运行容器脚本和宿主下载前按当前生效顺序下发。
+
+#### GitHub 镜像
+
+`GitHubMirrors.shellFunctions()` 定义 `maidroid_github_clone`、`maidroid_github_fetch` 和供协议端安装复用的 `maidroid_download_urls` shell 函数：遇到 GitHub 域名地址时依次尝试 `MirrorManager` 排好序的镜像线路与直连（非 GitHub 地址直接走直连），git 每个镜像重试 3 次。容器脚本里的镜像列表和宿主侧的应用自更新（`appupdate`）共用同一套来源配置。
 
 git 默认不检测传输停滞，镜像连上后卡住会一直等。两个函数都带 `-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60`：连续 60 秒低于 1 KB/s 就判这一次失败，接着重试或换镜像。
 
-### 软件源镜像
+#### 软件源镜像（APT 与 PyPI）
 
-`AptMirrors` 列着清华、中科大、阿里云镜像和 Debian 官方源，都用 http：rootfs 刚解包时还没有 CA 证书，软件包本身有 apt 的签名校验。OOBE 先写入清华；`maidroid_apt_install` 更新索引、安装软件包，下载失败（连不上、超时、`Hash Sum mismatch`、镜像正在同步）就按顺序换下一个源、清掉旧索引重来，终端里打一行 `[自动修复]`。换成功的源留在 `sources.list` 里，之后的 apt（例如容器 SSH 装 sshd）都用它。空间满、手机时间不对（`is not valid yet`）时换源也一样失败，不换，直接报错。
+- `AptMirrors` 提供清华、中科大、阿里云镜像和 Debian 官方源（均用 http，rootfs 刚解包时还没有 CA 证书，软件包本身有 apt 签名校验）。OOBE 写入当前优先源；`maidroid_apt_install` 更新索引、安装软件包，下载失败（连不上、超时、`Hash Sum mismatch`、镜像正在同步）就按顺序换下一个源、清掉旧索引重来，终端里打一行 `[自动修复]`。换成功的源留在 `sources.list` 里，之后的 apt（例如容器 SSH 装 sshd）都用它。空间满、手机时间不对（`is not valid yet`）时换源也一样失败，不换，直接报错。
+- `PyPiMirrors` 提供阿里云、腾讯云、中科大与 PyPI 官方源，由 `MirrorManager` 统一测速并在 `uv sync` 下载失败时按顺序自动轮换。
 
 ### 容器 DNS
 
@@ -216,9 +221,10 @@ OOBE 用浅克隆，`origin` 可能是早已失效的镜像地址，所以更新
 - **启动时检查**（`checkOnLaunch`）：每次打开应用进入主页时做一次“检查”，查到新版本由主页弹出 MaiBot 更新弹窗；连不上不提示。
 - **MaiDroid 更新后的自动升级**（`updateAfterAppUpgrade`）：MaiDroid 刚更新过的第一次启动，在唤醒页上先 `runWhileStopped` 拦住麦麦的启动 -> 检查 -> 有新版本或源码被改过就按“更新”的流程切到上游、重装依赖 -> 拉起麦麦。拉取失败照常启动现在的版本；升级到一半失败才弹窗。是否“刚更新过”的判断在 `shouldAutoUpdateMaiBot`，设置页“应用版本”弹窗底部可以关掉。
 
-## 容器 SSH（`ssh/`）
+## 容器 SSH 与本地交互终端（`ssh/`、`terminal/`）
 
-设置页可以在容器里开 sshd，方便用电脑连进去排查：
+- **本地交互终端**（`terminal/ContainerShellManager` + `ProotCommand.interactiveShell`）：主页打开终端页后向右滑动或切换顶栏「输出 | 终端」，无需开 sshd 即可直接在手机上经 Termux 终端引擎操作容器内交互式 bash；会话懒启动并在转屏与重进时保活，安全退出时统一关闭。
+- **容器 SSH**（`ssh/`）：设置页可以在容器里开 sshd，方便用电脑连进去排查：
 
 1. **配置**（`ContainerSshScripts.configure`）：修复 dpkg 半装状态 -> 没有 sshd 就 apt 装 openssh-server（失败会尝试修 dpkg 再装一次）-> 补齐 sshd 用户和目录 -> 改写 sshd_config 的端口、允许 root 密码登录 -> 设置 root 密码 -> 生成主机密钥并自检配置。
 2. **清理**残留 sshd -> **前台运行** `sshd -D -e -p <端口>`。
