@@ -1,4 +1,4 @@
-// 控制台“05 成员”“06 审计”两个分页（仅所有者可见，服务端同样按所有者校验）。
+// 控制台“04 成员”“05 审计”两个分页（仅所有者可见，服务端同样按所有者校验）。
 // 触发：所有者点开对应分页时才拉数据；控制台下发时由服务端把这里的标记拼进 <!--TEAM--> 占位、脚本接在主脚本后面。
 // 成员：新建账号 -> 生成只显示一次的初始口令 -> 私聊转交 -> 对方首次登录强制改口令；可改角色、停用、重置口令、删除。
 // 审计：最近 200 条操作记录，可按类别与操作人筛选。
@@ -19,7 +19,7 @@ export const ADMIN_TEAM_MARKUP = `
         <div class="ph"><h2>角色权限</h2><span class="sp mono soft">逐级包含</span></div>
         <div class="roles">
           <div class="rc" style="border-top-color:var(--mute)"><b>观察者</b><span>只看总览大屏</span></div>
-          <div class="rc" style="border-top-color:var(--teal)"><b>客服</b><span>+ 查求助码、看报错详情、复制回复话术</span></div>
+          <div class="rc" style="border-top-color:var(--teal)"><b>客服</b><span>+ 查看报错详情、设备分布与脱敏样本现场</span></div>
           <div class="rc" style="border-top-color:var(--mustard)"><b>维护者</b><span>+ 改报错状态、编辑并签名发布公告 / 热规则</span></div>
           <div class="rc" style="border-top-color:var(--orange)"><b>所有者</b><span>+ 成员管理、清空 debug、查看审计</span></div>
         </div>
@@ -36,7 +36,7 @@ export const ADMIN_TEAM_MARKUP = `
     <div class="panel" data-busy="audit">
       <div class="ph"><h2>审计日志</h2>
         <div class="seg" id="auSeg">
-          <button class="on" data-act="tAudit" data-v="all">全部</button><button data-act="tAudit" data-v="login">登录</button><button data-act="tAudit" data-v="diag">求助码</button><button data-act="tAudit" data-v="error">报错</button><button data-act="tAudit" data-v="manifest">清单</button><button data-act="tAudit" data-v="team">成员</button>
+          <button class="on" data-act="tAudit" data-v="all">全部</button><button data-act="tAudit" data-v="login">登录</button><button data-act="tAudit" data-v="error">报错</button><button data-act="tAudit" data-v="manifest">清单</button><button data-act="tAudit" data-v="team">成员</button>
         </div>
         <input id="auActor" placeholder="按操作人筛选" style="width:160px" autocomplete="off" />
         <span class="sp mono soft">最近 200 条 · 保留 90 天</span>

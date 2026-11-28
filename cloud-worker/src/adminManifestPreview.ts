@@ -177,12 +177,12 @@ export const ADMIN_MANIFEST_PREVIEW_SCRIPT = `
   function renderHint(h, stepLabel) {
     const p = parseAction(h.action);
     const code = (h.steps && h.steps[0]) || "QQ-INSTALL";
-    const btns = (p ? '<span class="pv-nb hi">' + esc(DEFAULT_LABEL[p.kind]) + "</span>" : "") +
-      '<span class="pv-nb hi">生成求助码</span><span class="pv-nb">反馈问题</span><span class="pv-nb">QQ 群反馈</span>';
+    const actBtn = p ? '<div class="pv-nbs"><span class="pv-nb hi">' + esc(DEFAULT_LABEL[p.kind]) + "</span></div>" : "";
+    const links = '<div class="pv-links"><span>导出诊断包</span><span class="pv-dot">·</span><span>QQ 群求助</span></div>';
     return phone('<div class="pv-title">首次引导</div><div class="pv-fail"><div class="pv-fh">✕ ' + esc(stepLabel || "某个步骤") + "失败</div>" +
       '<div class="pv-code">错误码 ' + esc(code) + "</div>" +
       '<div class="pv-cause">可能的原因：' + esc(h.title || "（原因标题）") + "</div>" +
-      '<div class="pv-body">' + esc(h.advice || "（解决建议）") + '</div><div class="pv-nbs">' + btns + "</div></div>" + mockRows(3));
+      '<div class="pv-body">' + esc(h.advice || "（解决建议）") + "</div>" + actBtn + links + "</div>" + mockRows(3));
   }
 
   C.mfp = { parseAction, actionText, parseVersion, cmpVersion, annMissReason, matchHintIndex, validateAnn, validateHint, renderBanner, renderModal, renderNotify, renderHint, DEFAULT_LABEL };

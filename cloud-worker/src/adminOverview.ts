@@ -129,7 +129,6 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
     active24h,
     totals7d,
     totals30d,
-    diag7d,
     dailyRes,
     heatRes,
     issueCats,
@@ -137,7 +136,6 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
     manifestRow,
     lastPresence,
     lastTelemetry,
-    lastDiag,
     lastIssue,
     manufacturers,
     versions,
@@ -162,8 +160,6 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
     ).bind(since7d).first<{ uniq: number; done: number }>(),
     db.prepare("SELECT COUNT(*) AS uniq FROM device_presence WHERE last_seen_at >= ?")
       .bind(since30d).first<{ uniq: number }>(),
-    db.prepare("SELECT COUNT(*) AS cnt FROM diag_snapshots WHERE created_at >= ?")
-      .bind(since7d).first<{ cnt: number }>(),
     db.prepare(
       `SELECT CAST((created_at + ${CN_OFFSET_SECONDS}) / 86400 AS INTEGER) AS d,
               COUNT(DISTINCT install_id) AS installs,
@@ -189,7 +185,6 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
       .first<{ version: number; updated_at: number; payload_json: string }>(),
     db.prepare("SELECT MAX(last_seen_at) AS at FROM device_presence").first<{ at: number | null }>(),
     db.prepare("SELECT MAX(created_at) AS at FROM telemetry_events").first<{ at: number | null }>(),
-    db.prepare("SELECT MAX(created_at) AS at FROM diag_snapshots").first<{ at: number | null }>(),
     db.prepare("SELECT MAX(last_seen_at) AS at FROM error_issues").first<{ at: number | null }>(),
     presenceShares(db, "manufacturer", since7d),
     presenceShares(db, "app_version", since7d),
@@ -292,7 +287,6 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
       installs7d: Number(totals7d?.uniq) || 0,
       completed7d: Number(totals7d?.done) || 0,
       installs30d: Number(totals30d?.uniq) || 0,
-      diag7d: Number(diag7d?.cnt) || 0,
       openIssues,
       openInstalls,
     },
@@ -310,7 +304,6 @@ export async function buildAdminOverview(db: Db, nowSec: number) {
       },
       telemetry: { state: componentState(latestTelemetryAt, nowSec, 6 * 3600), lastAt: latestTelemetryAt },
       errorReport: { state: componentState(lastIssue?.at, nowSec, 3 * 86400), lastAt: lastIssue?.at ?? null },
-      diag: { state: componentState(lastDiag?.at, nowSec, 7 * 86400), lastAt: lastDiag?.at ?? null },
     },
     shares: { manufacturers, versions, onlineVersions, qqClients, oobeSteps, sdks },
     power: {

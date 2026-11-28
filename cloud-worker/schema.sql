@@ -1,4 +1,4 @@
--- MaiDroid 远程公告、6 位求助码诊断快照与匿名遥测表结构（Cloudflare D1 / SQLite）
+-- MaiDroid 远程公告、热规则与匿名遥测 / 自动报错聚合同步表结构（Cloudflare D1 / SQLite）
 
 -- 单行保存当前生效的远程清单（公告 + 动态排障热规则）及已签名信封
 CREATE TABLE IF NOT EXISTS manifest_config (
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS manifest_config (
     updated_at INTEGER NOT NULL
 );
 
--- 用户主动点击“生成求助码”上传的脱敏诊断快照（默认保留 7 天自动清理）
+-- 历史故障求助码快照表（功能已随 0.5.0 下线；保留表结构兼容既有 D1 库，不再写入或读取）
 CREATE TABLE IF NOT EXISTS diag_snapshots (
     code TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL,
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions (expires_at);
 
--- 管理台审计日志（谁在何时查了哪个求助码、改了哪个报错、发布了哪版清单，保留 90 天）
+-- 管理台审计日志（谁在何时改了哪个报错、发布了哪版清单、管理了哪些成员，保留 90 天）
 CREATE TABLE IF NOT EXISTS admin_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at INTEGER NOT NULL,

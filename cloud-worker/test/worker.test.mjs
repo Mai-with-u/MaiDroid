@@ -7,12 +7,9 @@ import { ADMIN_MANIFEST_PREVIEW_SCRIPT } from "../src/adminManifestPreview.ts";
 import { ADMIN_TEAM_SCRIPT } from "../src/adminTeam.ts";
 import { ADMIN_GATE_SCRIPT, ADMIN_HTML } from "../src/adminHtml.ts";
 import { buildHeatmapMatrix, cnDayIndex, cnDayLabel, componentState, fillDailySeries } from "../src/adminOverview.ts";
-import { buildDiagnosticAdvice } from "../src/advisor.ts";
 import {
   bytesToBase64,
   derToP1363,
-  generateDiagCode,
-  normalizeDiagCode,
   p1363ToDer,
   signManifestPayload,
   verifyManifestEnvelope,
@@ -56,43 +53,26 @@ test("P1363 <-> ASN.1 DER handles high-bit padding and leading zeros", () => {
   assert.deepEqual(restored, raw);
 });
 
-test("Diag code generation and normalization strip # and dashes", () => {
-  for (let i = 0; i < 20; i++) {
-    const code = generateDiagCode();
-    assert.match(code, /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/);
-    assert.equal(normalizeDiagCode(`#${code.toLowerCase()}`), code);
-  }
-  assert.equal(normalizeDiagCode("0O1-I10"), null); // 易混淆字符不接受
-});
+test("POST /v1/diag returns 410 deprecation notice for legacy clients", async () => {
+  const db = createSqliteD1();
+  const env = { DB: db, ADMIN_TOKEN: "test-secret", IP_HASH_SALT: "salt-1" };
+  const ctx = { waitUntil() {} };
 
-test("Diagnostic advisor surfaces missing battery whitelist, low disk, and DNS steps", () => {
-  const result = buildDiagnosticAdvice("M8K-29F", {
-    appVersion: "0.2.4",
-    device: "HONOR OXF-AN10",
-    availableStorageMb: 180,
-    permissions: { storage: true, batteryIgnored: false, notifications: true },
-    errorCode: "UV-SYNC/NET-DNS",
-    lastExitReason: "其他（厂商系统的后台清理多半记在这里）",
-  });
-  assert.equal(result.findings.length >= 3, true);
-  assert.equal(result.replyText.includes("#M8K-29F"), true);
-  assert.equal(result.replyText.includes("清理空间"), true);
-  assert.equal(result.replyText.includes("私人 DNS"), true);
-  assert.equal(result.replyText.includes("忽略电池优化"), true);
+  const resp = await worker.fetch(
+    new Request("https://ops.8u.nz/v1/diag", { method: "POST", body: new Uint8Array([0x1f, 0x8b]) }),
+    env,
+    ctx
+  );
+  assert.equal(resp.status, 410);
+  const body = await resp.json();
+  assert.match(body.error, /导出诊断包/);
 
-  const prootAdvice = buildDiagnosticAdvice("P18-2AA", {
-    appVersion: "0.3.0",
-    device: "HUAWEI MLR-AL00",
-    errorCode: "CT-PROOT/PROOT-182",
-  });
-  assert.equal(prootAdvice.replyText.includes("卓易通"), true);
-
-  const oldMaiBotAdvice = buildDiagnosticAdvice("MBO-123", {
-    appVersion: "0.3.0",
-    device: "Xiaomi 24069RA21C",
-    errorCode: "QQ-PRECHECK/MB-OLD",
-  });
-  assert.equal(oldMaiBotAdvice.replyText.includes("MaiBot 更新"), true);
+  const lookupResp = await worker.fetch(
+    new Request("https://ops.8u.nz/admin/api/diag/M8K-29F", { headers: { Authorization: "Bearer test-secret" } }),
+    env,
+    ctx
+  );
+  assert.equal(lookupResp.status, 404);
 });
 
 test("validateErrorReportPayload normalizes fields, filters extra whitelist, and rejects bad inputs", () => {
@@ -442,9 +422,6 @@ function createMockD1() {
         results: [],
       };
     }
-    if (q.includes("FROM diag_snapshots")) {
-      return { first: { cnt: 0 } };
-    }
     throw new Error(`Unexpected SQL in mock D1: ${q}`);
   }
 
@@ -751,6 +728,14 @@ test("manifest preview logic mirrors the Android client matching rules", () => {
   assert.equal(P.matchHintIndex(hints, "QQ-INSTALL", "x\nError: ENOSPC no space"), 0);
   assert.equal(P.matchHintIndex(hints, "SL-INSTALL", "Error: ENOSPC"), 1);
   assert.equal(P.matchHintIndex(hints, "SL-INSTALL", "ENOSPC\n" + "ok\n".repeat(400)), -1);
+  // 验证控制台与热规则预览已同步移除求助码入口，对齐 0.5.0 的「导出诊断包 / QQ 群求助」
+  assert.equal(ADMIN_CONSOLE_MARKUP.includes('data-v="diag"'), false);
+  assert.equal(ADMIN_CONSOLE_MARKUP.includes("求助码"), false);
+  assert.equal(ADMIN_CONSOLE_SCRIPT.includes("lookupDiag"), false);
+  const renderedHint = P.renderHint({ id: "h1", title: "空间不足", advice: "先清理" }, "安装 NapCat");
+  assert.equal(renderedHint.includes("生成求助码"), false);
+  assert.equal(renderedHint.includes("导出诊断包"), true);
+  assert.equal(renderedHint.includes("QQ 群求助"), true);
   assert.equal(P.validateHint({ id: "x", title: "t", advice: "a", containsAny: [] }).some((e) => e[0] === "err"), true);
   assert.equal(P.validateAnn({ ...base, filter: { minAppVersion: "0.3", maxAppVersion: "0.2" } }, 0).some((e) => e[0] === "err"), true);
   assert.match(P.renderBanner({ ...base, title: "<b>x</b>" }), /&lt;b&gt;x/);

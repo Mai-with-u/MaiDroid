@@ -49,7 +49,7 @@ test("PBKDF2 password hash round-trips and initial passwords avoid ambiguous cha
 test("requiredRoleFor maps each admin endpoint to the minimum role and defaults to owner", () => {
   assert.equal(requiredRoleFor("overview", "GET"), "viewer");
   assert.equal(requiredRoleFor("console", "GET"), "viewer");
-  assert.equal(requiredRoleFor("diag/M8K-29F", "GET"), "support");
+  assert.equal(requiredRoleFor("diag/M8K-29F", "GET"), "owner");
   assert.equal(requiredRoleFor("errors", "GET"), "support");
   assert.equal(requiredRoleFor("errors/release/abcdef0123456789", "GET"), "support");
   assert.equal(requiredRoleFor("errors/release/abcdef0123456789", "PATCH"), "maintainer");
@@ -159,7 +159,7 @@ test("worker enforces role ladder end to end: viewer < support < maintainer < ow
   const matrix = [
     // [接口, 方法, 观察者, 客服, 维护者]
     ["overview", "GET", 200, 200, 200],
-    ["diag/M8K-29F", "GET", 403, 404, 404],
+    ["diag/M8K-29F", "GET", 403, 403, 403],
     ["errors", "GET", 403, 200, 200],
     ["errors/" + fp, "PATCH", 403, 403, 404],
     ["manifest", "GET", 403, 403, 200],
@@ -175,12 +175,10 @@ test("worker enforces role ladder end to end: viewer < support < maintainer < ow
     }
   }
 
-  // 客服查求助码（哪怕没查到）也会留下审计，所有者能看到是谁查的
-  const audit = await fetchApi("audit?action=diag_lookup", { token: "root-secret" });
-  assert.deepEqual(audit.body.entries.map((e) => e.actor).sort(), ["m-maintainer", "m-support"]);
-  // 非所有者拿到的控制台里没有成员与审计分页
+  // 非所有者拿到的控制台里没有成员与审计分页；全部角色拿到的控制台均不再包含求助码页签
   const supportConsole = await fetchApi("console", { token: tokens.support });
   assert.equal(supportConsole.body.me.role, "support");
+  assert.equal(supportConsole.body.markup.includes('id="v-diag"'), false);
   assert.equal(supportConsole.body.markup.includes('id="v-team"'), false);
   assert.equal(supportConsole.body.script.includes("/admin/api/users"), false);
   // 客服拿不到清单编辑器，维护者能拿到但拿不到成员分页

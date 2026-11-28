@@ -1,6 +1,6 @@
 // 解锁后才下发的控制台主体（标记 + 脚本）。
 // 触发：登录闸门用管理员口令请求 GET /admin/api/console 成功后，把这里的标记挂进 #app，再把脚本作为内联 script 执行。
-// 顺序：校验口令 -> 下发控制台 -> 拉取总览 -> 按需拉取报错 / 求助码 / 清单。
+// 顺序：校验口令 -> 下发控制台 -> 拉取总览 -> 按需拉取报错 / 清单。
 // 原因：口令通过前页面上只有登录框，看不到任何控制台结构、接口路径和操作入口。
 // 注意：这里是 TS 模板字符串，脚本里不写反斜杠和美元加花括号，换行一律用 NL 常量。
 
@@ -15,10 +15,9 @@ export const ADMIN_CONSOLE_MARKUP = `
     <nav id="nav">
       <a data-act="view" data-v="overview" class="on"><i>01</i>总览</a>
       <a data-act="view" data-v="errors" data-min="support"><i>02</i>报错<span class="cnt" id="navErrCnt" hidden></span></a>
-      <a data-act="view" data-v="diag" data-min="support"><i>03</i>求助码</a>
-      <a data-act="view" data-v="manifest" data-min="maintainer"><i>04</i>清单</a>
-      <a data-act="view" data-v="team" data-min="owner"><i>05</i>成员</a>
-      <a data-act="view" data-v="audit" data-min="owner"><i>06</i>审计</a>
+      <a data-act="view" data-v="manifest" data-min="maintainer"><i>03</i>清单</a>
+      <a data-act="view" data-v="team" data-min="owner"><i>04</i>成员</a>
+      <a data-act="view" data-v="audit" data-min="owner"><i>05</i>审计</a>
     </nav>
     <div class="hd-r">
       <div class="upd"><i></i><span id="clock">--:--:--</span><span id="syncAt">同步中</span></div>
@@ -36,7 +35,6 @@ export const ADMIN_CONSOLE_MARKUP = `
       <div class="k"><div class="dl">7 日活跃</div><div class="dv" id="k7d">0</div><div class="rd" id="k30d">30 日 0</div></div>
       <div class="k"><div class="dl">引导完成率</div><div class="dv" id="kDone">0</div><div class="rd" id="kDoneRd">-</div></div>
       <div class="k"><div class="dl">待处理报错</div><div class="dv" id="kOpen">0</div><div class="rd" id="kOpenRd">正式版</div></div>
-      <div class="k"><div class="dl">7 日求助码</div><div class="dv" id="kDiag">0</div><div class="rd">用户主动生成</div></div>
       <div class="sys" id="sys">正在接入遥测链路...</div>
     </div>
     <div class="row">
@@ -94,14 +92,6 @@ export const ADMIN_CONSOLE_MARKUP = `
     <div id="errDetail"></div>
   </section>
 
-  <section class="view" id="v-diag">
-    <div class="panel">
-      <div class="ph"><h2>故障求助码</h2><span class="sp mono soft">用户在 App 内生成 · 快照保留 7 日</span></div>
-      <div class="codebar"><span class="mono" style="color:var(--hot);font-size:34px;font-weight:600">#</span><input id="diagCode" maxlength="8" placeholder="M8K-29F" autocomplete="off" spellcheck="false" /><button class="btn pri" data-act="diagLookup">查询快照</button></div>
-    </div>
-    <div id="diagResult"></div>
-  </section>
-
   <!--MANIFEST-->
   <!--TEAM-->
 </div>
@@ -115,7 +105,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
   const MD = window.MD;
   const PALETTE = ["var(--orange)", "var(--teal)", "var(--mustard)", "var(--brown)", "var(--olive)", "var(--plum)", "var(--mute)", "var(--soft)"];
   const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
-  const st = { view: "overview", ov: null, share: "manufacturers", verMode: "all7d", errStatus: "open", errCat: "all", activeKey: "", detail: null, reply: "", errLoaded: false };
+  const st = { view: "overview", ov: null, share: "manufacturers", verMode: "all7d", errStatus: "open", errCat: "all", activeKey: "", detail: null, errLoaded: false };
   // 角色逐级包含；前端按角色隐藏入口只是体验，越权请求服务端一律 403
   const RANK = { viewer: 1, support: 2, maintainer: 3, owner: 4 };
   const ROLE_NAME = { viewer: "观察者", support: "客服", maintainer: "维护者", owner: "所有者" };
@@ -208,7 +198,6 @@ export const ADMIN_CONSOLE_SCRIPT = `
     roll($("kOpen"), k.openIssues);
     $("kOpen").className = "dv " + (k.openIssues > 0 ? "hot" : "ok");
     $("kOpenRd").textContent = k.openIssues > 0 ? "影响 " + fmt(k.openInstalls) + " 台设备" : "正式版零待处理";
-    roll($("kDiag"), k.diag7d);
     const nav = $("navErrCnt");
     nav.hidden = !(k.openIssues > 0 && can("support"));
     nav.textContent = String(k.openIssues);
@@ -320,7 +309,6 @@ export const ADMIN_CONSOLE_SCRIPT = `
       ["签名清单下发", c.manifest.state, "ECDSA P-256 · v" + c.manifest.version, c.manifest.updatedAt ? "发布于 " + ago(c.manifest.updatedAt) : "尚未发布"],
       ["匿名遥测接收", c.telemetry.state, "6 小时内有心跳视为在线", "最近 " + ago(c.telemetry.lastAt)],
       ["自动报错接收", c.errorReport.state, "3 日内有新报错视为在线", "最近 " + ago(c.errorReport.lastAt)],
-      ["求助码快照通道", c.diag.state, "Gzip 脱敏快照 · 7 日过期", "最近 " + ago(c.diag.lastAt)],
     ];
     $("comps").innerHTML = rows.map((r) =>
       '<div class="comp"><span class="dot ' + r[1] + '"></span><div><div class="n">' + esc(r[0]) + '</div><div class="d">' + esc(r[2]) + "</div></div>" +
@@ -514,32 +502,7 @@ export const ADMIN_CONSOLE_SCRIPT = `
     } catch (e) { if (e.message !== "unauthorized") toast("清理失败：" + e.message, true); }
   }
 
-  // ---------- 03 求助码 ----------
-  async function lookupDiag() {
-    const code = $("diagCode").value.trim();
-    if (!code) { toast("先输入 6 位求助码", true); return; }
-    $("diagResult").innerHTML = '<div class="panel busy"><div class="empty">正在解压脱敏快照...</div></div>';
-    try {
-      const d = await api("/admin/api/diag/" + encodeURIComponent(code));
-      st.reply = d.advice.replyText || "";
-      const snap = d.snapshot || {};
-      const findings = (d.advice.findings || []).map((f) =>
-        '<div class="lrow"><span class="tag ' + esc(f.level) + '">' + esc(f.title) + '</span><span class="n" style="white-space:normal;font-weight:400">' + esc(f.step) + "</span></div>"
-      ).join("") || '<div class="empty">未发现明显权限或空间异常</div>';
-      $("diagResult").innerHTML =
-        '<div class="row"><div class="panel f7"><div class="ph"><h2>自动诊断结论</h2><span class="sp mono soft">#' + esc(d.code) + "</span></div>" +
-        '<div class="kv" style="margin-bottom:10px"><span>提交 <b>' + fmtTime(d.createdAt) + "</b></span><span>版本 <b>" + esc(d.appVersion) + "</b></span><span>设备 <b>" + esc(d.device) + "</b></span><span>API <b>" + esc(d.sdkInt) + "</b></span><span>错误码 <b>" + esc(d.errorCode || "无") + "</b></span></div>" + findings + "</div>" +
-        '<div class="panel f5"><div class="ph"><h2>回复话术</h2><span class="sp"><button class="btn sm pri" data-act="copyReply">一键复制</button></span></div><pre class="term">' + esc(st.reply) + "</pre></div></div>" +
-        '<div class="panel"><div class="ph"><h2>原始现场</h2><span class="sp mono soft">已在设备端脱敏</span></div>' +
-        '<details open><summary>脱敏诊断报告</summary><pre class="term">' + esc(snap.reportText || "") + "</pre></details>" +
-        '<details><summary>终端输出尾部</summary><pre class="term">' + esc(snap.terminalTail || "（无）") + "</pre></details>" +
-        '<details><summary>MaiBot 日志尾部 / 闪退栈</summary><pre class="term">' + esc((snap.maiBotLogTail || "") + NL + NL + (snap.latestCrash || "")) + "</pre></details></div>";
-    } catch (e) {
-      if (e.message !== "unauthorized") $("diagResult").innerHTML = '<div class="panel"><span class="tag critical">' + esc(e.message) + "</span></div>";
-    }
-  }
-
-  // 04 清单：可视化编辑器在 adminManifestEditor 模块里，这里只负责把报错样本交给它生成热规则草稿
+  // 03 清单：可视化编辑器在 adminManifestEditor 模块里，这里只负责把报错样本交给它生成热规则草稿
   async function draftHint() {
     if (!st.detail || !st.detail.issue || !MDC.mfDraftHint) return;
     switchView("manifest");
@@ -555,7 +518,6 @@ export const ADMIN_CONSOLE_SCRIPT = `
     document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.v === v));
     document.querySelectorAll(".view").forEach((s) => s.classList.toggle("on", s.id === "v-" + v));
     if (v === "errors" && !st.errLoaded) loadErrors();
-    if (v === "diag") setTimeout(() => $("diagCode").focus(), 50);
     if (MDC.views[v]) MDC.views[v]();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -630,11 +592,8 @@ export const ADMIN_CONSOLE_SCRIPT = `
     else if (a === "errOpen") openError(el.dataset.bt, el.dataset.fp);
     else if (a === "errPatch") patchError(el.dataset.bt, el.dataset.fp, el.dataset.st);
     else if (a === "draftHint") draftHint();
-    else if (a === "diagLookup") lookupDiag();
-    else if (a === "copyReply") navigator.clipboard.writeText(st.reply).then(() => toast("回复话术已复制"), () => toast("复制失败，请手动选择", true));
   });
   $("errDebug").addEventListener("change", loadErrors);
-  $("diagCode").addEventListener("keydown", (e) => { if (e.key === "Enter") lookupDiag(); });
 
   // 悬浮提示：任何带 data-tip 的元素，第一段加粗，其余按竖线分行
   const vt = $("vt");
