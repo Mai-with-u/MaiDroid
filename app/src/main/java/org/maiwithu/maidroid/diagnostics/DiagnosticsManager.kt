@@ -437,8 +437,8 @@ internal fun latestExitReasonText(context: Context): String? {
         .joinToString("：")
 }
 
-/** 系统记录的进程结束原因（ApplicationExitInfo.REASON_*）换成中文。 */
-private fun exitReasonLabel(reason: Int): String = when (reason) {
+/** 系统记录的进程结束原因（ApplicationExitInfo.REASON_*）换成中文，覆盖 Android 13+ 新增退出码。 */
+internal fun exitReasonLabel(reason: Int): String = when (reason) {
     ApplicationExitInfo.REASON_EXIT_SELF -> "自己退出"
     ApplicationExitInfo.REASON_SIGNALED -> "被信号结束"
     ApplicationExitInfo.REASON_LOW_MEMORY -> "内存不足被系统回收"
@@ -452,5 +452,8 @@ private fun exitReasonLabel(reason: Int): String = when (reason) {
     ApplicationExitInfo.REASON_USER_STOPPED -> "用户停止"
     ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "依赖的进程结束"
     ApplicationExitInfo.REASON_OTHER -> "其他（厂商系统的后台清理多半记在这里）"
+    ApplicationExitInfo.REASON_FREEZER -> "被系统后台冻结后结束"
+    ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE -> "应用状态变更"
+    ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "应用更新重启"
     else -> "未知（$reason）"
 }

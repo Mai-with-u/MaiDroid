@@ -1,5 +1,8 @@
 package org.maiwithu.maidroid.ui.extension
 
+import android.content.Context
+import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -303,21 +306,31 @@ internal fun WebUiLoginDialog(
     val context = LocalContext.current
     val authContainer = remember(context) { FrameLayout(context) }
 
+    // 认证弹窗位于独立 Dialog 窗口（不在 Activity 根 FocusGuardFrameLayout 下），
+    // 关闭或认证成功自动卸载内嵌 WebView 前主动清焦点并收起软键盘，避免输入法滞留或焦点回落异常。
+    val dismissWithFocusCleanup: () -> Unit = {
+        releaseAuthDialogFocus(context, authContainer)
+        onDismiss()
+    }
+
     DisposableEffect(authContainer) {
         attachAuthView(authContainer)
-        onDispose { detachAuthView(authContainer) }
+        onDispose {
+            releaseAuthDialogFocus(context, authContainer)
+            detachAuthView(authContainer)
+        }
     }
 
     MaiDialog(
         title = "登录本机 WebUI",
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismissWithFocusCleanup,
         size = MaiDialogSize.Expanded,
         scrollable = false,
         footer = {
             MaiDialogButtonRow {
                 MaiDialogButton(
                     text = "暂先关闭",
-                    onClick = onDismiss,
+                    onClick = dismissWithFocusCleanup,
                     style = MaiDialogButtonStyle.Secondary,
                     modifier = Modifier.weight(1f)
                 )
@@ -339,6 +352,9 @@ internal fun WebUiLoginDialog(
         Spacer(modifier = Modifier.height(8.dp))
         AndroidView(
             factory = { authContainer },
+            onRelease = { view ->
+                releaseAuthDialogFocus(context, view)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false)
@@ -347,6 +363,15 @@ internal fun WebUiLoginDialog(
                 .background(PageBackground)
         )
     }
+}
+
+private fun releaseAuthDialogFocus(context: Context, container: FrameLayout) {
+    // 阻断后代重新获焦 -> 收起软键盘 -> 清理子视图与容器焦点，保证卸载过程干净无残留。
+    container.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+    context.getSystemService(InputMethodManager::class.java)
+        ?.hideSoftInputFromWindow(container.windowToken, 0)
+    container.findFocus()?.clearFocus()
+    container.clearFocus()
 }
 
 /** 运行时摘要区：16dp 内嵌圆角面板呈现当前状态文本、悬浮权限引导胶囊以及双列清晰指标。 */
