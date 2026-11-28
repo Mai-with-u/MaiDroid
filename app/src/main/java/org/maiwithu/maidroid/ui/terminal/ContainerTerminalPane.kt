@@ -119,14 +119,16 @@ internal fun ContainerTerminalPane(
 
     val terminalViewHolder = remember { TerminalViewHolder() }
 
-    // 切到此页时懒启动容器 shell；滑回日志输出页或关闭全屏终端页时清焦点并收起软键盘，同时释放 Pager 锁
+    // 切到此页时懒启动容器 shell 并恢复光标闪烁；滑回日志输出页或关闭全屏终端页时停闪烁、清焦点并收起软键盘，同时释放 Pager 锁
     LaunchedEffect(isActivePage) {
         if (isActivePage) {
             shellManager.ensureStarted()
+            terminalViewHolder.view?.setTerminalCursorBlinkerState(true, true)
         } else {
             onSelectingTextChange(false)
             onMouseTrackingChange(false)
             terminalViewHolder.view?.let { view ->
+                view.setTerminalCursorBlinkerState(false, false)
                 if (view.isSelectingText) view.stopTextSelectionMode()
                 view.clearFocus()
                 hideSoftKeyboard(context, view)
@@ -283,9 +285,10 @@ private fun TerminalSessionAndroidView(
                 )
                 isFocusable = true
                 isFocusableInTouchMode = true
-                setTypeface(typeface)
-                setTextSize(latestFontSizePx)
-                setBackgroundColor(TerminalBackgroundColorInt(latestIsDark))
+                // Termux TerminalView 初始化顺序强约束：
+                // 1) 先绑定 Client（updateSize / 光标闪烁 / 按键回调都直接解引用 mClient）；
+                // 2) 再调 setTextSize 创建 mRenderer，随后才能调 setTypeface（其内部直接读 mRenderer.mTextSize）；
+                // 3) 最后再设置背景、调色板并 attachSession。
                 setTerminalViewClient(object : TerminalViewClient {
                     override fun onScale(scale: Float): Float {
                         val rawNext = (baseFontPx * scale).roundToInt()
@@ -338,7 +341,7 @@ private fun TerminalSessionAndroidView(
                         applyTerminalThemeColors(latestSession, latestIsDark)
                         setBackgroundColor(TerminalBackgroundColorInt(latestIsDark))
                         setTerminalCursorBlinkerRate(500)
-                        setTerminalCursorBlinkerState(true, true)
+                        setTerminalCursorBlinkerState(latestIsActivePage, true)
                         onScreenUpdated()
                     }
 
@@ -350,6 +353,9 @@ private fun TerminalSessionAndroidView(
                     override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) = Unit
                     override fun logStackTrace(tag: String?, e: Exception?) = Unit
                 })
+                setTextSize(latestFontSizePx)
+                setTypeface(typeface)
+                setBackgroundColor(TerminalBackgroundColorInt(latestIsDark))
                 applyTerminalThemeColors(latestSession, latestIsDark)
                 attachSession(latestSession)
                 // 在节点创建阶段用普通引用持有视图并绑定会话刷新器，不触发额外的 Compose 状态写入。
@@ -370,7 +376,8 @@ private fun TerminalSessionAndroidView(
             latestOnMouseTrackingChange(session.emulator?.isMouseTrackingActive == true)
         },
         onRelease = { view ->
-            // 视图从组合树卸载时收起软键盘、停止选字并解绑容器会话，防止脏引用与软键盘滞留。
+            // 视图从组合树卸载时停止光标闪烁定时器、收起软键盘、退出选字并解绑容器会话，防止定时器与视图泄漏。
+            view.setTerminalCursorBlinkerState(false, false)
             if (view.isSelectingText) view.stopTextSelectionMode()
             hideSoftKeyboard(context, view)
             shellManager.detachView(view)

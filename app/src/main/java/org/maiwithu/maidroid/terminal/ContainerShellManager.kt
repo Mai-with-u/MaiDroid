@@ -25,6 +25,9 @@ import org.maiwithu.maidroid.runtime.RuntimePaths
 import org.maiwithu.maidroid.runtime.RuntimeReadiness
 import java.lang.ref.WeakReference
 
+/** 仅当 Termux 会话已经实际派生子进程（pid > 0）时才允许调用 finishIfRunning()，避免 pid == 0 时触发 Os.kill(0, SIGKILL) 误杀整个应用进程组。 */
+internal fun canTerminateTerminalSessionPid(pid: Int): Boolean = pid > 0
+
 /** 本地容器交互终端的运行阶段。 */
 internal sealed interface ContainerShellPhase {
     data object Idle : ContainerShellPhase
@@ -210,7 +213,10 @@ internal class ContainerShellManager(
     fun stopForExit() {
         shuttingDown = true
         _state.value.session?.let { session ->
-            runCatching { session.finishIfRunning() }
+            // 尚未完成 initializeEmulator 的会话 pid 为 0，直接调 finishIfRunning 会向自身进程组发 SIGKILL
+            if (canTerminateTerminalSessionPid(session.pid)) {
+                runCatching { session.finishIfRunning() }
+            }
         }
         attachedViewRef = null
         _state.update { ContainerShellState(phase = ContainerShellPhase.Idle, session = null, sessionGeneration = it.sessionGeneration + 1) }
@@ -252,7 +258,9 @@ internal class ContainerShellManager(
 
     private fun finishCurrentSessionLocked() {
         _state.value.session?.let { oldSession ->
-            runCatching { oldSession.finishIfRunning() }
+            if (canTerminateTerminalSessionPid(oldSession.pid)) {
+                runCatching { oldSession.finishIfRunning() }
+            }
         }
     }
 
