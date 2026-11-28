@@ -187,9 +187,6 @@ internal fun shouldRunScheduledBackup(
     return scheduleSlotKey(slot, frequency) != lastAutoBackupSlotKey
 }
 
-internal fun localDayKey(epochMillis: Long, zoneId: ZoneId): String =
-    Instant.ofEpochMilli(epochMillis).atZone(zoneId).toLocalDate().format(DAY_KEY_FORMATTER)
-
 internal fun formatScheduleTime(hour: Int, minute: Int): String =
     String.format(Locale.US, "%02d:%02d", hour.coerceIn(0, 23), minute.coerceIn(0, 59))
 

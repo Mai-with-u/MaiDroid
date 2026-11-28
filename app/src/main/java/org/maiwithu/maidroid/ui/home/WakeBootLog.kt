@@ -30,6 +30,7 @@ import org.maiwithu.maidroid.ui.theme.JetBrainsMono
 import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.StatusWarning
+import org.maiwithu.maidroid.ui.theme.TextSizes
 import org.maiwithu.maidroid.webui.MaiBotWebUi
 import kotlin.math.exp
 
@@ -38,7 +39,7 @@ import kotlin.math.exp
 
 private val BootLineStyle = TextStyle(
     fontFamily = JetBrainsMono,
-    fontSize = 12.sp,
+    fontSize = TextSizes.Caption,
     lineHeight = 22.8.sp,
     // 每行固定占满行高：隐藏的行、报错的多行说明和正常行高度一致，逐行出现时整块不上下跳。
     lineHeightStyle = LineHeightStyle(

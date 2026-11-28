@@ -86,7 +86,7 @@ internal fun MirrorSettingsPage(
         statusBarTop = statusBarTop,
         horizontalPadding = horizontalPadding,
         expandedTopOffset = effectiveExpandedTopOffset,
-        expandedFontSize = if (compact) 24.sp else TextSizes.Display,
+        expandedFontSize = if (compact) TextSizes.Headline else TextSizes.Display,
         collapsedFontSize = if (compact) 18.sp else 19.sp,
         topBarHeight = topBarHeight,
         headerOverscrollPx = overscroll.headerOverscrollPx,

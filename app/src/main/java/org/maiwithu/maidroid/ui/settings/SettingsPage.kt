@@ -74,7 +74,7 @@ import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LiquidSegmentItem
 import org.maiwithu.maidroid.ui.component.LiquidSegmentedSelector
@@ -727,7 +727,7 @@ private fun SettingsNavigationPane(
                         null
                     } else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = sshState.enabled,
                                 onCheckedChange = onSshEnabledChange,
                                 enabled = !sshState.isStarting
@@ -845,7 +845,7 @@ private fun SettingsNavigationPane(
                     onClick = { onKeepScreenOnChange(!keepScreenOn) },
                     trailing = if (compact) null else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = keepScreenOn,
                                 onCheckedChange = onKeepScreenOnChange
                             )
@@ -872,7 +872,7 @@ private fun SettingsNavigationPane(
                     onClick = { onWifiLockChange(!wifiLockEnabled) },
                     trailing = if (compact) null else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = wifiLockEnabled,
                                 onCheckedChange = onWifiLockChange
                             )
@@ -985,7 +985,7 @@ private fun SettingsNavigationPane(
                     onClick = { onTelemetryChange(!telemetryEnabled) },
                     trailing = if (compact) null else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = telemetryEnabled,
                                 onCheckedChange = onTelemetryChange
                             )
@@ -1201,7 +1201,7 @@ private fun CompactSettingSwitchRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        FlatSwitch(
+        LiquidToggle(
             checked = checked,
             onCheckedChange = onCheckedChange,
             enabled = enabled

@@ -59,7 +59,7 @@ import org.maiwithu.maidroid.pet.DesktopPetUiState
 import org.maiwithu.maidroid.pet.normalizeDesktopPetScale
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LiquidSlider
@@ -181,7 +181,7 @@ internal fun FloatingPetSummaryCard(
 
             if (!compact) {
                 Spacer(modifier = Modifier.width(10.dp))
-                FlatSwitch(
+                LiquidToggle(
                     checked = switchChecked,
                     onCheckedChange = onToggle
                 )
@@ -218,7 +218,7 @@ internal fun FloatingPetSummaryCard(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
-                FlatSwitch(
+                LiquidToggle(
                     checked = switchChecked,
                     onCheckedChange = onToggle
                 )

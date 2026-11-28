@@ -54,7 +54,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -78,7 +77,9 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.JetBrainsMono
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TerminalBackground
@@ -140,7 +141,7 @@ internal fun ContainerTerminalPane(
     LaunchedEffect(isDark, shellState.session, shellState.sessionGeneration) {
         applyTerminalThemeColors(shellState.session, isDark)
         terminalViewHolder.view?.let { view ->
-            view.setBackgroundColor(TerminalBackgroundColorInt(isDark))
+            view.setBackgroundColor(terminalBackgroundColorInt(isDark))
             view.onScreenUpdated()
             onMouseTrackingChange(shellState.session?.emulator?.isMouseTrackingActive == true)
         }
@@ -342,7 +343,7 @@ private fun TerminalSessionAndroidView(
 
                     override fun onEmulatorSet() {
                         applyTerminalThemeColors(latestSession, latestIsDark)
-                        setBackgroundColor(TerminalBackgroundColorInt(latestIsDark))
+                        setBackgroundColor(terminalBackgroundColorInt(latestIsDark))
                         setTerminalCursorBlinkerRate(500)
                         setTerminalCursorBlinkerState(latestIsActivePage, true)
                         onScreenUpdated()
@@ -358,7 +359,7 @@ private fun TerminalSessionAndroidView(
                 })
                 setTextSize(latestFontSizePx)
                 setTypeface(typeface)
-                setBackgroundColor(TerminalBackgroundColorInt(latestIsDark))
+                setBackgroundColor(terminalBackgroundColorInt(latestIsDark))
                 applyTerminalThemeColors(latestSession, latestIsDark)
                 attachSession(latestSession)
                 // 在节点创建阶段用普通引用持有视图并绑定会话刷新器，不触发额外的 Compose 状态写入。
@@ -371,7 +372,7 @@ private fun TerminalSessionAndroidView(
                 applyTerminalThemeColors(session, isDark)
                 view.attachSession(session)
             }
-            view.setBackgroundColor(TerminalBackgroundColorInt(isDark))
+            view.setBackgroundColor(terminalBackgroundColorInt(isDark))
             if (view.tag != sessionGeneration) {
                 view.tag = sessionGeneration
                 view.onScreenUpdated()
@@ -547,8 +548,8 @@ private fun ShellPlaceholderState(modifier: Modifier = Modifier) {
     }
 }
 
-private fun TerminalBackgroundColorInt(isDark: Boolean): Int =
-    if (isDark) Color(0xFF000000).toArgb() else Color(0xFFF6F7FA).toArgb()
+private fun terminalBackgroundColorInt(isDark: Boolean): Int =
+    (if (isDark) DarkMaiDroidColors else LightMaiDroidColors).terminalBackground.toArgb()
 
 private fun showSoftKeyboard(context: Context, view: View) {
     val imm = context.getSystemService(InputMethodManager::class.java) ?: return

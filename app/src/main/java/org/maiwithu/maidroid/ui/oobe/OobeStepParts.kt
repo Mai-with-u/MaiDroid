@@ -144,7 +144,7 @@ internal fun OobeStepHeader(
 
         Text(
             text = step.description,
-            fontSize = if (narrow) 12.sp else 14.sp,
+            fontSize = if (narrow) TextSizes.Caption else TextSizes.Body,
             fontWeight = FontWeight.Bold,
             color = OobeTextPrimary,
             lineHeight = if (narrow) 15.sp else 17.sp,

@@ -39,6 +39,8 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -466,7 +468,7 @@ internal class InteractiveHighlight(
             )
             val radius = (size.minDimension * 1.5f).coerceAtLeast(1f)
             // 深色模式叠白光并相加混合；浅色模式改用低透冷炭墨微按压蒙层并常规覆盖，避免白光隐身。
-            val highlightBase = if (isDark) Color.White else Color(0xFF0F172A)
+            val highlightBase = (if (isDark) DarkMaiDroidColors else LightMaiDroidColors).glassPressHighlight
             val highlightBlend = if (isDark) BlendMode.Plus else BlendMode.SrcOver
             val uniformAlpha = if (isDark) 0.08f else 0.04f
             val centerAlpha = if (isDark) 0.15f else 0.09f

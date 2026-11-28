@@ -41,7 +41,7 @@ import org.maiwithu.maidroid.pet.DesktopPetUiState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
@@ -209,7 +209,7 @@ internal fun DesktopPetSettingsPage(
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = switchChecked,
                                 onCheckedChange = onToggle
                             )

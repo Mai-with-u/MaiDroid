@@ -154,7 +154,7 @@ internal fun BackupSettingsPage(
         statusBarTop = statusBarTop,
         horizontalPadding = horizontalPadding,
         expandedTopOffset = effectiveTopOffset,
-        expandedFontSize = if (compact) 24.sp else TextSizes.Display,
+        expandedFontSize = if (compact) TextSizes.Headline else TextSizes.Display,
         collapsedFontSize = if (compact) 18.sp else 19.sp,
         topBarHeight = 52.dp,
         headerOverscrollPx = overscroll.headerOverscrollPx,
