@@ -28,6 +28,59 @@ internal object MaiBotUpdateScripts {
     private const val SCHEMA_SOURCE_PATH = "src/common/database/migrations/builtin.py"
     private const val DATABASE_PATH = "data/MaiBot.db"
 
+    // 解析 migrations/builtin.py 中的 LATEST_SCHEMA_VERSION：兼容 `LATEST_SCHEMA_VERSION = V55_SCHEMA_VERSION`
+    // 常量别名、多跳赋值、类型注解（如 `: int` / `: Final[int]`）与纯整数写法，全部使用 POSIX awk 以便容器内外直接执行。
+    internal val TARGET_SCHEMA_AWK =
+        """
+        {
+            gsub(/\r/, "")
+            sub(/#.*/, "")
+            if (${'$'}0 ~ /^[ \t]*[A-Za-z_][A-Za-z0-9_]*([ \t]*:[^=]*)?[ \t]*=[ \t]*[A-Za-z0-9_]+[ \t]*${'$'}/) {
+                line = ${'$'}0
+                sub(/^[ \t]*/, "", line)
+                eq = index(line, "=")
+                lhs = substr(line, 1, eq - 1)
+                sub(/:.*/, "", lhs)
+                gsub(/[ \t]+/, "", lhs)
+                rhs = substr(line, eq + 1)
+                gsub(/[ \t]+/, "", rhs)
+                has_val = 0
+                val = 0
+                if (rhs ~ /^[0-9]+${'$'}/) {
+                    val = rhs + 0
+                    has_val = 1
+                } else if (rhs in vals) {
+                    val = vals[rhs]
+                    has_val = 1
+                } else if (rhs ~ /^V[0-9]+_SCHEMA_VERSION${'$'}/) {
+                    tmp = rhs
+                    sub(/^V/, "", tmp)
+                    sub(/_SCHEMA_VERSION${'$'}/, "", tmp)
+                    val = tmp + 0
+                    has_val = 1
+                }
+                if (has_val) {
+                    vals[lhs] = val
+                    if (lhs ~ /^V[0-9]+_SCHEMA_VERSION${'$'}/ && val > max_v) {
+                        max_v = val
+                    }
+                }
+                if (lhs == "LATEST_SCHEMA_VERSION") {
+                    saw_latest = 1
+                }
+            } else if (${'$'}0 ~ /^[ \t]*LATEST_SCHEMA_VERSION([ \t]*:[^=]*)?[ \t]*=/) {
+                saw_latest = 1
+            }
+        }
+        END {
+            if ("LATEST_SCHEMA_VERSION" in vals) {
+                print vals["LATEST_SCHEMA_VERSION"]
+            } else if (saw_latest && max_v > 0) {
+                print max_v
+            }
+        }
+        """.trimIndent()
+
     /**
      * 动源码之前记下要切到的分支和提交（一行“分支 提交”）。在线更新、切换通道、自动升级一路做完（不论成败）由宿主侧删掉；
      * 做到一半应用闪退、被系统结束或断电时它还在，下次打开时 resumeInterrupted 照着它把源码切完、依赖装完。
@@ -169,8 +222,9 @@ internal object MaiBotUpdateScripts {
             "import sqlite3, sys; p = sys.argv[1]; print(sqlite3.connect(f'file:{p}?mode=ro', uri=True).execute('PRAGMA user_version').fetchone()[0])"
         val readUserVersionRw =
             "import sqlite3, sys; p = sys.argv[1]; print(sqlite3.connect(f'file:{p}', uri=True).execute('PRAGMA user_version').fetchone()[0])"
+        // 兼容纯整数、常量别名（如 LATEST_SCHEMA_VERSION = V55_SCHEMA_VERSION）与类型注解写法，避免漏判降级
         return """
-        target_schema="${'$'}(git show "${'$'}remote_ref:$SCHEMA_SOURCE_PATH" 2>/dev/null | sed -n 's/^LATEST_SCHEMA_VERSION *= *\([0-9][0-9]*\) *${'$'}/\1/p' | head -n 1)"
+        target_schema="${'$'}(git show "${'$'}remote_ref:$SCHEMA_SOURCE_PATH" 2>/dev/null | awk ${shellQuote(TARGET_SCHEMA_AWK)})"
         database_schema=""
         if [ -x .venv/bin/python ]; then
             for db_file in $DATABASE_PATH bots/*/$DATABASE_PATH; do

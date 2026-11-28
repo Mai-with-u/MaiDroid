@@ -48,4 +48,19 @@ class MaiBotUpdateScriptsTest {
             assertTrue(body.contains("if [ -z \"${'$'}database_schema\" ] || [ \"${'$'}ver\" -gt \"${'$'}database_schema\" ]; then"))
         }
     }
+
+    @Test
+    fun `target schema parser uses POSIX awk supporting alias constants, annotations, and V-N fallback`() {
+        val awkProgram = MaiBotUpdateScripts.TARGET_SCHEMA_AWK
+        assertTrue(awkProgram.contains("vals[lhs] = val"))
+        assertTrue(awkProgram.contains("sub(/:.*/, \"\", lhs)"))
+        assertTrue(awkProgram.contains("V[0-9]+_SCHEMA_VERSION"))
+        assertTrue(awkProgram.contains("\"LATEST_SCHEMA_VERSION\" in vals"))
+        assertTrue(awkProgram.contains("saw_latest && max_v > 0"))
+
+        listOf(MaiBotUpdateScripts.fetchLatest().body, MaiBotUpdateScripts.fetchAndReset().body).forEach { body ->
+            assertTrue(body.contains("awk '"))
+            assertFalse(body.contains("sed -n 's/^LATEST_SCHEMA_VERSION"))
+        }
+    }
 }
