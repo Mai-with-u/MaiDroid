@@ -41,7 +41,7 @@ import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LiquidButton
@@ -325,7 +325,7 @@ private fun PermissionSwitchCard(
         statusColor = if (checked) StatusOnline else TextMuted,
         modifier = modifier
     ) {
-        FlatSwitch(
+        LiquidToggle(
             checked = checked,
             onCheckedChange = onCheckedChange
         )

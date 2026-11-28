@@ -22,7 +22,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -416,14 +415,3 @@ internal fun rangeResponseStart(
 }
 
 private val CONTENT_RANGE = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""", RegexOption.IGNORE_CASE)
-
-/** 安装包大小、下载进度的显示：163110537 -> "155.6 MB"，按 1024 进位，与系统设置里看到的一致。 */
-internal fun formatBytes(bytes: Long): String {
-    val value = bytes.coerceAtLeast(0L)
-    return when {
-        value >= 1024L * 1024 * 1024 -> "%.2f GB".format(Locale.ROOT, value / (1024.0 * 1024 * 1024))
-        value >= 1024L * 1024 -> "%.1f MB".format(Locale.ROOT, value / (1024.0 * 1024))
-        value >= 1024L -> "%.0f KB".format(Locale.ROOT, value / 1024.0)
-        else -> "$value B"
-    }
-}

@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
 import org.maiwithu.maidroid.permission.hasExternalStoragePermission
 import org.maiwithu.maidroid.runtime.RuntimePaths

@@ -4,7 +4,6 @@ import android.os.Build
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -71,11 +70,11 @@ import kotlinx.coroutines.flow.collectLatest
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.GlassButtonSurface
 import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
-import org.maiwithu.maidroid.ui.theme.GlassShadow
 import org.maiwithu.maidroid.ui.theme.GlassStroke
 import org.maiwithu.maidroid.ui.theme.LiquidButtonSurface
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
-import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.SwitchTrackUnchecked
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -120,12 +119,16 @@ internal fun LiquidButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val animationScope = rememberCoroutineScope()
-    val interactiveHighlight = remember(animationScope) { InteractiveHighlight(animationScope) }
+    val colors = LocalMaiDroidColors.current
+    val interactiveHighlight = remember(animationScope, colors.isDark) {
+        InteractiveHighlight(animationScope, isDark = colors.isDark)
+    }
     val activeInteractive = enabled && isInteractive
     val resolvedShape = shape()
     val visual = resolveLiquidButtonVisual(
         style = style,
         enabled = enabled,
+        colors = colors,
         tint = tint,
         surfaceColor = surfaceColor,
         contentColor = contentColor
@@ -221,15 +224,20 @@ internal fun LiquidGlassIconButton(
     refractionHeight: Dp = 14.dp,
     refractionAmount: Dp = 24.dp,
     highlight: (() -> Highlight?)? = { Highlight.Default.copy(alpha = if (enabled) 0.88f else 0.35f) },
-    shadow: (() -> Shadow?)? = { DefaultIconButtonShadow },
+    shadow: (() -> Shadow?)? = null,
     content: @Composable () -> Unit
 ) {
     val animationScope = rememberCoroutineScope()
-    val interactiveHighlight = remember(animationScope) { InteractiveHighlight(animationScope) }
+    val colors = LocalMaiDroidColors.current
+    val interactiveHighlight = remember(animationScope, colors.isDark) {
+        InteractiveHighlight(animationScope, isDark = colors.isDark)
+    }
     val activeInteractive = enabled && isInteractive
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val resolvedShape = shape()
     val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.8.dp, GlassStroke, resolvedShape)
+    val defaultShadow = remember(colors.glassShadow) { Shadow(radius = 14.dp, color = colors.glassShadow) }
+    val resolvedShadow = shadow ?: { defaultShadow }
 
     Box(
         modifier = modifier
@@ -243,7 +251,7 @@ internal fun LiquidGlassIconButton(
                     lens(refractionHeight.toPx(), refractionAmount.toPx())
                 },
                 highlight = highlight,
-                shadow = shadow,
+                shadow = resolvedShadow,
                 layerBlock = if (activeInteractive) {
                     {
                         val transform = computeLiquidButtonDragTransform(
@@ -388,7 +396,7 @@ internal fun LiquidToggle(
     backdrop: Backdrop = resolveLiquidBackdrop(),
     enabled: Boolean = true
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !LocalMaiDroidColors.current.isDark
     val trackWidth = 60.dp
     val trackHeight = 28.dp
     // 保持 28dp 视觉轨道不变，纵向扩展至 40dp 透明热区，方便横屏与弹窗场景下直接点拖开关。
@@ -611,6 +619,7 @@ internal fun LiquidToggle(
 private fun resolveLiquidButtonVisual(
     style: LiquidButtonStyle,
     enabled: Boolean,
+    colors: MaiDroidColors,
     tint: Color,
     surfaceColor: Color,
     contentColor: Color
@@ -618,37 +627,42 @@ private fun resolveLiquidButtonVisual(
     val defaultVisual = when (style) {
         LiquidButtonStyle.Primary -> LiquidButtonVisual(
             tint = BrandOrange,
-            tintAlpha = if (enabled) 0.78f else 0.28f,
+            tintAlpha = if (enabled) 0.78f else if (colors.isDark) 0.28f else 0.36f,
             surfaceColor = Color.Unspecified,
-            contentColor = if (enabled) OnBrandOrange else TextFaint
+            contentColor = when {
+                enabled -> OnBrandOrange
+                colors.isDark -> colors.textFaint
+                else -> OnBrandOrange.copy(alpha = 0.85f)
+            }
         )
 
         LiquidButtonStyle.Secondary -> LiquidButtonVisual(
             tint = Color.Unspecified,
             tintAlpha = 0f,
-            surfaceColor = if (enabled) LiquidButtonSurface else LiquidButtonSurface.copy(alpha = 0.45f),
-            contentColor = if (enabled) TextPrimary else TextFaint
+            surfaceColor = if (enabled) colors.liquidButtonSurface else colors.liquidButtonSurface.copy(alpha = 0.45f),
+            contentColor = if (enabled) colors.textPrimary else colors.textFaint
         )
 
         LiquidButtonStyle.SoftAccent -> LiquidButtonVisual(
             tint = Color.Unspecified,
             tintAlpha = 0f,
-            surfaceColor = BrandOrange.copy(alpha = if (enabled) 0.20f else 0.08f),
-            contentColor = if (enabled) BrandOrange else TextFaint
+            surfaceColor = BrandOrange.copy(alpha = if (enabled) (if (colors.isDark) 0.20f else 0.15f) else 0.08f),
+            contentColor = if (enabled) BrandOrange else colors.textFaint
         )
 
         LiquidButtonStyle.Danger -> LiquidButtonVisual(
-            tint = StatusDanger,
-            tintAlpha = if (enabled) 0.80f else 0.28f,
+            tint = colors.statusDanger,
+            tintAlpha = if (enabled) 0.80f else 0.32f,
             surfaceColor = Color.Unspecified,
-            contentColor = if (enabled) TextPrimary else TextFaint
+            // 实色危险红按钮内恒用纯白文字，确保浅/深色主题下都具备高对比度。
+            contentColor = if (enabled) OnBrandOrange else colors.textFaint
         )
 
         LiquidButtonStyle.SoftDanger -> LiquidButtonVisual(
             tint = Color.Unspecified,
             tintAlpha = 0f,
-            surfaceColor = StatusDanger.copy(alpha = if (enabled) 0.16f else 0.08f),
-            contentColor = if (enabled) StatusDanger else TextFaint
+            surfaceColor = colors.statusDanger.copy(alpha = if (enabled) 0.16f else 0.08f),
+            contentColor = if (enabled) colors.statusDanger else colors.textFaint
         )
     }
 
@@ -659,8 +673,3 @@ private fun resolveLiquidButtonVisual(
         contentColor = if (contentColor.isSpecified) contentColor else defaultVisual.contentColor
     )
 }
-
-private val DefaultIconButtonShadow = Shadow(
-    radius = 14.dp,
-    color = GlassShadow
-)

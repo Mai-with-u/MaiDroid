@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.effect
@@ -167,10 +166,7 @@ internal fun CollapsingGlassHeaderContainer(
     )
     val actionScale = computeCollapsingActionScale(clampedProgress)
 
-    val contentBackdrop = rememberLayerBackdrop {
-        drawRect(PageBackground)
-        drawContent()
-    }
+    val contentBackdrop = rememberThemedLayerBackdrop(PageBackground)
 
     val topScrimBrush = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         Brush.verticalGradient(

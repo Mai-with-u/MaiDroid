@@ -38,17 +38,17 @@ import org.maiwithu.maidroid.permission.PermissionState
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
 import org.maiwithu.maidroid.ui.theme.BrandOrange
-import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.IconWarmCoral
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.OobeSurface
+import org.maiwithu.maidroid.ui.theme.OobeSurfaceVariant
 import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.OobeTextSecondary
 import org.maiwithu.maidroid.ui.theme.StatusDanger
 import org.maiwithu.maidroid.ui.theme.TextMuted
-import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 // OOBE 第一步“授予权限”的内容：必选的消息通知权限卡片 + 可选的外部存储权限卡片 + 可选的后台保活卡片（四项保活设置）。
@@ -227,7 +227,7 @@ private fun BackgroundKeepAliveCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Corners.Panel))
-                .background(CardSurface)
+                .background(OobeSurfaceVariant)
                 .padding(8.dp)
         ) {
             KeepAlivePermissionRow(
@@ -286,7 +286,7 @@ private fun KeepAlivePermissionRow(
         OobePermissionTag(
             text = tagText,
             backgroundColor = if (destructive) StatusDanger else BrandOrange,
-            textColor = TextPrimary,
+            textColor = OnBrandOrange,
             minWidth = 44.dp
         )
 
@@ -331,6 +331,7 @@ private fun KeepAlivePermissionRow(
 @Composable
 private fun KeepAliveDivider() {
     Spacer(modifier = Modifier.height(4.dp))
-    HorizontalDivider(color = TextPrimary.copy(alpha = 0.08f), thickness = 1.dp)
+    // 沿用 OOBE 前景色，确保浅色/深色引导卡片分割线保持柔和对比
+    HorizontalDivider(color = OobeTextPrimary.copy(alpha = 0.08f), thickness = 1.dp)
     Spacer(modifier = Modifier.height(3.dp))
 }

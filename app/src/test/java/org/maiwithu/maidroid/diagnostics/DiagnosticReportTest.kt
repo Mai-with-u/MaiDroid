@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.diagnostics
 
+import android.app.ApplicationExitInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -91,5 +92,14 @@ class DiagnosticReportTest {
         assertEquals("HONOR OXF-AN10 / Android 12", params["device"])
         assertEquals("UV-SYNC/NET-DNS", params["error-code"])
         assertTrue(params.getValue("description").startsWith("错误码 UV-SYNC/NET-DNS：安装 Python 依赖包失败"))
+    }
+
+    @Test
+    fun exitReasonLabelTranslatesAndroid13PlusReasons() {
+        assertEquals("被系统后台冻结后结束", exitReasonLabel(ApplicationExitInfo.REASON_FREEZER))
+        assertEquals("应用状态变更", exitReasonLabel(ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE))
+        assertEquals("应用更新重启", exitReasonLabel(ApplicationExitInfo.REASON_PACKAGE_UPDATED))
+        assertEquals("闪退", exitReasonLabel(ApplicationExitInfo.REASON_CRASH))
+        assertEquals("未知（99）", exitReasonLabel(99))
     }
 }

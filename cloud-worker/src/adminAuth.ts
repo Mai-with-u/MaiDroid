@@ -1,6 +1,6 @@
 // 管理台多用户与权限分级：内置账号 + 会话令牌 + 四级角色 + 审计日志。
 // 触发：任何 /admin/api/* 请求先经 resolvePrincipal 认出“是谁、什么角色”，再按 requiredRoleFor 判定能不能做。
-// 角色从低到高逐级包含：观察者（只看总览）< 客服（查求助码、看报错）< 维护者（改报错状态、发布清单）< 所有者（成员管理、清空 debug、审计）。
+// 角色从低到高逐级包含：观察者（只看总览）< 客服（看报错详情）< 维护者（改报错状态、发布清单）< 所有者（成员管理、清空 debug、审计）。
 // ADMIN_TOKEN 是超级管理员 / 应急入口，永远是所有者，且只有它能授予、修改所有者账号，防止成员之间互相夺权。
 
 import { bytesToBase64, base64ToBytes, sha256Hex, timingSafeEqualText } from "./crypto.ts";
@@ -62,7 +62,6 @@ export function hasRole(p: Principal, need: Role): boolean {
 // 每个管理接口需要的最低角色；没列出来的一律按所有者处理（默认拒绝）
 export function requiredRoleFor(sub: string, method: string): Role {
   if (["console", "me", "password", "logout", "overview", "stats"].includes(sub)) return "viewer";
-  if (sub.startsWith("diag/") && method === "GET") return "support";
   if (sub === "errors" && method === "GET") return "support";
   if (sub === "errors/debug") return "owner";
   if (sub.startsWith("errors/")) return method === "GET" ? "support" : "maintainer";

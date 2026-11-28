@@ -196,6 +196,31 @@ class SnowLumaAdapterConfigTest {
         )
         assertTrue(hostDepResolveFailed.contains("silk-python"))
 
+        val stillPreparingDeps = diagnoseAdapterConfigWaitFailure(
+            listOf(
+                "[MaiBot] Process started (PID: 17976)",
+                "MaiBot 宿主已启动：/opt/MaiBot",
+                "正在检查并准备插件依赖，完成后启动 Bot…"
+            )
+        )
+        assertTrue(stillPreparingDeps.contains("仍在下载安装 QQ 适配器依赖"))
+
+        val preparedThenStalled = diagnoseAdapterConfigWaitFailure(
+            listOf(
+                "正在检查并准备插件依赖，完成后启动 Bot…",
+                "插件依赖准备完成"
+            )
+        )
+        assertTrue(preparedThenStalled.contains("等了 5 分钟"))
+
+        val exitedAfterPrepare = diagnoseAdapterConfigWaitFailure(
+            listOf(
+                "正在检查并准备插件依赖，完成后启动 Bot…",
+                "[MaiBot] Process exited with code: 130"
+            )
+        )
+        assertTrue(exitedAfterPrepare.contains("等了 5 分钟"))
+
         val generic = diagnoseAdapterConfigWaitFailure(
             listOf("[MaiBot] ValueError: 图片嵌入必须配置 Provider 对应的 image_embedding_input 或 image_embedding_body")
         )

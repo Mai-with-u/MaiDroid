@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 
-/** Returns the current top system-bar inset in density-independent pixels. */
+/** 返回当前顶部状态栏安全区高度（dp）。 */
 @Composable
 internal fun statusBarTopInset(): Dp {
     val density = LocalDensity.current

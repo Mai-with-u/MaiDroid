@@ -13,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.maiwithu.maidroid.BuildConfig
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.maibot.MaiBotInstances
 import org.maiwithu.maidroid.maibot.MaiBotProcessSupervisor
 import org.maiwithu.maidroid.maibot.maiBotProjectVersion
@@ -130,8 +130,7 @@ internal class DiagnosticsManager(
             fileName = "maidroid-diagnostics-${fileNameFormat.withZone(zone).format(now)}.zip",
             terminalLogCount = terminalTexts.size,
             crashCount = entries.count { it.name.startsWith("crashes/") },
-            includesMaiBotLog = entries.any { it.name.startsWith("maibot/") },
-            snapshotMeta = collectSnapshotMeta(report.device)
+            includesMaiBotLog = entries.any { it.name.startsWith("maibot/") }
         )
     }
 
@@ -348,38 +347,9 @@ internal class DiagnosticsManager(
 
     private fun readTextOrNull(file: File): String? =
         runCatching { file.takeIf { it.isFile }?.readText() }.getOrNull()
-
-    private fun collectSnapshotMeta(deviceLabel: String): DiagnosticSnapshotMeta {
-        val storageMb = runCatching {
-            StatFs(paths.rootfsDir.parentFile?.absolutePath ?: "/data").availableBytes / (1024L * 1024L)
-        }.getOrNull()
-        val availMemMb = runCatching {
-            val mem = ActivityManager.MemoryInfo()
-            appContext.getSystemService(ActivityManager::class.java).getMemoryInfo(mem)
-            mem.availMem / (1024L * 1024L)
-        }.getOrNull()
-        val storageGranted = hasExternalStoragePermission(appContext)
-        val batteryIgnored = appContext.getSystemService(PowerManager::class.java)
-            .isIgnoringBatteryOptimizations(appContext.packageName)
-        val notifications = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
-        return DiagnosticSnapshotMeta(
-            appVersion = BuildConfig.VERSION_NAME,
-            versionCode = BuildConfig.VERSION_CODE,
-            buildType = BuildConfig.BUILD_TYPE,
-            device = deviceLabel,
-            manufacturer = Build.MANUFACTURER,
-            sdkInt = Build.VERSION.SDK_INT,
-            availableStorageMb = storageMb,
-            availableMemMb = availMemMb,
-            storageGranted = storageGranted,
-            notificationsEnabled = notifications,
-            batteryIgnored = batteryIgnored,
-            lastExitReason = latestExitReasonText(appContext)
-        )
-    }
 }
 
-/** 一份准备好的反馈材料：打码后的报告、剪贴板文字、Issue 地址、诊断包内容和求助码快照摘要。 */
+/** 一份准备好的反馈材料：打码后的报告、剪贴板文字、Issue 地址和诊断包内容。 */
 internal class FeedbackPackage(
     val failure: Failure?,
     val reportText: String,
@@ -389,8 +359,7 @@ internal class FeedbackPackage(
     val fileName: String,
     val terminalLogCount: Int,
     val crashCount: Int,
-    val includesMaiBotLog: Boolean,
-    val snapshotMeta: DiagnosticSnapshotMeta? = null
+    val includesMaiBotLog: Boolean
 )
 
 private val API_KEY_LINE = Regex("""(?m)^\s*api_key\s*=\s*["']([^"'\n]+)["']""")
@@ -468,8 +437,8 @@ internal fun latestExitReasonText(context: Context): String? {
         .joinToString("：")
 }
 
-/** 系统记录的进程结束原因（ApplicationExitInfo.REASON_*）换成中文。 */
-private fun exitReasonLabel(reason: Int): String = when (reason) {
+/** 系统记录的进程结束原因（ApplicationExitInfo.REASON_*）换成中文，覆盖 Android 13+ 新增退出码。 */
+internal fun exitReasonLabel(reason: Int): String = when (reason) {
     ApplicationExitInfo.REASON_EXIT_SELF -> "自己退出"
     ApplicationExitInfo.REASON_SIGNALED -> "被信号结束"
     ApplicationExitInfo.REASON_LOW_MEMORY -> "内存不足被系统回收"
@@ -483,5 +452,8 @@ private fun exitReasonLabel(reason: Int): String = when (reason) {
     ApplicationExitInfo.REASON_USER_STOPPED -> "用户停止"
     ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "依赖的进程结束"
     ApplicationExitInfo.REASON_OTHER -> "其他（厂商系统的后台清理多半记在这里）"
+    ApplicationExitInfo.REASON_FREEZER -> "被系统后台冻结后结束"
+    ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE -> "应用状态变更"
+    ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "应用更新重启"
     else -> "未知（$reason）"
 }

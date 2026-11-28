@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.R
-import org.maiwithu.maidroid.ui.component.DefaultLiquidGlassHighlight
 import org.maiwithu.maidroid.ui.component.LiquidGlassIconButton
+import org.maiwithu.maidroid.ui.component.defaultLiquidGlassHighlight
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -161,9 +161,6 @@ internal val PortraitBottomBarGap = 12.dp
 /** 单个标签按钮高度（dp 数值常量，同时供竖屏底栏与正常高度横屏侧栏计算复用）。 */
 internal const val HomeTabButtonHeightDp = 48f
 
-/** 单个标签按钮的高度（竖屏底栏与正常高度横屏侧栏通用）。 */
-internal val HomeTabButtonHeight = HomeTabButtonHeightDp.dp
-
 /** 首页导航外框统一全圆胶囊形状（底栏 56dp 高时呈 28dp 半圆弧，横屏 72dp 侧栏呈 36dp 半圆弧，正方形时呈正圆）。 */
 internal val HomeNavBarShape: Shape = Capsule()
 
@@ -200,6 +197,7 @@ internal fun HomeTerminalButton(
     enabled: Boolean = true,
     iconSizeDp: Float = 24f
 ) {
+    val navHighlight = defaultLiquidGlassHighlight()
     LiquidGlassIconButton(
         painter = painterResource(R.drawable.ic_terminal_code),
         contentDescription = "查看终端输出",
@@ -212,7 +210,7 @@ internal fun HomeTerminalButton(
         iconSize = iconSizeDp.dp,
         tint = TextPrimary.copy(alpha = HomeNavInactiveContentAlpha),
         surfaceColor = LiquidBarSurface,
-        highlight = { DefaultLiquidGlassHighlight },
+        highlight = { navHighlight },
         enabled = enabled,
         modifier = modifier
     )

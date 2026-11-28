@@ -94,6 +94,23 @@ class OwnChildProcessesTest {
         logUnexpectedSigkill(exitCode = 137, intentionallyStopped = true, uptimeMs = 5_000L, childCountProvider = { 10 }) {
             logs += it
         }
+        logUnexpectedSigkill(
+            exitCode = 241,
+            intentionallyStopped = false,
+            uptimeMs = 12_400L,
+            childCountProvider = { 8 },
+            onLog = { logs += it }
+        )
+        logUnexpectedSigkill(
+            exitCode = 247,
+            intentionallyStopped = false,
+            uptimeMs = 9_100L,
+            childCountProvider = { 7 },
+            onLog = { logs += it }
+        )
+        logUnexpectedSigkill(exitCode = 241, intentionallyStopped = true, uptimeMs = 5_000L, childCountProvider = { 8 }) {
+            logs += it
+        }
         logUnexpectedSigkill(exitCode = 1, intentionallyStopped = false, uptimeMs = 5_000L, childCountProvider = { 10 }) {
             logs += it
         }
@@ -101,7 +118,9 @@ class OwnChildProcessesTest {
         assertEquals(
             listOf(
                 "[MaiDroid] 容器进程收到 SIGKILL(137)，本轮已运行 305s，当前本应用子进程数：19",
-                "[MaiDroid] 容器进程收到 SIGKILL(137)，当前本应用子进程数：18"
+                "[MaiDroid] 容器进程收到 SIGKILL(137)，当前本应用子进程数：18",
+                "[MaiDroid] 容器子进程收到 SIGTERM(退出码 241 / -15)，本轮已运行 12s，当前本应用子进程数：8",
+                "[MaiDroid] 容器子进程收到 SIGKILL(退出码 247 / -9)，本轮已运行 9s，当前本应用子进程数：7"
             ),
             logs
         )

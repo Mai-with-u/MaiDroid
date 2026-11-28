@@ -1,5 +1,8 @@
 package org.maiwithu.maidroid.ui.extension
 
+import android.content.Context
+import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -59,7 +62,7 @@ import org.maiwithu.maidroid.pet.DesktopPetUiState
 import org.maiwithu.maidroid.pet.normalizeDesktopPetScale
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LiquidSlider
@@ -74,9 +77,12 @@ import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusDanger
@@ -107,7 +113,11 @@ internal fun FloatingPetSummaryCard(
     compact: Boolean = false
 ) {
     val switchChecked = petState.desiredEnabled || petState.overlayActive
-    val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(entry.badge, petState)
+    val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(
+        defaultBadge = entry.badge,
+        petState = petState,
+        colors = LocalMaiDroidColors.current
+    )
     val scalePercent = (normalizeDesktopPetScale(petState.petScale) * 100f).roundToInt()
     val summarySubtitle = if (switchChecked) {
         "${petState.statusText} · 大小 $scalePercent%"
@@ -174,7 +184,7 @@ internal fun FloatingPetSummaryCard(
 
             if (!compact) {
                 Spacer(modifier = Modifier.width(10.dp))
-                FlatSwitch(
+                LiquidToggle(
                     checked = switchChecked,
                     onCheckedChange = onToggle
                 )
@@ -211,7 +221,7 @@ internal fun FloatingPetSummaryCard(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
-                FlatSwitch(
+                LiquidToggle(
                     checked = switchChecked,
                     onCheckedChange = onToggle
                 )
@@ -296,21 +306,31 @@ internal fun WebUiLoginDialog(
     val context = LocalContext.current
     val authContainer = remember(context) { FrameLayout(context) }
 
+    // 认证弹窗位于独立 Dialog 窗口（不在 Activity 根 FocusGuardFrameLayout 下），
+    // 关闭或认证成功自动卸载内嵌 WebView 前主动清焦点并收起软键盘，避免输入法滞留或焦点回落异常。
+    val dismissWithFocusCleanup: () -> Unit = {
+        releaseAuthDialogFocus(context, authContainer)
+        onDismiss()
+    }
+
     DisposableEffect(authContainer) {
         attachAuthView(authContainer)
-        onDispose { detachAuthView(authContainer) }
+        onDispose {
+            releaseAuthDialogFocus(context, authContainer)
+            detachAuthView(authContainer)
+        }
     }
 
     MaiDialog(
         title = "登录本机 WebUI",
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismissWithFocusCleanup,
         size = MaiDialogSize.Expanded,
         scrollable = false,
         footer = {
             MaiDialogButtonRow {
                 MaiDialogButton(
                     text = "暂先关闭",
-                    onClick = onDismiss,
+                    onClick = dismissWithFocusCleanup,
                     style = MaiDialogButtonStyle.Secondary,
                     modifier = Modifier.weight(1f)
                 )
@@ -332,6 +352,9 @@ internal fun WebUiLoginDialog(
         Spacer(modifier = Modifier.height(8.dp))
         AndroidView(
             factory = { authContainer },
+            onRelease = { view ->
+                releaseAuthDialogFocus(context, view)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false)
@@ -340,6 +363,15 @@ internal fun WebUiLoginDialog(
                 .background(PageBackground)
         )
     }
+}
+
+private fun releaseAuthDialogFocus(context: Context, container: FrameLayout) {
+    // 阻断后代重新获焦 -> 收起软键盘 -> 清理子视图与容器焦点，保证卸载过程干净无残留。
+    container.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+    context.getSystemService(InputMethodManager::class.java)
+        ?.hideSoftInputFromWindow(container.windowToken, 0)
+    container.findFocus()?.clearFocus()
+    container.clearFocus()
 }
 
 /** 运行时摘要区：16dp 内嵌圆角面板呈现当前状态文本、悬浮权限引导胶囊以及双列清晰指标。 */
@@ -851,21 +883,25 @@ internal fun CompactActionButton(
 
 internal fun resolvePetHeaderBadge(
     defaultBadge: String,
-    petState: DesktopPetUiState
+    petState: DesktopPetUiState,
+    colors: MaiDroidColors = DarkMaiDroidColors
 ): Pair<String, Color> = when {
     petState.overlayActive && petState.connected && !petState.overlayVisible -> "已隐藏" to BrandOrange
-    petState.overlayActive && petState.connected -> "运行中" to StatusOnline
+    petState.overlayActive && petState.connected -> "运行中" to colors.statusOnline
     petState.phase == DesktopPetPhase.Connecting -> "连接中" to BrandOrange
-    petState.phase == DesktopPetPhase.AuthRequired -> "待登录" to StatusWarning
-    petState.phase == DesktopPetPhase.ConfigRequired -> "待配置" to StatusWarning
-    petState.phase == DesktopPetPhase.Error -> "异常" to StatusDanger
-    else -> defaultBadge to TextMuted
+    petState.phase == DesktopPetPhase.AuthRequired -> "待登录" to colors.statusWarning
+    petState.phase == DesktopPetPhase.ConfigRequired -> "待配置" to colors.statusWarning
+    petState.phase == DesktopPetPhase.Error -> "异常" to colors.statusDanger
+    else -> defaultBadge to colors.textMuted
 }
 
-internal fun resolvePetPhaseColor(petState: DesktopPetUiState): Color = when (petState.phase) {
-    DesktopPetPhase.Running -> if (petState.connected) StatusOnline else BrandOrange
+internal fun resolvePetPhaseColor(
+    petState: DesktopPetUiState,
+    colors: MaiDroidColors = DarkMaiDroidColors
+): Color = when (petState.phase) {
+    DesktopPetPhase.Running -> if (petState.connected) colors.statusOnline else BrandOrange
     DesktopPetPhase.Connecting -> BrandOrange
-    DesktopPetPhase.AuthRequired, DesktopPetPhase.ConfigRequired -> StatusWarning
-    DesktopPetPhase.Error -> StatusDanger
-    DesktopPetPhase.Idle -> TextMuted
+    DesktopPetPhase.AuthRequired, DesktopPetPhase.ConfigRequired -> colors.statusWarning
+    DesktopPetPhase.Error -> colors.statusDanger
+    DesktopPetPhase.Idle -> colors.textMuted
 }

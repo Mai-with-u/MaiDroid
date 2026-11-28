@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.maiwithu.maidroid.runtime.formatBytes
 import java.net.InetSocketAddress
 import java.util.Collections
 import kotlin.random.Random

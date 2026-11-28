@@ -15,6 +15,7 @@ flowchart TB
         Platforms["ui/platform\n消息平台页"]
         Extensions["ui/extension\n扩展组件与悬浮桌宠配置"]
         Settings["ui/settings\n设置、权限、备份、镜像、更新、SSH"]
+        TerminalUi["ui/terminal\n终端输出与本地交互终端"]
     end
 
     subgraph State["状态与流程"]
@@ -34,6 +35,7 @@ flowchart TB
         SnowLuma["SnowLumaPlatformManager\nSnowLumaProcessSupervisor"]
         QqOfficial["QqOfficialPlatformManager"]
         Ssh["ContainerSshManager"]
+        Shell["ContainerShellManager\n本地交互式容器终端"]
     end
 
     subgraph Runtime["容器运行时（runtime/）"]
@@ -57,6 +59,7 @@ flowchart TB
     Settings --> AppUpdate
     Settings --> Backup
     Settings --> Ssh
+    TerminalUi --> Shell
 
     VM -->|OOBE 完成后拉起| Service
     Service --> MaiBot
@@ -71,6 +74,7 @@ flowchart TB
     SnowLuma --> Runner
     QqOfficial --> Runner
     Ssh --> Runner
+    Shell --> Runner
     Runner --> Scripts
     Runner --> Paths
 ```
@@ -87,40 +91,40 @@ flowchart TB
 | 包 | 职责 | 主要类 |
 | --- | --- | --- |
 | （根） | 进程入口、依赖创建处、核心 Activity，以及系统栏同步、高刷新率请求与版本号比较 | `MaiDroidApplication`、`AppDependencies`、`MainActivity`、`MainViewModel`、`WebUiActivity`、`SystemBars.kt`（`applySystemBars`、`LocalHideNavigationBar`）、`DisplayRefreshRate.kt`、`VersionNumber` |
-| `settings` | MMKV 持久化的应用设置 | `AppSettings` |
-| `terminal` | 全应用共享的终端输出，以及把 ANSI 控制序列解析成带颜色的行 | `TerminalLog`、`AnsiText` |
+| `settings` | MMKV 持久化的应用设置与外观主题策略模型 | `AppSettings`、`AppThemeMode.kt`（`AppThemeMode`、`resolveUseDarkTheme`） |
+| `terminal` | 全应用共享的终端日志输出、ANSI 解析，以及本机交互式容器 Shell 会话管理（基于 Termux 终端引擎） | `TerminalLog`、`AnsiText`、`ContainerShellManager` |
 | `permission` | 存储、通知、悬浮窗、电池优化等系统权限的检查和跳转 | `SystemPermissionController`、`PermissionState`、`PermissionActions` |
-| `runtime` | 容器运行时：路径、就绪检查、proot 命令、脚本与挂载定义、回环直连免代理、子进程巡检与终止、原子落盘与 dpkg 修复、存储空间、GitHub 和 apt 镜像、容器 DNS 和时区、手机网络状态 | `RuntimePaths`、`InContainerPaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`（含 `ContainerBindMount`）、`ContainerCommandRunner`、`LoopbackHttp.kt`（`isLoopbackHost`、`openDirectOrDefault`）、`OwnChildProcesses.kt`、`ProcessTermination.kt`、`DurableFiles`、`DpkgState`、`StorageSpace`、`RuntimeAssetInstaller`、`GitHubMirrors`、`AptMirrors`、`ContainerSetupScripts`、`ContainerDns`、`ContainerTimeZone`、`NetworkStatus` |
+| `runtime` | 容器运行时：路径、就绪检查、proot 命令与交互 Shell 参数、脚本与挂载定义、回环直连免代理、子进程巡检与终止、原子落盘与 dpkg 修复、存储空间与字节格式化、GitHub / APT / PyPI 镜像管理与测速、容器 DNS 和时区、手机网络状态 | `RuntimePaths`、`InContainerPaths`、`RuntimeReadiness`、`ProotCommand`、`ContainerScript`（含 `ContainerBindMount`）、`ContainerCommandRunner`、`LoopbackHttp.kt`（`isLoopbackHost`、`openDirectOrDefault`）、`OwnChildProcesses.kt`、`ProcessTermination.kt`、`DurableFiles.kt`、`DpkgState`、`StorageSpace.kt`（`StorageSpace`、`formatBytes`）、`RuntimeAssetInstaller`、`MirrorConfig.kt`、`MirrorManager`、`MirrorSpeedTester`、`GitHubMirrors`、`AptMirrors`、`PyPiMirrors`、`ContainerSetupScripts`、`ContainerDns`、`ContainerTimeZone`、`NetworkStatus` |
 | `diagnostics` | 出了问题时帮用户说清楚：终端输出落盘、MaiDroid 闪退记录、失败的错误码和认原因的规则表、诊断报告（打码）与诊断包、预填好的 GitHub Issue 链接 | `DiagnosticsManager`、`FailureCodes.kt`（`Failure`、`FailureStep`、`FailureCause`）、`FailureRules.kt`、`LogRedactor`、`DiagnosticReport.kt`、`TerminalLogRecorder`、`TerminalLogFiles`、`CrashRecorder`、`DiagnosticsFiles` |
 | `cleanup` | 清理空间：量容器里各类缓存占多少，删掉勾选的 | `StorageCleanupManager`、`StorageCleanupScripts`（含 `CleanupItem`） |
 | `backup` | 自动与手动配置/记忆库备份：组件文件规划、在线 SQLite 快照（`VACUUM INTO`）打包、默认外置目录与 SAF 目录双存储、频率/时刻调度与系统任务保底 | `BackupManager`、`BackupModels.kt`、`BackupArchivePlanner`、`BackupArchiver`、`BackupStorage.kt`、`BackupSchedule.kt`、`AutoBackupJobService` |
 | `maibot` | MaiBot 本体：多实例发现与选择、安装与启动脚本、依赖安装步骤、进程监管与启动判断、控制台日志轮转、协议 hash、读版本号、插件查找与版本区间校验、插件 config.toml 逐行读写 | `MaiBotInstances`、`MaiBotScripts`、`MaiBotDependencyStep`、`MaiBotProcessSupervisor`、`MaiBotConsoleLogRotator`、`MaiBotStartup.kt`、`MaiBotAgreement`、`MaiBotProjectVersion.kt`、`MaiBotPlugins.kt`、`PluginConfigToml` |
 | `maibot.update` | MaiBot 在线更新：手动更新、启动时检查、MaiDroid 更新后的自动升级、正式/测试通道切换 | `MaiBotUpdateManager`、`MaiBotUpdateScripts`、`MaiBotUpdateReport`、`MaiBotChannel` |
 | `appupdate` | MaiDroid 应用本体的在线更新：查 GitHub 最新 Release（`AppRelease.kt` 解析）、经镜像下载 APK（`AppUpdateClient`）、校验（`AppPackageCheck.kt`）后交给系统安装器 | `AppUpdateManager`、`AppUpdateClient`、`AppRelease.kt`、`AppUpdateFiles`、`AppPackageCheck.kt` |
-| `remote` | 远程公告与动态排障热规则下发（`SHA256withECDSA` 验签、主源 ETag 增量与 GitHub 镜像并发兜底）、6 位故障求助码脱敏快照 Gzip 上传、脱敏自动报错提取与节流匿名统计 | `RemoteOpsManager`、`RemoteOpsClient`、`RemoteManifest.kt`、`ManifestSignatureVerifier`、`AutoErrorExtractor`、`PowerTelemetryTracker`、`DiagnosticSnapshotPayload` |
+| `remote` | 远程公告与动态排障热规则下发（`SHA256withECDSA` 验签、主源 ETag 增量与 GitHub 镜像并发兜底）、脱敏自动报错提取与节流匿名统计（含在线心跳与能耗遥测） | `RemoteOpsManager`、`RemoteOpsClient`、`RemoteManifest.kt`、`ManifestSignatureVerifier`、`AutoErrorExtractor`、`PowerTelemetryTracker` |
 | `oobe` | 首次引导的“配置容器”“安装 MaiBot”两步与失败自动重试 | `OobeSetupManager`、`OobeSetupState`、`OobeStep`、`OobeAutoRetry` |
 | `files` | 把容器里的文件经 SAF 共享给系统“文件”应用、MT 管理器等文件管理器，以及打开它的入口 | `ContainerDocumentsProvider`、`ContainerDocuments.kt`、`openMaiBotInFileManager` |
-| `pet` | 悬浮桌宠运行时：长连接协议与缩放规格、前端资源与音频分段解析、GPU 舞台物理拖动与撞墙回弹、独立常显传输锚点与悬浮窗、探索记录独立页 | `DesktopPetManager`、`DesktopPetState.kt`、`DesktopPetHost`、`PetAssetResolver`、`PetFlingPhysics.kt`、`PetOverlayService`、`PetWebView`、`PetRecordsActivity` |
+| `pet` | 悬浮桌宠运行时：长连接协议与缩放规格、原生消息桥、前端资源与音频分段解析、GPU 舞台物理拖动与撞墙回弹、独立常显传输锚点与悬浮窗、探索记录独立页 | `DesktopPetManager`、`DesktopPetState.kt`、`DesktopPetBridge`、`DesktopPetHost.kt`、`PetAssetResolver`、`PetFlingPhysics.kt`、`PetOverlayService`、`PetWebView`、`PetRecordsActivity` |
 | `service` | 前台服务、开机与覆盖安装自启广播、OOBE 通知保活、设置页的安全退出、低电量暂停 | `MaiBotRuntimeService`、`RuntimeAutoStartReceiver`、`SetupKeepAlive`、`SafeExitManager`、`LowBatteryPolicy` |
 | `ssh` | 容器里的 sshd | `ContainerSshManager`、`ContainerSshScripts` |
 | `platform.qq` | 两种 QQ 协议端（NapCat、SnowLuma 客户端）共用的部分：启用哪一种和切换、自定义来源解析、OneBot 地址与 token、MaiBot 侧连它们的 SnowLuma 适配器（`SnowLumaAdapter*`） | `QqClient.kt`（`QqClient`、`QqClientChoice`）、`QqClientSwitcher`、`QqCustomSource.kt`、`QqOneBot`、`QqAdapterFiles`、`QqAdapterUpkeep`、`SnowLumaAdapterScripts`、`SnowLumaAdapterInstaller`、`SnowLumaAdapterConfig` |
 | `platform.napcat` | QQ（NapCat）接入：NapCat 本体 | `NapCatPlatformManager`、`NapCatProcessSupervisor`、`NapCatStatusReader`、`NapCatWebUiClient`、`NapCatScripts`、`NapCatFiles`、`NapCatQrCodeRefresh.kt` |
 | `platform.snowluma` | QQ（SnowLuma 客户端）接入：在 Xvfb 上跑 LinuxQQ、让 SnowLuma 注入、宿主维护文件锁替身，读 Xvfb 的屏幕文件把 QQ 窗口显示给用户 | `SnowLumaPlatformManager`、`SnowLumaProcessSupervisor`、`QqProcLocksSync`、`SnowLumaWebUiClient.kt`、`SnowLumaScripts`、`SnowLumaFiles`、`SnowLumaPlatformState.kt`、`QqScreen.kt` |
 | `platform.qqofficial` | QQ 官方机器人接入（MaiBot 内置或外置 `MaiBot-QQ-Adapter` 插件） | `QqOfficialPlatformManager`、`QqOfficialAdapterConfig`、`QqOfficialConnectionErrors.kt`、`QqOfficialAdapterScripts`、`QqOfficialAdapterFiles` |
-| `webui` | 嵌入 MaiBot WebUI：地址与令牌、进程级 GeckoView 运行时、原生桥接协议、统一会话宿主、原生表单弹窗模型、横屏桌面版、两指滚动、网页选文件、网页下载与防连崩守卫（配合 `assets/extensions/maidroid/` 内置扩展） | `MaiBotWebUi`、`WebUiRuntime`、`WebUiSessionHost`、`WebUiPromptModels.kt`、`WebUiBridgeProtocol.kt`、`WebUiDesktopViewport`、`WebUiTwoFingerScroll`、`WebUiFileChooser`、`WebUiDownloads`、`WebUiDownloadNames.kt`、`WebUiBlobReceiver`、`WebUiRenderCrashGuard` |
+| `webui` | 嵌入 MaiBot WebUI：地址与令牌、进程级 GeckoView 运行时、原生桥接协议、统一会话宿主、网页原生弹窗调度器与模型、横屏桌面版、两指滚动、网页选文件、网页下载与防连崩守卫（配合 `assets/extensions/maidroid/` 内置扩展） | `MaiBotWebUi`、`WebUiRuntime`、`WebUiSessionHost`、`WebUiPromptController`（含 `PromptSettlementGuard`）、`WebUiPromptModels.kt`、`WebUiBridgeProtocol.kt`、`WebUiDesktopViewport`、`WebUiTwoFingerScroll`、`WebUiFileChooser`、`WebUiDownloads`、`WebUiDownloadNames.kt`、`WebUiBlobReceiver`、`WebUiRenderCrashGuard` |
 | `ui` | 根界面 | `MaiDroidApp` |
 | `ui.oobe` | 首次引导界面和授权弹窗 | `OobeFlowScreen`、`OobeStepParts.kt`、`OobePermissionList.kt`、`OobeTaskList.kt`、`OobeAuthorizationDialog` |
-| `ui.home` | 主页外壳、唤醒页（开机自检画面）、竖屏底栏与 WebUI 侧边胶囊双向形变及倾角阻尼、横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`WakeBootLog.kt`、`HomePortraitNavigation`、`HomeNavigationParts.kt`（含底栏、胶囊和侧栏共用的 `HomeTab`、标签按钮、终端按钮）、`PillTiltDamper.kt`、`HomeNavigationRail`、`WebUiTab.kt` |
-| `ui.platform` | 消息平台页及其弹窗、协议端弹窗公共壳体与自定义源表单 | `MessagePlatformsPage`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`PlatformConfigDialogParts.kt`、`QqCustomSourceParts.kt`、`NapCatDialogs.kt`、`SnowLumaDialogs.kt`、`QqOfficialConfigDialog` |
-| `ui.extension` | 扩展组件首页与悬浮桌宠配置子页面 | `ExtensionsPage`、`DesktopPetExtensionCard`、`DesktopPetSettingsPage` |
-| `ui.diagnostics` | 失败提示（错误码、原因、建议、生成求助码和按钮）、反馈问题弹窗、QQ 用户反馈群弹窗、闪退后的询问 | `FailureNotice`、`FeedbackDialog`、`QqFeedbackGroupDialog`、`HelpCodeParts.kt`、`CrashPromptDialog` |
+| `ui.home` | 主页外壳、唤醒页（开机自检画面）、竖屏底栏与 WebUI 侧边胶囊几何模型/双向形变及倾角阻尼、横屏侧栏、WebUI 页签 | `HomeScreen`、`WakeMaiPage`、`WakeBootLog.kt`、`HomePortraitNavigation`、`HomePortraitNavLayout.kt`、`HomeNavigationParts.kt`（含底栏、胶囊和侧栏共用的 `HomeTab`、标签按钮、终端按钮）、`PillTiltDamper.kt`、`HomeNavigationRail`、`WebUiTab.kt` |
+| `ui.platform` | 消息平台页及其弹窗、网格/页头/搜索与分类积木、协议端弹窗公共壳体与自定义源表单 | `MessagePlatformsPage`、`MessagePlatformsParts.kt`、`PlatformCatalog.kt`（含接入方式 `AccessMethod`）、`AccessMethodSelector`、`PlatformRows.kt`、`PlatformCards.kt`、`PlatformConfigDialogParts.kt`、`QqCustomSourceParts.kt`、`NapCatDialogs.kt`、`SnowLumaDialogs.kt`、`QqOfficialConfigDialog` |
+| `ui.extension` | 扩展组件目录、首页与悬浮桌宠配置子页面 | `ExtensionCatalog.kt`、`ExtensionsPage`、`DesktopPetExtensionCard.kt`、`DesktopPetSettingsPage` |
+| `ui.diagnostics` | 失败提示（错误码、原因、建议和按钮）、反馈问题弹窗（导出诊断包 zip / GitHub Issue）、QQ 用户反馈群弹窗、闪退后的询问 | `FailureNotice`、`FeedbackDialog`、`QqFeedbackGroupDialog`、`CrashPromptDialog` |
 | `ui.remote` | 远程公告横幅、紧急提醒弹窗与受控内置跳转动作解析 | `RemoteAnnouncementViews.kt`、`RemoteActionTarget.kt` |
 | `ui.cleanup` | 清理空间与低空间提醒弹窗 | `StorageCleanupDialog`、`LowStorageDialog` |
-| `ui.settings` | 设置页、权限管理、自动备份配置与时间弹窗、镜像源设置、MaiBot 与应用的更新弹窗、容器 SSH 设置、安全退出的按钮与弹窗 | `SettingsPage`、`PermissionManagementPage`、`BackupSettingsPage`、`BackupTimePickerDialog`、`MirrorSettingsPage`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings.kt`、`SafeExitDialogs.kt` |
-| `ui.terminal` | 全屏终端输出页与 OOBE 平板布局里的嵌入面板，两者共用同一个终端查看器 | `TerminalViewer.kt`（`TerminalOutputScreen`、`TerminalOutputPanel`）、`TerminalLogList`、`TerminalViewerState` |
+| `ui.settings` | 设置页与行积木、权限管理、自动备份配置与时间弹窗、镜像源设置、MaiBot 与应用的更新弹窗、容器 SSH 设置、安全退出的按钮与弹窗 | `SettingsPage`、`SettingsRowParts.kt`、`SettingsEmptyDetailPane.kt`、`PermissionManagementPage`、`BackupSettingsPage`、`BackupSettingsParts.kt`、`BackupTimePickerDialog`、`MirrorSettingsPage`、`MirrorSettingsParts.kt`、`MaiBotUpdateDialog`、`AppUpdateDialog`、`ContainerSshSettings.kt`、`SafeExitDialogs.kt` |
+| `ui.terminal` | 全屏终端输出与本地交互终端双页滑动视图、顶栏/可展开工具栏与 OOBE 平板布局里的嵌入面板 | `TerminalViewer.kt`（`TerminalOutputScreen`、`TerminalOutputPanel`）、`TerminalViewerToolbar.kt`、`TerminalLogList.kt`、`TerminalViewerState`、`ContainerTerminalPane.kt`、`ContainerTerminalColors.kt` |
 | `ui.splash` | 启动页 | `StartupSplashPage` |
-| `ui.component` | 跨页面的小组件与动效（含统一弹窗外壳体系、网页原生液态弹窗、连续滑块与毛玻璃吸顶标题栏） | `BackdropBlurView`、`BlurTargetHost`、`BounceOverscroll.kt`（`BounceOverscrollEffect`）、`CollapsingGlassHeader.kt`、`LiquidSlider`、`LiquidSegmentedSelector`、`MaiDialog.kt`、`MaiDialogParts.kt`、`WebUiPromptDialogHost`、`DebugWatermarkBackground`、`FlatFeatureIcons.kt`、`FlatSwitch`、`horizontalSlideTransition`、`statusBarTopInset` |
-| `ui.theme` | 配色、字号与圆角阶梯、字体、Material 主题 | `Color.kt`、`Dimens.kt`（`TextSizes`、`Corners`）、`Type.kt`、`MaiDroidTheme` |
+| `ui.component` | 跨页面的液态玻璃控件与动效、统一弹窗外壳体系、网页原生液态弹窗、焦点防重入容器、双栏分栏规格与毛玻璃吸顶标题栏 | `LiquidGlass.kt`、`LiquidControls.kt`（`LiquidButton`、`LiquidToggle`）、`LiquidGlassModal.kt`、`LiquidGlassPhysics.kt`、`LiquidHaptics.kt`、`LiquidSlider`、`LiquidSegmentedSelector`、`FocusGuardContent.kt`（`setFocusGuardedContent`）、`HomeTwoPaneSpec.kt`、`NavigationClearance.kt`、`BounceOverscroll.kt`（`BounceOverscrollEffect`）、`CollapsingGlassHeader.kt`、`MaiDialog.kt`、`MaiDialogParts.kt`、`WebUiPromptDialogHost`、`DebugWatermarkBackground.kt`、`FlatFeatureIcons.kt`、`horizontalSlideTransition`、`statusBarTopInset` |
+| `ui.theme` | 深浅双色语义色板（`DarkMaiDroidColors` / `LightMaiDroidColors` / `LocalMaiDroidColors`）、字号与圆角阶梯、字体、Material 主题 | `Color.kt`、`Dimens.kt`（`TextSizes`、`Corners`）、`Type.kt`、`MaiDroidTheme` |
 
 表里带 `.kt` 的是文件名（里面是一组顶层函数或几个相关的小类型），其余是类、对象或函数名。
 
@@ -131,14 +135,14 @@ flowchart TB
 所有长生命周期的组件都在 `AppDependencies` 里创建（手动依赖注入），`MaiDroidApplication.onCreate` 里先初始化 MMKV 再创建它。任何地方拿 `context.appDependencies.xxx` 用同一份实例：
 
 - 立即创建：`settings`、`diagnosticsFiles`、`terminalLogRecorder`（一创建就开始把终端输出写进文件）、`crashRecorder`（`MaiDroidApplication` 随后装上闪退记录）、`runtimePaths`、`runtimeReadiness`、`commandRunner`。
-- 第一次用时创建（`lazy`）：`mirrorManager`、`maiBotConsoleLogRotator`、`maiBotProcess`、`containerSsh`、`qqClientSwitcher`、`napCatProcess`、`snowLumaProcess`、`napCat`、`snowLuma`、`qqOfficial`、`maiBotUpdater`、`appUpdater`、`backupManager`、`desktopPet`、`safeExit`、`diagnostics`、`storageCleanup`、`networkMonitor`、`oobeSetup`、`powerTelemetry`、`remoteOps`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat、SnowLuma 和两边启动前换装共用一个，迁移配置靠它的锁串行）、`qqAdapterUpkeep`、`qqClientChoice`。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
+- 第一次用时创建（`lazy`）：`mirrorManager`、`maiBotConsoleLogRotator`、`maiBotProcess`、`containerSsh`、`containerShell`、`qqClientSwitcher`、`napCatProcess`、`snowLumaProcess`、`napCat`、`snowLuma`、`qqOfficial`、`maiBotUpdater`、`appUpdater`、`backupManager`、`desktopPet`、`safeExit`、`diagnostics`、`storageCleanup`、`networkMonitor`、`oobeSetup`、`powerTelemetry`、`remoteOps`，以及私有的 `snowLumaAdapterInstaller`（消息平台页安装 NapCat、SnowLuma 和两边启动前换装共用一个，迁移配置靠它的锁串行）、`qqAdapterUpkeep`、`qqClientChoice`。平台管理器一创建就会开始后台轮询，所以要等用户打开对应页面或服务需要时才创建。
 
 新增模块时在这里加一个属性，构造函数里写清依赖，不要再写 `get(context)` 式的单例。
 
 ## 一次启动的流程
 
 1. `MaiDroidApplication.onCreate`：初始化 MMKV -> 创建 `AppDependencies` -> 注册前台服务的通知渠道。
-2. `MainActivity.onCreate`：常亮屏幕、透明系统栏、读一次权限状态，`setContent` 进入 `MaiDroidApp`。
+2. `MainActivity.onCreate`：按 `AppThemeMode` 同步深浅外观与透明系统栏、请求高刷新率、读一次权限状态，经 `setFocusGuardedContent`（避免卸载聚焦原生视图时焦点回退重入 Compose 提交）进入 `MaiDroidApp`。
 3. `MaiDroidApp` 按 `MainViewModel` 的状态切页面：
    - 全新启动先播 1.2 秒启动页（`showStartupSplash`，存在 `SavedStateHandle` 里，旋转屏幕不重播）。
    - OOBE 没完成：显示 `OobeFlowScreen`。没同意过协议时，启动页结束后约 0.4 秒弹出 `OobeAuthorizationDialog`。
@@ -150,7 +154,7 @@ flowchart TB
    - 两步结束时要么完成、要么有一张失败卡片且页脚按钮可以重试：脚本返回成功后还会按文件核对一次，意外异常也落到失败卡片上，不会停在只能等、没有按钮可点的页面，也不会让应用闪退。
    - 走到哪一步存在 `AppSettings.oobeStep`，闪退、强杀后重开回到那一步接着做；初始化期间挂着保活的前台服务（见“扛得住暴力测试”）。
 5. OOBE 完成后（之后每次打开应用都一样），`MainViewModel` 依次：检查一次 MaiDroid 新版本（`AppUpdateManager.checkOnLaunch`）->（MaiDroid 刚更新过、设置里没关自动升级时）先在唤醒页上把 MaiBot 升级到上游最新（`MaiBotUpdateManager.updateAfterAppUpgrade`，期间拦住麦麦的启动）-> 拉起 `MaiBotRuntimeService` ->（没自动升级时）检查一次 MaiBot 新版本（`MaiBotUpdateManager.checkOnLaunch`，只拉取上游提交、不动源码）-> 每 1.5 秒（在线后每 5 秒）探测一次 WebUI（自己的 MaiBot 在跑、端口又能连上才算在线），顺带每分钟看一次剩余空间。查到新版本时 `MaiDroidApp` 在主页上弹更新提醒，两个都有时先弹 MaiDroid 的。“刚更新过”按 `AppSettings.lastLaunchedVersionCode` 判断，判定完立刻记下当前版本号，同一版本只自动升级一次。
-6. 主页在 WebUI 第一次在线前显示唤醒页（开机自检画面，`WakeMaiPage`），每 30 秒自动唤醒一次；上线后切到三栏外壳（WebUI、消息平台、设置）。
+6. 主页在 WebUI 第一次在线前显示唤醒页（开机自检画面，`WakeMaiPage`），每 30 秒自动唤醒一次；上线后切到四栏外壳（WebUI、消息平台、扩展组件、设置）。
 7. 开机（`ACTION_BOOT_COMPLETED`）或应用覆盖升级（`ACTION_MY_PACKAGE_REPLACED`）后，`RuntimeAutoStartReceiver` 在 OOBE 已完成、`AppSettings.autoStartService` 没关、用户上次没有安全退出时自动拉起前台服务。
 
 ## 前台服务与长驻进程
@@ -188,7 +192,7 @@ flowchart TB
 
 设置页最底下的“安全退出”按钮（`SafeExitButton`，二次确认 `SafeExitConfirmDialog`）。流程在 `SafeExitManager`，由前台服务执行：
 
-1. 确认后 `SafeExitManager.request` 记下 `AppSettings.userExited`，再以 `ACTION_SAFE_EXIT` 拉起前台服务。根界面（`MaiDroidApp`）按 `SafeExitManager.state` 弹出不可取消的进度弹窗（`SafeExitProgressDialog`），只有“切到后台”一个按钮。
+1. 确认后 `SafeExitManager.request` 记下 `AppSettings.userExited`，在主线程停掉悬浮桌宠与本地交互终端会话（`containerShell.stopForExit()`），再以 `ACTION_SAFE_EXIT` 拉起前台服务。根界面（`MaiDroidApp`）按 `SafeExitManager.state` 弹出不可取消的进度弹窗（`SafeExitProgressDialog`），只有“切到后台”一个按钮。
 2. 服务把常驻通知换成“正在安全退出 MaiDroid”和当前进度，三项服务同时退出：
    - **MaiBot**（`shutdownForExit`）：在线更新还在做就先等它做完，再照上面的方式停止（请 Runner 自己退出、保存好数据）。
    - **QQ**：NapCat、SnowLuma 两个监管器的 `shutdownForExit` 同时跑（没启用的那个本来就没在跑，很快返回），两边的结果合成一项（`mergeExitOutcomes`），有一边被强制停止就算强制停止。
@@ -240,6 +244,8 @@ flowchart TB
 | `desktop_pet_scale` | 悬浮桌宠显示缩放比例（`0.60~1.30`） | 1.0 |
 | `keep_screen_on` | 前台打开界面时是否阻止系统息屏（引导阶段自动常亮） | false |
 | `wifi_lock_enabled` | 后台运行期间是否持有低延迟 `WifiLock` | false |
+| `theme_mode` | 外观主题策略（`AppThemeMode`：`system` / `light` / `dark`） | `system` |
+| `mirror_{github,apt,pypi}_{mode,preset,custom}` | 三类镜像源的选择模式（自动测速 / 固定预设 / 自定义地址）、选中预设与自定义 URL | `auto` / 空 / 空 |
 | `backup_auto_enabled` | 是否启用定时自动备份 | false |
 | `backup_schedule_frequency` / `backup_schedule_day_of_week` | 自动备份频率（`every_6h`/`every_12h`/`daily`/`weekly`）与每周执行日（`1..7`） | `daily` / 7（周日） |
 | `backup_schedule_hour` / `backup_schedule_minute` | 自动备份基准时刻（24 小时制） | 4 / 0 |
@@ -250,6 +256,8 @@ flowchart TB
 | `telemetry_enabled` | 是否允许发送无感匿名运行统计与脱敏报错上报（设置页“帮助 > 匿名运行统计”开关） | true |
 | `telemetry_install_id` | 匿名统计使用的随机安装 UUID，重装即变 | 首次生成 |
 | `telemetry_last_heartbeat_sec` | 上次成功发送每日存活心跳的时间戳（秒） | 0 |
+| `telemetry_last_online_heartbeat_sec` | 上次发送实时在线心跳的时间戳（秒） | 0 |
+| `telemetry_last_version_code` / `telemetry_last_version_name` | 上次心跳上报的版本信息，用于在升级后扣减旧版本在线计数 | 0 / 空 |
 | `telemetry_last_auto_crash_ms` | 上次已自动补报的崩溃时间戳（毫秒），防跨进程重复上报 | 0 |
 | `telemetry_auto_error_day` | 自动错误上报的当日日期（`yyyy-MM-dd`） | 空 |
 | `telemetry_auto_error_day_count` | 当日已自动上报的脱敏错误条数（单设备每天上限 8 条） | 0 |
@@ -263,7 +271,7 @@ flowchart TB
 ## 日志
 
 - `TerminalLog`：MaiBot、NapCat、SnowLuma、sshd、OOBE、在线更新的输出都写到这里，保留最近 800 行，在主页的终端按钮（竖屏在底栏右端，WebUI 页签里先点右下角的小按钮展开底栏；横屏在左侧导航栏底部）打开的终端输出页查看；每行同时打到 logcat 的 `TerminalLog` 标签。各来源用前缀区分：`[MaiBot]`、`[NapCat]`、`[SnowLuma]`、`[ContainerSSH]`、`[QQ 官方机器人]`、`[MaiBot 更新]`、`[MaiDroid 更新]`、`[GitHub]`。
-- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionErrors`。
+- QQ 官方机器人靠订阅 `TerminalLog.lines` 识别连接报错，MaiBot 每次启动时打的 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG` 一行用来清掉上一轮的报错。改这些日志文字时要同步检查 `QqOfficialConnectionErrors.kt`。
 - WebUI（GeckoView）相关日志在 `MaiDroidWebUi`（`MaiBotWebUi.LOG_TAG`）与 `MaiDroidGecko` 标签；GeckoView 自行拉起的隔离内容子进程会在 `MaiDroidApplication.onCreate` 早期被拦截退出，避免重复初始化 MMKV 与后台组件。
 - `TerminalLogRecorder` 把终端输出同时写进 `files/diagnostics/logs/terminal-<启动时间>.log`：每行带时间，每个进程一份，单个文件满 2 MB 接着写 `.2.log`，所有文件合计超过 12 MB 删最旧的。反馈问题时带上最近几份，用户不用自己翻终端。
 - MaiDroid 自己闪退时 `CrashRecorder` 把调用栈和最后 80 行终端输出写进 `files/diagnostics/crashes/`（保留 10 份），下次打开主界面时问一次要不要反馈。原生代码闪退（例如内容进程或原生库崩溃把应用一起带走）和应用无响应走不到 Java 的异常处理，由 `recentSystemCrashes` 从系统的进程结束记录（Android 11 起）补上，最近三天内的一样会问。
@@ -271,13 +279,13 @@ flowchart TB
 
 ## 错误码与反馈
 
-错误码是 `<步骤>/<原因>`：前半段 `FailureStep` 说明哪一步失败（如 `UV-SYNC`），后半段 `FailureCause` 是从这一步的输出里认出的原因（如 `NET-DNS`），认不出时只有前半段。失败提示（`FailureNotice`）显示错误码、原因的标题和建议，原因带着跳转时（网络设置、日期时间、清理空间）多一个按钮，旁边是“反馈问题”和“QQ 群反馈”。
+错误码是 `<步骤>/<原因>`：前半段 `FailureStep` 说明哪一步失败（如 `UV-SYNC`），后半段 `FailureCause` 是从这一步的输出里认出的原因（如 `NET-DNS`），认不出时只有前半段。失败提示（`FailureNotice`）显示错误码、原因的标题和建议，原因带着跳转时（网络设置、日期时间、清理空间）多一个按钮，旁边是“导出诊断包”和“QQ 群求助”。
 
 - 认原因：`FailureRules.kt` 的规则表按顺序匹配输出的最后 400 行，第一条命中的就是。具体原因（空间满、手机时间不对、数据库降级）排在笼统的网络错误前面，网络错误里按“解析不了 -> 超时 -> 断开 -> 服务器报错”排。MaiBot 跑起来之后反复退出时只在 `MAIBOT_RUNTIME_CAUSES` 里认，它运行时的网络报错（大模型请求超时等）多半不致命。
 - 联网步骤开始前先看 `NetworkStatus`：手机根本没连网时直接报 `<步骤>/NET-OFFLINE`，不用等各个镜像都超时。
 - 新增失败点：用一个 `FailureStep`（没有合适的就加一个，码要短、全大写、不重复，`FailureCodesTest` 会检查），失败时用 `failureOf(步骤, 说明, 输出)` 生成 `Failure` 放进界面状态，并写一行 `logLine()`，界面放一个 `FailureNotice`。新增原因：先拿到真机日志或 Issue 里的原文，加进规则表并补测试。
-- 反馈：`DiagnosticsManager.prepare` 收集版本、设备、权限、网络、容器和进程状态、最近几次进程结束的原因（`ApplicationExitInfo`）、终端日志、MaiBot 最新的日志和闪退记录，经 `LogRedactor` 打码：已知的令牌、密钥、密码、QQ 号原样替换，再按规则替换 API Key、Bearer、URL 里的密钥参数、QQ 号、手机号和公网 IP。“生成求助码”把这份已打码材料经 `DiagnosticSnapshotPayload` Gzip 压缩（上限 128 KB）上传至 `cloud-worker/` 诊断服务换取 6 位短码（如 `#M8K-29F`，保留 7 天自动清理），方便不熟悉文件操作的用户直接发码或截屏排查。“去 GitHub 反馈”复制报告和日志尾部，打开按 `.github/ISSUE_TEMPLATE/bug_report.yml` 的字段 id 预填好版本、机型、错误码的表单；GitHub 只能预填文本框，下拉选项要用户自己选。“保存诊断包”把报告和全部日志存成 zip。“QQ 群反馈”（`QqFeedbackGroupDialog`，设置页“帮助 > QQ 反馈群”也打开它）展示群号与入群验证答案（优先取 `AppUpdateManager` 查到的最新正式版版本号，未查到时回退当前版本），复制验证答案并打开加群链接。
-- 远程公告与热规则：`RemoteOpsManager` 在打开界面及前台服务每小时后台拉取经 ECDSA P-256 签名的远程清单（主源不可达时经 `GitHubMirrors` 并发兜底），验签通过后一方面把 `failureHints` 合并进 `FailureRules`（不发版即可补充新报错的人话建议），另一方面按版本、品牌、协议端筛选当前生效公告展示在设置页/首次引导横幅、根界面强提醒弹窗或系统通知栏。
+- 反馈：`DiagnosticsManager.prepare` 收集版本、设备、权限、网络、容器和进程状态、最近几次进程结束的原因（`ApplicationExitInfo`）、终端日志、MaiBot 最新的日志和闪退记录，经 `LogRedactor` 打码：已知的令牌、密钥、密码、QQ 号原样替换，再按规则替换 API Key、Bearer、URL 里的密钥参数、QQ 号、手机号和公网 IP。“保存诊断包”把报告和全部日志存成脱敏 zip，方便发进用户反馈群或随 Issue 上传；“去 GitHub 反馈”复制报告和日志尾部，打开按 `.github/ISSUE_TEMPLATE/bug_report.yml` 的字段 id 预填好版本、机型、错误码的表单（GitHub 只能预填文本框，下拉选项要用户自己选）；“QQ 群反馈”（`QqFeedbackGroupDialog`，设置页“帮助 > QQ 反馈群”也打开它）展示群号与入群验证答案（优先取 `AppUpdateManager` 查到的最新正式版版本号，未查到时回退当前版本），复制验证答案并打开加群链接。
+- 远程公告与热规则：`RemoteOpsManager` 在打开界面及前台服务每小时后台拉取经 ECDSA P-256 签名的远程清单（主源不可达时经 `GitHubMirrors` 并发兜底），验签通过后一方面把 `failureHints` 合并进 `FailureRules.kt`（不发版即可补充新报错的人话建议），另一方面按版本、品牌、协议端筛选当前生效公告展示在设置页/首次引导横幅、根界面强提醒弹窗或系统通知栏。
 - 自动脱敏报错上报：`RemoteOpsManager` 在“匿名运行统计”开启时订阅终端失败行、冷启补报未上报的 `CrashRecorder` 记录并监听后台 MaiBot 启动异常，经 `AutoErrorExtractor` 与 `LogRedactor` 严格裁除闪退前终端与聊天内容（MaiBot 启动失败仅抽取纯 Python `Traceback` 或白名单启动行），附带 `buildType` 和 24 小时同指纹冷却/每日 8 条配额发往 `/v1/error-report` 并在服务端按 `(fingerprint, build_type)` 隔离聚合。
 
 ## 扛得住暴力测试：断网、闪退、强杀、存储满、断电
@@ -351,14 +359,14 @@ WebUI 在容器里监听 `http://127.0.0.1:8001/`，宿主直接经内嵌 Mozill
 
 1. `MaiBotWebUi.launchUrl` 找访问令牌（先读 `host/webui.json`，旧版 MaiBot 读 `data/webui.json`，再从终端日志里找），找到就打开 `/auth?token=…` 自动登录。
 2. `WebUiRuntime.ensureBridgeExtension` 注册内置 WebExtension（`assets/extensions/maidroid/`，先挂好 `WebExtension.MessageDelegate` 再放行挂起的首帧 `session.loadUri`）：`content.js` 在 `document_start` 阶段写入缺失的深色 + `future-retro` 主题默认值（不覆盖用户修改过的选择），并根据宿主经原生端口（`maidroid`）下发的 `configure` 消息同步桌面布局宽度与竖屏 `--maidroid-webview-height` 视口补丁（页面里的普通滚动区保持网页自己的尺寸）。
-3. 网页的上传按钮（本地聊天室发图片、加表情包等）经 `PromptDelegate.onFilePrompt` 交给 `WebUiFileChooser`，用宿主注册的 ActivityResult 打开系统选文件页，把选中的 `content://` 地址回传 `FilePrompt.confirm(...)`。JS 与网页原生的 `<select>`、`alert`/`confirm`/`prompt` 与颜色选择器统一由 `PromptDelegate` 发射给居中液态玻璃卡片 `WebUiPromptDialogHost` 承接，`<input type="date/time">` 由系统 `DatePickerDialog`/`TimePickerDialog` 承接；主窗口与全屏网页同时经 `DisplayRefreshRate` 申请当前分辨率下的最高刷新率。
+3. 网页的上传按钮（本地聊天室发图片、加表情包等）经 `WebUiPromptController` 的 `PromptDelegate.onFilePrompt` 交给 `WebUiFileChooser`，用宿主注册的 ActivityResult 打开系统选文件页，把选中的 `content://` 地址回传 `FilePrompt.confirm(...)`。JS 与网页原生的 `<select>`、`alert`/`confirm`/`prompt` 与颜色选择器统一由 `WebUiPromptController` 发射给居中液态玻璃卡片 `WebUiPromptDialogHost` 承接，`<input type="date/time">` 由系统 `DatePickerDialog`/`TimePickerDialog` 承接；主窗口与全屏网页同时经 `DisplayRefreshRate.kt` 申请当前分辨率下的最高刷新率。
 4. 网页的导出、下载按钮交给 `WebUiDownloads`，最后统一弹系统“另存为”（`ACTION_CREATE_DOCUMENT`，不用存储权限），分两条通路：
    - HTTP 下载响应（如数据迁移导出的 zip）：`ContentDelegate.onExternalResponse(WebResponse)` 立即在后台协程把 `response.body` 流式写入临时缓存文件，并同步在主线程弹出“另存为”，选完位置后等待临时文件落地再复制到目标 Uri 並清理缓存。
    - `blob:`、`data:` 地址（主题、界面设置、日志、表达方式、图片等网页现场生成的文件）：`content.js` 在 `document_start` 向页面主世界注入钩子包住 `URL.createObjectURL` 与 `a[download]` 点击，通过跨隔离界面的事件把数据切片按 base64 经 `sendNativeMessage` 分块送给 `WebUiBlobReceiver` 存成缓存文件，收齐后弹“另存为”。
 
 横屏时 MaiBot WebUI 按桌面版排版：每次加载前 `WebUiSessionHost.applyDesktopViewport` 按视图尺寸用 `WebUiDesktopViewport` 算出布局宽度（保证布局视口不小于 1040 CSS px 宽；1024 是 WebUI 桌面布局断点，多留 16px 余量避免首页卡片挤坏；高度不设下限），在 `GeckoSessionSettings.VIEWPORT_MODE_MOBILE` 下通过原生消息指示 `content.js` 把 `meta[name="viewport"]` 改为 `width=布局宽度`。视图宽度变化（如挖孔安全区晚一帧生效）时原地推送新宽度，仅压矮高度（弹出键盘）时不重算；竖屏、NapCat / SnowLuma 管理页保持手机版。
 
-`WebUiSessionHost` 为 `GeckoView` 安装了两指外层滚动（`WebUiTwoFingerScroll`）：第二根手指按下时给网页内核补发 `CANCEL` 作废单指手势，之后两指竖直位移经原生端口 `twoFingerBegin` / `twoFingerMove` 交给 `content.js` 从两指中点向祖先逐层传递滚动，松手用 `OverScroller` 惯性续滑。`GeckoView` 显式使用 `BACKEND_TEXTURE_VIEW`，保证竖屏灵动胶囊与横屏毛玻璃侧栏的 `BlurTargetHost` 能正常实时模糊底层网页而不穿透成黑洞。
+`WebUiSessionHost` 为 `GeckoView` 安装了两指外层滚动（`WebUiTwoFingerScroll`）：第二根手指按下时给网页内核补发 `CANCEL` 作废单指手势，之后两指竖直位移经原生端口 `twoFingerBegin` / `twoFingerMove` 交给 `content.js` 从两指中点向祖先逐层传递滚动，松手用 `OverScroller` 惯性续滑。`GeckoView` 显式使用 `BACKEND_TEXTURE_VIEW`，保证在 Compose `AnimatedContent` 与深浅色页面容器中不发生 SurfaceView 打洞黑屏；导航与弹窗通过 `rememberSurfaceBackdrop` 复用页面底色源，兼顾液态玻璃质感与高刷新率流畅度。
 
 横屏侧栏底部透出的网页底色同样由 `content.js` 用 1×1 画布转换为 sRGB 经原生端口 `pageBackground` 上报，切换标签时跟着网页一起滑走。主框架错误由 `NavigationDelegate.onLoadError` 与 `ProgressDelegate.onPageStop` 联合判定，WebUI 上线时若上次加载失败则自动重载一次。
 

@@ -24,6 +24,26 @@ internal class ProotCommand(
             listOf("/bin/sh", "-c", "${shellPrelude()} ${if (script.excludeTopCpuCluster) excludeTopCpuClusterPrelude() else ""} ${script.body}")
 
     /**
+     * 构造可供伪终端（PTY）直接拉起的交互式容器 Shell 命令行：
+     * 清空宿主 LD_LIBRARY_PATH 并注入 xterm-256color 与简洁橙蓝提示符，优先启动交互式 bash（缺失时回退 sh）。
+     */
+    fun interactiveShellCommandLine(workingDirectory: String = InContainerPaths.MAIBOT_DIR): List<String> =
+        prootArguments(workingDirectory) + listOf("/bin/sh", "-c", interactiveShellScript())
+
+    /**
+     * 构造容器交互式 Shell 使用的宿主侧进程环境变量数组（KEY=VALUE 形式）：
+     * 以宿主环境为底避免 execve 丢失系统基础变量，再覆写 proot 所需库路径与终端色彩/编码环境。
+     */
+    fun interactiveShellEnvironment(hostEnvironment: Map<String, String> = System.getenv()): Array<String> =
+        buildMap {
+            putAll(hostEnvironment)
+            putAll(environment())
+            put("TERM", "xterm-256color")
+            put("COLORTERM", "truecolor")
+            put("LANG", "C.UTF-8")
+        }.entries.map { (key, value) -> "$key=$value" }.toTypedArray()
+
+    /**
      * proot 进程本身的环境变量：PROOT_LOADER 和 LD_LIBRARY_PATH 指向 APK 内置的 loader 与依赖库，
      * PROOT_TMP_DIR 放 proot 的临时文件。进入容器后脚本前缀会 unset LD_LIBRARY_PATH，避免污染 Debian 程序。
      */
@@ -100,6 +120,14 @@ internal class ProotCommand(
             "export PATH=${shellQuote(DEBIAN_PATH)}; " +
             "export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh TMPDIR=/tmp; " +
             "export MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=131072; "
+
+    // 交互式本地终端进入容器前的环境整理：保留完整 Debian 工具链与颜色支持，并按 bash -> sh 顺序接管 TTY
+    private fun interactiveShellScript(): String =
+        shellPrelude() +
+            "export TERM=xterm-256color COLORTERM=truecolor LANG=C.UTF-8; " +
+            "export PS1='\\[\\e[1;33m\\]maidroid\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]# '; " +
+            "if [ -x /bin/bash ]; then export SHELL=/bin/bash; exec /bin/bash -i; " +
+            "else export SHELL=/bin/sh; exec /bin/sh -i; fi"
 
     /**
      * 把容器整棵进程树与宿主外层 proot 父进程一并钉在「非最高频簇」的 CPU 上（通用能效规则，非机型特调）：

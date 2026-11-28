@@ -53,7 +53,7 @@
             android:exported="true"
             android:label="${appLabel}"
             android:theme="@style/Theme.MaiDroid"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop">
             <intent-filter>
@@ -66,7 +66,7 @@
             android:name=".WebUiActivity"
             android:exported="false"
             android:theme="@style/Theme.MaiDroid"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize" />
 
         <!-- 悬浮桌宠探索记录全屏页 -->
@@ -74,7 +74,7 @@
             android:name=".pet.PetRecordsActivity"
             android:exported="false"
             android:theme="@style/Theme.MaiDroid"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize" />
 
         <!-- 托管 MaiBot、NapCat、SnowLuma、容器 sshd 的前台服务：用 specialUse 承载本地常驻运行时，不设 6 小时运行上限 -->

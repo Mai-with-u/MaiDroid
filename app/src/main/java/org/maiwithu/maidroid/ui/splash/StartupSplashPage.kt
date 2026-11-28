@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -45,19 +47,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.shapes.RoundedRectangle
 import org.maiwithu.maidroid.R
 import org.maiwithu.maidroid.ui.component.liquidGlassSurface
-import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.theme.DesignFrameHeightDp
 import org.maiwithu.maidroid.ui.theme.DesignFrameWidthDp
 import org.maiwithu.maidroid.ui.theme.DouyinSans
 import org.maiwithu.maidroid.ui.theme.GlassFallbackSurface
 import org.maiwithu.maidroid.ui.theme.HarmonySans
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.SplashEdgeShade
 import org.maiwithu.maidroid.ui.theme.SplashSideBlurOverlay
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -155,16 +157,13 @@ internal fun startupSplashAdaptiveGeometry(
 internal fun StartupSplashPage(modifier: Modifier = Modifier) {
     BoxWithConstraints(
         modifier = modifier
-            .background(CardSurface)
+            .background(PageBackground)
     ) {
         val useAdaptiveLayout = startupSplashUsesAdaptiveLayout(
             widthDp = maxWidth.value,
             heightDp = maxHeight.value
         )
-        val splashBackdrop = rememberLayerBackdrop {
-            drawRect(CardSurface)
-            drawContent()
-        }
+        val splashBackdrop = rememberThemedLayerBackdrop(PageBackground)
 
         if (useAdaptiveLayout) {
             val geometry = startupSplashAdaptiveGeometry(
@@ -219,6 +218,7 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    .clipToBounds()
                     .layerBackdrop(splashBackdrop)
             ) {
                 Image(
@@ -226,6 +226,8 @@ internal fun StartupSplashPage(modifier: Modifier = Modifier) {
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
+                        // 竖屏插画按 424dp 含出血绘制，先解除父容器 maxWidth 约束再左移 6dp，避免右侧被截断露白边
+                        .wrapContentSize(align = Alignment.TopStart, unbounded = true)
                         .offset(x = geometry.artLeftDp.dp, y = 0.dp)
                         .width(geometry.artWidthDp.dp)
                         .height(geometry.artHeightDp.dp)
@@ -257,6 +259,7 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
         }
     }
 
+    val edgeShade = SplashEdgeShade
     Canvas(modifier = modifier) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
 
@@ -284,7 +287,6 @@ private fun AdaptiveSplashBackground(modifier: Modifier = Modifier) {
             )
         }
 
-        val edgeShade = SplashEdgeShade
         if (artLeft > 0f) {
             drawRect(
                 brush = Brush.horizontalGradient(
@@ -394,6 +396,7 @@ private fun StartupSideBlur(
     backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
+    val sideBlurOverlay = SplashSideBlurOverlay
     Box(
         modifier = modifier.drawPlainBackdrop(
             backdrop = backdrop,
@@ -402,7 +405,7 @@ private fun StartupSideBlur(
                 blur(StartupSplashSideBlurRadius.dp.toPx())
             },
             onDrawSurface = {
-                drawRect(SplashSideBlurOverlay)
+                drawRect(sideBlurOverlay)
             }
         )
     )

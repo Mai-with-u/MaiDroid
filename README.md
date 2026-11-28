@@ -20,8 +20,11 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
 - 安全退出：设置页最底下的“安全退出”先让麦麦保存好数据、QQ 正常下线，再关闭 MaiDroid，不用去系统设置里强行停止。
 - 在手机上管理 MaiBot：主页的 WebUI 页签就是 MaiBot 自己的管理界面，导出、下载、上传按钮都能用，横屏时按桌面版显示。
 - 接入 QQ，有三种方式：用 NapCat 或 SnowLuma（实验性）扫码登录个人 QQ（两者二选一），或者填 QQ 开放平台的 AppID 和 AppSecret 使用官方机器人。
+- 扩展组件：内置悬浮桌宠（支持惯性滑行、撞墙回弹、缩放调整与探索记录独立查看页）。
+- 自动备份：支持按每 6/12 小时、每日或每周定时备份 MaiBot 配置、记忆库、插件及 QQ 协议端数据，支持默认 `/sdcard/MaiDroid/Backups` 与自定义 SAF 目录双模式。
+- 外观与镜像源：支持跟随系统 / 浅色 / OLED 纯黑深色外观；GitHub、Debian APT 与 PyPI 镜像源支持自动测速择优、固定预设或手动填入自定义地址。
 - 更新：设置页可以直接更新容器里的 MaiBot，也能检查、下载并安装 MaiDroid 自己的新版本。
-- 看日志：终端输出页汇总容器里所有进程的输出，可以搜索、暂停、多选复制。
+- 看日志与本地终端：终端页汇总容器里所有进程的输出，可以筛选、暂停、多选复制；向右滑动或切换顶栏即可进入容器内交互式 bash，无需电脑或 SSH 也能现场排障。
 - 看文件：系统“文件”应用的侧边栏里会出现“MaiBot”和“MaiDroid 容器”两个位置，MT 管理器这类支持 SAF 的文件管理器也能添加。
 - 容器 SSH（可选）：在设置页打开后，可以用电脑连进容器排查问题。
 
@@ -32,7 +35,7 @@ MaiBot 是 Python 项目，要在 Linux 环境里跑。MaiDroid 的 APK 里带�
 1. 到 [Releases](https://github.com/Mai-with-u/MaiDroid/releases) 下载最新的 APK，安装。
 2. 打开应用，阅读并同意用户协议和隐私协议（内容来自 MaiBot）。
 3. 首次引导共三步。
-   - 授予权限：存储权限必需，通知、电池优化等可以之后再设。
+   - 授予权限：消息通知为核心保活必开权限；忽略电池优化与外部存储（默认目录自动备份/挂载 `/sdcard` 时用到）按需可选，之后也可以在设置里随时调整。
    - 配置容器：解包 Debian 和 proot，装 git、curl。
    - 安装 MaiBot：下载源码，装 Python 依赖，启动并等 WebUI 能打开。这一步最久，取决于网速和手机性能。
 4. 进入主页后，WebUI 页签里就是 MaiBot 的管理界面，模型、人设这些配置在这里完成，具体含义见 [MaiBot](https://github.com/Mai-with-u/MaiBot) 的文档。
@@ -156,20 +159,22 @@ sequenceDiagram
 | 想看什么 | 去哪里 |
 | --- | --- |
 | 各组件在哪创建、谁依赖谁 | 根包的 `AppDependencies` |
-| 界面 | `ui/`，按页面分为 `oobe`、`home`、`platform`、`settings`、`diagnostics`、`cleanup`、`remote`、`terminal`、`splash`，公共组件在 `component`，配色字体在 `theme` |
+| 界面 | `ui/`，按页面分为 `oobe`、`home`、`platform`、`extension`、`settings`、`diagnostics`、`cleanup`、`remote`、`terminal`、`splash`，公共液态玻璃与弹窗组件在 `component`，深浅双色与字体在 `theme` |
 | 首次引导的安装步骤 | `oobe/` |
-| 容器怎么搭、命令怎么跑 | `runtime/`：路径、就绪检查、proot 命令、脚本执行、资源解包、GitHub 镜像、DNS、时区 |
+| 容器怎么搭、命令怎么跑、镜像源怎么测速 | `runtime/`：路径、就绪检查、proot 命令与交互 Shell、脚本执行、资源解包、GitHub/APT/PyPI 镜像管理与测速、DNS、时区 |
 | MaiBot 的安装、启动、更新 | `maibot/`，在线更新在 `maibot/update/` |
 | QQ 接入 | `platform/napcat/`、`platform/snowluma/`、两者共用的 `platform/qq/`、`platform/qqofficial/` |
+| 悬浮桌宠与扩展组件运行时 | `pet/` 与 `ui/extension/` |
+| 自动与手动配置/记忆库备份 | `backup/` 与 `ui/settings/BackupSettings*` |
 | 前台服务、开机/升级自启、安全退出 | `service/` |
 | 错误码、打码诊断与闪退记录 | `diagnostics/` |
 | 容器缓存清理 | `cleanup/` |
-| 嵌入的 MaiBot WebUI | `webui/`：GeckoView 运行时与会话宿主、原生消息桥接、内置 WebExtension、令牌、横屏桌面版、两指滚动、上传、下载 |
+| 嵌入的 MaiBot WebUI | `webui/`：GeckoView 运行时与会话宿主、网页原生弹窗调度、原生消息桥接、内置 WebExtension、令牌、横屏桌面版、两指滚动、上传、下载 |
 | 容器 SSH | `ssh/` |
 | 系统“文件”应用里的 MaiBot 目录 | `files/` |
 | MaiDroid 自己的更新 | `appupdate/` |
-| 远程公告、动态排障热规则、6 位求助码与匿名统计 | 客户端在 `remote/` 与 `ui/remote/`，配套 Cloudflare Worker + D1 服务端在仓库根目录 `cloud-worker/` |
-| 权限、设置、终端输出 | `permission/`、`settings/`、`terminal/` |
+| 远程公告、动态排障热规则与匿名统计 | 客户端在 `remote/` 与 `ui/remote/`，配套 Cloudflare Worker + D1 服务端在仓库根目录 `cloud-worker/` |
+| 权限、设置与外观策略、终端输出与本地交互 Shell | `permission/`、`settings/`、`terminal/` |
 
 更细的分层、启动流程和各类的职责见 [架构总览](docs/architecture.md)。
 
@@ -193,7 +198,7 @@ MaiBot 源码、适配器、uv、Python 以及来自 GitHub 的自定义 QQ 协�
 
 ### 出问题了怎么反馈？
 
-报错提示处或“设置 > 反馈问题”弹窗里可以直接点“生成求助码”，一键上传脱敏诊断快照（7 天自动过期）拿到 6 位短码，把短码发进“设置 > QQ 反馈群”【麦麦不吃苹果派】（750194887）即可快速定位原因；也可以导出脱敏诊断包 zip，或复制日志到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交。若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
+报错提示处或“设置 > 反馈问题”弹窗里可以直接导出脱敏诊断包 zip（已自动对令牌、密钥、QQ 号、手机号与公网 IP 打码），把 zip 发进“设置 > QQ 反馈群”【麦麦不吃苹果派】（750194887）即可快速定位原因；也可以点“去 GitHub 反馈”复制摘要日志并到 [Issues](https://github.com/Mai-with-u/MaiDroid/issues/new/choose) 选对应的模板提交。若自行复制原始终端，请务必先把令牌、API Key、QQ 号这类敏感信息打码。
 
 MaiBot 相关报错请去 [MaiBot](https://github.com/Mai-with-u/MaiBot/issues)，QQ 协议侧的问题请提交到你所用 QQ 协议端的对应仓库，看你用的是哪一个。
 

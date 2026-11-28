@@ -286,10 +286,12 @@ private fun BootFailureRow(code: String, onFeedback: () -> Unit) {
 // 4dp 细进度条：深灰轨道上画一段强调色。进度在绘制阶段读取，走动时只重画、不重组。
 @Composable
 private fun BootProgressBar(progress: () -> Float, modifier: Modifier = Modifier) {
+    val trackColor = BootTrack
+    val accentColor = BootAccent
     Canvas(modifier = modifier) {
-        drawRect(color = BootTrack)
+        drawRect(color = trackColor)
         drawRect(
-            color = BootAccent,
+            color = accentColor,
             size = Size(size.width * progress().coerceIn(0f, 1f), size.height)
         )
     }
@@ -341,6 +343,8 @@ private fun BootMeta(
 // 收尾时中缝（与下扇上沿重合）先从中间向两侧划开，到 500ms 交给两扇快门各自的边线，快门再带着边线上下拉开。
 @Composable
 private fun BootShutters(exitMillis: () -> Float, modifier: Modifier = Modifier) {
+    val inkColor = BootInk
+    val accentColor = BootAccent
     Canvas(modifier = modifier) {
         val t = exitMillis()
         val line = 1.dp.toPx()
@@ -349,18 +353,18 @@ private fun BootShutters(exitMillis: () -> Float, modifier: Modifier = Modifier)
         val travel = shutterHeight * 1.01f * open
 
         val topBottom = shutterHeight - travel
-        drawRect(color = BootInk, topLeft = Offset(0f, -travel), size = Size(size.width, shutterHeight))
+        drawRect(color = inkColor, topLeft = Offset(0f, -travel), size = Size(size.width, shutterHeight))
         val bottomTop = size.height - shutterHeight + travel
-        drawRect(color = BootInk, topLeft = Offset(0f, bottomTop), size = Size(size.width, shutterHeight))
+        drawRect(color = inkColor, topLeft = Offset(0f, bottomTop), size = Size(size.width, shutterHeight))
 
         if (t >= ExitShutterStartMillis) {
-            drawRect(color = BootAccent, topLeft = Offset(0f, topBottom - line), size = Size(size.width, line))
-            drawRect(color = BootAccent, topLeft = Offset(0f, bottomTop), size = Size(size.width, line))
+            drawRect(color = accentColor, topLeft = Offset(0f, topBottom - line), size = Size(size.width, line))
+            drawRect(color = accentColor, topLeft = Offset(0f, bottomTop), size = Size(size.width, line))
         } else if (t > ExitSeamStartMillis) {
             val seam = BootEasing.transform(((t - ExitSeamStartMillis) / ExitSeamMillis).coerceIn(0f, 1f))
             val seamWidth = size.width * seam
             drawRect(
-                color = BootAccent,
+                color = accentColor,
                 topLeft = Offset((size.width - seamWidth) / 2f, size.height - shutterHeight),
                 size = Size(seamWidth, line)
             )

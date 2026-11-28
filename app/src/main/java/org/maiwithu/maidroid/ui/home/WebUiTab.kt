@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +61,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.isSystemDarkMode
+import org.maiwithu.maidroid.settings.resolveUseDarkTheme
 import org.maiwithu.maidroid.terminal.AnsiText
 import org.maiwithu.maidroid.terminal.TerminalLog
 import org.maiwithu.maidroid.ui.component.LiquidButton
@@ -71,6 +74,8 @@ import org.maiwithu.maidroid.ui.component.rememberSurfaceBackdrop
 import org.maiwithu.maidroid.ui.component.statusBarTopInset
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusWarning
@@ -80,6 +85,7 @@ import org.maiwithu.maidroid.webui.MaiBotWebUi
 import org.maiwithu.maidroid.webui.WebUiDownloads
 import org.maiwithu.maidroid.webui.WebUiFileChooser
 import org.maiwithu.maidroid.webui.WebUiRenderCrashGuard
+import org.maiwithu.maidroid.webui.WebUiRuntime
 import org.maiwithu.maidroid.webui.WebUiSessionHost
 
 /** 主页或全屏网页退后台连续空闲这么久后销毁 WebUI 会话，释放内容进程与显存；回到前台且选中页签再按需唤醒。 */
@@ -197,11 +203,17 @@ internal fun rememberWebUiTabState(
 
         // 首次构建与内容进程异常退出后重建都共用这套会话工厂；回调里经 tabState 更新页签状态。
         WebUiTabState(fileChooser, downloads) { tabState ->
+            val initialDark = resolveUseDarkTheme(
+                context.appDependencies.settings.themeMode,
+                isSystemDarkMode(context.resources)
+            )
+            val initialBackground = (if (initialDark) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
             WebUiSessionHost(
                 context = context,
                 logTag = MaiBotWebUi.LOG_TAG,
                 fileChooser = fileChooser,
                 downloads = downloads,
+                initialBackgroundColor = initialBackground,
                 onPageFinished = { tabState.webUiError = null },
                 onMainFrameError = { errorText ->
                     tabState.webUiError = errorText
@@ -280,7 +292,10 @@ internal fun rememberWebUiTabState(
                 }
             }
 
-            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+            // Application 级配置回调转发给 GeckoRuntime，兜底覆盖后台窗口期间的系统深浅色切换
+            override fun onConfigurationChanged(newConfig: Configuration) {
+                WebUiRuntime.onConfigurationChanged(newConfig)
+            }
 
             @Deprecated("Deprecated in Java")
             override fun onLowMemory() {
@@ -371,6 +386,10 @@ internal fun WebUiTabPage(
         val hasActiveModal = LocalLiquidModalHost.current?.hasModals == true
 
         if (activeHost != null) {
+            val pageBackgroundArgb = PageBackground.toArgb()
+            LaunchedEffect(activeHost, pageBackgroundArgb) {
+                activeHost.updateThemeBackground(pageBackgroundArgb)
+            }
             val activePrompt by activeHost.activePrompt.collectAsState()
             Box(modifier = Modifier.fillMaxSize()) {
                 key(activeHost) {

@@ -6,19 +6,25 @@ import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import org.maiwithu.maidroid.permission.SystemPermissionController
 import org.maiwithu.maidroid.remote.RemoteOpsManager
+import org.maiwithu.maidroid.settings.resolveUseDarkTheme
 import org.maiwithu.maidroid.ui.MaiDroidApp
+import org.maiwithu.maidroid.ui.component.setFocusGuardedContent
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.webui.MaiBotWebUi
+import org.maiwithu.maidroid.webui.WebUiRuntime
 
 /**
  * 唯一的主界面。界面内容见 MaiDroidApp，流程状态见 MainViewModel；
@@ -38,10 +44,27 @@ class MainActivity : ComponentActivity() {
         )
         // 在首帧合成前向窗口声明同分辨率最高刷新率，避免高刷屏幕上的网页被默认限帧在 60Hz。
         applyPreferredHighRefreshRate(this)
-        // 状态栏、导航栏都透明并用浅色图标（深色界面）；什么时候显示、隐藏见 applySystemBars。
+        val initialDark = resolveUseDarkTheme(settings.themeMode, isSystemDarkMode(resources))
+        val initialDarkStatusIcons = shouldUseDarkStatusBarIcons(
+            isDarkTheme = initialDark,
+            showingSplash = viewModel.showStartupSplash.value,
+            setupComplete = viewModel.setupComplete.value
+        )
+        // 状态栏、导航栏保持透明，并按当前深浅主题与所处页面（插画或主页）设置图标明暗；显隐策略见 applySystemBars。
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+            statusBarStyle = if (initialDarkStatusIcons) {
+                SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+            } else {
+                SystemBarStyle.dark(Color.TRANSPARENT)
+            },
+            navigationBarStyle = if (initialDark) {
+                SystemBarStyle.dark(Color.TRANSPARENT)
+            } else {
+                SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+            }
+        )
+        window.decorView.setBackgroundColor(
+            (if (initialDark) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
         )
         // 首帧排版前先按当前方向设好系统栏：横屏一开始就是全屏，
         // WebUI 页签第一次量到的就是全屏尺寸，桌面版按这个尺寸算布局宽度。
@@ -53,11 +76,42 @@ class MainActivity : ComponentActivity() {
         permissions.refresh()
         handleAnnouncementIntent(intent)
 
-        setContent {
-            MaiDroidTheme {
-                val setupComplete by viewModel.setupComplete.collectAsState()
-                val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
-                val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+        // 使用带焦点防重入保护的根容器挂载界面，避免卸载仍聚焦的 TerminalView / GeckoView 时在 applyChanges 期间触发闪退。
+        setFocusGuardedContent {
+            val themeMode by settings.themeModeFlow.collectAsState()
+            val isDarkTheme = resolveUseDarkTheme(themeMode, isSystemInDarkTheme())
+            val showStartupSplash by viewModel.showStartupSplash.collectAsState()
+            val setupComplete by viewModel.setupComplete.collectAsState()
+            val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+            LaunchedEffect(isDarkTheme, showStartupSplash, setupComplete) {
+                val darkStatusIcons = shouldUseDarkStatusBarIcons(
+                    isDarkTheme = isDarkTheme,
+                    showingSplash = showStartupSplash,
+                    setupComplete = setupComplete
+                )
+                enableEdgeToEdge(
+                    statusBarStyle = if (darkStatusIcons) {
+                        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.dark(Color.TRANSPARENT)
+                    },
+                    navigationBarStyle = if (isDarkTheme) {
+                        SystemBarStyle.dark(Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                    }
+                )
+                window.decorView.setBackgroundColor(
+                    (if (isDarkTheme) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
+                )
+            }
+            LaunchedEffect(themeMode) {
+                WebUiRuntime.updatePreferredColorScheme(themeMode)
+            }
+
+            MaiDroidTheme(darkTheme = isDarkTheme) {
                 // OOBE 完成、转屏（Activity 没重建时）都重新设一遍系统栏；设置页切换常亮开关时立即增删常亮标记。
                 LaunchedEffect(setupComplete, landscape) {
                     applySystemBars(window, landscape = landscape, hideNavigationBar = setupComplete)
@@ -86,6 +140,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAnnouncementIntent(intent)
+    }
+
+    // 清单已接管 uiMode 变更：同步通知 GeckoRuntime，确保跟随系统切浅/深色时网页无需重建即刷新配色。
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        WebUiRuntime.onConfigurationChanged(newConfig)
     }
 
     // 进入前台时恢复主界面轮询探测并通知电源遥测，已同意隐私授权后立即补报一次实时在线心跳。

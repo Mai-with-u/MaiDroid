@@ -1,6 +1,6 @@
 // MaiDroid 远程运维 Cloudflare Worker 入口：
 // 1. GET  /v1/manifest.json — 下发 ECDSA 签名的远程公告与动态排障热规则（带边缘缓存与 ETag）
-// 2. POST /v1/diag          — 接收 Gzip 脱敏诊断快照，校验防爆后入库 D1 并返回 6 位求助码
+// 2. POST /v1/diag          — 已下线（对 <= 0.4.2 老客户端返回 410 提示改用导出诊断包或升级）
 // 3. POST /v1/telemetry     — 接收无感匿名枚举心跳
 // 4. POST /v1/error-report  — 接收脱敏后的崩溃堆栈与安装/启动报错并按指纹聚合
 // 5. GET  /admin & /admin/api/* — 单页管理后台
@@ -18,10 +18,7 @@ import {
   writeAudit,
 } from "./adminAuth.ts";
 import { buildAdminOverview } from "./adminOverview.ts";
-import { buildDiagnosticAdvice, type SnapshotInput } from "./advisor.ts";
 import {
-  generateDiagCode,
-  normalizeDiagCode,
   sha256Hex,
   signManifestPayload,
 } from "./crypto.ts";
@@ -51,10 +48,7 @@ export interface Env {
   IP_HASH_SALT?: string;
 }
 
-const MAX_DIAG_GZIP_BYTES = 128 * 1024;
-const MAX_DIAG_UNCOMPRESSED_BYTES = 1024 * 1024;
 const MAX_TELEMETRY_BYTES = 4 * 1024;
-const DIAG_TTL_SECONDS = 7 * 86400;
 const TELEMETRY_TTL_SECONDS = 30 * 86400;
 
 export default {
@@ -71,7 +65,10 @@ export default {
         return await handleGetManifest(request, env, ctx);
       }
       if (pathname === "/v1/diag" && request.method === "POST") {
-        return await handleUploadDiag(request, env, ctx);
+        return jsonResponse(
+          { error: "故障求助码功能已下线，请升级至最新版 MaiDroid 或改用「导出诊断包」提交至 QQ 反馈群 / GitHub Issue。" },
+          410
+        );
       }
       if (pathname === "/v1/telemetry" && request.method === "POST") {
         return await handleTelemetry(request, env, ctx);
@@ -145,64 +142,6 @@ async function handleGetManifest(request: Request, env: Env, ctx: ExecutionConte
   });
   ctx.waitUntil(cache.put(cacheKey, response.clone()));
   return response;
-}
-
-async function handleUploadDiag(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  const lenHeader = Number(request.headers.get("Content-Length") || "0");
-  if (lenHeader > MAX_DIAG_GZIP_BYTES) {
-    return jsonResponse({ error: "诊断快照体积超过 128 KB 上限" }, 413);
-  }
-  if (!(await checkRateLimit(request, env, "diag", 5, 600))) {
-    return jsonResponse({ error: "请求过于频繁，请稍后再试" }, 429);
-  }
-
-  const rawBytes = new Uint8Array(await request.arrayBuffer());
-  if (rawBytes.length < 20 || rawBytes.length > MAX_DIAG_GZIP_BYTES) {
-    return jsonResponse({ error: "诊断快照大小不合法" }, 400);
-  }
-  if (rawBytes[0] !== 0x1f || rawBytes[1] !== 0x8b) {
-    return jsonResponse({ error: "仅接受 Gzip 压缩快照" }, 400);
-  }
-
-  // 流式解压并卡住 1 MB 硬上限，防止高压缩比炸弹耗尽 Worker 内存
-  const parsed = JSON.parse(await gunzipLimitedText(rawBytes, MAX_DIAG_UNCOMPRESSED_BYTES)) as SnapshotInput;
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + DIAG_TTL_SECONDS;
-  const appVersion = safeStr(parsed.appVersion, 32) || "unknown";
-  const device = safeStr(parsed.device, 96) || "unknown";
-  const sdkInt = Number.isInteger(parsed.sdkInt) ? Number(parsed.sdkInt) : 0;
-  const errorCode = safeStr(parsed.errorCode, 48);
-  const summaryJson = JSON.stringify({
-    availableStorageMb: parsed.availableStorageMb ?? null,
-    availableMemMb: parsed.availableMemMb ?? null,
-    permissions: parsed.permissions ?? {},
-    failureMessage: safeStr(parsed.failureMessage, 240),
-    lastExitReason: safeStr(parsed.lastExitReason, 120),
-  });
-
-  let savedCode: string | null = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = generateDiagCode();
-    const res = await env.DB.prepare(
-      `INSERT OR IGNORE INTO diag_snapshots
-       (code, created_at, expires_at, app_version, device, sdk_int, error_code, summary_json, payload_gzip)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(candidate, now, expiresAt, appVersion, device, sdkInt, errorCode, summaryJson, rawBytes)
-      .run();
-    if ((res.meta?.changes ?? 0) > 0) {
-      savedCode = candidate;
-      break;
-    }
-  }
-  if (!savedCode) {
-    return jsonResponse({ error: "生成求助码冲突，请重试" }, 503);
-  }
-
-  ctx.waitUntil(
-    env.DB.prepare("DELETE FROM diag_snapshots WHERE expires_at < ?").bind(now).run()
-  );
-  return jsonResponse({ code: savedCode, expiresAt }, 200);
 }
 
 async function handleTelemetry(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -589,40 +528,6 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
   const accountResp = await handleAccountRoute(sub, request, env, principal);
   if (accountResp) return accountResp;
 
-  if (sub.startsWith("diag/") && request.method === "GET") {
-    const code = normalizeDiagCode(decodeURIComponent(sub.slice("diag/".length)));
-    if (!code) return jsonResponse({ error: "求助码格式不正确（应为 6 位字符）" }, 400);
-    const row = await env.DB.prepare(
-      "SELECT code, created_at, app_version, device, sdk_int, error_code, payload_gzip FROM diag_snapshots WHERE code = ?"
-    )
-      .bind(code)
-      .first<{
-        code: string;
-        created_at: number;
-        app_version: string;
-        device: string;
-        sdk_int: number;
-        error_code: string | null;
-        payload_gzip: ArrayBuffer;
-      }>();
-    // 查求助码会看到用户脱敏现场，无论查没查到都留审计
-    await writeAudit(env.DB, principal, "diag_lookup", code, { found: !!row });
-    if (!row) return jsonResponse({ error: `未找到求助码 #${code}（可能已过期或输入有误）` }, 404);
-    const snapshot = JSON.parse(
-      await gunzipLimitedText(new Uint8Array(row.payload_gzip), MAX_DIAG_UNCOMPRESSED_BYTES)
-    ) as SnapshotInput & Record<string, unknown>;
-    return jsonResponse({
-      code: row.code,
-      createdAt: row.created_at,
-      appVersion: row.app_version,
-      device: row.device,
-      sdkInt: row.sdk_int,
-      errorCode: row.error_code,
-      advice: buildDiagnosticAdvice(row.code, snapshot),
-      snapshot,
-    });
-  }
-
   if (sub === "manifest" && request.method === "GET") {
     const row = await env.DB.prepare("SELECT version, payload_json FROM manifest_config WHERE id = 1").first<{
       version: number;
@@ -681,7 +586,7 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
     const now = Math.floor(Date.now() / 1000);
     const since = now - 7 * 86400;
     const sinceOnline = now - ONLINE_WINDOW_SECONDS;
-    const [onlineRow, totals, diagCnt, openReleaseIssues, topErrors, topExits] = await Promise.all([
+    const [onlineRow, totals, openReleaseIssues, topErrors, topExits] = await Promise.all([
       env.DB.prepare(
         "SELECT COUNT(*) AS cnt FROM device_presence WHERE is_online = 1 AND last_online_at >= ?"
       ).bind(sinceOnline).first<{ cnt: number }>(),
@@ -690,8 +595,6 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
                 COALESCE(SUM(CASE WHEN setup_complete = 1 THEN 1 ELSE 0 END), 0) AS done
          FROM device_presence WHERE last_seen_at >= ?`
       ).bind(since).first<{ uniq: number; done: number }>(),
-      env.DB.prepare("SELECT COUNT(*) AS cnt FROM diag_snapshots WHERE created_at >= ?")
-        .bind(since).first<{ cnt: number }>(),
       env.DB.prepare(
         "SELECT COUNT(*) AS cnt FROM error_issues WHERE build_type = 'release' AND status = 'open'"
       ).first<{ cnt: number }>(),
@@ -710,7 +613,6 @@ async function handleAdminApi(request: Request, env: Env, url: URL): Promise<Res
       onlineNow: onlineRow?.cnt ?? 0,
       uniqueInstalls: totals?.uniq ?? 0,
       completedInstalls: totals?.done ?? 0,
-      diagCount: diagCnt?.cnt ?? 0,
       openReleaseIssues: openReleaseIssues?.cnt ?? 0,
       topErrors: topErrors.results ?? [],
       topExitReasons: topExits.results ?? [],

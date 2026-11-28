@@ -287,6 +287,22 @@ internal fun diagnoseAdapterConfigWaitFailure(recentMaiBotLines: List<String>): 
     if (hostDependencyFailed || contextLines.any { it.contains("依赖流水线阻止加载") || it.contains("silk-python") }) {
         return "MaiBot 安装 QQ 适配器依赖失败（silk-python），请检查网络并查看终端输出后重试"
     }
+    // 1.4.x 宿主刚启动时会打印“正在检查并准备插件依赖，完成后启动 Bot…”，
+    // 若 5 分钟内既无报错也没有进入完成或退出状态，说明仍在拉取适配器依赖，直接点明原因以免误导为麦麦未运行。
+    val depPrepareIdx = recentMaiBotLines.indexOfLast { it.contains("正在检查并准备插件依赖") }
+    if (depPrepareIdx >= 0) {
+        val afterPrepare = recentMaiBotLines.subList(depPrepareIdx + 1, recentMaiBotLines.size)
+        val settledOrExited = afterPrepare.any { line ->
+            line.contains("插件依赖准备完成") ||
+                line.contains("依赖准备完成") ||
+                line.contains("依赖已就绪") ||
+                line.contains("正在启动 Bot") ||
+                line.contains("Process exited with code:")
+        }
+        if (!settledOrExited) {
+            return "麦麦仍在下载安装 QQ 适配器依赖，5 分钟内尚未完成，请检查网络或待终端提示完成后重试"
+        }
+    }
     return "等了 5 分钟麦麦还没生成 QQ 适配器的配置，请确认麦麦在运行后重试"
 }
 

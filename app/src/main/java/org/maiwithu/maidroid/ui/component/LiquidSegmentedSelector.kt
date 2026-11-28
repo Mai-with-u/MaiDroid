@@ -61,8 +61,9 @@ import com.kyant.shapes.Capsule
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
 import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.SegmentedThumbSurface
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -212,9 +213,11 @@ internal fun LiquidSegmentedSelector(
                 }
         }
 
-        val selectorHighlight = remember(animationScope, isLtr, itemCount) {
+        val isDark = LocalMaiDroidColors.current.isDark
+        val selectorHighlight = remember(animationScope, isLtr, itemCount, isDark) {
             InteractiveHighlight(
                 animationScope = animationScope,
+                isDark = isDark,
                 position = { size, _ ->
                     val slotW = (size.width / itemCount).coerceAtLeast(1f)
                     val cx = if (isLtr) {
@@ -307,7 +310,7 @@ internal fun LiquidSegmentedSelector(
                 .layerBackdrop(tabsBackdrop)
                 .graphicsLayer { translationX = panelOffsetPx }
                 .clip(trackShape)
-                .background(CardSurfaceSelected)
+                .background(SegmentedThumbSurface)
                 .then(selectorHighlight.modifier)
                 .padding(innerPadding),
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
@@ -353,6 +356,11 @@ internal fun LiquidSegmentedSelector(
         if (resolvedSelectedIndex != null) {
             val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, trackShape)
             val allowDrag = enabled && itemCount > 1
+            val thumbBorder = if (!isDark) {
+                Modifier.border(0.5.dp, GlassStroke, trackShape)
+            } else {
+                Modifier
+            }
             Box(
                 modifier = Modifier
                     .padding(vertical = innerPadding)
@@ -380,7 +388,14 @@ internal fun LiquidSegmentedSelector(
                             Highlight.Default.copy(alpha = 0.55f + 0.45f * dragAnimation.pressProgress)
                         },
                         shadow = {
-                            Shadow(radius = 8.dp, alpha = 0.25f + 0.75f * dragAnimation.pressProgress)
+                            if (isDark) {
+                                Shadow(radius = 8.dp, alpha = 0.25f + 0.75f * dragAnimation.pressProgress)
+                            } else {
+                                Shadow(
+                                    radius = 8.dp,
+                                    color = Color.Black.copy(alpha = 0.12f + 0.10f * dragAnimation.pressProgress)
+                                )
+                            }
                         },
                         innerShadow = {
                             val progress = dragAnimation.pressProgress
@@ -395,11 +410,17 @@ internal fun LiquidSegmentedSelector(
                         },
                         onDrawSurface = {
                             val progress = dragAnimation.pressProgress
-                            // 复用底层 CardSurfaceSelected 与品牌橙亮色，仅保留微弱玻璃透光反光防文字压暗
-                            drawRect(Color.White.copy(alpha = 0.06f), alpha = 1f - progress)
-                            drawRect(Color.Black.copy(alpha = 0.02f * progress))
+                            // 复用底层 SegmentedThumbSurface 与品牌橙亮色；浅底给白胶囊保留低透明柔和透光以维持清晰轮廓
+                            if (isDark) {
+                                drawRect(Color.White.copy(alpha = 0.06f), alpha = 1f - progress)
+                                drawRect(Color.Black.copy(alpha = 0.02f * progress))
+                            } else {
+                                drawRect(Color.White.copy(alpha = 0.14f), alpha = 1f - progress)
+                                drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                            }
                         }
                     )
+                    .then(thumbBorder)
                     .then(fallbackBorder)
                     .width(itemWidth)
                     .fillMaxHeight()

@@ -37,7 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.shapes.RoundedRectangle
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.backup.BackupComponent
 import org.maiwithu.maidroid.backup.BackupFrequency
 import org.maiwithu.maidroid.backup.BackupRecord
@@ -52,7 +52,7 @@ import org.maiwithu.maidroid.backup.formatScheduleTime
 import org.maiwithu.maidroid.backup.formatWeekdayLabel
 import org.maiwithu.maidroid.backup.formatWeekdayShort
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LiquidSegmentItem
@@ -144,7 +144,7 @@ internal fun BackupOverviewCard(
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
-            FlatSwitch(
+            LiquidToggle(
                 checked = config.autoEnabled,
                 onCheckedChange = onAutoToggle
             )
@@ -467,7 +467,7 @@ internal fun BackupComponentsCard(
                     )
                 }
                 Spacer(modifier = Modifier.width(10.dp))
-                FlatSwitch(
+                LiquidToggle(
                     checked = checked,
                     onCheckedChange = { onToggle(component, it) }
                 )

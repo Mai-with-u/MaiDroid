@@ -8,12 +8,12 @@ import org.maiwithu.maidroid.platform.qqofficial.QqOfficialPlatformState
 import org.maiwithu.maidroid.platform.qqofficial.qqOfficialStatusText
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaHookPhase
 import org.maiwithu.maidroid.platform.snowluma.SnowLumaPlatformState
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.IconFreshGreen
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
+import org.maiwithu.maidroid.ui.theme.MaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PlatformDiscord
 import org.maiwithu.maidroid.ui.theme.PlatformSignal
-import org.maiwithu.maidroid.ui.theme.StatusOnline
-import org.maiwithu.maidroid.ui.theme.TextMuted
 
 /**
  * 平台卡片下方选择器里的接入方式，label 是选择器上显示的文字。目前只有 QQ 有多种接入方式。
@@ -46,7 +46,7 @@ internal data class InstalledPlatform(
     @param:DrawableRes val iconRes: Int,
     val account: String,
     val iconColor: Color,
-    val statusColor: Color = StatusOnline,
+    val statusColor: Color = DarkMaiDroidColors.statusOnline,
     val running: Boolean = true
 )
 
@@ -116,14 +116,15 @@ internal val AvailablePlatforms = listOf(
 internal fun installedPlatformCards(
     napCatState: NapCatPlatformState,
     snowLumaState: SnowLumaPlatformState,
-    qqOfficialState: QqOfficialPlatformState
+    qqOfficialState: QqOfficialPlatformState,
+    colors: MaiDroidColors = DarkMaiDroidColors
 ): List<InstalledPlatform> = listOfNotNull(
-    napCatInstalledCard(napCatState),
-    snowLumaInstalledCard(snowLumaState),
-    qqOfficialInstalledCard(qqOfficialState)
+    napCatInstalledCard(napCatState, colors),
+    snowLumaInstalledCard(snowLumaState, colors),
+    qqOfficialInstalledCard(qqOfficialState, colors)
 )
 
-private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlatform? {
+private fun napCatInstalledCard(napCatState: NapCatPlatformState, colors: MaiDroidColors): InstalledPlatform? {
     if (!napCatState.installed && !napCatState.hasQrCode && napCatState.oneBotConfig == null) {
         return null
     }
@@ -142,7 +143,7 @@ private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlat
         iconRes = R.drawable.ic_platform_qq,
         account = account,
         iconColor = IconSkyBlue,
-        statusColor = if (napCatState.oneBotReachable) StatusOnline else TextMuted,
+        statusColor = if (napCatState.oneBotReachable) colors.statusOnline else colors.textMuted,
         running = napCatState.oneBotReachable
     )
 }
@@ -151,7 +152,7 @@ private fun napCatInstalledCard(napCatState: NapCatPlatformState): InstalledPlat
  * SnowLuma 装好后才出现在已安装行里；改用 NapCat 后留着，写明停用了。
  * 没登录时按 SnowLuma 汇报的进度说清楚卡在哪一步（QQ 启动中、等待扫码、注入失败）。
  */
-private fun snowLumaInstalledCard(state: SnowLumaPlatformState): InstalledPlatform? {
+private fun snowLumaInstalledCard(state: SnowLumaPlatformState, colors: MaiDroidColors): InstalledPlatform? {
     if (!state.installed) return null
     val account = when {
         !state.active -> "SnowLuma 已停用"
@@ -170,7 +171,7 @@ private fun snowLumaInstalledCard(state: SnowLumaPlatformState): InstalledPlatfo
         iconRes = R.drawable.ic_platform_qq,
         account = account,
         iconColor = IconSkyBlue,
-        statusColor = if (state.active && state.loggedIn) StatusOnline else TextMuted,
+        statusColor = if (state.active && state.loggedIn) colors.statusOnline else colors.textMuted,
         running = state.active && state.loggedIn
     )
 }
@@ -179,7 +180,7 @@ private fun snowLumaInstalledCard(state: SnowLumaPlatformState): InstalledPlatfo
  * 官方机器人装好后才出现在已安装行里。适配器连上 QQ 时不上报，
  * 所以“已启用”只表示凭据齐全、MaiBot 在跑且近一分钟没有连接报错。
  */
-private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPlatform? {
+private fun qqOfficialInstalledCard(state: QqOfficialPlatformState, colors: MaiDroidColors): InstalledPlatform? {
     if (!state.installed) return null
     return InstalledPlatform(
         kind = InstalledPlatformKind.QqOfficial,
@@ -188,7 +189,7 @@ private fun qqOfficialInstalledCard(state: QqOfficialPlatformState): InstalledPl
         iconRes = R.drawable.ic_platform_qq,
         account = qqOfficialStatusText(state),
         iconColor = IconSkyBlue,
-        statusColor = qqOfficialStatusColor(state),
+        statusColor = qqOfficialStatusColor(state, colors),
         running = state.presumedOnline
     )
 }

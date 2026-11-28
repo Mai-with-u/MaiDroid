@@ -26,7 +26,7 @@ val hasReleaseSigning = releaseKeystorePath != null &&
 val appUpdateApiUrl = providers.gradleProperty("appUpdateApiUrl").orNull?.takeIf { it.isNotBlank() }
     ?: "https://api.github.com/repos/Mai-with-u/MaiDroid/releases/latest"
 
-// 远程公告、6 位求助码诊断快照上传与匿名遥测的 Cloudflare Worker 根地址，以及静态签名清单的 GitHub 兜底地址。
+// 远程公告、动态排障热规则与匿名遥测的 Cloudflare Worker 根地址，以及静态签名清单的 GitHub 兜底地址。
 // 本地真机联调可用 -PremoteOpsBaseUrl=http://127.0.0.1:18787 -PremoteSigningPublicKeys="2026-k1=..." 指到 wrangler dev。
 val remoteOpsBaseUrl = providers.gradleProperty("remoteOpsBaseUrl").orNull?.trim()?.trimEnd('/')
     ?: "https://ops.8u.nz"
@@ -52,8 +52,8 @@ android {
         applicationId = "org.maiwithu.maidroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.4.2"
+        versionCode = 15
+        versionName = "0.5.0"
         buildConfigField("String", "APP_UPDATE_API_URL", "\"$appUpdateApiUrl\"")
         buildConfigField("String", "REMOTE_OPS_BASE_URL", "\"$remoteOpsBaseUrl\"")
         buildConfigField("String", "REMOTE_MANIFEST_FALLBACK_URL", "\"$remoteManifestFallbackUrl\"")
@@ -106,6 +106,8 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // termux terminal-emulator AAR 附带多架构原生库，本项目仅面向 arm64-v8a 设备发布，剔除其余 ABI 避免包体积膨胀
+            excludes += listOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
         }
     }
 }
@@ -148,6 +150,9 @@ dependencies {
 
     // Embedded Web Engine (GeckoView arm64)
     implementation(libs.geckoview)
+
+    // Local Interactive Terminal (Termux PTY + VT100/xterm-256color)
+    implementation(libs.termux.terminal.view)
 
     // Testing：只有 JVM 单元测试，没有设备上的仪器测试
     testImplementation(libs.junit)

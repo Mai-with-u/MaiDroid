@@ -28,7 +28,7 @@ MaiBot 通过插件（适配器）连接聊天平台。MaiDroid 的“消息平�
 ## 消息平台页的结构
 
 - `PlatformCatalog.kt`：“发现”区展示哪些平台（`AvailablePlatforms`），每个平台可选的接入方式（`AccessMethod`），以及“已安装”行按真实状态生成卡片的规则（`installedPlatformCards`）。设置页的“运行中平台数”也按这里统计。
-- `MessagePlatformsPage.kt`：页面本身，按窗口大小选排版（`messagePlatformsLayout`）：手机竖屏是单列分组列表，手机横屏分左右两栏，平板是卡片网格；还持有各弹窗的开关（`rememberSaveable`，用户切去 QQ 扫码导致 Activity 重建后弹窗还在）。
+- `MessagePlatformsPage.kt`、`MessagePlatformsParts.kt`：页面主骨架与排版分发（`messagePlatformsLayout`：手机竖屏单列分组列表、手机横屏 38:62 左右两栏、平板卡片网格），以及可复用的平板发现网格、页头、搜索框与分类胶囊；页面内持有各弹窗开关（`rememberSaveable`，用户切去 QQ 扫码导致 Activity 重建后弹窗还在）。
 - `PlatformRows.kt`：手机用的分组列表，已连接行、发现行和分类小胶囊，样子和设置页一致。
 - `PlatformCards.kt`：平板用的已安装小卡片、平台安装卡片。右侧按钮按选中的接入方式显示下载 / 进度环 / 设置，这个状态和点击逻辑（`platformInstallAction`）卡片和列表行共用。
 - `AccessMethodSelector.kt`：接入方式选择器。
@@ -60,7 +60,7 @@ Discord、WhatsApp、Signal 目前只是展示：平板卡片上点下载会提�
 
 适配器连上 QQ 网关后不打任何日志，只在失败时每隔几秒打一行“QQ 官方网关连接失败，将重试: 原因”。所以：
 
-- `QqOfficialConnectionErrors` 从 `TerminalLog` 的每一行里识别这类报错，翻译成用户看得懂的说明（例如 IP 不在白名单、凭据错误）。
+- `QqOfficialConnectionErrors.kt` 从 `TerminalLog` 的每一行里识别这类报错，翻译成用户看得懂的说明（例如 IP 不在白名单、凭据错误）。
 - 一分钟内没有新报错就认为已连上（`QqOfficialErrorStaleMs`）；MaiBot 重新启动（日志里出现 `MaiBotProcessSupervisor.PROCESS_STARTED_LOG`）时清掉旧报错。
 - 卡片上的“已启用”= 凭据齐全 + 插件启用 + MaiBot 在跑 + 近期没有连接报错，是推断值，不是适配器上报的。
 
@@ -112,7 +112,7 @@ MaiDroid 不自己从头写这份配置：MaiBot 要求插件配置必须带 `pl
 
 点 NapCat 设置时先问 NapCat QQ 是否已登录：已登录打开 NapCat 管理页（`/webui/?token=…`，结尾斜杠不能少，否则前端路由不渲染，整页白屏），未登录弹二维码。
 
-二维码弹窗打开期间每 3 秒问一次扫码进度（`keepQrCodeFresh`），按 `NapCatQrCodeRefresh` 决定要不要替用户换码：
+二维码弹窗打开期间每 3 秒问一次扫码进度（`keepQrCodeFresh`），按 `NapCatQrCodeRefresh.kt` 里的策略决定要不要替用户换码：
 
 - QQ 的二维码约 120 秒失效。NapCat 只在 QQ 回 ErrCode 3 时自己重新出码，遇到 ErrCode 10 会一直停在旧码上，所以码龄超过 125 秒（多留 5 秒给 NapCat 先自己换）就主动请求新码。
 - 已扫码、等用户在手机上确认时，再多宽限 60 秒才视为作废，避免打断正在确认的用户。
@@ -129,7 +129,7 @@ NapCat 没有注销 QQ 的接口，QQ 只随进程结束下线。所以“退出
 
 SnowLuma 客户端（[SnowLuma/SnowLuma](https://github.com/SnowLuma/SnowLuma)）是另一种 QQ 协议端。它不自己登录 QQ：容器里先在 Xvfb 上跑一个原版 LinuxQQ，SnowLuma 用 ptrace 把自己的原生组件注入 QQ 主进程，借 QQ 本身收发消息，再对外提供 OneBot11 WebSocket。
 
-SnowLuma 的原生组件是闭源的专有软件，只能用于非商业用途；它的用户协议规定，并入第三方安装包或用自动化脚本部署都要作者书面授权。MaiDroid 取得了这份授权，在安装时从官方 Release 自动下载发行包，不随 APK 分发。安装前先弹协议弹窗（`SnowLumaAgreementDialog`，附用户协议、隐私政策的链接），用户点“同意并安装”才开始装，同意记录写在 `/root/.maidroid/snowluma_consent`；有这份记录，启动时才通过 `SNOWLUMA_ACCEPT_EULA`、`SNOWLUMA_ACCEPT_PRIVACY` 替用户确认协议。
+SnowLuma 的原生组件是闭源的专有软件，只能用于非商业用途，不随 APK 分发，也不在应用内写死第三方下载地址。安装前先由用户自行填写自定义仓库或 `linux-arm64` 归档直链，并阅读同意协议与自定义来源提示弹窗（`SnowLumaAgreementDialog`），点“同意并安装”后才开始下载安装；同意记录写在 `/root/.maidroid/snowluma_consent`，有这份记录启动时才通过 `SNOWLUMA_ACCEPT_EULA`、`SNOWLUMA_ACCEPT_PRIVACY` 替用户确认协议。
 
 ### 和 NapCat 二选一（`platform/qq/`）
 

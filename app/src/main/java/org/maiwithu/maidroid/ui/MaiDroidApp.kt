@@ -19,7 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.MainViewModel
@@ -32,6 +31,7 @@ import org.maiwithu.maidroid.ui.component.LiquidModalHostOverlay
 import org.maiwithu.maidroid.ui.component.LocalLiquidModalHost
 import org.maiwithu.maidroid.ui.component.horizontalSlideTransition
 import org.maiwithu.maidroid.ui.component.rememberLiquidModalHostState
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.diagnostics.CrashPromptDialog
 import org.maiwithu.maidroid.ui.diagnostics.FeedbackDialog
 import org.maiwithu.maidroid.ui.diagnostics.QqFeedbackGroupDialog
@@ -97,10 +97,7 @@ internal fun MaiDroidApp(
     var showCrashQqGroup by rememberSaveable { mutableStateOf(false) }
 
     val modalHost = rememberLiquidModalHostState()
-    val appBackdrop = rememberLayerBackdrop {
-        drawRect(PageBackground)
-        drawContent()
-    }
+    val appBackdrop = rememberThemedLayerBackdrop(PageBackground)
 
     LaunchedEffect(showStartupSplash) {
         if (showStartupSplash) {
@@ -173,10 +170,7 @@ internal fun MaiDroidApp(
                         )
 
                         else -> Box(modifier = Modifier.fillMaxSize()) {
-                            val oobeBackdrop = rememberLayerBackdrop {
-                                drawRect(OobeBackground)
-                                drawContent()
-                            }
+                            val oobeBackdrop = rememberThemedLayerBackdrop(OobeBackground)
                             OobeFlowScreen(
                                 currentStep = oobeStep,
                                 setupState = setupState,

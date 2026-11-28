@@ -137,8 +137,9 @@ class WebUiBridgeProtocolTest {
         assertTrue(permissions.containsAll(listOf("nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons")))
 
         val contentJs = extensionAsset("content.js").readText(Charsets.UTF_8)
-        // 只在主题键缺失时写入默认值，不覆盖用户修改过的主题
+        // 只在主题键缺失时写入默认值（跟随系统），不覆盖用户修改过的主题
         assertTrue(contentJs.contains("localStorage.getItem('maibot-theme-mode') === null"))
+        assertTrue(contentJs.contains("localStorage.setItem('maibot-theme-mode', 'system')"))
         assertTrue(contentJs.contains("localStorage.getItem('maibot-theme-dashboard-style') === null"))
         // 下载拦截在 page-world 脚本提前安装并连通 native port
         assertTrue(contentJs.contains("URL.createObjectURL = function"))
@@ -158,7 +159,7 @@ class WebUiBridgeProtocolTest {
         // 递增扩展版本，确保已安装设备的 GeckoView ensureBuiltIn 自动更新脚本缓存
         assertFalse(extensionVersion.isNullOrBlank())
         assertFalse(extensionVersion == "1.0.0")
-        assertEquals("1.0.2", extensionVersion)
+        assertEquals("1.0.3", extensionVersion)
 
         val contentJs = extensionAsset("content.js").readText(Charsets.UTF_8)
         // 横竖屏统一声明 resizes-content 并在视口收缩/切焦时自动居中显露被遮挡输入框

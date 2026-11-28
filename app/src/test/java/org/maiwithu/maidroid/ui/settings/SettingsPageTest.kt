@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.shouldKeepScreenOn
+import org.maiwithu.maidroid.shouldUseDarkStatusBarIcons
 import org.maiwithu.maidroid.backup.BackupConfig
 import org.maiwithu.maidroid.backup.BackupFrequency
 import org.maiwithu.maidroid.backup.BackupState
@@ -19,6 +20,9 @@ import org.maiwithu.maidroid.runtime.MirrorPreference
 import org.maiwithu.maidroid.runtime.MirrorSelectionMode
 import org.maiwithu.maidroid.runtime.MirrorSettingsState
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
+import org.maiwithu.maidroid.settings.AppThemeMode
+import org.maiwithu.maidroid.webui.resolveGeckoColorScheme
+import org.mozilla.geckoview.GeckoRuntimeSettings
 
 class SettingsPageTest {
     @Test
@@ -317,5 +321,23 @@ class SettingsPageTest {
     fun `resolveTimePickerDialogMaxWidthDp keeps landscape dialog compact and non-fullscreen`() {
         assertEquals(456, resolveTimePickerDialogMaxWidthDp(isPhoneLandscape = true))
         assertEquals(380, resolveTimePickerDialogMaxWidthDp(isPhoneLandscape = false))
+    }
+
+    @Test
+    fun `themeModeSummaryText and dark status bar policy match selected appearance`() {
+        assertEquals("跟随系统（当前：浅色）", themeModeSummaryText(AppThemeMode.System, isDark = false))
+        assertEquals("跟随系统（当前：深色）", themeModeSummaryText(AppThemeMode.System, isDark = true))
+        assertEquals("已固定为浅色外观", themeModeSummaryText(AppThemeMode.Light, isDark = false))
+        assertEquals("已固定为深色外观（OLED 纯黑）", themeModeSummaryText(AppThemeMode.Dark, isDark = true))
+
+        // 启动页与 OOBE 顶部为插画，保持浅色状态栏图标；进入主页且为浅色模式时才切为深色状态栏图标
+        assertFalse(shouldUseDarkStatusBarIcons(isDarkTheme = true, showingSplash = false, setupComplete = true))
+        assertFalse(shouldUseDarkStatusBarIcons(isDarkTheme = false, showingSplash = true, setupComplete = true))
+        assertFalse(shouldUseDarkStatusBarIcons(isDarkTheme = false, showingSplash = false, setupComplete = false))
+        assertTrue(shouldUseDarkStatusBarIcons(isDarkTheme = false, showingSplash = false, setupComplete = true))
+
+        assertEquals(GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM, resolveGeckoColorScheme(AppThemeMode.System))
+        assertEquals(GeckoRuntimeSettings.COLOR_SCHEME_LIGHT, resolveGeckoColorScheme(AppThemeMode.Light))
+        assertEquals(GeckoRuntimeSettings.COLOR_SCHEME_DARK, resolveGeckoColorScheme(AppThemeMode.Dark))
     }
 }

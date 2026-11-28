@@ -8,31 +8,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,17 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,19 +44,17 @@ import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
-import org.maiwithu.maidroid.backup.BackupState
 import org.maiwithu.maidroid.files.openMaiBotInFileManager
-import org.maiwithu.maidroid.maibot.update.MaiBotUpdatePhase
 import org.maiwithu.maidroid.maibot.update.MaiBotUpdateState
 import org.maiwithu.maidroid.permission.PermissionActions
 import org.maiwithu.maidroid.permission.PermissionState
+import org.maiwithu.maidroid.settings.AppThemeMode
 import org.maiwithu.maidroid.ssh.ContainerSshState
 import org.maiwithu.maidroid.ui.cleanup.StorageCleanupDialog
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
-import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.LocalBottomNavigationClearance
 import org.maiwithu.maidroid.ui.component.appPageBackground
 import org.maiwithu.maidroid.ui.component.computeHeaderSubtitleAlpha
@@ -92,8 +72,6 @@ import org.maiwithu.maidroid.ui.platform.installedPlatformCards
 import org.maiwithu.maidroid.ui.remote.AnnouncementBannerSection
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardDivider
-import org.maiwithu.maidroid.ui.theme.CardSurface
-import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconCoralPink
 import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.IconFreshGreen
@@ -103,11 +81,11 @@ import org.maiwithu.maidroid.ui.theme.IconPeachOrange
 import org.maiwithu.maidroid.ui.theme.IconSkyBlue
 import org.maiwithu.maidroid.ui.theme.IconSunnyAmber
 import org.maiwithu.maidroid.ui.theme.IconTealMint
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.StatusOnline
 import org.maiwithu.maidroid.ui.theme.StatusWarning
 import org.maiwithu.maidroid.ui.theme.TextMuted
-import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 private data class SettingsDetailContentArgs(
@@ -593,6 +571,10 @@ private fun SettingsNavigationPane(
     var telemetryEnabled by remember { mutableStateOf(settings.telemetryEnabled) }
     val keepScreenOn by settings.keepScreenOnFlow.collectAsState()
     val wifiLockEnabled by settings.wifiLockEnabledFlow.collectAsState()
+    val themeMode by settings.themeModeFlow.collectAsState()
+    val onThemeModeSelected: (AppThemeMode) -> Unit = { mode ->
+        settings.themeMode = mode
+    }
     val onKeepScreenOnChange: (Boolean) -> Unit = { enabled ->
         settings.keepScreenOn = enabled
     }
@@ -606,6 +588,7 @@ private fun SettingsNavigationPane(
             remoteOps.reportOnlineHeartbeat(force = true)
         }
     }
+    val colors = LocalMaiDroidColors.current
     // 顶部下拉到顶时大标题轻度跟随下沉、下方卡片区大幅弹性拉开留白，替代生硬的拉伸变形
     val overscroll = rememberSplitHeaderOverscrollEffect()
     val density = LocalDensity.current
@@ -693,7 +676,7 @@ private fun SettingsNavigationPane(
                     iconColor = IconSkyBlue,
                     title = "MaiBot 更新",
                     supportingText = maiBotUpdateSummaryText(updateState),
-                    supportingColor = maiBotUpdateSummaryColor(updateState),
+                    supportingColor = maiBotUpdateSummaryColor(updateState, colors),
                     onClick = onUpdateClick,
                     trailing = if (compact) null else {
                         {
@@ -714,7 +697,7 @@ private fun SettingsNavigationPane(
                         null
                     } else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = sshState.enabled,
                                 onCheckedChange = onSshEnabledChange,
                                 enabled = !sshState.isStarting
@@ -814,6 +797,15 @@ private fun SettingsNavigationPane(
 
                 SettingsDivider()
 
+                // 外观主题直接内嵌液态玻璃三档选择器，点击或拖动水滴即可即时预览浅/深色切换，无需弹窗跳转。
+                ThemeModeSettingBlock(
+                    selectedMode = themeMode,
+                    isDarkTheme = colors.isDark,
+                    onModeSelected = onThemeModeSelected
+                )
+
+                SettingsDivider()
+
                 // 引导完成后按用户开关控制窗口是否保持常亮，避免大屏高刷机型长时间挂在前台发热掉电。
                 SettingsNavigationRow(
                     icon = FlatFeatureIcons.KeepScreenOn,
@@ -823,7 +815,7 @@ private fun SettingsNavigationPane(
                     onClick = { onKeepScreenOnChange(!keepScreenOn) },
                     trailing = if (compact) null else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = keepScreenOn,
                                 onCheckedChange = onKeepScreenOnChange
                             )
@@ -850,7 +842,7 @@ private fun SettingsNavigationPane(
                     onClick = { onWifiLockChange(!wifiLockEnabled) },
                     trailing = if (compact) null else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = wifiLockEnabled,
                                 onCheckedChange = onWifiLockChange
                             )
@@ -899,7 +891,7 @@ private fun SettingsNavigationPane(
                     iconColor = IconCyanBlue,
                     title = "应用版本",
                     supportingText = appUpdateSummaryText(appUpdateState.copy(currentVersion = versionName)),
-                    supportingColor = appUpdateSummaryColor(appUpdateState),
+                    supportingColor = appUpdateSummaryColor(appUpdateState, colors),
                     onClick = onAppUpdateClick,
                     trailing = if (compact) null else {
                         {
@@ -963,7 +955,7 @@ private fun SettingsNavigationPane(
                     onClick = { onTelemetryChange(!telemetryEnabled) },
                     trailing = if (compact) null else {
                         {
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = telemetryEnabled,
                                 onCheckedChange = onTelemetryChange
                             )
@@ -992,222 +984,4 @@ private fun SettingsNavigationPane(
         }
         }
     }
-}
-
-@Composable
-private fun SettingsSection(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = title,
-            color = TextMuted,
-            fontSize = TextSizes.Caption,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 14.sp,
-            modifier = Modifier.padding(start = 6.dp)
-        )
-
-        // 取消外圈硬描边，用圆润扁平卡片底色与深色背景自然拉开层级
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Corners.Chip))
-                .background(CardSurface),
-            content = content
-        )
-    }
-}
-
-@Composable
-private fun SettingsNavigationRow(
-    icon: ImageVector,
-    iconColor: Color,
-    title: String,
-    supportingText: String,
-    modifier: Modifier = Modifier,
-    supportingColor: Color = TextMuted,
-    selected: Boolean = false,
-    exposesSelection: Boolean = false,
-    onClick: (() -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null
-) {
-    val clickModifier = when {
-        onClick == null -> Modifier
-        exposesSelection -> Modifier.selectable(
-            selected = selected,
-            onClick = onClick,
-            role = Role.Tab
-        )
-        else -> Modifier.clickable(onClick = onClick)
-    }
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(if (selected) BrandOrange.copy(alpha = 0.08f) else Color.Transparent)
-            .then(clickModifier)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        FlatFeatureIconBadge(
-            icon = icon,
-            backgroundColor = iconColor,
-            size = 38.dp,
-            iconSize = 25.dp
-        )
-
-        Spacer(modifier = Modifier.width(13.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = TextPrimary,
-                fontSize = TextSizes.BodyLarge,
-                fontWeight = FontWeight.Medium,
-                lineHeight = 19.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(3.dp))
-
-            Text(
-                text = supportingText,
-                color = supportingColor,
-                fontSize = TextSizes.Caption,
-                lineHeight = 15.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        if (trailing != null) {
-            Spacer(modifier = Modifier.width(8.dp))
-            trailing()
-        }
-    }
-}
-
-@Composable
-private fun SettingsRowArrow(
-    contentDescription: String,
-    tint: Color = TextMuted.copy(alpha = 0.6f)
-) {
-    Icon(
-        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-        contentDescription = contentDescription,
-        tint = tint,
-        modifier = Modifier.size(20.dp)
-    )
-}
-
-@Composable
-private fun SettingsDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 67.dp, end = 16.dp)
-            .height(0.5.dp)
-            .background(CardDivider)
-    )
-}
-
-@Composable
-private fun SettingsStatusDot(color: Color) {
-    Box(
-        modifier = Modifier
-            .size(9.dp)
-            .clip(CircleShape)
-            .background(color)
-    )
-}
-
-@Composable
-private fun CompactSshSwitchRow(
-    checked: Boolean,
-    enabled: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    CompactSettingSwitchRow(
-        label = "启用 SSH",
-        checked = checked,
-        enabled = enabled,
-        onCheckedChange = onCheckedChange
-    )
-}
-
-@Composable
-private fun CompactSettingSwitchRow(
-    label: String,
-    checked: Boolean,
-    enabled: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    // 左右交互彻底分离：左侧占满剩余宽度防止窄屏挤压，右侧开关独立承接点击与液态拖拽，避免整行按压蒙层盖在开关上方。
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .defaultMinSize(minHeight = 40.dp)
-                .clickable(
-                    interactionSource = null,
-                    indication = null,
-                    enabled = enabled,
-                    role = Role.Switch,
-                    onClick = { onCheckedChange(!checked) }
-                ),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            Text(
-                text = label,
-                color = TextMuted,
-                fontSize = TextSizes.Caption,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        FlatSwitch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled
-        )
-    }
-}
-
-// 失败标醒目暖橙提醒，平时保持柔和次要灰字，避免喧宾夺主。
-private fun maiBotUpdateSummaryColor(state: MaiBotUpdateState): Color =
-    when (state.phase) {
-        MaiBotUpdatePhase.Failed -> StatusWarning
-        MaiBotUpdatePhase.Available -> BrandOrange
-        else -> TextMuted
-    }
-
-// 失败标醒目暖橙提醒，发现新版本标品牌橙提醒，其余保持次要灰字。
-private fun appUpdateSummaryColor(state: AppUpdateState): Color =
-    when (state.phase) {
-        AppUpdatePhase.Failed -> StatusWarning
-        AppUpdatePhase.Available -> BrandOrange
-        else -> TextMuted
-    }
-
-internal fun permissionSummary(state: PermissionState): String {
-    val notificationStatus = if (state.notificationGranted) "通知已开启" else "通知未开启"
-    val optionalGranted = listOf(
-        state.batteryOptimizationIgnored,
-        state.storageGranted
-    ).count { it }
-    return "$notificationStatus · 可选项 $optionalGranted/2"
 }

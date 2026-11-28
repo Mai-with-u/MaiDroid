@@ -7,13 +7,13 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
-import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInRoot
@@ -33,14 +33,30 @@ internal const val DebugWatermarkText = "    MaiDroid · 开发中内容，请�
 /** 背景斜纹逆时针倾斜角度（度）。 */
 internal const val DebugWatermarkAngleDegrees = -24f
 
-/** 纯黑底上的水印纯白不透明度，保持高辨识度且不抢卡片与正文阅读视线。 */
+/** 深色底上的水印纯白不透明度，保持高辨识度且不抢卡片与正文阅读视线。 */
 internal const val DebugWatermarkAlpha = 0.085f
+
+/** 浅色底上的水印深墨灰不透明度，柔和可见且不干扰阅读。 */
+internal const val DebugWatermarkLightBgAlpha = 0.055f
 
 private const val DebugWatermarkTextSizeSp = 13f
 private const val DebugWatermarkRowSpacingDp = 56f
 
-/** 判断当前构建是否需要在纯黑页面基底叠加“开发中”背景水印。 */
+/** 判断当前构建是否需要在页面基底叠加“开发中”背景水印。 */
 internal fun shouldShowDebugBackgroundWatermark(isDebugBuild: Boolean): Boolean = isDebugBuild
+
+/** 判断页面背景是否属于浅色底面，决定水印选用深色墨迹还是纯白柔光。 */
+internal fun isLightSurfaceColor(color: Color): Boolean = color.luminance() > 0.5f
+
+/** 依据页面基底明暗返回对应水印画笔 ARGB 颜色（纯位运算组装，便于 JVM 单测直接校验）。 */
+internal fun resolveDebugWatermarkInkArgb(backgroundColor: Color): Int =
+    if (isLightSurfaceColor(backgroundColor)) {
+        val alphaByte = (DebugWatermarkLightBgAlpha * 255f).roundToInt().coerceIn(0, 255)
+        (alphaByte shl 24) or 0x0F172A
+    } else {
+        val alphaByte = (DebugWatermarkAlpha * 255f).roundToInt().coerceIn(0, 255)
+        (alphaByte shl 24) or 0xFFFFFF
+    }
 
 /** 根据实测文本宽度与单行行距计算两行错行瓦片尺寸（向上取整且保底为 1px，避免零宽高贴图崩溃）。 */
 internal fun computeDebugWatermarkTileDimensions(
@@ -105,9 +121,11 @@ private class AppPageBackgroundNode(
     override fun ContentDrawScope.draw() {
         drawRect(color)
         val density = requireDensity()
+        val inkArgb = resolveDebugWatermarkInkArgb(color)
         val shader = DebugWatermarkTileCache.shaderFor(
             density = density.density,
-            fontScale = density.fontScale
+            fontScale = density.fontScale,
+            inkArgb = inkArgb
         )
         // 图案在 Root 窗口原点坐标系下统一旋转与平铺，再减去当前容器偏移，使双栏/弹窗跨分界线完全无缝对齐。
         shaderMatrix.reset()
@@ -122,11 +140,12 @@ private class AppPageBackgroundNode(
     }
 }
 
-/** 按 `(density, fontScale)` 全局复用单张两行交错砖纹纹理瓦片，避免每次重绘重新测量排版大量文字。 */
+/** 按 `(density, fontScale, inkArgb)` 全局复用单张两行交错砖纹纹理瓦片，切深浅色主题立即切换墨色且避免频繁重建贴图。 */
 private object DebugWatermarkTileCache {
     private class CachedTile(
         val densityBits: Int,
         val fontScaleBits: Int,
+        val inkArgb: Int,
         val bitmap: Bitmap,
         val shader: BitmapShader
     )
@@ -134,7 +153,7 @@ private object DebugWatermarkTileCache {
     private var cached: CachedTile? = null
 
     @Synchronized
-    fun shaderFor(density: Float, fontScale: Float): BitmapShader {
+    fun shaderFor(density: Float, fontScale: Float, inkArgb: Int): BitmapShader {
         val safeDensity = if (density.isFinite() && density > 0f) density else 1f
         val safeFontScale = if (fontScale.isFinite() && fontScale > 0f) fontScale else 1f
         val densityBits = safeDensity.toRawBits()
@@ -143,14 +162,14 @@ private object DebugWatermarkTileCache {
         if (current != null &&
             current.densityBits == densityBits &&
             current.fontScaleBits == fontScaleBits &&
+            current.inkArgb == inkArgb &&
             !current.bitmap.isRecycled
         ) {
             return current.shader
         }
 
-        val alphaByte = (DebugWatermarkAlpha * 255f).roundToInt().coerceIn(0, 255)
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = AndroidColor.argb(alphaByte, 255, 255, 255)
+            color = inkArgb
             textSize = DebugWatermarkTextSizeSp * safeDensity * safeFontScale
             typeface = Typeface.DEFAULT
             isSubpixelText = true
@@ -179,6 +198,7 @@ private object DebugWatermarkTileCache {
         cached = CachedTile(
             densityBits = densityBits,
             fontScaleBits = fontScaleBits,
+            inkArgb = inkArgb,
             bitmap = bitmap,
             shader = shader
         )

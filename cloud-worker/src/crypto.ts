@@ -1,7 +1,5 @@
-// 远程清单签名验签（ECDSA P-256 -> ASN.1 DER，兼容 Android API 26+ 原生 SHA256withECDSA）、
-// 去易混字符 6 位求助码生成与归一化、以及加盐哈希工具。
-
-const DIAG_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+// 远程清单签名验签（ECDSA P-256 -> ASN.1 DER，兼容 Android API 26+ 原生 SHA256withECDSA）
+// 以及加盐哈希与常量时间比较工具。
 
 export interface SignedEnvelope {
   keyId: string;
@@ -129,26 +127,6 @@ export async function verifyManifestEnvelope(
   } catch {
     return false;
   }
-}
-
-export function generateDiagCode(): string {
-  const rand = new Uint8Array(6);
-  crypto.getRandomValues(rand);
-  let chars = "";
-  for (let i = 0; i < 6; i++) {
-    chars += DIAG_ALPHABET[rand[i] & 31];
-  }
-  return `${chars.slice(0, 3)}-${chars.slice(3, 6)}`;
-}
-
-// 兼容用户输入 `#m8k29f`、`M8K-29F`、`m8k 29f`，统一归一化为 `M8K-29F`
-export function normalizeDiagCode(input: string): string | null {
-  const cleaned = input.trim().replace(/^[#\s]+/, "").replace(/[-\s]/g, "").toUpperCase();
-  if (cleaned.length !== 6) return null;
-  for (const ch of cleaned) {
-    if (!DIAG_ALPHABET.includes(ch)) return null;
-  }
-  return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}`;
 }
 
 export async function sha256Hex(text: string): Promise<string> {

@@ -41,15 +41,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
-import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.appDependencies
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FeedbackPackage
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.LiquidButton
-import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
 import org.maiwithu.maidroid.ui.component.LocalMaiDialogPhoneLandscape
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
@@ -80,17 +77,14 @@ private sealed interface FeedbackPreparation {
 
 /**
  * “反馈问题”弹窗：一打开就在后台收集并打码诊断信息 -> 胶囊摘要呈现诊断包构成并折叠长报告预览 ->
- * 支持生成 6 位故障求助码、导出 zip 诊断包、跳转 QQ 群反馈或一键复制诊断信息到 GitHub Issue。
+ * 支持导出 zip 诊断包、跳转 QQ 群反馈或一键复制诊断信息到 GitHub Issue。
  */
 @Composable
 internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val diagnostics = remember(context) { context.appDependencies.diagnostics }
-    val remoteOps = remember(context) { context.appDependencies.remoteOps }
     val scope = rememberCoroutineScope()
     var saving by remember { mutableStateOf(false) }
-    var generatingCode by remember { mutableStateOf(false) }
-    var helpCode by rememberSaveable { mutableStateOf<String?>(null) }
     var showQqGroup by rememberSaveable { mutableStateOf(false) }
 
     val preparation by produceState<FeedbackPreparation>(FeedbackPreparation.Loading, failure) {
@@ -205,54 +199,6 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
                 accentColor = StatusWarning
             )
             is FeedbackPreparation.Ready -> {
-                val currentCode = helpCode
-                if (currentCode != null) {
-                    HelpCodeCard(code = currentCode, errorCode = failure?.code)
-                } else {
-                    MaiDialogSectionCard {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = "6 位故障求助码",
-                                    color = TextPrimary,
-                                    fontSize = TextSizes.Body,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "上传脱敏快照（7 天自动清理），报求助码进群即可排查。",
-                                    color = TextMuted,
-                                    fontSize = TextSizes.Caption,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                            CompactGenerateButton(
-                                text = if (generatingCode) "生成中..." else "生成",
-                                enabled = !generatingCode,
-                                onClick = {
-                                    generatingCode = true
-                                    scope.launch {
-                                        val res = remoteOps.generateHelpCode(state.pkg)
-                                        generatingCode = false
-                                        res.onSuccess { code ->
-                                            helpCode = code
-                                            copyHelpCodeToClipboard(context, code, failure?.code)
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, err.message ?: "生成求助码失败", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-
                 // 胶囊概括诊断包已包含内容，把长报告拆到次列或默认收进折叠面板保持首屏清爽。
                 MaiDialogSectionCard {
                     FlowRow(
@@ -278,7 +224,7 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
                         }
                     }
                     Text(
-                        text = "聊天记录未作脱敏，提交或发群前可展开核对；点下方按钮会自动复制摘要并预填 GitHub Issue。",
+                        text = "点击「保存诊断包」导出 zip 文件即可发到 QQ 群或拖进 GitHub Issue；聊天记录未作脱敏，发出前可展开核对。",
                         color = TextMuted,
                         fontSize = TextSizes.Caption,
                         lineHeight = 16.sp
@@ -290,24 +236,6 @@ internal fun FeedbackDialog(failure: Failure?, onDismiss: () -> Unit) {
 
     if (showQqGroup) {
         QqFeedbackGroupDialog(onDismiss = { showQqGroup = false })
-    }
-}
-
-@Composable
-private fun CompactGenerateButton(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    LiquidButton(
-        onClick = onClick,
-        enabled = enabled,
-        style = LiquidButtonStyle.SoftAccent,
-        shape = { RoundedRectangle(10.dp) },
-        minHeight = 34.dp,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Text(text = text, fontSize = TextSizes.Caption, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 

@@ -30,7 +30,6 @@ import org.maiwithu.maidroid.diagnostics.DiagnosticsManager
 import org.maiwithu.maidroid.diagnostics.Failure
 import org.maiwithu.maidroid.diagnostics.FailureCause
 import org.maiwithu.maidroid.diagnostics.FailureStep
-import org.maiwithu.maidroid.diagnostics.FeedbackPackage
 import org.maiwithu.maidroid.diagnostics.backgroundScope
 import org.maiwithu.maidroid.diagnostics.latestExitReasonText
 import org.maiwithu.maidroid.diagnostics.parseFailureLogLine
@@ -52,7 +51,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 远程公告、动态排障热规则、6 位故障求助码上传与无感匿名统计的进程级协调器。
+ * 远程公告、动态排障热规则与无感匿名统计的进程级协调器。
  *
  * 1. 启动即从本地缓存恢复上次验签通过的清单（热规则零延迟生效），随后在打开界面及前台服务每小时后台增量刷新；
  * 2. 匹配当前设备环境的公告拆成顶部横幅列表（info/warning）与模态强提醒（blocker），开启系统栏提醒的新公告只推送一次通知；
@@ -257,22 +256,6 @@ internal class RemoteOpsManager(
 
     fun clearFocusedAnnouncement() {
         _focusedAnnouncement.value = null
-    }
-
-    /** 基于已收集脱敏的 FeedbackPackage 直接压缩上传并返回 6 位求助码（供 FeedbackDialog 零延迟调用）。 */
-    suspend fun generateHelpCode(pkg: FeedbackPackage): Result<String> {
-        val gzip = withContext(Dispatchers.Default) {
-            DiagnosticSnapshotPayload.buildGzipBytes(pkg)
-        }
-        return client.uploadDiagnosticSnapshot(BuildConfig.REMOTE_OPS_BASE_URL, gzip)
-    }
-
-    /** 从报错现场一键收集脱敏快照并上传换取 6 位求助码（供 FailureNotice 直接调用）。 */
-    suspend fun generateHelpCode(failure: Failure?): Result<String> {
-        val pkg = runCatching { diagnosticsProvider().prepare(failure) }.getOrElse { err ->
-            return Result.failure(err)
-        }
-        return generateHelpCode(pkg)
     }
 
     /**

@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.maiwithu.maidroid.appDependencies
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.cleanup.CleanupItem
 import org.maiwithu.maidroid.cleanup.CleanupOutcome
 import org.maiwithu.maidroid.cleanup.CleanupSizes

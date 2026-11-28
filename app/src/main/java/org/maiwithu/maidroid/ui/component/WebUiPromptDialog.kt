@@ -53,6 +53,7 @@ import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.DialogInnerSurface
 import org.maiwithu.maidroid.ui.theme.IconCyanBlue
 import org.maiwithu.maidroid.ui.theme.IconIrisBlue
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.TextFaint
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -67,8 +68,9 @@ import android.graphics.Color as AndroidColor
 
 private const val CHOICE_SEARCH_THRESHOLD = 8
 private const val COLOR_SWATCH_COLUMNS = 4
-private val ChoiceBadgeForeground = TextPrimary
-private val ChoiceBadgeSecondary = TextPrimary.copy(alpha = 0.56f)
+// 实色圆形徽章上的双层图标恒为纯白前景，防止浅色模式下跟随 TextPrimary 变黑。
+private val ChoiceBadgeForeground = OnBrandOrange
+private val ChoiceBadgeSecondary = OnBrandOrange.copy(alpha = 0.56f)
 
 /**
  * 网页原生表单弹窗统一 Compose 宿主：
@@ -600,6 +602,7 @@ private fun WebUiColorPickerPromptDialog(prompt: WebUiPromptRequest.ColorPicker)
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             val swatchShape = RoundedCornerShape(Corners.Control)
+            val fallbackSwatchColor = DialogInnerSurface
             prompt.paletteHexes.chunked(COLOR_SWATCH_COLUMNS).forEach { rowColors ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -609,9 +612,9 @@ private fun WebUiColorPickerPromptDialog(prompt: WebUiPromptRequest.ColorPicker)
                         val swatchHex = rowColors.getOrNull(columnIndex)
                         if (swatchHex != null) {
                             val selected = swatchHex.equals(previewHex, ignoreCase = true)
-                            val swatchColor = remember(swatchHex) {
+                            val swatchColor = remember(swatchHex, fallbackSwatchColor) {
                                 runCatching { Color(AndroidColor.parseColor(swatchHex)) }
-                                    .getOrDefault(DialogInnerSurface)
+                                    .getOrDefault(fallbackSwatchColor)
                             }
                             Box(
                                 modifier = Modifier

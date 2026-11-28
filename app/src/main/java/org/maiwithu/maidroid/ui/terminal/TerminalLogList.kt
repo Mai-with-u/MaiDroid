@@ -70,13 +70,15 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.shapes.Capsule
 import org.maiwithu.maidroid.terminal.AnsiLine
 import org.maiwithu.maidroid.ui.component.LiquidButton
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
+import org.maiwithu.maidroid.ui.component.rememberThemedLayerBackdrop
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.LiquidBarSurface
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
 import org.maiwithu.maidroid.ui.theme.TerminalBackground
 import org.maiwithu.maidroid.ui.theme.TerminalText
 import org.maiwithu.maidroid.ui.theme.TextFaint
@@ -84,17 +86,31 @@ import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
-// 日志正文：等宽小字；自动换行时折下来的续行缩进一点，一眼能看出和上一行是同一条日志。
-private val TerminalLineStyle = TextStyle(
-    color = TerminalText,
+// 日志正文基础排版：等宽小字；自动换行时折下来的续行缩进一点，一眼能看出和上一行是同一条日志。
+private val TerminalBaseLineStyle = TextStyle(
     fontFamily = FontFamily.Monospace,
     fontSize = TextSizes.Caption,
     lineHeight = 17.sp,
     textIndent = TextIndent(restLine = 1.5.em)
 )
 
-// 命中筛选关键字的位置：品牌橙底色。
-private val SearchHighlight = SpanStyle(background = BrandOrange.copy(alpha = 0.38f), color = Color.White)
+@Composable
+private fun rememberTerminalLineStyle(): TextStyle {
+    val textColor = TerminalText
+    return remember(textColor) { TerminalBaseLineStyle.copy(color = textColor) }
+}
+
+@Composable
+private fun rememberSearchHighlightSpan(): SpanStyle {
+    val isDark = LocalMaiDroidColors.current.isDark
+    return remember(isDark) {
+        if (isDark) {
+            SpanStyle(background = BrandOrange.copy(alpha = 0.38f), color = Color.White)
+        } else {
+            SpanStyle(background = BrandOrange.copy(alpha = 0.85f), color = OnBrandOrange)
+        }
+    }
+}
 
 // 长按拖选时手指离列表上下边缘不到这个距离就自动滚动，越靠边越快。
 private val AutoScrollEdge = 56.dp
@@ -188,10 +204,7 @@ internal fun TerminalLogList(
     }
 
     val showResumePill = viewer.paused && !viewer.selecting
-    val logBackdrop = rememberLayerBackdrop {
-        drawRect(TerminalBackground)
-        drawContent()
-    }
+    val logBackdrop = rememberThemedLayerBackdrop(TerminalBackground)
 
     BoxWithConstraints(modifier = modifier) {
         val viewportWidth = maxWidth
@@ -304,10 +317,15 @@ private fun TerminalLogLine(
     selected: Boolean,
     wrap: Boolean
 ) {
-    val text: AnnotatedString = remember(line, query) { line.toDisplayText(query, SearchHighlight) }
+    val isDark = LocalMaiDroidColors.current.isDark
+    val lineStyle = rememberTerminalLineStyle()
+    val highlight = rememberSearchHighlightSpan()
+    val text: AnnotatedString = remember(line, query, highlight, isDark) {
+        line.toDisplayText(query, highlight, isDarkTerminal = isDark)
+    }
     Text(
         text = text,
-        style = TerminalLineStyle,
+        style = lineStyle,
         softWrap = wrap,
         modifier = Modifier
             .fillMaxWidth()
@@ -399,13 +417,14 @@ private fun rememberNoWrapContentWidth(rows: List<TerminalRow>, horizontalPaddin
     if (!enabled) return 0.dp
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    return remember(rows, horizontalPadding, density) {
+    val lineStyle = rememberTerminalLineStyle()
+    return remember(rows, horizontalPadding, density, lineStyle) {
         val candidates = rows
             .flatMap { row -> row.line.text.split('\n') }
             .sortedByDescending(::estimatedColumns)
             .take(NO_WRAP_MEASURE_CANDIDATES)
         val widest = candidates.maxOfOrNull { text ->
-            measurer.measure(text, TerminalLineStyle, softWrap = false, maxLines = 1).size.width
+            measurer.measure(text, lineStyle, softWrap = false, maxLines = 1).size.width
         } ?: 0
         // 每行自己左右各 6dp，列表左右各 horizontalPadding，再多留一点余量。
         with(density) { widest.toDp() } + horizontalPadding * 2 + 12.dp + 8.dp

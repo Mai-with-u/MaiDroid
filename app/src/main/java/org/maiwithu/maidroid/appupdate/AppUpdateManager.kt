@@ -26,6 +26,7 @@ import org.maiwithu.maidroid.runtime.GitHubMirrors
 import org.maiwithu.maidroid.runtime.MirrorCategory
 import org.maiwithu.maidroid.runtime.MirrorManager
 import org.maiwithu.maidroid.runtime.NetworkStatus
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.terminal.TerminalLog
 import java.io.File
 import java.io.IOException

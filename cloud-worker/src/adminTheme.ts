@@ -267,7 +267,7 @@ details summary:hover { color:var(--orange); }
 .arow .act { font-weight:700; }
 .arow .mono { font:12px var(--f-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 @media (max-width:760px) { .trow { grid-template-columns:36px 1fr; } .trow > :nth-child(n+3) { grid-column:2; } .arow { grid-template-columns:1fr; gap:2px; } }
-/* 所有者有 6 个分页：中等宽度下收紧分页按钮、藏掉副标题和同步文字，让页头保持一行 */
+/* 所有者有 5 个分页：中等宽度下收紧分页按钮、藏掉副标题和同步文字，让页头保持一行 */
 @media (max-width:1480px) { .hd { gap:14px 24px; } nav { gap:6px; } nav a { padding:0 16px 0 12px; } .brand span, #syncAt, #clock { display:none; } .hd-r { gap:10px; } }
 
 /* 清单可视化编辑器：左列表 / 中表单 / 右手机预览 */
@@ -347,6 +347,8 @@ details summary:hover { color:var(--orange); }
 .pv-nbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .pv-nb { border-radius:10px; padding:7px 12px; font:700 12px var(--f-sans); background:#262830; color:#fff; }
 .pv-nb.hi { background:rgba(233,127,15,.16); color:#E97F0F; }
+.pv-links { display:flex; align-items:center; gap:6px; margin-top:10px; font:600 12px var(--f-sans); color:#E97F0F; }
+.pv-dot { color:#555966; }
 /* 中等宽度：条目列表挪到上方整行，表单与预览并排，保证改字时预览始终在视线内 */
 @media (max-width:1360px) { .mf-ui { grid-template-columns:minmax(0,1fr) 350px; } .mf-list { grid-column:1 / -1; display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:4px 10px; } .mf-list .mf-sec, .mf-list .mf-tip, .mf-list .empty { grid-column:1 / -1; } .mf-prev { padding:20px 16px; } }
 @media (max-width:860px) { .mf-ui { grid-template-columns:1fr; } .mf-prev { position:static; } }

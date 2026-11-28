@@ -1,10 +1,12 @@
 package org.maiwithu.maidroid.ui.terminal
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.SpanStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maiwithu.maidroid.terminal.AnsiText
 
@@ -102,5 +104,21 @@ class TerminalViewerStateTest {
 
         assertSame(first[0], second[0])
         assertEquals("new", second[2].text)
+    }
+
+    @Test
+    fun `light terminal darkens bright ansi foreground colors while dark terminal keeps raw palette`() {
+        val sample = AnsiText.parse("\u001B[97mWhite\u001B[0m \u001B[93mYellow\u001B[0m \u001B[96mCyan\u001B[0m \u001B[92mGreen\u001B[0m")
+
+        val darkSpans = sample.toDisplayText("", highlight, isDarkTerminal = true).spanStyles
+            .filter { it.item.color != Color.Unspecified }
+        assertEquals(Color(0xFFFFFFFF), darkSpans[0].item.color)
+        assertEquals(Color(0xFFF5F543), darkSpans[1].item.color)
+
+        val lightSpans = sample.toDisplayText("", highlight, isDarkTerminal = false).spanStyles
+            .filter { it.item.color != Color.Unspecified }
+        lightSpans.forEach { span ->
+            assertTrue("Expected darkened ANSI color luminance < 0.35, got ${span.item.color.luminance()}", span.item.color.luminance() < 0.35f)
+        }
     }
 }

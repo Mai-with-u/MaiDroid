@@ -56,6 +56,7 @@ import com.kyant.shapes.Capsule
 import kotlinx.coroutines.flow.collectLatest
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardSurface
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.SwitchTrackUnchecked
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -151,10 +152,13 @@ internal fun LiquidSlider(
     val thumbWidth = 40.dp
     val thumbHeight = 24.dp
 
+    val colors = LocalMaiDroidColors.current
     val hasRenderEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val resolvedAccentColor = accentColor.copy(alpha = if (enabled) 1f else 0.45f)
     val resolvedTrackColor = if (enabled) trackColor else trackColor.copy(alpha = 0.5f)
     val thumbColor = if (enabled) Color.White else Color.White.copy(alpha = 0.65f)
+    val fallbackStrokeColor = if (colors.isDark) Color.White.copy(alpha = 0.55f) else colors.glassStroke
+    val shadowAlpha = if (colors.isDark) 0.16f else 0.10f
 
     val density = LocalDensity.current
     val touchSlop = LocalViewConfiguration.current.touchSlop
@@ -432,7 +436,7 @@ internal fun LiquidSlider(
                         shadow = {
                             Shadow(
                                 radius = 4f.dp,
-                                color = Color.Black.copy(alpha = 0.16f)
+                                color = Color.Black.copy(alpha = shadowAlpha)
                             )
                         },
                         innerShadow = {
@@ -451,14 +455,14 @@ internal fun LiquidSlider(
                         },
                         onDrawSurface = {
                             val progress = dampedDragAnimation.pressProgress
-                            // Android 8–11 无实时 RenderEffect 折射时保留轻透磨砂与高光边线，防止拖动水滴发虚隐身。
+                            // Android 8–11 无实时 RenderEffect 折射时保留轻透磨砂与主题适配边线，防止拖动水滴发虚隐身。
                             val minSurfaceAlpha = if (hasRenderEffect) 0f else 0.36f
                             drawRect(thumbColor.copy(alpha = lerp(1f, minSurfaceAlpha, progress)))
                             if (!hasRenderEffect && progress > 0.01f) {
                                 val strokePx = 0.9.dp.toPx()
                                 val inset = strokePx / 2f
                                 drawRoundRect(
-                                    color = Color.White.copy(alpha = 0.55f * progress),
+                                    color = fallbackStrokeColor.copy(alpha = fallbackStrokeColor.alpha * progress),
                                     topLeft = Offset(inset, inset),
                                     size = Size(size.width - strokePx, size.height - strokePx),
                                     cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),

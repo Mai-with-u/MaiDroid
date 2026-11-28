@@ -19,10 +19,14 @@ import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.OnBrandOrange
+import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 
-private val IconForeground = TextPrimary
-private val IconSecondary = TextPrimary.copy(alpha = 0.56f)
+// 实色圆形徽章内部的矢量图层恒为纯白前景与柔白底影，不跟随浅/深色正文反转为深墨色。
+private val IconForeground = OnBrandOrange
+private val IconSecondary = OnBrandOrange.copy(alpha = 0.56f)
 
 /**
  * 清新扁平圆形功能图标徽章：明快实色圆底搭配双层柔白+纯白圆润几何图标。
@@ -36,7 +40,12 @@ internal fun FlatFeatureIconBadge(
     iconSize: Dp = 25.dp,
     dimmed: Boolean = false
 ) {
-    val bg = if (dimmed) TextPrimary.copy(alpha = 0.12f) else backgroundColor
+    val isDark = LocalMaiDroidColors.current.isDark
+    val bg = if (dimmed) {
+        if (isDark) TextPrimary.copy(alpha = 0.12f) else TextMuted.copy(alpha = 0.28f)
+    } else {
+        backgroundColor
+    }
     Box(
         modifier = modifier
             .size(size)
@@ -522,6 +531,23 @@ internal object FlatFeatureIcons {
                 circlePath(6.6f, 8.5f, 1.85f)
                 circlePath(17.4f, 15.5f, 1.85f)
                 sparklePath(12.0f, 12.0f, 3.1f, 1.0f)
+            }
+        }
+    }
+
+    /** 外观主题图标：外圈双弧日光环搭配半明半暗对比核心，表达浅色/深色与跟随系统切换。 */
+    val Appearance: ImageVector by lazy {
+        flatVector("FlatAppearance") {
+            strokeLayer(IconSecondary, width = 1.9f) {
+                circlePath(12.0f, 12.0f, 8.4f)
+            }
+            fillLayer(IconForeground) {
+                moveTo(12.0f, 6.2f)
+                arcTo(5.8f, 5.8f, 0f, false, true, 12.0f, 17.8f)
+                close()
+            }
+            strokeLayer(IconForeground, width = 1.8f) {
+                circlePath(12.0f, 12.0f, 5.8f)
             }
         }
     }

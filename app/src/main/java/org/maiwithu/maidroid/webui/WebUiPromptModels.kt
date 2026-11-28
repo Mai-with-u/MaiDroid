@@ -1,5 +1,6 @@
 package org.maiwithu.maidroid.webui
 
+import org.maiwithu.maidroid.runtime.isLoopbackHost
 import java.net.URI
 import java.util.Calendar
 import java.util.Locale
@@ -354,6 +355,5 @@ internal fun isLocalLoopbackUri(uriString: String?): Boolean {
     val uri = runCatching { URI(uriString.trim()) }.getOrNull() ?: return false
     val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
     if (scheme != "http" && scheme != "https") return false
-    val host = uri.host?.lowercase(Locale.ROOT) ?: return false
-    return host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "[::1]"
+    return isLoopbackHost(uri.host)
 }

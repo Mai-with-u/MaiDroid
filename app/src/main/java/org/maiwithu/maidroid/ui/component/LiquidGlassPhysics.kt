@@ -39,6 +39,8 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -437,6 +439,7 @@ internal class DampedDragAnimation(
  */
 internal class InteractiveHighlight(
     private val animationScope: CoroutineScope,
+    private val isDark: Boolean = true,
     private val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset }
 ) {
     private val pressProgressAnimationSpec = spring(0.5f, 300f, 0.001f)
@@ -464,25 +467,33 @@ internal class InteractiveHighlight(
                 resolved.y.fastCoerceIn(0f, size.height)
             )
             val radius = (size.minDimension * 1.5f).coerceAtLeast(1f)
-            drawRect(Color.White.copy(alpha = 0.08f * progress), blendMode = BlendMode.Plus)
+            // 深色模式叠白光并相加混合；浅色模式改用低透冷炭墨微按压蒙层并常规覆盖，避免白光隐身。
+            val highlightBase = (if (isDark) DarkMaiDroidColors else LightMaiDroidColors).glassPressHighlight
+            val highlightBlend = if (isDark) BlendMode.Plus else BlendMode.SrcOver
+            val uniformAlpha = if (isDark) 0.08f else 0.04f
+            val centerAlpha = if (isDark) 0.15f else 0.09f
+            val radialStartAlpha = if (isDark) 0.18f else 0.10f
+            val radialMidAlpha = if (isDark) 0.10f else 0.05f
+
+            drawRect(highlightBase.copy(alpha = uniformAlpha * progress), blendMode = highlightBlend)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && shader != null) {
                 shader.apply {
                     setFloatUniform("size", size.width, size.height)
-                    setColorUniform("color", Color.White.copy(alpha = 0.15f * progress).toArgb())
+                    setColorUniform("color", highlightBase.copy(alpha = centerAlpha * progress).toArgb())
                     setFloatUniform("radius", radius)
                     setFloatUniform("position", clampedCenter.x, clampedCenter.y)
                 }
-                drawRect(ShaderBrush(shader), blendMode = BlendMode.Plus)
+                drawRect(ShaderBrush(shader), blendMode = highlightBlend)
             } else {
                 drawRect(
                     brush = Brush.radialGradient(
-                        0.0f to Color.White.copy(alpha = 0.18f * progress),
-                        0.5f to Color.White.copy(alpha = 0.10f * progress),
+                        0.0f to highlightBase.copy(alpha = radialStartAlpha * progress),
+                        0.5f to highlightBase.copy(alpha = radialMidAlpha * progress),
                         1.0f to Color.Transparent,
                         center = clampedCenter,
                         radius = radius
                     ),
-                    blendMode = BlendMode.Plus
+                    blendMode = highlightBlend
                 )
             }
         }

@@ -41,7 +41,7 @@ import org.maiwithu.maidroid.pet.DesktopPetUiState
 import org.maiwithu.maidroid.ui.component.CollapsingGlassHeaderContainer
 import org.maiwithu.maidroid.ui.component.FlatFeatureIconBadge
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.GlassHeaderCircleButton
 import org.maiwithu.maidroid.ui.component.HomeTwoPaneSpec
 import org.maiwithu.maidroid.ui.component.LiquidButtonStyle
@@ -57,6 +57,7 @@ import org.maiwithu.maidroid.ui.theme.CardDivider
 import org.maiwithu.maidroid.ui.theme.CardSurface
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.IconPeachOrange
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
 import org.maiwithu.maidroid.ui.theme.PageBackground
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
@@ -88,14 +89,15 @@ internal fun DesktopPetSettingsPage(
     compact: Boolean = false,
     expandedTopOffset: Dp = 40.dp
 ) {
+    val colors = LocalMaiDroidColors.current
     val switchChecked = petState.desiredEnabled || petState.overlayActive
-    val targetPhaseColor = resolvePetPhaseColor(petState)
+    val targetPhaseColor = resolvePetPhaseColor(petState, colors)
     val animatedPhaseColor by animateColorAsState(
         targetValue = targetPhaseColor,
         animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         label = "PetDetailPhaseColor"
     )
-    val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(ExtensionCatalog.primaryEntry.badge, petState)
+    val (statusBadgeText, statusBadgeColor) = resolvePetHeaderBadge(ExtensionCatalog.primaryEntry.badge, petState, colors)
 
     val statusBarTop = statusBarTopInset()
     val overscroll = rememberSplitHeaderOverscrollEffect()
@@ -207,7 +209,7 @@ internal fun DesktopPetSettingsPage(
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
-                            FlatSwitch(
+                            LiquidToggle(
                                 checked = switchChecked,
                                 onCheckedChange = onToggle
                             )

@@ -39,10 +39,10 @@ import org.maiwithu.maidroid.appupdate.AppUpdateAction
 import org.maiwithu.maidroid.appupdate.AppUpdatePhase
 import org.maiwithu.maidroid.appupdate.AppUpdateState
 import org.maiwithu.maidroid.appupdate.ReleaseNoteKind
-import org.maiwithu.maidroid.appupdate.formatBytes
+import org.maiwithu.maidroid.runtime.formatBytes
 import org.maiwithu.maidroid.appupdate.releaseNoteLines
 import org.maiwithu.maidroid.ui.component.FlatFeatureIcons
-import org.maiwithu.maidroid.ui.component.FlatSwitch
+import org.maiwithu.maidroid.ui.component.LiquidToggle
 import org.maiwithu.maidroid.ui.component.MaiDialog
 import org.maiwithu.maidroid.ui.component.MaiDialogButton
 import org.maiwithu.maidroid.ui.component.MaiDialogButtonRow
@@ -473,7 +473,7 @@ private fun MaiBotAutoUpdateRow(switch: MaiBotAutoUpdateSwitch) {
                 lineHeight = 16.sp
             )
         }
-        FlatSwitch(
+        LiquidToggle(
             checked = switch.disabled,
             onCheckedChange = switch.onChange
         )

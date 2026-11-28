@@ -4,9 +4,15 @@ import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.maiwithu.maidroid.appDependencies
+import org.maiwithu.maidroid.applySystemBarAppearance
+import org.maiwithu.maidroid.isSystemDarkMode
+import org.maiwithu.maidroid.settings.resolveUseDarkTheme
+import org.maiwithu.maidroid.ui.theme.DarkMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.LightMaiDroidColors
 
 /**
  * 悬浮桌宠探索记录独立查看页：打开时自动暂隐悬浮桌宠以免遮挡列表，退出后恢复显示。
@@ -34,7 +40,17 @@ class PetRecordsActivity : ComponentActivity() {
         current = this
         recordsView = webView
 
+        val isDarkTheme = resolveUseDarkTheme(appDependencies.settings.themeMode, isSystemDarkMode(resources))
+        val pageBg = (if (isDarkTheme) DarkMaiDroidColors.pageBackground else LightMaiDroidColors.pageBackground).toArgb()
+        window.decorView.setBackgroundColor(pageBg)
+        applySystemBarAppearance(
+            window = window,
+            darkStatusBarIcons = !isDarkTheme,
+            darkNavigationBarIcons = !isDarkTheme
+        )
+
         val container = FrameLayout(this).apply {
+            setBackgroundColor(pageBg)
             addView(
                 webView,
                 FrameLayout.LayoutParams(

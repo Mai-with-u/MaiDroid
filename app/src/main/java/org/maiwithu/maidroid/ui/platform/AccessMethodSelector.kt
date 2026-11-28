@@ -68,9 +68,10 @@ import org.maiwithu.maidroid.ui.component.resolveLiquidBackdrop
 import org.maiwithu.maidroid.ui.component.resolveLiquidHapticSlot
 import org.maiwithu.maidroid.ui.theme.BrandOrange
 import org.maiwithu.maidroid.ui.theme.CardBorder
-import org.maiwithu.maidroid.ui.theme.CardSurfaceSelected
 import org.maiwithu.maidroid.ui.theme.Corners
 import org.maiwithu.maidroid.ui.theme.GlassStroke
+import org.maiwithu.maidroid.ui.theme.LocalMaiDroidColors
+import org.maiwithu.maidroid.ui.theme.SegmentedThumbSurface
 import org.maiwithu.maidroid.ui.theme.TextMuted
 import org.maiwithu.maidroid.ui.theme.TextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
@@ -228,9 +229,11 @@ internal fun AccessMethodSelector(
                 }
         }
 
-        val selectorHighlight = remember(animationScope, isLtr, itemCount) {
+        val isDark = LocalMaiDroidColors.current.isDark
+        val selectorHighlight = remember(animationScope, isLtr, itemCount, isDark) {
             InteractiveHighlight(
                 animationScope = animationScope,
+                isDark = isDark,
                 position = { size, _ ->
                     val slotW = (size.width / itemCount).coerceAtLeast(1f)
                     val cx = if (isLtr) {
@@ -302,7 +305,7 @@ internal fun AccessMethodSelector(
                 .layerBackdrop(tabsBackdrop)
                 .graphicsLayer { translationX = panelOffsetPx }
                 .clip(trackShape)
-                .background(CardSurfaceSelected)
+                .background(SegmentedThumbSurface)
                 .then(selectorHighlight.modifier)
                 .padding(horizontal = horizontalPadding, vertical = horizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
@@ -335,6 +338,7 @@ internal fun AccessMethodSelector(
 
         // 兄弟层 3：独立浮起的水滴分段滑块，按压可鼓出边框并跟随手势速度拉伸
         val fallbackBorder = if (hasRenderEffect) Modifier else Modifier.border(0.6.dp, GlassStroke, Capsule())
+        val thumbBorder = if (!isDark) Modifier.border(0.5.dp, GlassStroke, Capsule()) else Modifier
         Box(
             modifier = Modifier
                 .padding(vertical = horizontalPadding)
@@ -362,7 +366,14 @@ internal fun AccessMethodSelector(
                         Highlight.Default.copy(alpha = 0.55f + 0.45f * dragAnimation.pressProgress)
                     },
                     shadow = {
-                        Shadow(radius = 8.dp, alpha = 0.25f + 0.75f * dragAnimation.pressProgress)
+                        if (isDark) {
+                            Shadow(radius = 8.dp, alpha = 0.25f + 0.75f * dragAnimation.pressProgress)
+                        } else {
+                            Shadow(
+                                radius = 8.dp,
+                                color = Color.Black.copy(alpha = 0.12f + 0.10f * dragAnimation.pressProgress)
+                            )
+                        }
                     },
                     innerShadow = {
                         val progress = dragAnimation.pressProgress
@@ -377,12 +388,18 @@ internal fun AccessMethodSelector(
                     },
                     onDrawSurface = {
                         val progress = dragAnimation.pressProgress
-                        // 兄弟层 2 已通过 tabsBackdrop 提供 CardSurfaceSelected 底色与纯正品牌橙文字，
-                        // 静止态只叠极轻透玻璃微光而非高不透明深灰，避免把橙色文字压灰压暗
-                        drawRect(Color.White.copy(alpha = 0.06f), alpha = 1f - progress)
-                        drawRect(Color.Black.copy(alpha = 0.02f * progress))
+                        // 兄弟层 2 已通过 tabsBackdrop 提供 SegmentedThumbSurface 底色与纯正品牌橙文字，
+                        // 浅底给白胶囊保留低透明柔和透光以维持清晰轮廓
+                        if (isDark) {
+                            drawRect(Color.White.copy(alpha = 0.06f), alpha = 1f - progress)
+                            drawRect(Color.Black.copy(alpha = 0.02f * progress))
+                        } else {
+                            drawRect(Color.White.copy(alpha = 0.14f), alpha = 1f - progress)
+                            drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                        }
                     }
                 )
+                .then(thumbBorder)
                 .then(fallbackBorder)
                 .width(itemWidth)
                 .fillMaxHeight()

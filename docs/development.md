@@ -75,6 +75,8 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `runtime/ContainerTimeZoneTest` | 容器时区跟随手机：容器有同名 zoneinfo 就用原名，没有就按当前偏移换成 Etc/GMT∓N，半点偏移退回 UTC，挡掉越出 zoneinfo 的时区名；改写 /etc/localtime 和 /etc/timezone |
 | `runtime/GitHubMirrorsTest` | 宿主侧可用的下载线路、容器脚本里的镜像列表 |
 | `runtime/AptMirrorsTest` | apt 换源：默认清华、都用 http、只在下载失败时换、容器 SSH 装 sshd 也用；下载 30 秒没动静算失败 |
+| `runtime/MirrorConfigTest`、`runtime/MirrorManagerTest` | GitHub / APT / PyPI 三类镜像源配置解析、自定义地址规范化与自动测速/手动预设优先级切换 |
+| `runtime/ProotCommandTest`、`runtime/ProotInteractiveShellTest` | PRoot 命令行组装、核簇排除脚本、附加挂载与本地交互式容器 bash 启动参数 |
 | `runtime/DpkgStateTest` | dpkg 上次没做完的判断：updates 里有没并进 status 的记录、包停在解包或配置到一半 |
 | `runtime/DurableFilesTest` | 原子写文件：整份替换、不留临时文件、写不成时旧内容不动；量已下载缓存的大小 |
 | `runtime/NetworkStatusTest` | 没连网时给出 NET-OFFLINE，系统没验证过能上网照常放行 |
@@ -82,22 +84,27 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `runtime/RequestExitScriptTest` | 停止时在容器里通知谁退出：MaiBot 只通知 Runner、QQ 只通知主进程（用真机抓到的进程命令行验证），不会选中脚本自己；退出码的含义；清理残留时认得出 MaiBot 的每一层进程、不碰 NapCat |
 | `service/LowBatteryPolicyTest` | 低电量（<5%）暂停与充电/高电量（≥10%）恢复的双阈值判定 |
 | `service/SafeExitStateTest` | 安全退出进度：什么时候算全部停下、常驻通知显示哪一项 |
-| `terminal/AnsiTextTest` | 终端输出的 ANSI 解析：颜色和加粗、回车退格覆盖、擦除行、丢掉光标等控制序列、截断的序列不漏进正文 |
+| `ssh/ContainerSshScriptsTest` | 容器 SSH 安装、配置改写与前台启动脚本生成 |
+| `terminal/AnsiTextTest`、`terminal/ContainerShellManagerTest` | 终端输出的 ANSI 解析（颜色、加粗、回车退格覆盖、擦除行、过滤截断控制序列），以及未派生子进程 PID 时的会话终止安全守卫 |
 | `VersionNumberTest` | 版本号比较（数字逐位比、正式版新于同号预发布）和解析 |
 | `appupdate/AppReleaseTest` | 应用自更新：Release 解析与挑选 APK、校验行、更新说明排版 |
-| `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、断点续传响应判断、测速、大小显示 |
+| `appupdate/AppUpdateClientTest` | 应用自更新下载：断点续传、断线后接着下、服务器不支持 Range 时从头下、断点续传响应判断、测速、字节格式化 |
 | `appupdate/AppUpdateFilesTest`、`appupdate/AppPackageCheckTest` | 安装包命名与清理、能否覆盖安装、下载后核对包名版本号签名 |
 | `backup/BackupArchivePlannerTest`、`backup/BackupArchiverAndStorageTest`、`backup/BackupScheduleTest` | 自动/手动备份：可用组件探测与多实例文件清单过滤、在线 SQLite 快照（`VACUUM INTO`）与双存储写入/清理、每 6/12 小时与每天/每周调度槽位计算 |
 | `DisplayRefreshRateTest` | 同物理分辨率下最高刷新率模式筛选（仅超过 61Hz 时请求高刷） |
-| `remote/RemoteManifestTest`、`remote/ManifestSignatureVerifierTest`、`remote/DiagnosticSnapshotPayloadTest` | 远程公告定向过滤与动态排障热规则匹配、WebCrypto 与 Android `SHA256withECDSA` 跨端验签及防篡改、超长日志自动裁剪压进 128 KB Gzip 上限 |
-| `remote/AutoErrorExtractorTest` | 自动报错提取与指纹归类：提取 Python `Traceback` 与 MaiBot 1.4 宿主退出码 2 核心报错行，过滤协议端互斥与自定义源校验等前置提示 |
+| `remote/RemoteManifestTest`、`remote/ManifestSignatureVerifierTest` | 远程公告定向过滤与动态排障热规则匹配、WebCrypto 与 Android `SHA256withECDSA` 跨端验签及防篡改 |
+| `remote/OnlineHeartbeatThrottleTest`、`remote/PowerTelemetryTrackerTest` | 实时在线心跳节流、版本升级扣减与设备充放电/边充边掉能耗遥测归因 |
+| `remote/AutoErrorExtractorTest` | 自动报错提取与指纹归类：提取 Python `Traceback` 与 MaiBot 1.4 宿主退出码 2 核心报错行、区分无栈退出码指纹并过滤协议端互斥与自定义源校验等前置提示 |
 | `ui/remote/RemoteActionTargetTest` | 远程公告与热规则受控跳转动作解析，拒绝非 `https://` 外链与不安全 scheme |
 | `ui/component/BounceOverscrollTest` | 列表越界橡胶阻尼曲线、顶部下拉视差与 1:1 反向回推消费 |
 | `ui/component/CollapsingGlassHeaderTest` | 吸顶毛玻璃渐进顶栏的折叠进度计算与标题淡入淡出交接 |
-| `ui/component/DebugWatermarkBackgroundTest` | Debug 包纯黑页面斜向开发中水印开关与瓦片尺寸计算 |
+| `ui/component/DebugWatermarkBackgroundTest` | Debug 包页面斜向开发中水印开关、深浅适配与瓦片尺寸计算 |
+| `ui/component/FocusGuardContentTest` | 拦截卸载聚焦原生视图时的同步焦点重入分派策略与延迟聚焦判定 |
+| `ui/component/HomeTwoPaneSpecTest` | 横屏 38:62 双栏布局断点与外边距规格计算 |
+| `ui/component/LiquidGlassPhysicsTest`、`ui/component/LiquidHapticsTest`、`ui/component/LiquidSegmentedSelectorTest` | 液态玻璃按压拉伸几何、刻度线性震动节流与分段选择器滑块物理位置计算 |
 | `ui/component/MaiDialogLayoutTest` | 弹窗 `Compact`/`Medium`/`Expanded` 三档在竖屏、手机横屏（含四周留白与软键盘收窄）和平板下的宽高、双列判定与按钮行自适应堆叠 |
 | `ui/extension/ExtensionsPageTest` | 扩展组件页设备布局档位选择、顶栏桌宠运行阶段副标题与双栏选中切换 |
-| `ui/home/HomePortraitNavigationTest` | 竖屏底栏与 WebUI 侧边悬浮胶囊的几何定位及双向平滑形变轨迹 |
+| `ui/home/HomePortraitNavigationTest`、`ui/home/WebUiLifecyclePolicyTest` | 竖屏底栏与 WebUI 侧边悬浮胶囊的几何定位与双向形变轨迹，以及退后台/内存紧缩时 WebUI 会话休眠判定 |
 | `ui/home/PillTiltDamperTest` | 重力传感器屏幕坐标投影与侧边胶囊三级阻尼防抖换边 |
 | `ui/home/WakeBootLogTest` | 唤醒页开机自检：正常三阶段、自动升级 MaiBot 时多出的一行和进度分段、容器出问题时进度条停住、端口被占时的提示 |
 | `webui/WebUiRenderCrashGuardTest` | WebUI 内容进程崩溃后自动重开：2 分钟内最多 3 次，更早的崩溃不算 |
@@ -105,17 +112,17 @@ Windows PowerShell 用 `.\gradlew.bat`。`./gradlew check` 还会跑 `checkUtf8E
 | `ui/platform/MessagePlatformsPageTest` | 按窗口选排版（手机列表、横屏两栏、平板网格）、平台网格列数、选择器宽度、平台目录 |
 | `ui/platform/QqClientButtonTest` | QQ 两种协议端的按钮：支持从自定义源安装与协议/来源确认、装好并启用后进设置；点没启用的那个先确认切换；停用的那个照样列出、不算运行中 |
 | `ui/diagnostics/FeedbackDialogTest`、`ui/diagnostics/QqFeedbackGroupDialogTest` | 反馈弹窗里“诊断包包括什么”只列实际带上的；QQ 反馈群入群验证答案优先取线上更新的正式版版本号、未查到时回退当前版本 |
-| `ui/settings/*Test` | 设置页分栏规则、自动备份排程与时间弹窗宽度规则、MaiBot 与应用更新弹窗的按钮与文案 |
+| `ui/settings/SettingsPageTest`、`ui/settings/AppUpdateDialogTest`、`ui/settings/MaiBotUpdateDialogTest` | 设置页分栏、自动备份时间弹窗宽度与外观主题摘要、应用与 MaiBot 更新弹窗按钮/文案 |
 | `ui/splash/StartupSplashPageTest` | 启动页几何计算 |
-| `ui/terminal/TerminalViewerStateTest` | 终端输出：筛选与关键词高亮、暂停后新日志计数、拖选范围、复制的文本、颜色解析缓存 |
-| `ui/theme/ColorPaletteTest` | 深色模式最深背景色 `#000000` 及关键表面/边框对比度契约 |
+| `ui/terminal/TerminalViewerStateTest`、`ui/terminal/ContainerTerminalColorsTest` | 终端输出（筛选、高亮、暂停新日志计数、拖选复制、解析缓存）与本机交互终端深浅 ANSI 259 色板、快捷按键序列翻译 |
+| `ui/theme/ColorPaletteTest` | 深浅双色语义色板对比度、深色模式 OLED 纯黑 `#000000` 契约及 `AppThemeMode` 解析 |
 | `webui/MaiBotWebUiTest` | WebUI 访问令牌与启动密码解析 |
 | `webui/WebUiBridgeProtocolTest` | GeckoView 原生消息协议编解码（`Locale.GERMANY` 下保持标准小数点）与内置扩展 `manifest.json` / `content.js` 契约校验 |
 | `webui/WebUiDesktopViewportTest` | 横屏桌面版的布局宽度（不小于 1040 宽，高度不设下限） |
 | `webui/WebUiFileChooserTest` | 网页 accept 属性转成选文件页的 MIME 类型 |
 | `webui/WebUiDownloadNamesTest` | 网页下载的文件名（download 属性、Content-Disposition 含 filename*、地址路径、按类型猜）、去掉非法字符、交给“另存为”的 MIME 类型与扩展名一致 |
 | `webui/WebUiBlobReceiverTest` | 分块接收 Blob 下载：拼接、核对字节数、超限和坏数据丢弃、新文件顶掉没收完的旧文件、清理遗留临时文件 |
-| `webui/WebUiPromptModelsTest` | `<select>`/`<optgroup>` 树展平、关键字筛选、多选顺序与颜色选择器十六进制归一化解析 |
+| `webui/WebUiPromptModelsTest`、`webui/WebUiPromptSettlementTest` | `<select>`/`<optgroup>` 树展平、关键字筛选、多选顺序、颜色选择器归一化解析与 `PromptSettlementGuard` 一次性结算防重入 |
 
 改了这些逻辑要同步更新测试；新写的纯逻辑也照这个方式补测试。界面和容器命令靠真机验证。
 
@@ -196,10 +203,10 @@ adb forward tcp:16099 tcp:6099
 
 ### 界面
 
-- 颜色只从 `ui/theme/Color.kt` 取，按用途命名；只有某一页专用的配色才在那一页私有定义。文字和图标的主色用 `TextPrimary`，次要文字用 `TextMuted`、`TextFaint`。
+- 颜色只从 `ui/theme/Color.kt` 的深浅双色语义令牌取（随 `AppThemeMode` 自动切换），不在页面或通用控件里硬编码黑白底色与边框色；文字和图标的主色用 `TextPrimary`，次要文字用 `TextMuted`、`TextFaint`。
 - 字号从 `TextSizes`、圆角从 `Corners` 取（都在 `ui/theme/Dimens.kt`，按角色分档），不在页面里写死 sp、dp。唤醒页、启动页的插画按设计稿等比缩放，是例外。
 - 可点击的东西用默认的按压水波纹；只有遮罩、吞点击的全屏背景才写 `indication = null`，并在旁边注明原因。
-- 页面切换动画用 `horizontalSlideTransition`，毛玻璃用 `BackdropBlurView`，内嵌 WebUI 统一使用 `WebUiSessionHost` 创建（传入宿主注册好的 `WebUiFileChooser` 和 `WebUiDownloads`，且强制 `GeckoView.BACKEND_TEXTURE_VIEW` 确保上层毛玻璃采样正常）。
+- 页面切换动画用 `horizontalSlideTransition`，液态玻璃表面与控件统一使用 `LiquidGlass.kt` / `LiquidControls.kt`（如 `LiquidButton`、`LiquidToggle`），Activity 根 Compose 内容经 `setFocusGuardedContent` 挂载（拦截卸载聚焦原生视图时的焦点重入崩溃），内嵌 WebUI 统一使用 `WebUiSessionHost` 创建（传入宿主注册好的 `WebUiFileChooser`、`WebUiDownloads` 与初始主题底色，且强制 `GeckoView.BACKEND_TEXTURE_VIEW` 防止在 Compose 容器内打洞黑屏）。
 - Compose 里放 `GeckoView` 必须显式设 `MATCH_PARENT` 布局参数，否则高度塌陷导致页面空白。
 - 跨 Activity 重建要保留的界面状态用 `rememberSaveable` 或放进 `MainViewModel` 的 `SavedStateHandle`。
 

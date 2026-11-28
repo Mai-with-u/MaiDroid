@@ -29,6 +29,7 @@ import org.maiwithu.maidroid.ui.theme.MaiDroidTheme
 import org.maiwithu.maidroid.ui.theme.OobeBackground
 import org.maiwithu.maidroid.ui.theme.OobeSurface
 import org.maiwithu.maidroid.ui.theme.OobeTextDimmed
+import org.maiwithu.maidroid.ui.theme.OobeTextPrimary
 import org.maiwithu.maidroid.ui.theme.TextSizes
 
 /**
@@ -57,7 +58,7 @@ private fun StepNode(number: Int, isActive: Boolean) {
         label = "OobeStepBorderWidth"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (isActive) Color.White else OobeSurface,
+        targetValue = if (isActive) OobeTextPrimary else OobeSurface,
         label = "OobeStepBorderColor"
     )
 
@@ -74,7 +75,7 @@ private fun StepNode(number: Int, isActive: Boolean) {
                 modifier = Modifier
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(Color.White)
+                    .background(OobeTextPrimary)
             )
         } else {
             Text(
